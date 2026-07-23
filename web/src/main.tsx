@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import './design/base.css'
+import './design/console.css'
 import { applyTokens, DEFAULT_TOKENS } from './design/tokens'
 
 // Write the token custom properties to :root before first paint so base.css
