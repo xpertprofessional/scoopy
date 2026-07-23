@@ -1,0 +1,33 @@
+# build outputs (anchored to repo root — an unanchored `build/` also matched
+# vendored JUCE's `extras/Build/` case-insensitively on macOS and silently
+# dropped its CMake machinery from the repo, breaking CI configure. Parlante
+# lost half a day to this; the anchoring is deliberate.)
+/build/
+/build-*/
+# Stray per-subproject CMake dirs (the real build tree is /build/). Listed by
+# explicit path rather than a bare `build/` so vendored JUCE's extras/Build is
+# never matched again.
+engine/build/
+host/build/
+shell/build/
+driver/build/
+web/build/
+webdist-staging/
+web/node_modules/
+web/dist/
+*.o
+*.a
+*.dylib
+*.so
+*.dll
+
+# OS / editor. .DS_Store is listed because it poisoned parlante's webdist
+# content hash — an invisible file made the freshness gate flap.
+.DS_Store
+*.swp
+.idea/
+.vscode/
+.cache/
+
+# JUCE / libsamplerate are committed deliberately when added (ThirdParty/) —
+# do not ignore them.
