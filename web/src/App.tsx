@@ -1,11 +1,9 @@
 /**
  * Root component — P0 walking skeleton. Boots the EngineLink transport, shows
  * the shell connection status and the live engine clock streaming from
- * HotFrame, and offers a boot-tone toggle whose signal moves the main meter —
- * proving the whole device→engine→meter→UI path. The console/strip mixer
- * surface is built out in P1.
+ * HotFrame. The boot tone is gone (P1-04): the main meter now shows the real
+ * summed main bus. The console/strip mixer surface is built out in P1-08.
  */
-import { useState } from 'react'
 import { useAppStore } from './store/appStore'
 import { useEngineLink } from './engine/useEngineLink'
 
@@ -23,19 +21,12 @@ function dbfs(amp: number): string {
 }
 
 export function App() {
-  const link = useEngineLink()
+  useEngineLink()
   const shellStatus = useAppStore((s) => s.shellStatus)
   const engineTimeSamples = useAppStore((s) => s.engineTimeSamples)
   const caps = useAppStore((s) => s.capabilities)
   const mainPeakL = useAppStore((s) => s.mainPeakL)
   const mainPeakR = useAppStore((s) => s.mainPeakR)
-  const [tone, setTone] = useState(false)
-
-  const toggleTone = () => {
-    const next = !tone
-    setTone(next)
-    void link?.command('setTestTone', { enabled: next })
-  }
 
   const peak = Math.max(mainPeakL, mainPeakR)
 
@@ -53,9 +44,6 @@ export function App() {
         <dt>main peak</dt>
         <dd data-testid="main-peak">{dbfs(peak)}</dd>
       </dl>
-      <button type="button" onClick={toggleTone} disabled={!link}>
-        {tone ? 'Stop boot tone' : 'Play boot tone'}
-      </button>
     </main>
   )
 }

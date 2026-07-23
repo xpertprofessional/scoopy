@@ -41,10 +41,16 @@ struct ChannelState {
     int32_t deckIndex = -1; // srcKind==deck: which deck unit feeds this strip
     bool toMonitor = false; // cue assign (main is always fed)
     ChannelParams params;
-    // Render-side smoother state (gain/pan one-pole, mute ramp position) is
-    // owned by the render thread and lives here so it travels with the strip.
-    double smGainL = 0.0, smGainR = 0.0; // P1-04
-    double muteRamp = 1.0;               // P1-04 (1 = open)
+    // Render-side smoother state — owned by the render thread; lives here so
+    // it travels with the strip. Fresh worlds start strips at their targets
+    // (no fade-in on publish; a publish is a document swap, not a gesture).
+    double smGainL = -1.0, smGainR = -1.0; // -1 = seed from target on first block
+    double muteRamp = -1.0;                // ramp position 0..1 (1 = open); -1 = seed
+    double soloRamp = 1.0;                 // main-bus-only duck (in-place solo)
+    // Per-strip meters (post-fader/mute, pre-solo), published per block for
+    // HotFrame. Written on the render thread, read on the UI timer thread.
+    std::atomic<double> mPeakL{0.0}, mPeakR{0.0};
+    std::atomic<double> mRmsL{0.0}, mRmsR{0.0};
 };
 
 struct World {

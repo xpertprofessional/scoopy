@@ -1,5 +1,6 @@
 #include "wz_engine.h"
 
+#include "fader.h"
 #include "world.h"
 
 #include <algorithm>
@@ -23,7 +24,7 @@ constexpr const char* kParamNames[] = {
 constexpr uint32_t kParamCount = sizeof(kParamNames) / sizeof(kParamNames[0]);
 
 constexpr double kParamDefaults[kParamCount] = {
-    1.0,  // mainGain (linear master output trim)
+    0.75, // mainGain (fader POSITION — unity detent, D-WZ-FADER-01)
     0.75, // gain (fader position; unity detent — D-WZ-FADER-01)
     0.0,  // pan
     0.0,  // mute
@@ -57,9 +58,8 @@ constexpr uint32_t kHotFrameLength = 8;
 } // namespace
 
 namespace {
-constexpr double kTwoPi = 6.283185307179586;
-constexpr double kTestToneHz = 440.0;
-constexpr double kTestToneAmp = 0.125892541; // -18 dBFS
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kRampSeconds = 0.010; // D-WZ-RAMP-01: one 10 ms constant
 } // namespace
 
 struct wz_engine {
@@ -73,13 +73,17 @@ struct wz_engine {
     // D-CLOCK-01 model). Advanced by exactly `frames` every render, regardless
     // of transport, so realignment across takes (Law C-2) is a pure delta.
     std::atomic<uint64_t> engineTimeSamples;
-    // Main-bus output peak (linear) of the most recent render block, published
+    // Bus output peaks (linear) of the most recent render block, published
     // into HotFrame. Written on the render thread, read on the UI/timer thread.
     std::atomic<double> mainPeakL;
     std::atomic<double> mainPeakR;
-    // Boot-tone (P0 skeleton). `phase` is render-thread-only mutable state.
-    std::atomic<uint32_t> testTone;
-    double tonePhase;
+    std::atomic<double> monitorPeakL;
+    std::atomic<double> monitorPeakR;
+    // Master-fader smoother state (render-thread-only); -1 = seed from target.
+    double smMain;
+    // Preallocated float64 bus accumulators (D-WZ-DSP-01), maxBlockFrames each
+    // — sized at create so render never allocates.
+    std::vector<double> accMainL, accMainR, accMonL, accMonR;
 
     // --- world (RCU) -----------------------------------------------------
     // `world` is the installed snapshot the render thread reads (one load per
@@ -113,8 +117,13 @@ wz_engine* wz_engine_create(double sample_rate,
     e->engineTimeSamples.store(0, std::memory_order_relaxed);
     e->mainPeakL.store(0.0, std::memory_order_relaxed);
     e->mainPeakR.store(0.0, std::memory_order_relaxed);
-    e->testTone.store(0, std::memory_order_relaxed);
-    e->tonePhase = 0.0;
+    e->monitorPeakL.store(0.0, std::memory_order_relaxed);
+    e->monitorPeakR.store(0.0, std::memory_order_relaxed);
+    e->smMain = -1.0;
+    e->accMainL.assign(max_block_frames, 0.0);
+    e->accMainR.assign(max_block_frames, 0.0);
+    e->accMonL.assign(max_block_frames, 0.0);
+    e->accMonR.assign(max_block_frames, 0.0);
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->builder = nullptr;
@@ -277,15 +286,33 @@ uint64_t wz_world_revision(const wz_engine* e) {
     return w != nullptr ? w->revision : 0;
 }
 
-void wz_engine_set_test_tone(wz_engine* e, uint32_t enabled) {
-    if (e != nullptr) e->testTone.store(enabled ? 1u : 0u, std::memory_order_relaxed);
+namespace {
+
+// Raised-cosine shape over ramp position r ∈ [0,1] (D-WZ-RAMP-01): 0 = closed,
+// 1 = open, smooth at both ends.
+inline double rampShape(double r) { return 0.5 * (1.0 - std::cos(kPi * r)); }
+
+// Advance a ramp position toward `target` (0 or 1) by one sample step.
+inline double rampStep(double r, double target, double step) {
+    if (r < target) return std::min(target, r + step);
+    if (r > target) return std::max(target, r - step);
+    return r;
 }
 
-void wz_engine_render(wz_engine* e,
-                      float* const* bus_out,
-                      uint32_t bus_count,
-                      uint32_t frames) {
+inline double sanitize(float s) {
+    return std::isfinite(s) ? static_cast<double>(s) : 0.0; // NaN/Inf squelched at strip input
+}
+
+} // namespace
+
+void wz_engine_render_io(wz_engine* e,
+                         const float* const* in_bus,
+                         uint32_t in_count,
+                         float* const* bus_out,
+                         uint32_t bus_count,
+                         uint32_t frames) {
     if (e == nullptr) return;
+    if (frames > e->maxBlockFrames) frames = e->maxBlockFrames; // never overrun the accumulators
 
     // Pick up the current world snapshot (RCU: one acquire load per block) and
     // acknowledge its revision so the control thread can retire older ones.
@@ -293,66 +320,180 @@ void wz_engine_render(wz_engine* e,
     if (world != nullptr)
         e->renderWorldRev.store(world->revision, std::memory_order_release);
 
-    // Channel summing lands in P1-04; this block still renders silence (+ the
-    // P0 boot tone below). Every bus starts as silence. The main bus is
-    // output channels 0 (L) and 1 (R).
-    if (bus_out != nullptr) {
-        for (uint32_t b = 0; b < bus_count; ++b) {
+    const double sr = e->sampleRate.load(std::memory_order_relaxed);
+    const double fs = sr > 0.0 ? sr : 48000.0;
+    // One-pole coefficient for ~10 ms settling; ramp step for the 10 ms
+    // raised-cosine (both from the single D-WZ-RAMP-01 constant).
+    const double alpha = 1.0 - std::exp(-1.0 / (kRampSeconds * fs));
+    const double step = 1.0 / (kRampSeconds * fs);
+
+    double* accL = e->accMainL.data();
+    double* accR = e->accMainR.data();
+    double* monL = e->accMonL.data();
+    double* monR = e->accMonR.data();
+    for (uint32_t i = 0; i < frames; ++i) accL[i] = accR[i] = monL[i] = monR[i] = 0.0;
+
+    if (world != nullptr) {
+        // In-place solo: any solo engaged anywhere ducks non-soloed strips on
+        // MAIN only (monitor/cue unaffected) — spec §2.
+        bool anySolo = false;
+        for (const auto& ch : world->channels)
+            if (ch->params.solo.load(std::memory_order_relaxed) != 0.0) { anySolo = true; break; }
+
+        for (const auto& chPtr : world->channels) {
+            auto& ch = *chPtr;
+
+            // Source pointers for this block (same-clock duplex inputs only in
+            // P1; decks join in P1-07, rings in P2).
+            const float* srcL = nullptr;
+            const float* srcR = nullptr;
+            if (ch.srcKind == wz::SourceKind::deviceInput && in_bus != nullptr) {
+                if (ch.srcChan0 >= 0 && static_cast<uint32_t>(ch.srcChan0) < in_count)
+                    srcL = in_bus[ch.srcChan0];
+                if (ch.srcChan1 >= 0 && static_cast<uint32_t>(ch.srcChan1) < in_count)
+                    srcR = in_bus[ch.srcChan1];
+                if (srcR == nullptr) srcR = srcL; // mono pick feeds both sides
+            }
+
+            // Block-rate targets; per-sample smoothing below.
+            const double faderLin =
+                wz::faderPositionToLinear(ch.params.gain.load(std::memory_order_relaxed));
+            const double pan = ch.params.pan.load(std::memory_order_relaxed);
+            const double theta = (std::clamp(pan, -1.0, 1.0) + 1.0) * kPi / 4.0;
+            const double tgtL = faderLin * std::cos(theta); // D-WZ-PAN-01
+            const double tgtR = faderLin * std::sin(theta);
+            const double muteTgt = ch.params.mute.load(std::memory_order_relaxed) != 0.0 ? 0.0 : 1.0;
+            const double soloTgt =
+                (anySolo && ch.params.solo.load(std::memory_order_relaxed) == 0.0) ? 0.0 : 1.0;
+
+            // Fresh strips start AT their targets: a publish is a document
+            // swap, not a gesture (no fade-in on world install).
+            if (ch.smGainL < 0.0) { ch.smGainL = tgtL; ch.smGainR = tgtR; }
+            if (ch.muteRamp < 0.0) ch.muteRamp = muteTgt;
+
+            double pkL = 0.0, pkR = 0.0, sumSqL = 0.0, sumSqR = 0.0;
+            const bool feedsMonitor = ch.toMonitor;
+
+            for (uint32_t i = 0; i < frames; ++i) {
+                ch.smGainL += alpha * (tgtL - ch.smGainL);
+                ch.smGainR += alpha * (tgtR - ch.smGainR);
+                ch.muteRamp = rampStep(ch.muteRamp, muteTgt, step);
+                ch.soloRamp = rampStep(ch.soloRamp, soloTgt, step);
+                const double muteG = rampShape(ch.muteRamp);
+                const double soloG = rampShape(ch.soloRamp);
+
+                const double inL = srcL != nullptr ? sanitize(srcL[i]) : 0.0;
+                const double inR = srcR != nullptr ? sanitize(srcR[i]) : 0.0;
+                // Post-fader, post-mute strip signal (float64 — D-WZ-DSP-01).
+                const double l = inL * ch.smGainL * muteG;
+                const double r = inR * ch.smGainR * muteG;
+
+                accL[i] += l * soloG; // solo ducks main only
+                accR[i] += r * soloG;
+                if (feedsMonitor) {
+                    monL[i] += l;
+                    monR[i] += r;
+                }
+                pkL = std::max(pkL, std::abs(l));
+                pkR = std::max(pkR, std::abs(r));
+                sumSqL += l * l;
+                sumSqR += r * r;
+            }
+
+            // Per-strip meters: post-fader/mute, pre-solo (a soloed-away strip
+            // still shows its own level — console convention).
+            ch.mPeakL.store(pkL, std::memory_order_relaxed);
+            ch.mPeakR.store(pkR, std::memory_order_relaxed);
+            const double n = frames > 0 ? static_cast<double>(frames) : 1.0;
+            ch.mRmsL.store(std::sqrt(sumSqL / n), std::memory_order_relaxed);
+            ch.mRmsR.store(std::sqrt(sumSqR / n), std::memory_order_relaxed);
+        }
+    }
+
+    // Master fader (same curve family, smoothed) applied at the main bus sum;
+    // monitor is a cue path — unity, unaffected by the main fader.
+    const double mainTgt = wz::faderPositionToLinear(e->params[0].load(std::memory_order_relaxed));
+    if (e->smMain < 0.0) e->smMain = mainTgt;
+
+    double mainPkL = 0.0, mainPkR = 0.0, monPkL = 0.0, monPkR = 0.0;
+    float* outL = (bus_out != nullptr && bus_count >= 1) ? bus_out[0] : nullptr;
+    float* outR = (bus_out != nullptr && bus_count >= 2) ? bus_out[1] : nullptr;
+    float* cueL = (bus_out != nullptr && bus_count >= 3) ? bus_out[2] : nullptr;
+    float* cueR = (bus_out != nullptr && bus_count >= 4) ? bus_out[3] : nullptr;
+    for (uint32_t i = 0; i < frames; ++i) {
+        e->smMain += alpha * (mainTgt - e->smMain);
+        const double l = accL[i] * e->smMain;
+        const double r = accR[i] * e->smMain;
+        if (outL != nullptr) outL[i] = static_cast<float>(l);
+        if (outR != nullptr) outR[i] = static_cast<float>(r);
+        if (cueL != nullptr) cueL[i] = static_cast<float>(monL[i]);
+        if (cueR != nullptr) cueR[i] = static_cast<float>(monR[i]);
+        mainPkL = std::max(mainPkL, std::abs(l));
+        mainPkR = std::max(mainPkR, std::abs(r));
+        monPkL = std::max(monPkL, std::abs(monL[i]));
+        monPkR = std::max(monPkR, std::abs(monR[i]));
+    }
+    // Any remaining device output channels stay silent.
+    if (bus_out != nullptr)
+        for (uint32_t b = 4; b < bus_count; ++b)
             if (bus_out[b] != nullptr)
                 for (uint32_t i = 0; i < frames; ++i) bus_out[b][i] = 0.0f;
-        }
-    }
 
-    // Boot tone (skeleton proof): a -18 dBFS 440 Hz sine × mainGain on the main
-    // bus. Metering below reads whatever ends up on channels 0/1, so it stays
-    // correct once P1 replaces the tone with real channel output.
-    const double mainGain = e->params[0].load(std::memory_order_relaxed);
-    if (e->testTone.load(std::memory_order_relaxed) != 0 && bus_out != nullptr &&
-        bus_count >= 1 && bus_out[0] != nullptr) {
-        const double sr = e->sampleRate.load(std::memory_order_relaxed);
-        const double inc = kTwoPi * kTestToneHz / (sr > 0.0 ? sr : 48000.0);
-        double phase = e->tonePhase;
-        float* l = bus_out[0];
-        float* r = (bus_count >= 2 && bus_out[1] != nullptr) ? bus_out[1] : nullptr;
-        for (uint32_t i = 0; i < frames; ++i) {
-            const auto s = static_cast<float>(std::sin(phase) * kTestToneAmp * mainGain);
-            l[i] = s;
-            if (r != nullptr) r[i] = s;
-            phase += inc;
-            if (phase >= kTwoPi) phase -= kTwoPi;
-        }
-        e->tonePhase = phase;
-    }
-
-    // Main-bus metering (float64 accumulate per D-WZ-DSP-01): the block peak on
-    // channels 0/1, published for the next HotFrame read.
-    double peakL = 0.0, peakR = 0.0;
-    if (bus_out != nullptr && bus_count >= 1 && bus_out[0] != nullptr)
-        for (uint32_t i = 0; i < frames; ++i)
-            peakL = std::max(peakL, std::abs(static_cast<double>(bus_out[0][i])));
-    if (bus_out != nullptr && bus_count >= 2 && bus_out[1] != nullptr)
-        for (uint32_t i = 0; i < frames; ++i)
-            peakR = std::max(peakR, std::abs(static_cast<double>(bus_out[1][i])));
-    else
-        peakR = peakL;
-    e->mainPeakL.store(peakL, std::memory_order_relaxed);
-    e->mainPeakR.store(peakR, std::memory_order_relaxed);
+    e->mainPeakL.store(mainPkL, std::memory_order_relaxed);
+    e->mainPeakR.store(mainPkR, std::memory_order_relaxed);
+    e->monitorPeakL.store(monPkL, std::memory_order_relaxed);
+    e->monitorPeakR.store(monPkR, std::memory_order_relaxed);
 
     // The clock advances regardless of transport state (D-CLOCK-01 model).
     e->engineTimeSamples.fetch_add(frames, std::memory_order_relaxed);
 }
 
+void wz_engine_render(wz_engine* e,
+                      float* const* bus_out,
+                      uint32_t bus_count,
+                      uint32_t frames) {
+    wz_engine_render_io(e, nullptr, 0, bus_out, bus_count, frames);
+}
+
+uint32_t wz_engine_hotframe_length(const wz_engine* e) {
+    if (e == nullptr) return 0;
+    auto* w = e->world.load(std::memory_order_acquire);
+    const uint32_t channels = w != nullptr ? static_cast<uint32_t>(w->channels.size()) : 0;
+    // Per-deck blocks join in P1-07 (deck count is a world property).
+    return kHotFrameLength + channels * 7u;
+}
+
 uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) {
-    if (e == nullptr || out == nullptr || capacity < kHotFrameLength) return 0;
+    if (e == nullptr || out == nullptr) return 0;
+    const uint32_t total = wz_engine_hotframe_length(e);
+    if (capacity < total) return 0; // short buffer refused, not truncated
+
     out[0] = static_cast<double>(e->schemaVersion);
     out[1] = static_cast<double>(e->engineTimeSamples.load(std::memory_order_relaxed));
-    out[2] = 0.0; // cpuLoad — placeholder until the render path has work to measure
+    out[2] = 0.0; // cpuLoad — placeholder until the render path is measured
     out[3] = 0.0; // feedbackAlarm — watchdog lands in P4
     out[4] = e->mainPeakL.load(std::memory_order_relaxed);
     out[5] = e->mainPeakR.load(std::memory_order_relaxed);
-    out[6] = 0.0; // monitorPeakL — the monitor bus lands with channels in P1
-    out[7] = 0.0; // monitorPeakR
-    return kHotFrameLength;
+    out[6] = e->monitorPeakL.load(std::memory_order_relaxed);
+    out[7] = e->monitorPeakR.load(std::memory_order_relaxed);
+
+    // Per-channel blocks (stride 7, order per schema CHANNEL_BLOCK_FIELDS):
+    // peakL peakR rmsL rmsR srcRingFill srcDriftPpm srcDropouts — the last
+    // three stay 0 until P2's capture lands (reserved, D-WZ-CLOCK-01).
+    auto* w = e->world.load(std::memory_order_acquire);
+    uint32_t idx = kHotFrameLength;
+    if (w != nullptr) {
+        for (const auto& ch : w->channels) {
+            out[idx++] = ch->mPeakL.load(std::memory_order_relaxed);
+            out[idx++] = ch->mPeakR.load(std::memory_order_relaxed);
+            out[idx++] = ch->mRmsL.load(std::memory_order_relaxed);
+            out[idx++] = ch->mRmsR.load(std::memory_order_relaxed);
+            out[idx++] = 0.0;
+            out[idx++] = 0.0;
+            out[idx++] = 0.0;
+        }
+    }
+    return idx;
 }
 
 } // extern "C"

@@ -29,7 +29,7 @@ int main() {
     CHECK(gainId != WZ_PARAM_UNKNOWN);
     CHECK(wz_param_id_for_name("noSuchParam") == WZ_PARAM_UNKNOWN);
     CHECK(wz_param_id_for_name(nullptr) == WZ_PARAM_UNKNOWN);
-    CHECK(wz_param_get(e, 0, gainId) == 1.0);
+    CHECK(wz_param_get(e, 0, gainId) == 0.75); // unity detent (D-WZ-FADER-01)
     wz_param_set(e, 0, gainId, 0.5);
     CHECK(wz_param_get(e, 0, gainId) == 0.5);
     wz_param_set(e, 0, WZ_PARAM_UNKNOWN, 99.0); // must be ignored, not crash
@@ -66,6 +66,8 @@ int main() {
     wz_engine_set_sample_rate(e, 0.0); // rejected
     CHECK(wz_engine_sample_rate(e) == 44100.0);
 
+    // Empty world: frame = the 8 scalars exactly; short capacity refused.
+    CHECK(wz_engine_hotframe_length(e) == 8);
     double hot[8] = {};
     CHECK(wz_engine_hotframe(e, hot, 8) == 8);
     CHECK(wz_engine_hotframe(e, hot, 7) == 0); // capacity < length → refused
@@ -73,26 +75,25 @@ int main() {
     CHECK(hot[1] == 5 * 512.0);                // engineTimeSamples: 5 render calls
     CHECK(hot[2] == 0.0);                      // cpuLoad placeholder
     CHECK(hot[3] == 0.0);                      // feedbackAlarm idle
-    CHECK(hot[4] == 0.0 && hot[5] == 0.0);     // main peak L/R: silence (tone off)
+    CHECK(hot[4] == 0.0 && hot[5] == 0.0);     // main peak L/R: silence (no channels)
     CHECK(hot[6] == 0.0 && hot[7] == 0.0);     // monitor peak L/R: silence
 
-    // Boot tone: enabling it produces a metered signal on the main bus; the
-    // peak lands near -18 dBFS amplitude (0.1259), scaled by mainGain (0.5 here).
-    wz_engine_set_test_tone(e, 1);
+    // With channels in the world, the frame grows by one 7-slot block each and
+    // the render path stays finite + silent when the strips have no live source.
+    wz_world_begin(e);
+    wz_world_channel_begin(e, "a");
+    wz_world_channel_end(e);
+    wz_world_channel_begin(e, "b");
+    wz_world_channel_end(e);
+    wz_world_commit(e);
+    CHECK(wz_engine_hotframe_length(e) == 8 + 2 * 7);
     for (uint32_t b = 0; b < kBuses; ++b) busPtrs[b] = busBufs[b].data();
     wz_engine_render(e, busPtrs.data(), kBuses, kFrames);
-    CHECK(wz_engine_hotframe(e, hot, 8) == 8);
-    CHECK(hot[4] > 0.0 && hot[4] <= 0.13);     // mainPeakL: tone present, below full scale
-    CHECK(hot[5] == hot[4]);                    // stereo tone: L == R
-    // A non-silent sample actually landed on the main bus.
-    bool nonzero = false;
-    for (uint32_t i = 0; i < kFrames; ++i) nonzero = nonzero || (busBufs[0][i] != 0.0f);
-    CHECK(nonzero);
-    // Turning it off returns to silence on the next block.
-    wz_engine_set_test_tone(e, 0);
-    wz_engine_render(e, busPtrs.data(), kBuses, kFrames);
-    CHECK(wz_engine_hotframe(e, hot, 8) == 8);
-    CHECK(hot[4] == 0.0 && hot[5] == 0.0);
+    for (uint32_t i = 0; i < kFrames; ++i) CHECK(busBufs[0][i] == 0.0f);
+    double big[8 + 14] = {};
+    CHECK(wz_engine_hotframe(e, big, 8 + 14) == 8 + 14);
+    CHECK(wz_engine_hotframe(e, big, 8) == 0); // scalar-only buffer now too short
+    for (int i = 8; i < 8 + 14; ++i) CHECK(big[i] == 0.0); // silent strips meter 0
 
     wz_engine_destroy(e);
     std::printf("null_smoke OK\n");

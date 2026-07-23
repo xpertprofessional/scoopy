@@ -32,7 +32,8 @@ else()
 endif()
 
 add_library(wz_engine STATIC
-    src/wz_engine.cpp)
+    src/wz_engine.cpp
+    src/fader.cpp)
 target_include_directories(wz_engine PUBLIC include)
 # libsamplerate is an implementation detail of the engine (ASRC/varispeed);
 # PRIVATE so its header doesn't leak through the C ABI, but the static lib still

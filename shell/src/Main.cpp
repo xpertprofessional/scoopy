@@ -92,14 +92,19 @@ public:
 
 private:
     void timerCallback() override {
-        double frame[wz::protocol::hotframe::kFrameLength] = {};
-        const auto n = wz_engine_hotframe(engine, frame, wz::protocol::hotframe::kFrameLength);
+        // Frame length follows the world (scalars + per-channel + per-deck
+        // blocks); the buffer is grown-only so steady state never reallocates.
+        const auto len = wz_engine_hotframe_length(engine);
+        if (hotFrameBuf.size() < len) hotFrameBuf.resize(len, 0.0);
+        const auto n = wz_engine_hotframe(engine, hotFrameBuf.data(),
+                                          static_cast<uint32_t>(hotFrameBuf.size()));
         juce::Array<juce::var> values;
-        for (uint32_t i = 0; i < n; ++i) values.add(frame[i]);
+        for (uint32_t i = 0; i < n; ++i) values.add(hotFrameBuf[i]);
         webView->emitEventIfBrowserIsVisible("wzHotFrame", juce::var(values));
     }
 
     wz_engine* engine;
+    std::vector<double> hotFrameBuf; // grown-only hotframe staging
     wizard::host::AudioIO audioIO; // host device layer (host/), drives render
     juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;

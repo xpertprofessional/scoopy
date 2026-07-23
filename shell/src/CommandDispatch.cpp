@@ -48,12 +48,6 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
     if (method == "getCapabilities")
         return ok(capabilities());
 
-    if (method == "setTestTone") {
-        const auto enabled = static_cast<bool>(params.getProperty("enabled", false));
-        wz_engine_set_test_tone(engine, enabled ? 1u : 0u);
-        return ok(juce::var(new juce::DynamicObject()));
-    }
-
     if (method == "publishWorld") {
         const auto patch = params.getProperty("patch", juce::var());
         const auto channels = patch.getProperty("channels", juce::var());

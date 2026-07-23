@@ -93,29 +93,41 @@ uint64_t wz_world_commit(wz_engine* e); /* returns the new revision; without a
 uint32_t wz_world_channel_count(const wz_engine* e);
 uint64_t wz_world_revision(const wz_engine* e);
 
-/* --- boot tone (P0 walking-skeleton affordance) -----------------------
- * Toggles a low-level (-18 dBFS) 440 Hz sine on the main bus so the whole
- * device→engine→meter→UI path is provable before real channels exist. Default
- * OFF (the engine boots silent). Removed when P1 builds channels; the metering
- * it exercises stays. RT-safe. */
-void wz_engine_set_test_tone(wz_engine* e, uint32_t enabled);
-
 /* --- audio ------------------------------------------------------------- */
-/* Renders `frames` (<= max_block_frames) into `bus_count` output buffers, one
- * pointer per output channel in `bus_out` (the host maps up to 8 output buses +
- * monitor to device channels — ARCHITECTURE §3). Real-time safe: no locks, no
- * allocation, no IO. Advances the monotonic engine clock by exactly `frames`.
- * P0: renders silence into every buffer (no world/sources yet) while exercising
- * the clock, mainGain path, and metering taps. */
+/* Duplex render (D-WZ-RATE-01: inputs arrive in the SAME callback as the
+ * output — same clock, zero SRC). `in_bus` is `in_count` device input channel
+ * pointers (may be NULL/0 — deviceInput strips then read silence); `bus_out`
+ * is `bus_count` output channels: 0/1 = main L/R, 2/3 = monitor L/R when
+ * present (the host applies the Patch's outputMap on its side, P1-09).
+ *
+ * Sums the current world's channels per docs/specs/routing.md: fader curve
+ * (D-WZ-FADER-01), −3 dB constant-power pan (D-WZ-PAN-01), 10 ms raised-cosine
+ * mute + one-pole gain/pan smoothing (D-WZ-RAMP-01), float64 accumulation
+ * (D-WZ-DSP-01), in-place solo (main bus only). Non-finite input samples are
+ * squelched to 0 at the strip input, never propagated.
+ *
+ * Real-time safe: no locks, no allocation, no IO. Advances the monotonic
+ * engine clock by exactly `frames` regardless of world state. */
+void wz_engine_render_io(wz_engine* e,
+                         const float* const* in_bus,
+                         uint32_t in_count,
+                         float* const* bus_out,
+                         uint32_t bus_count,
+                         uint32_t frames);
+
+/* Output-only convenience: wz_engine_render_io with no inputs. */
 void wz_engine_render(wz_engine* e,
                       float* const* bus_out,
                       uint32_t bus_count,
                       uint32_t frames);
 
 /* --- hotframe ----------------------------------------------------------
- * Fills `out` with up to `capacity` doubles per the generated index map
- * (shell/generated/WZProtocol.h). Returns the number of values written, or 0
- * if capacity < the frame length (a short buffer is refused, not truncated). */
+ * Frame = scalars + one block per channel + one block per deck (strides in the
+ * generated WZProtocol.h; block counts follow the current world). Returns the
+ * number of doubles written, or 0 if `capacity` is smaller than the current
+ * frame length (a short buffer is refused, not truncated). Callers size their
+ * buffer via wz_engine_hotframe_length. */
+uint32_t wz_engine_hotframe_length(const wz_engine* e);
 uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity);
 
 #ifdef __cplusplus

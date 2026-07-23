@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -299,12 +299,6 @@ export const COMMANDS = {
         mode: z.enum(['loop', 'oneShot', 'stop', 'retrigger']),
       })
       .strict(),
-    result: z.object({}).strict(),
-  },
-  // Boot tone (P0 walking-skeleton affordance) — DELETED in P1-04 when real
-  // summing + metering replace it.
-  setTestTone: {
-    params: z.object({ enabled: z.boolean() }).strict(),
     result: z.object({}).strict(),
   },
   // Half-open [startSample, endSample); published atomically (seqlock — the
