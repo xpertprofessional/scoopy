@@ -9,24 +9,28 @@
 
 ## Top-level roadmap (read FIRST every orient — the reflected view; update at phase entry/exit)
 
-- **Now — P0 walking skeleton + risk spike (OPEN, entered 2026-07-23).** Stand up the repo
-  on the parlante-next template (`engine`/`host`/`shell`/`web`, keyed C ABI, ledger, signed
-  decisions, gates green from commit 1). Target of the phase gate P0-G1: shell boots on
-  macOS + Linux, sound out, meters move, all gates green. Seven decisions signed this
-  session (D-WZ-NAME/RATE/CLOCK/DSP/CORE-01/CORE-02/DESIGN-01 — see `docs/DECISIONS.md`).
-  **Schema v1.**
+- **Now — P0 walking skeleton COMPLETE, at gate P0-G1 (awaiting user sign-off).** Repo stood
+  up on the parlante-next template (`engine`/`host`/`shell`/`web`, keyed C ABI, ledger,
+  signed decisions). All 12 build rows + P0-R done; **every gate green from commit 1**
+  (protocol · abi · check:tokens · webdist · ctest). Walking skeleton: JUCE shell boots +
+  serves the bundle, WZP transport round-trips, a duplex device drives the engine, a metered
+  boot tone proves device→engine→meter→UI. Seven decisions signed
+  (D-WZ-NAME/RATE/CLOCK/DSP/CORE-01/CORE-02/DESIGN-01). **Schema v2.** P0-G1 needs the user
+  to (1) hear the boot tone + see the meter move, (2) confirm Linux boot, (3) create a
+  GitHub remote so CI runs.
 - **Next — P1 mixer slice (same-clock only).** Channels bound to hardware inputs + one deck
   playing a decoded file; faders/pan/mute/sends; main + monitor buses; strip meters;
-  routing matrix (DAG-only). No ASRC yet — everything on the device clock. **PD design
-  identity** interleaves after P1.
+  routing matrix (DAG-only). No ASRC yet — everything on the device clock. First rows:
+  P0-11a (engine block = device quantum) + P1-metering (per-strip meters on HotSurface).
+  **PD design identity** interleaves after P1.
 - **Later — P2 capture + ASRC** (the drift fixture is the centerpiece; `wz_capture.h` +
   fake backend → macOS taps → ASRC → Linux PipeWire) · **P3 deck recorder** (Law C-3
   gapless handoff + crash-safe BWF) · **P4 playback composer** (1–8 decks, signed
   varispeed, loopback + watchdog, 8-bus spatial map, strip mode) · **P5 virtual device**
   (clean-room AudioServerPlugIn) · **P6 plugins** · **P7 sessions** · **P8 release**.
-- **Blocked on user:** P0-R (AudioCap/TCC empirical spike — runbook written, user fills the
-  blanks) · P0-G1 visual boot confirmation on Linux · creating a GitHub remote (CI cannot
-  run until one exists — outward-facing, the user's call).
+- **Blocked on user:** P0-G1 sign-off — (1) launch Wizard + confirm boot tone/meter,
+  (2) Linux visual boot, (3) create a GitHub remote so CI proves Linux · P0-R (AudioCap/TCC
+  spike — runbook written at `docs/specs/capture.md`, user fills the blanks).
 - **Parked decisions (awaiting-decision, do not block):** D-WZ-DECK-01 (before P3) ·
   D-WZ-PDC-01 (before P6) · D-WZ-SHARED-01 (after P2).
 
@@ -46,10 +50,11 @@
 | P0-10 | build | Design token core: vendor tokens.ts + base.css from ScoopyLoops; check-tokens.ts gate + PD-05-style portability fixture; app-local token group for channel accents + rec/feedback lamps only (D-WZ-DESIGN-01) | done | SHARED_CHROME + SHARED_TYPE byte-identical; Scoopy primitives NOT copied. check:tokens catches hardcoded hex + dangling var (asks tokenVars(), exact by construction); tamper-tested. Portability fixture pins the hexes. 25 web green |
 | P0-11 | build | host/ AudioIO duplex device (D-WZ-RATE-01): JUCE input+output one callback, bus→device-channel map, drives wz_engine_render; engine told real device rate + quantum; first audible increment (tone/passthrough) with main peaks moving | done | duplex 2in/2out, opens at engine rate + refuses mismatch; renders into device output as bus buffers, chunked to engine max block. Engine: setTestTone (-18 dBFS 440 Hz, schema v2) + main-bus peak metering → HotFrame; UI toggle + dBFS readout. Input opened, engine consumption P2. 4 native + 25 web green. ⚠️ audible/visual = P0-G1 user check |
 | P0-11a | build | Engine rebuild at the DEVICE QUANTUM (D-WZ-CLOCK-01): P0-11 chunks device blocks to the engine's fixed max block (48000/512 at boot); the engine block should equal the device quantum, and a device rate/quantum change should tear down + rebuild the engine (loud UI notice per D-WZ-RATE-01). Wire in P1 when channels make the quantum matter | todo | seeded from P0-11 |
-| P0-12 | build | CI: .github/workflows/ci.yml — web job (typecheck/test/protocol:check/abi:check/check:tokens/webdist:check vs committed artifacts) + native matrix (macos-14, ubuntu-latest: configure/build/ctest). No Windows (v1 platform decision); WizardDriver excluded from Linux | in-progress | |
+| P0-12 | build | CI: .github/workflows/ci.yml — web job (typecheck/test/protocol:check/abi:check/check:tokens/webdist:check vs committed artifacts) + native matrix (macos-14, ubuntu-latest: configure/build/ctest). No Windows (v1 platform decision); WizardDriver excluded from Linux | done | web + native matrix; all 6 web gates verified in CI form locally; Release configure/build/ctest 4/4 green on macOS. ⚠️ needs a GitHub remote to actually run (outward-facing — user's call) |
 | P1-metering | build | Move per-strip meters off the React store onto the HotSurface canvas (one rAF loop, ≤2 ms/frame budget). P0-11's store-routed main peak is the walking-skeleton path only — the real per-channel/bus meters render outside React | todo | seeded from P0-11 |
-| P0-R | spec | docs/specs/capture.md: AudioCap/TCC empirical runbook with blanks — exact prompt text, when it fires, tccutil reset behavior, denial recovery, NSAudioCaptureUsageDescription hand-typing, signing requirement. User fills the blanks; loop skips it | awaiting-user | ROADMAP "P0-R first" reinterpreted as parallel per approved plan — no P0/P1 code depends on TCC; first dependent code is P2 taps |
-| P0-G1 | gate | **Phase gate (human):** shell boots on macOS + Linux, sound out, meters move, all gates green | todo | offered only after the P0-AUDIT row confirms every P0 spec/CONFIRM is covered |
+| P0-R | spec | docs/specs/capture.md: AudioCap/TCC empirical runbook with blanks — exact prompt text, when it fires, tccutil reset behavior, denial recovery, NSAudioCaptureUsageDescription hand-typing, signing requirement. User fills the blanks; loop skips it | awaiting-user | written. ROADMAP "P0-R first" reinterpreted as parallel per approved plan — no P0/P1 code depends on TCC; first dependent code is P2 taps |
+| P0-AUDIT | spec | Phase audit: diff P0 specs/CONFIRMs against built rows, materialize every gap as a row before offering P0-G1 | done | all P0-01..12 done; follow-ups materialized (P0-11a, P1-metering); only awaiting-user rows left (P0-R, remote). No P0 gaps unrowed |
+| P0-G1 | gate | **Phase gate (human):** shell boots on macOS + Linux, sound out, meters move, all gates green | awaiting-signoff | macOS: clean Release configure+build+ctest green; app builds + boots (window created at boot); all 6 web gates green in CI form. NEEDS USER: (1) launch Wizard, click "Play boot tone" → confirm 440 Hz out + main-peak readout moves; (2) Linux visual boot (CI builds but can't run a GUI); (3) create GitHub remote so CI proves Linux. Then P1 opens |
 
 ## Parked decisions
 
