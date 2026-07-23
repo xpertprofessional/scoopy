@@ -1,5 +1,6 @@
 #include "wz_engine.h"
 
+#include "deck.h"
 #include "fader.h"
 #include "world.h"
 
@@ -85,6 +86,12 @@ struct wz_engine {
     // — sized at create so render never allocates.
     std::vector<double> accMainL, accMainR, accMonL, accMonR;
 
+    // Deck units — stable engine objects (world commits never rebuild them) —
+    // plus per-deck preallocated block scratch the deck strips read from.
+    wz::Deck decks[wz::kMaxDecks];
+    std::vector<float> deckOutL[wz::kMaxDecks];
+    std::vector<float> deckOutR[wz::kMaxDecks];
+
     // --- world (RCU) -----------------------------------------------------
     // `world` is the installed snapshot the render thread reads (one load per
     // block). Control side (message thread, single-writer): builder state +
@@ -124,6 +131,10 @@ wz_engine* wz_engine_create(double sample_rate,
     e->accMainR.assign(max_block_frames, 0.0);
     e->accMonL.assign(max_block_frames, 0.0);
     e->accMonR.assign(max_block_frames, 0.0);
+    for (uint32_t d = 0; d < wz::kMaxDecks; ++d) {
+        e->deckOutL[d].assign(max_block_frames, 0.0f);
+        e->deckOutR[d].assign(max_block_frames, 0.0f);
+    }
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->builder = nullptr;
@@ -286,6 +297,78 @@ uint64_t wz_world_revision(const wz_engine* e) {
     return w != nullptr ? w->revision : 0;
 }
 
+void wz_world_set_deck_count(wz_engine* e, uint32_t count) {
+    if (e == nullptr || e->builder == nullptr) return;
+    e->builder->deckCount = count <= wz::kMaxDecks ? count : wz::kMaxDecks;
+}
+
+uint32_t wz_world_deck_count(const wz_engine* e) {
+    if (e == nullptr) return 0;
+    auto* w = e->world.load(std::memory_order_acquire);
+    return w != nullptr ? w->deckCount : 0;
+}
+
+/* --- decks --------------------------------------------------------------- */
+
+int32_t wz_deck_load(wz_engine* e, uint32_t deck, uint32_t channels,
+                     uint64_t frames, const float* const* data, double rate) {
+    if (e == nullptr || deck >= wz::kMaxDecks || channels == 0 || frames == 0 ||
+        data == nullptr || rate <= 0.0)
+        return 0;
+    auto& d = e->decks[deck];
+    // NOT RT-safe: the host detaches the render callback around this call.
+    d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_relaxed);
+    d.data.clear();
+    d.data.reserve(channels);
+    for (uint32_t c = 0; c < channels; ++c) {
+        if (data[c] == nullptr) return 0;
+        d.data.emplace_back(data[c], data[c] + frames);
+    }
+    d.frames = frames;
+    d.playhead = 0.0;
+    d.pubPlayhead.store(0.0, std::memory_order_relaxed);
+    d.publishLoop(0, 0, 0); // whole-buffer region until the document says otherwise
+    return 1;
+}
+
+uint64_t wz_deck_frames(const wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return 0;
+    return e->decks[deck].frames;
+}
+
+void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    auto& d = e->decks[deck];
+    switch (mode) {
+        case 0: // loop
+            d.pendingReset.store(1, std::memory_order_relaxed);
+            d.state.store(static_cast<uint32_t>(wz::DeckState::looping), std::memory_order_release);
+            break;
+        case 1: // oneShot
+            d.pendingReset.store(1, std::memory_order_relaxed);
+            d.state.store(static_cast<uint32_t>(wz::DeckState::oneShot), std::memory_order_release);
+            break;
+        case 2: // stop
+            d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_release);
+            break;
+        case 3: { // retrigger: seek region start; from idle it starts a oneShot
+            d.pendingReset.store(1, std::memory_order_relaxed);
+            const auto st = d.state.load(std::memory_order_relaxed);
+            if (st == static_cast<uint32_t>(wz::DeckState::idle))
+                d.state.store(static_cast<uint32_t>(wz::DeckState::oneShot),
+                              std::memory_order_release);
+            break;
+        }
+        default: break; // unknown mode ignored
+    }
+}
+
+void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
+                      uint64_t start, uint64_t end) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].publishLoop(enabled, start, end);
+}
+
 namespace {
 
 // Raised-cosine shape over ramp position r ∈ [0,1] (D-WZ-RAMP-01): 0 = closed,
@@ -333,6 +416,50 @@ void wz_engine_render_io(wz_engine* e,
     double* monR = e->accMonR.data();
     for (uint32_t i = 0; i < frames; ++i) accL[i] = accR[i] = monL[i] = monR[i] = 0.0;
 
+    // Deck pre-pass: each playing deck advances ONCE per block, into its
+    // preallocated scratch; deck strips read the scratch like any source.
+    for (uint32_t di = 0; di < wz::kMaxDecks; ++di) {
+        auto& d = e->decks[di];
+        float* dl = e->deckOutL[di].data();
+        float* dr = e->deckOutR[di].data();
+        const auto st = d.state.load(std::memory_order_acquire);
+        if (st == static_cast<uint32_t>(wz::DeckState::idle) || d.frames == 0) {
+            for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
+            d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
+            continue;
+        }
+        // Loop region, read torn-free once per block; degenerate → whole buffer.
+        uint32_t le = 0; uint64_t ls = 0, lend = 0;
+        d.readLoop(le, ls, lend);
+        uint64_t rs = 0, re = d.frames;
+        if (le != 0 && ls < lend && ls < d.frames) { rs = ls; re = lend < d.frames ? lend : d.frames; }
+        if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = static_cast<double>(rs);
+        if (d.playhead < static_cast<double>(rs) || d.playhead >= static_cast<double>(re))
+            d.playhead = static_cast<double>(rs);
+
+        const float* srcL = d.data[0].data();
+        const float* srcR = d.data.size() > 1 ? d.data[1].data() : d.data[0].data();
+        bool finished = false;
+        for (uint32_t i = 0; i < frames; ++i) {
+            if (finished) { dl[i] = 0.0f; dr[i] = 0.0f; continue; }
+            const auto idx = static_cast<uint64_t>(d.playhead);
+            dl[i] = srcL[idx];
+            dr[i] = srcR[idx];
+            d.playhead += 1.0; // varispeed plays 1.0 until P4
+            if (d.playhead >= static_cast<double>(re)) {
+                if (st == static_cast<uint32_t>(wz::DeckState::looping)) {
+                    d.playhead = static_cast<double>(rs); // gapless wrap
+                } else {
+                    finished = true; // oneShot: region done → idle
+                    d.state.store(static_cast<uint32_t>(wz::DeckState::idle),
+                                  std::memory_order_release);
+                    d.playhead = static_cast<double>(rs);
+                }
+            }
+        }
+        d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
+    }
+
     if (world != nullptr) {
         // In-place solo: any solo engaged anywhere ducks non-soloed strips on
         // MAIN only (monitor/cue unaffected) — spec §2.
@@ -353,6 +480,10 @@ void wz_engine_render_io(wz_engine* e,
                 if (ch.srcChan1 >= 0 && static_cast<uint32_t>(ch.srcChan1) < in_count)
                     srcR = in_bus[ch.srcChan1];
                 if (srcR == nullptr) srcR = srcL; // mono pick feeds both sides
+            } else if (ch.srcKind == wz::SourceKind::deck && ch.deckIndex >= 0 &&
+                       static_cast<uint32_t>(ch.deckIndex) < wz::kMaxDecks) {
+                srcL = e->deckOutL[ch.deckIndex].data();
+                srcR = e->deckOutR[ch.deckIndex].data();
             }
 
             // Block-rate targets; per-sample smoothing below.
@@ -459,8 +590,8 @@ uint32_t wz_engine_hotframe_length(const wz_engine* e) {
     if (e == nullptr) return 0;
     auto* w = e->world.load(std::memory_order_acquire);
     const uint32_t channels = w != nullptr ? static_cast<uint32_t>(w->channels.size()) : 0;
-    // Per-deck blocks join in P1-07 (deck count is a world property).
-    return kHotFrameLength + channels * 7u;
+    const uint32_t decks = w != nullptr ? w->deckCount : 0;
+    return kHotFrameLength + channels * 7u + decks * 7u;
 }
 
 uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) {
@@ -489,6 +620,21 @@ uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) 
             out[idx++] = ch->mRmsL.load(std::memory_order_relaxed);
             out[idx++] = ch->mRmsR.load(std::memory_order_relaxed);
             out[idx++] = 0.0;
+            out[idx++] = 0.0;
+            out[idx++] = 0.0;
+        }
+        // Per-deck blocks (stride 7, order per schema DECK_BLOCK_FIELDS):
+        // state playhead loopStart loopEnd rate recordLengthSamples
+        // recordDrainFill — record fields stay 0 until P3.
+        for (uint32_t di = 0; di < w->deckCount && di < wz::kMaxDecks; ++di) {
+            const auto& d = e->decks[di];
+            uint32_t le = 0; uint64_t ls = 0, lend = 0;
+            d.readLoop(le, ls, lend);
+            out[idx++] = static_cast<double>(d.state.load(std::memory_order_relaxed));
+            out[idx++] = d.pubPlayhead.load(std::memory_order_relaxed);
+            out[idx++] = static_cast<double>(ls);
+            out[idx++] = static_cast<double>(lend);
+            out[idx++] = d.rate.load(std::memory_order_relaxed);
             out[idx++] = 0.0;
             out[idx++] = 0.0;
         }

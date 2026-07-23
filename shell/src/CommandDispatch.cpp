@@ -76,6 +76,9 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         };
 
         wz_world_begin(engine);
+        const auto decks = patch.getProperty("decks", juce::var());
+        wz_world_set_deck_count(
+            engine, decks.isArray() ? static_cast<uint32_t>(decks.getArray()->size()) : 0u);
         for (const auto& chVar : *channels.getArray()) {
             const auto key = chVar.getProperty("key", "").toString();
             wz_world_channel_begin(engine, key.toRawUTF8());
@@ -108,6 +111,30 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         auto* result = new juce::DynamicObject();
         result->setProperty("revision", static_cast<juce::int64>(revision));
         return ok(juce::var(result));
+    }
+
+    if (method == "deckTrigger") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto mode = params.getProperty("mode", "stop").toString();
+        uint32_t m = 2; // stop
+        if (mode == "loop") m = 0;
+        else if (mode == "oneShot") m = 1;
+        else if (mode == "stop") m = 2;
+        else if (mode == "retrigger") m = 3;
+        else return fail("deckTrigger: unknown mode " + mode);
+        wz_deck_trigger(engine, deck, m);
+        return ok(juce::var(new juce::DynamicObject()));
+    }
+
+    if (method == "deckSetLoop") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto enabled = static_cast<bool>(params.getProperty("enabled", false));
+        const auto start = static_cast<uint64_t>(
+            static_cast<juce::int64>(params.getProperty("startSample", 0)));
+        const auto end = static_cast<uint64_t>(
+            static_cast<juce::int64>(params.getProperty("endSample", 0)));
+        wz_deck_set_loop(engine, deck, enabled ? 1u : 0u, start, end);
+        return ok(juce::var(new juce::DynamicObject()));
     }
 
     return fail("unknown method: " + method);

@@ -10,6 +10,7 @@
 
 #include "AudioIO.h"
 #include "CommandDispatch.h"
+#include "Decoder.h"
 #include "WZProtocol.h"
 #include "WebResources.h"
 #include "wz_engine.h"
@@ -65,6 +66,14 @@ public:
                             complete(deviceInfoReply());
                             return;
                         }
+                        // File-open needs the window + an async native dialog,
+                        // so it lives here rather than in the pure dispatcher.
+                        if (method == "deckLoadFile") {
+                            const auto deck = static_cast<uint32_t>(
+                                static_cast<int>(params.getProperty("deck", 0)));
+                            deckLoadFile(deck, std::move(complete));
+                            return;
+                        }
                         complete(wizard::command::dispatch(engine, method, params));
                     })
                 .withEventListener(
@@ -98,6 +107,54 @@ public:
     }
 
 private:
+    // Async native file-open → decode + SINC_BEST resample (off the render
+    // path) → wz_deck_load with the render callback detached. Cancel = ok:false.
+    void deckLoadFile(uint32_t deck,
+                      juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Load audio into deck " + juce::String(deck + 1), juce::File{},
+            "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3;*.m4a");
+        const auto chooserFlags = juce::FileBrowserComponent::openMode |
+                                  juce::FileBrowserComponent::canSelectFiles;
+        fileChooser->launchAsync(chooserFlags, [this, deck, complete](const juce::FileChooser& fc) {
+            const auto file = fc.getResult();
+            auto* result = new juce::DynamicObject();
+            if (file == juce::File{}) { // cancelled
+                result->setProperty("ok", false);
+                result->setProperty("path", "");
+                result->setProperty("channels", 0);
+                result->setProperty("sampleRate", 0.0);
+                result->setProperty("engineFrames", static_cast<juce::int64>(0));
+            } else {
+                // Decode + resample BEFORE suspending: only the cheap buffer
+                // copy needs the engine detached (D-WZ-DECKSRC-01).
+                const auto engineRate = wz_engine_sample_rate(engine);
+                const auto audio = wizard::decode::loadForDeck(file, engineRate);
+                bool loaded = false;
+                if (audio.ok) {
+                    std::vector<const float*> planar;
+                    planar.reserve(audio.data.size());
+                    for (const auto& ch : audio.data) planar.push_back(ch.data());
+                    audioIO.whileSuspended([&] {
+                        loaded = wz_deck_load(engine, deck, audio.channels,
+                                              audio.engineFrames(), planar.data(),
+                                              engineRate) == 1;
+                    });
+                }
+                result->setProperty("ok", loaded);
+                result->setProperty("path", file.getFullPathName());
+                result->setProperty("channels", static_cast<int>(audio.channels));
+                result->setProperty("sampleRate", audio.sourceRate);
+                result->setProperty("engineFrames",
+                                    static_cast<juce::int64>(audio.engineFrames()));
+            }
+            auto* envelope = new juce::DynamicObject();
+            envelope->setProperty("ok", true); // the command itself succeeded
+            envelope->setProperty("result", juce::var(result));
+            complete(juce::var(envelope));
+        });
+    }
+
     juce::var deviceInfoReply() const {
         auto* result = new juce::DynamicObject();
         result->setProperty("deviceName", audioIO.deviceName());
@@ -135,6 +192,7 @@ private:
 
     wz_engine* engine;
     std::vector<double> hotFrameBuf; // grown-only hotframe staging
+    std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
     wizard::host::AudioIO audioIO; // host device layer (host/), drives render
     juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;

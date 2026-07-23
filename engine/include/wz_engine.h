@@ -92,6 +92,32 @@ uint64_t wz_world_commit(wz_engine* e); /* returns the new revision; without a
                                            current revision */
 uint32_t wz_world_channel_count(const wz_engine* e);
 uint64_t wz_world_revision(const wz_engine* e);
+/* Deck count 1-8 is a world property (how many deck HotFrame blocks publish);
+ * the deck UNITS themselves are stable engine objects that survive commits. */
+void wz_world_set_deck_count(wz_engine* e, uint32_t count); /* builder-scoped */
+uint32_t wz_world_deck_count(const wz_engine* e);
+
+/* --- decks (P1: playback only; record states land P3) --------------------
+ * Buffers are planar float32 AT THE ENGINE RATE (D-WZ-DECKSRC-01: the host
+ * resamples at load, SINC_BEST). wz_deck_load copies the data in; NOT RT-safe
+ * -- the host detaches the render callback around it (whileSuspended). `rate`
+ * records the buffer's rate for sanity; playback is a straight read.
+ * Returns 1 on success, 0 on bad args/alloc failure. */
+int32_t wz_deck_load(wz_engine* e, uint32_t deck, uint32_t channels,
+                     uint64_t frames, const float* const* data, double rate);
+uint64_t wz_deck_frames(const wz_engine* e, uint32_t deck);
+
+/* Transport intent (control thread, RT-safe atomics):
+ * mode 0 = loop (play the loop region, wrap), 1 = oneShot (play region once ->
+ * idle), 2 = stop (-> idle), 3 = retrigger (seek region start, keep/enter the
+ * current play mode; from idle it starts a oneShot). State truth streams back
+ * via the HotFrame deck block, never a reply. */
+void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
+
+/* Half-open [start, end) in buffer samples, seqlock-published (never torn).
+ * enabled=0 or a degenerate/out-of-range pair plays the whole buffer. */
+void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
+                      uint64_t start, uint64_t end);
 
 /* --- audio ------------------------------------------------------------- */
 /* Duplex render (D-WZ-RATE-01: inputs arrive in the SAME callback as the

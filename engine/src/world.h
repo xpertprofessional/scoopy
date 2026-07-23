@@ -56,6 +56,9 @@ struct ChannelState {
 struct World {
     // unique_ptr because ChannelParams holds atomics (non-copyable/movable).
     std::vector<std::unique_ptr<ChannelState>> channels;
+    // How many deck HotFrame blocks publish (1-8, a world property). The deck
+    // UNITS live in the engine and survive commits.
+    uint32_t deckCount = 0;
     uint64_t revision = 0;
 };
 
