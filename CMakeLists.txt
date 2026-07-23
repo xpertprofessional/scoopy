@@ -10,8 +10,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # "No tests were found" at the root (parlante lesson).
 enable_testing()
 
+add_subdirectory(ThirdParty/JUCE)
+
+# JUCE's networking (juce_core → libcurl on Linux) is unused — the WebView
+# serves local files only. Disable it for every JUCE-linking target so the
+# static libs don't need libcurl (parlante's Linux link lesson: the app set
+# JUCE_USE_CURL=0 but the libs didn't, which broke the Linux link; macOS
+# provides curl implicitly and hid it).
+add_compile_definitions(JUCE_USE_CURL=0)
+
 add_subdirectory(engine)
 
 # host/ (JUCE duplex IO, capture backends) and shell/ (WebView app) are added
-# once JUCE is vendored in P0-05. The engine tier builds and tests standalone
-# with zero third-party deps until then.
+# in P0-06/P0-11. The engine tier still builds and tests standalone.
