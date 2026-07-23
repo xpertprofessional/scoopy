@@ -69,6 +69,46 @@ int main() {
         CHECK(hot[4] == 0.0);
     }
 
+    // publishWorld installs the Patch as the engine world and echoes a
+    // monotonic revision.
+    {
+        const auto patchJson = juce::JSON::parse(R"({
+            "patch": {
+                "schemaVersion": 3,
+                "channels": [
+                    {"key": "mic", "name": "Mic",
+                     "source": {"kind": "deviceInput", "id": "0,1", "name": "Built-in"},
+                     "gain": 0.5, "pan": -0.25, "mute": false, "solo": false,
+                     "toMonitor": true},
+                    {"key": "deck-1", "name": "Deck 1",
+                     "source": {"kind": "deck", "id": "0", "name": "Deck 1"},
+                     "gain": 0.75, "pan": 0, "mute": true, "solo": false,
+                     "toMonitor": false}
+                ],
+                "decks": [], "outputMap": {"main": [0,1], "monitor": null},
+                "uiMode": "console"
+            }
+        })");
+        const auto reply = dispatch(e, "publishWorld", patchJson);
+        CHECK(static_cast<bool>(reply.getProperty("ok", false)));
+        const auto rev = static_cast<juce::int64>(
+            reply.getProperty("result", juce::var()).getProperty("revision", 0));
+        CHECK(rev == 1);
+        CHECK(wz_world_channel_count(e) == 2);
+        // Builder values landed in the strips (keyed params read them back).
+        const auto gainId = wz_param_id_for_name("gain");
+        const auto muteId = wz_param_id_for_name("mute");
+        CHECK(wz_param_get(e, 0, gainId) == 0.5);
+        CHECK(wz_param_get(e, 1, muteId) == 1.0);
+        // Republishing bumps the revision.
+        const auto again = dispatch(e, "publishWorld", patchJson);
+        CHECK(static_cast<juce::int64>(
+                  again.getProperty("result", juce::var()).getProperty("revision", 0)) == 2);
+        // A malformed publish (no channels) is a structured failure.
+        const auto bad = dispatch(e, "publishWorld", juce::JSON::parse(R"({"patch": {}})"));
+        CHECK(!static_cast<bool>(bad.getProperty("ok", true)));
+    }
+
     // Unknown method → structured failure, not a crash.
     {
         const auto reply = dispatch(e, "nope", juce::var());

@@ -62,10 +62,36 @@ double wz_engine_sample_rate(const wz_engine* e);
 int32_t wz_param_id_for_name(const char* name); /* WZ_PARAM_UNKNOWN if unknown */
 uint32_t wz_param_count(void);
 const char* wz_param_name(uint32_t id); /* NULL if out of range */
-/* RT-safe, atomic. `channel` selects the strip; master-global params (mainGain)
- * ignore it. Unknown id is a no-op. */
+/* RT-safe, atomic. `channel` selects the strip in the CURRENT world;
+ * master-global params (mainGain) ignore it. Unknown id or out-of-range
+ * channel is a no-op. Control-thread single-writer (the message thread). */
 void wz_param_set(wz_engine* e, uint32_t channel, int32_t id, double value);
 double wz_param_get(const wz_engine* e, uint32_t channel, int32_t id);
+
+/* --- world (topology) ----------------------------------------------------
+ * Snapshot builder + RCU commit (docs/ARCHITECTURE.md §2 graph.cpp). The
+ * CONTROL thread builds a world off the render path; wz_world_commit installs
+ * it with one atomic pointer swap (lock-free publish — the render thread picks
+ * it up at its next block). TS owns the document: builder values ARE the
+ * document's values (a ParamWrite racing a commit self-heals on the next
+ * publish, which carries the same params).
+ *
+ * Channel FIELDS are keyed by name like params: resolve once at boot via
+ * wz_world_key_for_name ("srcKind","srcChan0","srcChan1","toMonitor","gain",
+ * "pan","mute","solo","deckIndex"); unknown key writes are ignored, never
+ * misread. srcKind values follow the schema enum order: 0 none · 1 deviceInput
+ * · 2 deck · 3 appTap · 4 systemMixExcept · 5 virtualDeviceInput · 6 busTap.
+ * All world calls are control-thread only, not RT-safe. */
+void wz_world_begin(wz_engine* e); /* discards any unfinished builder */
+int32_t wz_world_key_for_name(const char* name); /* WZ_PARAM_UNKNOWN if unknown */
+uint32_t wz_world_channel_begin(wz_engine* e, const char* channel_key);
+void wz_world_channel_set(wz_engine* e, int32_t key, double value);
+void wz_world_channel_end(wz_engine* e);
+uint64_t wz_world_commit(wz_engine* e); /* returns the new revision; without a
+                                           begin() it is a no-op returning the
+                                           current revision */
+uint32_t wz_world_channel_count(const wz_engine* e);
+uint64_t wz_world_revision(const wz_engine* e);
 
 /* --- boot tone (P0 walking-skeleton affordance) -----------------------
  * Toggles a low-level (-18 dBFS) 440 Hz sine on the main bus so the whole

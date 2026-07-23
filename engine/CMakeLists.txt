@@ -47,6 +47,10 @@ add_executable(null_smoke tools/null_smoke.cpp)
 target_link_libraries(null_smoke PRIVATE wz_engine)
 add_test(NAME null_smoke COMMAND null_smoke)
 
+add_executable(world_test tools/world_test.cpp)
+target_link_libraries(world_test PRIVATE wz_engine)
+add_test(NAME world_test COMMAND world_test)
+
 # Smoke: proves the vendored libsamplerate builds, links, and resamples with
 # SINC_BEST before the ASRC/varispeed path (P2) is built on it.
 add_executable(libsamplerate_smoke tools/libsamplerate_smoke.cpp)
