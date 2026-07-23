@@ -36,6 +36,14 @@ public:
     // RT-safe against a live render). Message thread only.
     void whileSuspended(const std::function<void()>& fn);
 
+    // Device introspection for the UI's sources browser (message thread only).
+    // Input names are compacted to ACTIVE channels, so index i == the engine's
+    // srcChan i in a deviceInput SourceRef.
+    juce::String deviceName() const;
+    int activeInputChannelCount() const;
+    int activeOutputChannelCount() const;
+    juce::StringArray activeInputChannelNames() const;
+
     void audioDeviceIOCallbackWithContext(const float* const* input,
                                           int numInputChannels,
                                           float* const* output,

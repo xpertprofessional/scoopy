@@ -73,16 +73,46 @@ void AudioIO::detach() {
     }
 }
 
+juce::String AudioIO::deviceName() const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    return device != nullptr ? device->getName() : juce::String();
+}
+
+int AudioIO::activeInputChannelCount() const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    return device != nullptr ? device->getActiveInputChannels().countNumberOfSetBits() : 0;
+}
+
+int AudioIO::activeOutputChannelCount() const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    return device != nullptr ? device->getActiveOutputChannels().countNumberOfSetBits() : 0;
+}
+
+juce::StringArray AudioIO::activeInputChannelNames() const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr) return {};
+    // The engine sees inputs by their position in the CALLBACK's array, which
+    // carries only ACTIVE channels — so names are compacted the same way, and
+    // index i here is exactly srcChan i in a deviceInput SourceRef.
+    const auto all = device->getInputChannelNames();
+    const auto active = device->getActiveInputChannels();
+    juce::StringArray names;
+    for (int i = 0; i < all.size(); ++i)
+        if (active[i]) names.add(all[i]);
+    return names;
+}
+
 void AudioIO::audioDeviceIOCallbackWithContext(
     const float* const* input, int numInputChannels,
     float* const* output, int numOutputChannels, int numSamples,
     const juce::AudioIODeviceCallbackContext&) {
-    juce::ignoreUnused(input, numInputChannels); // engine input path is P2 (source rings)
     if (numOutputChannels <= 0 || numSamples <= 0) return;
 
     // The engine renders straight into the device's output channel buffers as
-    // its bus buffers (bus 0/1 = main L/R). The device block can exceed the
-    // engine's max render block, so chunk it.
+    // its bus buffers (bus 0/1 = main L/R, 2/3 = monitor). Inputs ride the SAME
+    // callback — same clock, no rings, no ASRC (D-WZ-RATE-01): deviceInput
+    // strips read them inside wz_engine_render_io. The device block can exceed
+    // the engine's max render block, so chunk both sides together.
     const auto maxBlock = static_cast<int>(wz_engine_max_block_frames(engine));
     if (maxBlock <= 0) {
         for (int c = 0; c < numOutputChannels; ++c)
@@ -93,12 +123,17 @@ void AudioIO::audioDeviceIOCallbackWithContext(
     for (int offset = 0; offset < numSamples;) {
         const int chunk = std::min(numSamples - offset, maxBlock);
         // Offset each channel pointer into the current chunk.
-        std::array<float*, 32> chans{};
-        const int n = std::min(numOutputChannels, static_cast<int>(chans.size()));
-        for (int c = 0; c < n; ++c)
-            chans[static_cast<size_t>(c)] = output[c] != nullptr ? output[c] + offset : nullptr;
-        wz_engine_render(engine, chans.data(), static_cast<uint32_t>(n),
-                         static_cast<uint32_t>(chunk));
+        std::array<const float*, 32> ins{};
+        std::array<float*, 32> outs{};
+        const int nIn = std::min(numInputChannels, static_cast<int>(ins.size()));
+        const int nOut = std::min(numOutputChannels, static_cast<int>(outs.size()));
+        for (int c = 0; c < nIn; ++c)
+            ins[static_cast<size_t>(c)] = input[c] != nullptr ? input[c] + offset : nullptr;
+        for (int c = 0; c < nOut; ++c)
+            outs[static_cast<size_t>(c)] = output[c] != nullptr ? output[c] + offset : nullptr;
+        wz_engine_render_io(engine, ins.data(), static_cast<uint32_t>(nIn),
+                            outs.data(), static_cast<uint32_t>(nOut),
+                            static_cast<uint32_t>(chunk));
         offset += chunk;
     }
 }

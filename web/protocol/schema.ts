@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -265,6 +265,25 @@ export const COMMANDS = {
   getCapabilities: {
     params: z.object({}).strict(),
     result: CapabilitiesSchema,
+  },
+  // Duplex-device introspection for the sources browser (shell-owned — needs
+  // the host device layer, so Main.cpp answers it before the pure dispatcher).
+  // inputs[] is compacted to ACTIVE channels: inputs[i].index is exactly the
+  // srcChan value a deviceInput SourceRef uses. monitorAvailable mirrors
+  // routing.md §4: the cue pair exists only when the device has ≥4 outputs.
+  getDeviceInfo: {
+    params: z.object({}).strict(),
+    result: z
+      .object({
+        deviceName: z.string(),
+        sampleRate: z.number().nonnegative(),
+        inputs: z.array(
+          z.object({ index: z.number().int().nonnegative(), name: z.string() }).strict(),
+        ),
+        outputChannels: z.number().int().nonnegative(),
+        monitorAvailable: z.boolean(),
+      })
+      .strict(),
   },
   // WorldPublish: the full Patch document. The engine RCU-installs the world;
   // `revision` echoes a monotonic install counter so the UI can correlate

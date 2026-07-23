@@ -58,6 +58,13 @@ public:
                            juce::WebBrowserComponent::NativeFunctionCompletion complete) {
                         const auto method = args.size() > 0 ? args[0].toString() : juce::String();
                         const auto params = args.size() > 1 ? args[1] : juce::var();
+                        // Shell-owned: needs the host device layer, so it is
+                        // answered here rather than in the pure dispatcher
+                        // (parlante's chooseAndLoadFile precedent).
+                        if (method == "getDeviceInfo") {
+                            complete(deviceInfoReply());
+                            return;
+                        }
                         complete(wizard::command::dispatch(engine, method, params));
                     })
                 .withEventListener(
@@ -91,6 +98,29 @@ public:
     }
 
 private:
+    juce::var deviceInfoReply() const {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("deviceName", audioIO.deviceName());
+        result->setProperty("sampleRate", audioIO.openedSampleRate());
+        juce::Array<juce::var> inputs;
+        const auto names = audioIO.activeInputChannelNames();
+        for (int i = 0; i < names.size(); ++i) {
+            auto* in = new juce::DynamicObject();
+            in->setProperty("index", i);
+            in->setProperty("name", names[i]);
+            inputs.add(juce::var(in));
+        }
+        result->setProperty("inputs", juce::var(inputs));
+        const auto outs = audioIO.activeOutputChannelCount();
+        result->setProperty("outputChannels", outs);
+        // routing.md §4: the cue pair exists only on a ≥4-output device.
+        result->setProperty("monitorAvailable", outs >= 4);
+        auto* envelope = new juce::DynamicObject();
+        envelope->setProperty("ok", true);
+        envelope->setProperty("result", juce::var(result));
+        return juce::var(envelope);
+    }
+
     void timerCallback() override {
         // Frame length follows the world (scalars + per-channel + per-deck
         // blocks); the buffer is grown-only so steady state never reallocates.
