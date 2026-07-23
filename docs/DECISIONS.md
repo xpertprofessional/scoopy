@@ -244,6 +244,31 @@ returns a `WZ_CAP_AT_CAPACITY` status past 16; the source picker surfaces the co
 documented in `docs/specs/capture.md`. The constant is a named `kMaxConcurrentTaps` so
 raising it later is one edit + a re-measure.
 
+## D-WZ-DECK-01 · 2026-07-24 · Deck memory policy: cap + stop, ~256 MB/deck
+
+**Decision:** Each deck's in-RAM record buffer (which doubles as the playback buffer —
+Law C-3) is capped at **256 MB** (≈ 23 minutes of stereo float32 at 48 kHz). On reaching
+the cap, **recording stops on that deck** and a UI indicator shows it; the deck keeps
+looping and varispeed-bending what it captured. The crash-safe BWF/RF64 file
+(D-WZ-CORE-02) is written in parallel **regardless** and holds the full take up to the
+cap — it is the durable artifact.
+
+**Rationale:** Wizard's decks are a live looper — takes are phrases, not full sessions
+(long-form session capture is the file's job). A generous fixed per-deck cap keeps total
+RAM bounded (~2 GB worst case, 8 decks) and predictable, and **never glitches under memory
+pressure** — the failure mode a sliding-window or grow-until-watermark policy risks on the
+audio thread. Simplest correct foundation; the cap is a signed constant, raisable later
+without a design change.
+
+**Consequences:** `deck.cpp`'s record buffer grows in committed chunks from the control
+thread up to the cap; a `recordCapReached` flag surfaces in HotFrame (per-deck block) so
+the UI can light the indicator. The parallel drain (`recorder.cpp` → host WavWriter) is
+unaffected by the cap — the file keeps whatever was recorded. Degrade-to-window
+(unbounded file + RAM window) is explicitly **not** built; if long-form live-loopable
+capture is ever wanted it is a new, separately-signed policy. The record buffer's growth
+is off the RT path (control-thread commit, seqlock-published length — the render thread
+only ever reads a committed length).
+
 ---
 
 ## Parked — awaiting decision (do not block earlier phases)

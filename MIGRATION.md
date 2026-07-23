@@ -15,13 +15,19 @@
   (sample-exact loop wrap, SINC_BEST load), device picker, DAG-validated routing matrix,
   strip add/remove. Field fixes folded in: macOS mic permission + honest input-device
   reporting. **Schema v7.**
-- **Now — P2 capture + ASRC (ENTERING).** The differentiator: tap any running app / the
-  system-mix-except into a strip, ASRC each independent clock into the engine rate. Order
-  (ROADMAP §P2): wz_capture.h + deterministic fake backend (fixtures first) → macOS process
-  taps → source rings + ASRC PI controller (**centerpiece: asrc_drift_test, 48000 vs
-  48000.3 Hz, simulated hour, <1 ms**) → source picker + TCC UX → Linux PipeWire. ASRC
-  converter-tier decision surfaced to the user before the ASRC build. Front half (capture
-  ABI + fake backend) is decision-independent and builds now.
+- **P2 capture + ASRC — HEADLESS SPINE COMPLETE (P2-01..04); platform backends PARKED by
+  user 2026-07-24.** Built + verified headless: wz_capture.h ABI + deterministic fake
+  backend, source rings (SPSC, drop-oldest), the ASRC (SINC_BEST feedforward — asrc_drift_test
+  holds 0.0002 ms/hr vs the naive 22.5 ms/hr), tap strips wired through the ASRC with live
+  per-strip srcDriftPpm/srcDropouts. Signed D-WZ-ASRC-01, D-WZ-TAPCAP-01. PARKED (need the
+  user's machine + TCC runbook + a Linux box): P2-05/06 macOS taps, P2-07 Linux PipeWire.
+  wz_capture.h makes these additive — no rewrite.
+- **Now — P3 deck recorder (ENTERING).** Record into a deck with live monitor; **stop->loop
+  instant gapless turnaround (Law C-3)** — the in-engine record buffer that doubles as the
+  playback buffer; parallel crash-safe BWF drain (D-WZ-CORE-02); engine-sample stamps +
+  align-to-deck-N (Law C-2). Centerpieces: deck_handoff_test (gapless, sample-exact),
+  wav_killtest (SIGKILL mid-record recoverable). Decision D-WZ-DECK-01 (deck RAM policy)
+  signed before the record buffer.
 - **Later — phase by phase, each with its centerpiece fixture and its blocking decision:**
   - **P2 capture + ASRC.** Order: `wz_capture.h` + deterministic fake backend (fixtures
     first) → macOS taps (open/close/format-change/process-vanish lifecycle) → source rings
@@ -114,11 +120,30 @@ verifiable and builds now; taps/TCC/Linux need the user's machine + P0-R finding
 | P2-03 | build | ASRC (`asrc.cpp`): per-source SINC_BEST streaming SRC (D-WZ-ASRC-01), PI controller on timestamp error + ring-fill deviation → src_ratio; srcDriftPpm published per strip. **Centerpiece fixture `asrc_drift_test`: 48000 vs 48000.3 Hz synthetic clocks, simulated hour, alignment error < 1 ms; zipper-free small-ratio-walk listening bound** | done | asrc.h/cpp: SINC_BEST via src_callback_new streaming; ratio = PURE FEEDFORWARD from the ring's cumulative {framesWritten,host_time} true-rate estimate (converges sub-ppm for constant drift). A ring-fill PI trim was evaluated + REJECTED (quantum-read sawtooth biases the servo into fighting the feedforward → drift WORSE); gains left as a disabled seam. **asrc_drift_test: ON 0.0002 ms/hr, negative control 22.5 ms/hr — the controller is unambiguously the fix**, no under/overruns, 6.25 ppm discovered from timestamps. Rates scaled to 8 kHz (identical ppm) + measured-ratio→hour extrapolation to keep the SINC_BEST soak CI-fast (~4s); the literal 48k full-hour runs by bumping constants (pre-release). srcDriftPpm exposed for the per-strip HotFrame readout (wired P2-04). 11 native + 41 web green |
 | P2-03a | build | Active ring-fill re-centering for disruption recovery (format change / glitch): pure feedforward matches rate but doesn't re-center latency after a one-time buffer upset. A fill servo that does NOT fight feedforward (average-fill based, sawtooth-immune) — or adaptive ring growth per D-WZ-CLOCK-01. Robustness, not correctness | todo | seeded from P2-03 |
 | P2-04 | build | Source-kind strips wired to rings: appTap / systemMixExcept / virtualDeviceInput SourceRefs resolve to source rings in the engine world; strips read the ASRC output. Capability processCapture gated on backend presence | done | ring_open now creates the per-source ASRC (control thread); render pre-pass runs each ring's ASRC once/block into planar scratch (deinterleaved), tap strips read it like decks read theirs; ChannelState.ringId world field. Per-strip HotFrame now carries srcRingFill/srcDriftPpm/srcDropouts for ring-bound strips (D-WZ-CLOCK-01 — drift visible live). source_strip_test: 12.5 ppm drift discovered, tap sine reaches main bus at unity, unresolved ringId=-1 = silent preserved strip. SCOPE: host key→ringId binding (publishWorld resolution) + processCapture capability flip land with real taps in P2-05 (stays false — no backend in the shell yet, honest). 12 native + 44 web green |
-| P2-05 | build | macOS taps `host/src/capture/mac/` (TapSource.mm + ProcessWatch.mm): feasibility §3.2 sequence; own-PID excluded from system-mix by default (feedback guard); tap cap 16 soft (D-WZ-TAPCAP-01). Needs signing + the user's machine to run | blocked(P0-R + signed build + user machine) | write behind wz_capture.h; TCC UX needs P0-R findings |
-| P2-06 | build | Source picker UI + TCC UX: arm-time permission prompt surfaced inline; tap-cap count (13/16) + refusal; per-strip srcDriftPpm/srcDropouts visible | blocked(P0-R) | |
-| P2-07 | build | Linux PipeWire backend (`host/src/capture/linux/PipeWireBackend.cpp`): the abstraction proof — same wz_capture.h. Null-sink virtual device parity | blocked(P0-G1-LINUX) | |
+| P2-05 | build | macOS taps `host/src/capture/mac/` (TapSource.mm + ProcessWatch.mm): feasibility §3.2 sequence; own-PID excluded from system-mix by default (feedback guard); tap cap 16 soft (D-WZ-TAPCAP-01). Needs signing + the user's machine to run | PARKED(user 2026-07-24) | headless spine done behind wz_capture.h; write when the user does the TCC runbook + wants macOS taps. The fake backend proves the abstraction |
+| P2-06 | build | Source picker UI + TCC UX: arm-time permission prompt surfaced inline; tap-cap count (13/16) + refusal; per-strip srcDriftPpm/srcDropouts visible | PARKED(user 2026-07-24) | follows P2-05 |
+| P2-07 | build | Linux PipeWire backend (`host/src/capture/linux/PipeWireBackend.cpp`): the abstraction proof — same wz_capture.h. Null-sink virtual device parity | PARKED(user 2026-07-24) | needs a Linux box |
 | P2-AUDIT | spec | Phase audit before the gate | todo | |
 | P2-G1 | gate | **Phase gate (human): tap Spotify + system-mix-except simultaneously; one-hour drift soak audibly clean; srcDriftPpm visible per strip** | todo | needs macOS taps (P2-05/06) → the user's machine |
+
+## Phase P3 — deck recorder
+
+Signed: D-WZ-DECK-01 (cap+stop, 256 MB/deck, 2026-07-24). Laws C-1/C-2/C-3 (CONCEPT §2).
+Spec: docs/specs/recorder.md. Mostly headless — builds without the user's machine.
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P3-01 | spec | docs/specs/recorder.md: two artifacts (RAM buffer that IS the play buffer + parallel BWF file), Law C-3 handoff, off-RT buffer growth, drain→WavWriter, stamps (C-2), fixtures | done | signed D-WZ-DECK-01 written into DECISIONS.md |
+| P3-02 | build | Engine record buffer + drain ring + engine-sample stamps: wz_deck_record_start/stop; buffer grows in committed chunks off the RT path (seqlock length); per-deck drain ring (frames + startEngineSample); wz_deck_drain | todo | reuses source_ring SPSC pattern for the drain |
+| P3-03 | build | Law C-3 handoff: record_stop with loop → same-block switch to looping playback of the captured buffer (no copy/realloc/file). deck_handoff_test: gapless, sample-exact | todo | the phase centerpiece |
+| P3-04 | build | Host WavWriter (D-WZ-CORE-02): dependency-free BWF/RF64, pre-patched header + periodic flush, sidecar JSON. wav_killtest: SIGKILL mid-record → recoverable ± one flush quantum | todo | portable C++ in host/, no JUCE writer |
+| P3-05 | build | RecordService: per-deck drain thread → WavWriter + sidecar; overrun counted never blocks render; recorder_drain_test | todo | |
+| P3-06 | schema | Schema: recordStart/recordStop commands (stop returns startEngineSample), take-list model, recordLengthSamples/recordDrainFill/recordCapReached in the per-deck HotFrame block | todo | |
+| P3-07 | build | Stamps + align (C-2): take {deckId,startEngineSample,...}; align-to-deck-N = stamp delta; deck_stamp_test | todo | |
+| P3-08 | build | Cap enforcement: 256 MB/deck stop + recordCapReached; record_cap_test (no alloc on RT at the cap) | todo | D-WZ-DECK-01 |
+| P3-09 | build | UI: per-deck arm + ● rec + take list (click → any deck) + align-to-deck-N + cap lamp; TAKES panel | todo | consumes the HotFrame record fields |
+| P3-AUDIT | spec | Phase audit before the gate | todo | |
+| P3-G1 | gate | **Phase gate (human): record on deck 1; mid-take start deck 2 from a different input; stop both → both loop instantly; realignment sample-exact over a 30-min session** | todo | |
 
 ## Parked decisions
 
