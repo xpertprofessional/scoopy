@@ -1,0 +1,71 @@
+name: CI
+
+# Cross-platform is a property you keep from day one, not one you add later:
+# the native job builds + tests on macOS and Linux on every push. Windows is
+# absent by decision (v1 platforms = macOS 14.4+ / Linux PipeWire — its virtual-
+# device kernel-driver cost is commercial, not technical; feasibility §2, §4.2).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web (typecheck · test · gates)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Gates run against the COMMITTED artifacts (no regeneration first), so a
+      # stale generated header / ABI drift / stale bundle / hardcoded color fails
+      # the build.
+      - run: npm run protocol:check
+      - run: npm run abi:check
+      - run: npm run check:tokens
+      - run: npm run webdist:check
+
+  native:
+    name: native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # JUCE gui modules (juce_gui_extra / WebBrowserComponent) need system
+      # libraries on Linux; macOS provides its webview + audio natively.
+      - name: Install JUCE Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev libcurl4-openssl-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
