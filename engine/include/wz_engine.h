@@ -97,6 +97,26 @@ uint64_t wz_world_revision(const wz_engine* e);
 void wz_world_set_deck_count(wz_engine* e, uint32_t count); /* builder-scoped */
 uint32_t wz_world_deck_count(const wz_engine* e);
 
+/* --- source rings (P2: async-clock capture) ------------------------------
+ * A per-source SPSC lock-free ring, opened from the control thread, written by
+ * ONE host capture thread, read by the render thread / ASRC. Every write
+ * carries {host_time_ns, source_rate} -- the timestamp discipline the ASRC
+ * needs (D-WZ-CLOCK-01). Device inputs on the duplex clock do NOT use rings
+ * (same-clock, D-WZ-RATE-01); rings are for taps, the virtual-device input, and
+ * anything independently clocked. The strip<->ring binding (a source-kind strip
+ * reads its ring through the ASRC) lands in P2-03/04; P2-02 is the ring
+ * plumbing + telemetry. */
+int32_t wz_source_ring_open(wz_engine* e, const char* source_key,
+                            uint32_t channels, uint32_t capacity_frames);
+/* RT-safe, lock-free, SINGLE writer. `interleaved` is frames x channels. */
+void    wz_source_write(wz_engine* e, int32_t ring, const float* interleaved,
+                        uint32_t frames, double source_rate, uint64_t host_time_ns);
+void    wz_source_ring_close(wz_engine* e, int32_t ring);
+/* Telemetry for HotFrame (control/UI thread). Bad/closed ring returns 0. */
+uint64_t wz_source_ring_fill(const wz_engine* e, int32_t ring);
+uint64_t wz_source_ring_overruns(const wz_engine* e, int32_t ring);
+uint64_t wz_source_ring_underruns(const wz_engine* e, int32_t ring);
+
 /* --- decks (P1: playback only; record states land P3) --------------------
  * Buffers are planar float32 AT THE ENGINE RATE (D-WZ-DECKSRC-01: the host
  * resamples at load, SINC_BEST). wz_deck_load copies the data in; NOT RT-safe

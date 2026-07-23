@@ -63,6 +63,10 @@ add_executable(deck_test tools/deck_test.cpp)
 target_link_libraries(deck_test PRIVATE wz_engine)
 add_test(NAME deck_test COMMAND deck_test)
 
+add_executable(ring_test tools/ring_test.cpp)
+target_link_libraries(ring_test PRIVATE wz_engine)
+add_test(NAME ring_test COMMAND ring_test)
+
 # Smoke: proves the vendored libsamplerate builds, links, and resamples with
 # SINC_BEST before the ASRC/varispeed path (P2) is built on it.
 add_executable(libsamplerate_smoke tools/libsamplerate_smoke.cpp)

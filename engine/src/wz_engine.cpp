@@ -2,6 +2,7 @@
 
 #include "deck.h"
 #include "fader.h"
+#include "source_ring.h"
 #include "world.h"
 
 #include <algorithm>
@@ -100,6 +101,9 @@ struct wz_engine {
     // bounded by edit count, each world is tiny (topology only, no audio).
     std::atomic<wz::World*> world;
     std::atomic<uint64_t> renderWorldRev; // last revision seen by render()
+    // Source rings (P2). Fixed slots: 16 taps × up to 2 stereo rings + headroom.
+    // unique_ptr because SourceRing holds atomics. A null slot is free.
+    std::vector<std::unique_ptr<wz::SourceRing>> rings;
     wz::World* builder;                   // non-null between begin() and commit()
     wz::ChannelState* builderChannel;     // open channel inside the builder
     uint64_t revisionCounter;
@@ -137,6 +141,7 @@ wz_engine* wz_engine_create(double sample_rate,
     }
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
+    e->rings.resize(40); // fixed slot table; grown-never in steady state
     e->builder = nullptr;
     e->builderChannel = nullptr;
     e->revisionCounter = 0;
@@ -306,6 +311,58 @@ uint32_t wz_world_deck_count(const wz_engine* e) {
     if (e == nullptr) return 0;
     auto* w = e->world.load(std::memory_order_acquire);
     return w != nullptr ? w->deckCount : 0;
+}
+
+/* --- source rings (P2) --------------------------------------------------- */
+
+int32_t wz_source_ring_open(wz_engine* e, const char* source_key,
+                            uint32_t channels, uint32_t capacity_frames) {
+    if (e == nullptr || channels == 0 || capacity_frames == 0) return -1;
+    for (size_t i = 0; i < e->rings.size(); ++i) {
+        if (e->rings[i] == nullptr) {
+            auto r = std::make_unique<wz::SourceRing>();
+            r->init(source_key, channels, capacity_frames);
+            e->rings[i] = std::move(r);
+            return static_cast<int32_t>(i);
+        }
+    }
+    return -1; // slot table full
+}
+
+void wz_source_write(wz_engine* e, int32_t ring, const float* interleaved,
+                     uint32_t frames, double source_rate, uint64_t host_time_ns) {
+    if (e == nullptr || ring < 0 || static_cast<size_t>(ring) >= e->rings.size()) return;
+    auto* r = e->rings[static_cast<size_t>(ring)].get();
+    if (r != nullptr && interleaved != nullptr)
+        r->write(interleaved, frames, source_rate, host_time_ns);
+}
+
+void wz_source_ring_close(wz_engine* e, int32_t ring) {
+    // Control thread only, with capture stopped: freeing a ring the render
+    // thread might read is the caller's ordering responsibility (the host stops
+    // delivery + detaches the strip before closing), same discipline as decks.
+    if (e == nullptr || ring < 0 || static_cast<size_t>(ring) >= e->rings.size()) return;
+    e->rings[static_cast<size_t>(ring)].reset();
+}
+
+static const wz::SourceRing* ringAt(const wz_engine* e, int32_t ring) {
+    if (e == nullptr || ring < 0 || static_cast<size_t>(ring) >= e->rings.size()) return nullptr;
+    return e->rings[static_cast<size_t>(ring)].get();
+}
+
+uint64_t wz_source_ring_fill(const wz_engine* e, int32_t ring) {
+    auto* r = ringAt(e, ring);
+    return r != nullptr ? r->fillFrames() : 0;
+}
+
+uint64_t wz_source_ring_overruns(const wz_engine* e, int32_t ring) {
+    auto* r = ringAt(e, ring);
+    return r != nullptr ? r->overruns.load(std::memory_order_relaxed) : 0;
+}
+
+uint64_t wz_source_ring_underruns(const wz_engine* e, int32_t ring) {
+    auto* r = ringAt(e, ring);
+    return r != nullptr ? r->underruns.load(std::memory_order_relaxed) : 0;
 }
 
 /* --- decks --------------------------------------------------------------- */

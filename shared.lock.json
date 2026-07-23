@@ -1,5 +1,5 @@
 {
-  "sharedCommit": "3270a8c18d755835d265e9896a99babdd0eb9aed",
+  "sharedCommit": "6dace8adcf3ca0136c4a8484252e7c7618649289",
   "files": {
     "web/scripts/sharedSync.ts": {
       "from": "scripts/sharedSync.ts",
@@ -7,7 +7,7 @@
     },
     "web/scripts/webdistFresh.ts": {
       "from": "protocol/webdistFresh.ts",
-      "sha256": "88ffb43aebab2845288f62e53db61c8628c3c02bcad0926db0cbf813ee213185"
+      "sha256": "f974b4ad179ebb811b9c8cc07a5e2fe9bac35c2a98e7c03c4bb15a97c56b9a24"
     },
     "engine/tools/libsamplerate_smoke.cpp": {
       "from": "engine/tools/libsamplerate_smoke.cpp",

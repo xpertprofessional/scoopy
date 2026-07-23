@@ -10,7 +10,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -39,6 +39,22 @@ function walk(dir: string): string[] {
   return out
 }
 
+/**
+ * The bytes of an input that actually determine the bundle. For package.json
+ * this EXCLUDES the `scripts` block: npm scripts are build/CI tooling Vite never
+ * bundles (the same reason scripts/ is not a DIR_INPUT), so adding one — e.g.
+ * shared:check — must not flag the shipped bundle stale. Everything else, and
+ * every other field of package.json (deps, type, version), is hashed verbatim.
+ */
+function bundleInputBytes(abs: string): Buffer {
+  if (basename(abs) === 'package.json') {
+    const pkg = JSON.parse(readFileSync(abs, 'utf8')) as Record<string, unknown>
+    delete pkg['scripts']
+    return Buffer.from(JSON.stringify(pkg))
+  }
+  return readFileSync(abs)
+}
+
 export function computeSourceHash(): string {
   const files = [
     ...FILE_INPUTS.map((f) => resolve(webRoot, f)).filter(existsSync),
@@ -49,7 +65,7 @@ export function computeSourceHash(): string {
   for (const f of files) {
     h.update(relative(webRoot, f))
     h.update('\0')
-    h.update(readFileSync(f))
+    h.update(bundleInputBytes(f))
     h.update('\0')
   }
   return h.digest('hex')
