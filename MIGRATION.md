@@ -9,16 +9,19 @@
 
 ## Top-level roadmap (read FIRST every orient — the reflected view; update at phase entry/exit)
 
-- **Now — P1 mixer slice OPEN (entered 2026-07-23; P0-G1 signed on macOS — user heard the
-  boot tone).** Same-clock only: channels bound to duplex hardware inputs + one deck
-  playing a decoded file; faders/pan/mute/solo; main + monitor buses; per-strip meters on
-  HotSurface; routing matrix (DAG-only). No ASRC — everything on the device clock. Four
-  P1 audio decisions signed 2026-07-23: **D-WZ-PAN-01** (−3 dB constant-power),
-  **D-WZ-FADER-01** (−∞..+6 dB parlante taper, unity at 0.75), **D-WZ-RAMP-01** (10 ms
-  raised-cosine mute / one-pole smoothers), **D-WZ-DECKSRC-01** (resample at load,
-  SINC_BEST, zero SRC on the live path). Build order P1-01 → P1-09 below; the boot tone
-  is DELETED in P1-04 (replaced by real summing + metering). **Gate P1-G1: mix mic + file;
-  cue-monitor on device channels 3/4.**
+- **P1 mixer slice CLOSED (P1-G1 signed 2026-07-23 — user confirmed mic + deck playback).**
+  Same-clock console: hardware inputs + decks summed with real DSP (pan/fader/ramps per
+  D-WZ-PAN/FADER/RAMP-01, f64 sum), per-strip + main/cue HotSurface meters, deck v0
+  (sample-exact loop wrap, SINC_BEST load), device picker, DAG-validated routing matrix,
+  strip add/remove. Field fixes folded in: macOS mic permission + honest input-device
+  reporting. **Schema v7.**
+- **Now — P2 capture + ASRC (ENTERING).** The differentiator: tap any running app / the
+  system-mix-except into a strip, ASRC each independent clock into the engine rate. Order
+  (ROADMAP §P2): wz_capture.h + deterministic fake backend (fixtures first) → macOS process
+  taps → source rings + ASRC PI controller (**centerpiece: asrc_drift_test, 48000 vs
+  48000.3 Hz, simulated hour, <1 ms**) → source picker + TCC UX → Linux PipeWire. ASRC
+  converter-tier decision surfaced to the user before the ASRC build. Front half (capture
+  ABI + fake backend) is decision-independent and builds now.
 - **Later — phase by phase, each with its centerpiece fixture and its blocking decision:**
   - **P2 capture + ASRC.** Order: `wz_capture.h` + deterministic fake backend (fixtures
     first) → macOS taps (open/close/format-change/process-vanish lifecycle) → source rings
@@ -96,7 +99,7 @@
 | P1-12 | build | Remove channel/deck from the rack (UI affordance + republish; vanished-source preserve-don't-drop posture stays intact). Small; before or at P1-G1 re-check | done | × on each strip; plain strips remove freely; a deck strip removes its deck too, but only the HIGHEST deck id (no renumbering — add/remove at the end, matching CONCEPT 'user adds/removes'); republish via usePatch. Store test covers refuse/allow/no-op. 41 web green |
 | P1-G1-FIX | build | Field finding at the gate (user, 2026-07-23): mic input not receivable — the app never declared macOS microphone permission, so TCC starved the duplex input side (opens, delivers zeros); and the sources rail showed the OUTPUT device's name (macOS pairs separate in/out devices; combined getName() reports the output half). Fix: MICROPHONE_PERMISSION_ENABLED + usage text on juce_add_gui_app (NSMicrophoneUsageDescription verified in the built plist); schema v6 getDeviceInfo adds inputDeviceName + error; sources rail shows the input device and surfaces open errors instead of hiding silence | done | deck playback confirmed working by user (decode→SINC_BEST→deck→engine chain live). Retest: first launch prompts for mic; if previously denied, tccutil reset Microphone com.wizard.wizard |
 | PD-GRM | spec | Layout research (user request): study INA GRM Player's interface for deck-rack/console/strip layout inspiration → docs/specs/design-notes-grm-player.md (steal/adapt/avoid + ASCII sketches). | done | subagent died on a spend limit mid-research; completed inline (WebFetch/Search, 4 cited sources). Key: GRM anatomy Workspace→Sequences→Readers→Plug-ins; its core gesture = N readers over ONE sound = Wizard's decks-over-a-Take → validates the 1–8 deck rack as a PERFORMANCE surface. STEAL: N-readers model, speed-tracking resample (bar for P4 varispeed), edit-without-stopping, tooltip-first onboarding. AVOID: timeline/arrangement, discoverability tax, skeuomorphic styling. Console+strip ASCII sketches in the doc |
-| P1-G1 | gate | **Phase gate (human): mix a mic and a file; cue-monitor on device channels 3/4** | awaiting-signoff | READY TO TEST: launch the app → bind your mic (sources rail) → add a deck + Load a file → Loop it → mix with faders/pan/mute/solo → C-assign strips to cue (needs a ≥4-output device for 3/4; on a 2-out device the UI says so). Meters per strip + main/cue, live dB labels, matrix overlay. 8 native + 40 web green, all gates |
+| P1-G1 | gate | **Phase gate (human): mix a mic and a file; cue-monitor on device channels 3/4** | done | **SIGNED 2026-07-23: user confirmed mic input works** (after P1-G1-FIX mic permission + P1-10 device picker) and deck file playback works. P1 mixer slice COMPLETE — the same-clock console mixes hardware inputs + decks with real summing (pan/fader/ramps per signed decisions), per-strip + main/cue meters, DAG-validated routing. P2 (capture + ASRC) opens |
 
 ## Parked decisions
 
