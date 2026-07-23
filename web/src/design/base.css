@@ -1,0 +1,76 @@
+/**
+ * base.css — the token-consuming foundation. Every visual value here reads a
+ * custom property emitted by tokens.ts (tokenVars); no literal color/font/radius
+ * appears outside the token system (check:tokens enforces it).
+ *
+ * Vendored as the shared identity's base layer (D-WZ-DESIGN-01). App-local
+ * panel CSS for the console/strip surface layers on top in P1+.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--type-value-size);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The motion lever honoured in one place: reduced-motion collapses --motion-scale
+   to 0, so every calc(<n>ms * var(--motion-scale)) duration becomes instant with
+   no per-rule override. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scale: 0;
+  }
+}
+
+h1 {
+  font-family: var(--type-display-family);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  letter-spacing: var(--type-display-tracking);
+  text-transform: var(--type-display-transform);
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+
+dt {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+}
+
+dd {
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+
+main {
+  padding: 1rem;
+}
+
+/* A raised surface uses the token depth level + hairline border + derived
+   radius, so the whole app softens/sharpens from shape.radiusPx alone. */
+.raised {
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+}
