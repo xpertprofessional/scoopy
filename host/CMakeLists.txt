@@ -32,3 +32,12 @@ target_include_directories(wz_capture PUBLIC include)
 add_executable(capture_fake_test tools/capture_fake_test.cpp)
 target_link_libraries(capture_fake_test PRIVATE wz_capture)
 add_test(NAME capture_fake_test COMMAND capture_fake_test)
+
+# Crash-safe take writer (D-WZ-CORE-02): dependency-free portable C++ — no JUCE,
+# no platform headers — so a future WASM/companion build reuses it verbatim.
+add_library(wz_wav STATIC src/WavWriter.cpp)
+target_include_directories(wz_wav PUBLIC src)
+
+add_executable(wav_killtest tools/wav_killtest.cpp)
+target_link_libraries(wav_killtest PRIVATE wz_wav)
+add_test(NAME wav_killtest COMMAND wav_killtest)
