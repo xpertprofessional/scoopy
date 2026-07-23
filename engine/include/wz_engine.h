@@ -144,6 +144,33 @@ void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
 void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end);
 
+/* --- deck recording (P3, docs/specs/recorder.md) -------------------------
+ * The deck records `channels` ENGINE-input channels (chan0 = L/mono, chan1 = R
+ * or -1) into its buffer — the same chunked storage playback uses, so stop→loop
+ * is a no-copy handoff (Law C-3). The crash-safe file is a parallel host drain.
+ * Control thread. */
+void wz_deck_set_record_source(wz_engine* e, uint32_t deck,
+                               int32_t chan0, int32_t chan1);
+/* Arm + begin capturing at the next render block. Clears the deck's buffer,
+ * stamps recStartSample = the engine clock (Law C-2). RT-safe flag flip; the
+ * host must have called wz_deck_record_service first to allocate initial
+ * capacity (it allocates). */
+void wz_deck_record_start(wz_engine* e, uint32_t deck);
+/* Stop capturing. Returns the take's startEngineSample. If loop is enabled the
+ * deck switches to looping playback of the just-captured buffer IN THE SAME
+ * block (the Law C-3 handoff, P3-03); else → idle with the buffer retained. */
+uint64_t wz_deck_record_stop(wz_engine* e, uint32_t deck);
+/* Control-thread service: allocate record-buffer chunks AHEAD of the render's
+ * write position (so the RT path never allocates) and enforce the 256 MB cap
+ * (D-WZ-DECK-01). The host calls this regularly while any deck records. */
+void wz_deck_record_service(wz_engine* e);
+/* Host drain of a deck's parallel file feed: copies up to `capacity` interleaved
+ * frames of captured audio into `out`, returns frames written. Lock-free; an
+ * empty drain returns 0. `out_start_sample` receives the take's startEngineSample
+ * (Law C-2) for the sidecar. */
+uint32_t wz_deck_drain(wz_engine* e, uint32_t deck, float* out,
+                       uint32_t capacity_frames, uint64_t* out_start_sample);
+
 /* --- audio ------------------------------------------------------------- */
 /* Duplex render (D-WZ-RATE-01: inputs arrive in the SAME callback as the
  * output — same clock, zero SRC). `in_bus` is `in_count` device input channel

@@ -93,6 +93,10 @@ struct wz_engine {
     wz::Deck decks[wz::kMaxDecks];
     std::vector<float> deckOutL[wz::kMaxDecks];
     std::vector<float> deckOutR[wz::kMaxDecks];
+    // Per-deck parallel file drain (render writes captured frames, host pulls).
+    wz::SourceRing deckDrain[wz::kMaxDecks];
+    std::atomic<uint32_t> deckRecArm[wz::kMaxDecks]; // control→render: 1=start,2=stop
+    std::vector<float> recScratch; // interleaved capture staging (maxBlock*2)
 
     // --- world (RCU) -----------------------------------------------------
     // `world` is the installed snapshot the render thread reads (one load per
@@ -144,7 +148,9 @@ wz_engine* wz_engine_create(double sample_rate,
     for (uint32_t d = 0; d < wz::kMaxDecks; ++d) {
         e->deckOutL[d].assign(max_block_frames, 0.0f);
         e->deckOutR[d].assign(max_block_frames, 0.0f);
+        e->deckRecArm[d].store(0, std::memory_order_relaxed);
     }
+    e->recScratch.assign(static_cast<size_t>(max_block_frames) * 2u, 0.0f);
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->rings.resize(40); // fixed slot table; grown-never in steady state
@@ -392,17 +398,21 @@ int32_t wz_deck_load(wz_engine* e, uint32_t deck, uint32_t channels,
     if (e == nullptr || deck >= wz::kMaxDecks || channels == 0 || frames == 0 ||
         data == nullptr || rate <= 0.0)
         return 0;
-    auto& d = e->decks[deck];
-    // NOT RT-safe: the host detaches the render callback around this call.
-    d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_relaxed);
-    d.data.clear();
-    d.data.reserve(channels);
-    for (uint32_t c = 0; c < channels; ++c) {
+    for (uint32_t c = 0; c < channels; ++c)
         if (data[c] == nullptr) return 0;
-        d.data.emplace_back(data[c], data[c] + frames);
+    auto& d = e->decks[deck];
+    // NOT RT-safe: the host detaches the render callback around this call. Fill
+    // the same chunked storage a recording uses, so playback has one path and
+    // the Law C-3 handoff (P3-03) is a no-op on representation.
+    d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_relaxed);
+    d.reset(channels);
+    d.ensureCapacity(frames);
+    for (uint64_t f = 0; f < frames; ++f) {
+        const uint64_t ci = f / wz::kDeckChunkFrames, off = f % wz::kDeckChunkFrames;
+        for (uint32_t c = 0; c < channels; ++c)
+            d.chunks[ci]->plane[c][off] = data[c][f];
     }
-    d.frames = frames;
-    d.playhead = 0.0;
+    d.frames.store(frames, std::memory_order_release);
     d.pubPlayhead.store(0.0, std::memory_order_relaxed);
     d.publishLoop(0, 0, 0); // whole-buffer region until the document says otherwise
     return 1;
@@ -410,7 +420,7 @@ int32_t wz_deck_load(wz_engine* e, uint32_t deck, uint32_t channels,
 
 uint64_t wz_deck_frames(const wz_engine* e, uint32_t deck) {
     if (e == nullptr || deck >= wz::kMaxDecks) return 0;
-    return e->decks[deck].frames;
+    return e->decks[deck].frames.load(std::memory_order_acquire);
 }
 
 void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode) {
@@ -444,6 +454,66 @@ void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     e->decks[deck].publishLoop(enabled, start, end);
+}
+
+/* --- deck recording (P3) ------------------------------------------------- */
+
+void wz_deck_set_record_source(wz_engine* e, uint32_t deck,
+                               int32_t chan0, int32_t chan1) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].recSrcChan0 = chan0;
+    e->decks[deck].recSrcChan1 = chan1;
+}
+
+void wz_deck_record_start(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    auto& d = e->decks[deck];
+    const uint32_t ch = d.recSrcChan1 >= 0 ? 2u : 1u;
+    // Reset + initial capacity are control-thread work (allocation). The host
+    // calls wz_deck_record_service before/around this; here we also seed enough
+    // so the first blocks never touch an unallocated chunk.
+    d.reset(ch);
+    d.recCapFrames = (256ull * 1024ull * 1024ull) / (static_cast<uint64_t>(ch) * 4ull); // D-WZ-DECK-01
+    d.ensureCapacity(4u * e->maxBlockFrames);
+    // Drain ring sized for a comfortable host lag (interleaved).
+    e->deckDrain[deck].init("deckdrain", ch, 1u << 18);
+    // The render picks up the arm at its next block and stamps the start there,
+    // so the stamp is the exact engine sample recording began.
+    e->deckRecArm[deck].store(1u, std::memory_order_release);
+}
+
+uint64_t wz_deck_record_stop(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return 0;
+    auto& d = e->decks[deck];
+    e->deckRecArm[deck].store(2u, std::memory_order_release); // render finalizes at its next block
+    return d.recStartSample;
+}
+
+void wz_deck_record_service(wz_engine* e) {
+    if (e == nullptr) return;
+    for (uint32_t di = 0; di < wz::kMaxDecks; ++di) {
+        auto& d = e->decks[di];
+        if (d.state.load(std::memory_order_acquire) != static_cast<uint32_t>(wz::DeckState::recording))
+            continue;
+        // Keep allocation AHEAD of the render write position by a few chunks, up
+        // to the cap — so the RT append never hits an unallocated chunk.
+        const uint64_t pos = d.frames.load(std::memory_order_acquire);
+        uint64_t want = pos + 2u * wz::kDeckChunkFrames;
+        if (want > d.recCapFrames) want = d.recCapFrames;
+        d.ensureCapacity(want);
+    }
+}
+
+uint32_t wz_deck_drain(wz_engine* e, uint32_t deck, float* out,
+                       uint32_t capacity_frames, uint64_t* out_start_sample) {
+    if (e == nullptr || deck >= wz::kMaxDecks || out == nullptr) return 0;
+    if (out_start_sample != nullptr) *out_start_sample = e->decks[deck].recStartSample;
+    // Read only what's present — draining a partially-full ring is normal, not
+    // an underrun.
+    const uint64_t fill = e->deckDrain[deck].fillFrames();
+    uint32_t n = capacity_frames;
+    if (fill < n) n = static_cast<uint32_t>(fill);
+    return n == 0 ? 0u : e->deckDrain[deck].read(out, n);
 }
 
 namespace {
@@ -487,6 +557,55 @@ void wz_engine_render_io(wz_engine* e,
     const double alpha = 1.0 - std::exp(-1.0 / (kRampSeconds * fs));
     const double step = 1.0 / (kRampSeconds * fs);
 
+    // Deck RECORD pass (P3): arm transitions + capture of each recording deck's
+    // input into its buffer + the parallel drain. Runs before playback so a deck
+    // that just stopped-with-loop can play in this same block (Law C-3, P3-03).
+    const uint64_t blockStartSample = e->engineTimeSamples.load(std::memory_order_relaxed);
+    for (uint32_t di = 0; di < wz::kMaxDecks; ++di) {
+        auto& d = e->decks[di];
+        const uint32_t arm = e->deckRecArm[di].exchange(0, std::memory_order_acq_rel);
+        if (arm == 1u) { // start: stamp the exact engine sample capture begins
+            d.recStartSample = blockStartSample;
+            d.state.store(static_cast<uint32_t>(wz::DeckState::recording), std::memory_order_release);
+        } else if (arm == 2u) { // stop → idle (the Law C-3 handoff lands in P3-03)
+            if (d.state.load(std::memory_order_relaxed) == static_cast<uint32_t>(wz::DeckState::recording))
+                d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_release);
+        }
+        if (d.state.load(std::memory_order_acquire) != static_cast<uint32_t>(wz::DeckState::recording))
+            continue;
+
+        const uint32_t rch = d.channels;
+        const float* r0 = (in_bus != nullptr && d.recSrcChan0 >= 0 &&
+                           static_cast<uint32_t>(d.recSrcChan0) < in_count)
+                              ? in_bus[d.recSrcChan0] : nullptr;
+        const float* r1 = (in_bus != nullptr && d.recSrcChan1 >= 0 &&
+                           static_cast<uint32_t>(d.recSrcChan1) < in_count)
+                              ? in_bus[d.recSrcChan1] : nullptr;
+        uint64_t pos = d.frames.load(std::memory_order_relaxed);
+        const uint64_t allocFrames =
+            static_cast<uint64_t>(d.chunkCount.load(std::memory_order_acquire)) * wz::kDeckChunkFrames;
+        float* drs = e->recScratch.data();
+        uint32_t captured = 0;
+        for (uint32_t i = 0; i < frames; ++i) {
+            if (pos >= d.recCapFrames) { // D-WZ-DECK-01 cap → stop appending
+                d.recCapReached.store(1u, std::memory_order_relaxed);
+                d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_release);
+                break;
+            }
+            if (pos >= allocFrames) break; // service hasn't allocated ahead (never in practice)
+            float vals[2];
+            vals[0] = r0 != nullptr ? static_cast<float>(sanitize(r0[i])) : 0.0f;
+            if (rch > 1) vals[1] = r1 != nullptr ? static_cast<float>(sanitize(r1[i])) : vals[0];
+            d.appendFrame(pos, vals, rch);
+            for (uint32_t c = 0; c < rch; ++c)
+                drs[static_cast<size_t>(captured) * rch + c] = vals[c];
+            ++pos;
+            ++captured;
+        }
+        d.frames.store(pos, std::memory_order_release); // committed length
+        if (captured > 0) e->deckDrain[di].write(drs, captured, fs, blockStartSample);
+    }
+
     double* accL = e->accMainL.data();
     double* accR = e->accMainR.data();
     double* monL = e->accMonL.data();
@@ -524,7 +643,11 @@ void wz_engine_render_io(wz_engine* e,
         float* dl = e->deckOutL[di].data();
         float* dr = e->deckOutR[di].data();
         const auto st = d.state.load(std::memory_order_acquire);
-        if (st == static_cast<uint32_t>(wz::DeckState::idle) || d.frames == 0) {
+        const uint64_t dFrames = d.frames.load(std::memory_order_acquire);
+        // A recording deck's playback pass is silent (it is capturing, handled in
+        // the record pass below); playback resumes on the Law C-3 stop→loop.
+        if (st == static_cast<uint32_t>(wz::DeckState::idle) ||
+            st == static_cast<uint32_t>(wz::DeckState::recording) || dFrames == 0) {
             for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
             continue;
@@ -532,20 +655,18 @@ void wz_engine_render_io(wz_engine* e,
         // Loop region, read torn-free once per block; degenerate → whole buffer.
         uint32_t le = 0; uint64_t ls = 0, lend = 0;
         d.readLoop(le, ls, lend);
-        uint64_t rs = 0, re = d.frames;
-        if (le != 0 && ls < lend && ls < d.frames) { rs = ls; re = lend < d.frames ? lend : d.frames; }
+        uint64_t rs = 0, re = dFrames;
+        if (le != 0 && ls < lend && ls < dFrames) { rs = ls; re = lend < dFrames ? lend : dFrames; }
         if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = static_cast<double>(rs);
         if (d.playhead < static_cast<double>(rs) || d.playhead >= static_cast<double>(re))
             d.playhead = static_cast<double>(rs);
 
-        const float* srcL = d.data[0].data();
-        const float* srcR = d.data.size() > 1 ? d.data[1].data() : d.data[0].data();
         bool finished = false;
         for (uint32_t i = 0; i < frames; ++i) {
             if (finished) { dl[i] = 0.0f; dr[i] = 0.0f; continue; }
             const auto idx = static_cast<uint64_t>(d.playhead);
-            dl[i] = srcL[idx];
-            dr[i] = srcR[idx];
+            dl[i] = d.sample(0, idx);
+            dr[i] = d.channels > 1 ? d.sample(1, idx) : dl[i];
             d.playhead += 1.0; // varispeed plays 1.0 until P4
             if (d.playhead >= static_cast<double>(re)) {
                 if (st == static_cast<uint32_t>(wz::DeckState::looping)) {
