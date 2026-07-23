@@ -34,8 +34,18 @@ export function ChannelRack({ link }: { link: EngineLink | null }) {
     <section className="rack">
       {channels.map((ch, i) => (
         <div className="strip raised" key={ch.key}>
-          <div className="strip-name" style={{ color: KIND_VAR[ch.source.kind] }}>
-            {ch.name}
+          <div className="strip-head">
+            <div className="strip-name" style={{ color: KIND_VAR[ch.source.kind] }}>
+              {ch.name}
+            </div>
+            <button
+              type="button"
+              className="strip-remove"
+              title="remove strip"
+              onClick={() => actions.removeStrip(i)}
+            >
+              ×
+            </button>
           </div>
           <div className="strip-body">
             <div className="fader-col">

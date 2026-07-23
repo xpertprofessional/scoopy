@@ -77,3 +77,26 @@ test('capabilities are stored from the handshake', () => {
   })
   expect(useAppStore.getState().capabilities?.fileSystem).toBe(true)
 })
+
+test('removeChannel removes strips; deck strips only from the end', () => {
+  const s = useAppStore.getState()
+  s.addChannel('Mic', { kind: 'deviceInput', id: '0', name: '' })
+  s.addDeck() // deck 0 + strip
+  s.addDeck() // deck 1 + strip
+  // Removing deck 0's strip is refused (not the highest deck id).
+  let patch = useAppStore.getState().patch
+  const deck0Strip = patch.channels.findIndex((c) => c.source.kind === 'deck' && c.source.id === '0')
+  s.removeChannel(deck0Strip)
+  patch = useAppStore.getState().patch
+  expect(patch.decks).toHaveLength(2)
+  // Removing deck 1 (the last) removes deck + strip.
+  const deck1Strip = patch.channels.findIndex((c) => c.source.kind === 'deck' && c.source.id === '1')
+  s.removeChannel(deck1Strip)
+  patch = useAppStore.getState().patch
+  expect(patch.decks).toHaveLength(1)
+  expect(patch.channels.some((c) => c.source.id === '1' && c.source.kind === 'deck')).toBe(false)
+  // Plain strips remove freely; out-of-range is a no-op.
+  s.removeChannel(0)
+  s.removeChannel(99)
+  expect(useAppStore.getState().patch.channels.some((c) => c.name === 'Mic')).toBe(false)
+})

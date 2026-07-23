@@ -38,6 +38,7 @@ export function usePatchActions(link: EngineLink | null) {
   const addDeck = useAppStore((s) => s.addDeck)
   const setChannelParam = useAppStore((s) => s.setChannelParam)
   const setDeckSourcePath = useAppStore((s) => s.setDeckSourcePath)
+  const removeChannel = useAppStore((s) => s.removeChannel)
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
@@ -47,6 +48,10 @@ export function usePatchActions(link: EngineLink | null) {
     /** Add a deck + its strip and publish. */
     addDeckWithStrip() {
       publishPatch(link, addDeck())
+    },
+    /** Remove a strip (and its deck when it is the last deck) and publish. */
+    removeStrip(index: number) {
+      publishPatch(link, removeChannel(index))
     },
     /** Live continuous move: document + coalesced ParamWrite, no republish. */
     setFader(index: number, value: number) {

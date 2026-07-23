@@ -43,6 +43,10 @@ interface AppState {
   /** Topology edits — return the new Patch so the caller can publish it. */
   addChannel: (name: string, source: SourceRef) => Patch
   addDeck: () => Patch
+  /** Remove a strip. A deck strip also removes its deck — only the HIGHEST
+      deck id is removable (no id renumbering; matches add/remove-at-the-end).
+      Returns the unchanged patch when the removal is not legal. */
+  removeChannel: (index: number) => Patch
   /** Live param edits (caller also sends the ParamWrite; no republish). */
   setChannelParam: (
     index: number,
@@ -100,6 +104,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       decks: [...patch.decks, deck],
       channels: [...patch.channels, strip],
     }
+    set({ patch: next })
+    return next
+  },
+
+  removeChannel: (index) => {
+    const patch = get().patch
+    const ch = patch.channels[index]
+    if (!ch) return patch
+    let decks = patch.decks
+    if (ch.source.kind === 'deck') {
+      const deckId = Number(ch.source.id)
+      const maxId = Math.max(...patch.decks.map((d) => d.id))
+      if (deckId !== maxId) return patch // only the last deck is removable
+      decks = patch.decks.filter((d) => d.id !== deckId)
+    }
+    const channels = patch.channels.filter((_, i) => i !== index)
+    const next = { ...patch, channels, decks }
     set({ patch: next })
     return next
   },

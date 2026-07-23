@@ -331,3 +331,15 @@ canvas.meter {
 .matrix-fixed {
   color: var(--text-dim);
 }
+
+.strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.strip-remove {
+  padding: 0 4px;
+  color: var(--text-dim);
+}
