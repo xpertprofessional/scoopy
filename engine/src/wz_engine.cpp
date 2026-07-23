@@ -1,5 +1,6 @@
 #include "wz_engine.h"
 
+#include "asrc.h"
 #include "deck.h"
 #include "fader.h"
 #include "source_ring.h"
@@ -37,12 +38,12 @@ constexpr double kParamDefaults[kParamCount] = {
 // ParamIds: these describe TOPOLOGY + initial values at build time.
 constexpr const char* kWorldKeyNames[] = {
     "srcKind", "srcChan0", "srcChan1", "toMonitor",
-    "gain", "pan", "mute", "solo", "deckIndex",
+    "gain", "pan", "mute", "solo", "deckIndex", "ringId",
 };
 constexpr uint32_t kWorldKeyCount = sizeof(kWorldKeyNames) / sizeof(kWorldKeyNames[0]);
 enum WorldKey : int32_t {
     kWkSrcKind = 0, kWkSrcChan0, kWkSrcChan1, kWkToMonitor,
-    kWkGain, kWkPan, kWkMute, kWkSolo, kWkDeckIndex,
+    kWkGain, kWkPan, kWkMute, kWkSolo, kWkDeckIndex, kWkRingId,
 };
 
 int32_t indexOfName(const char* name, const char* const* table, uint32_t count) {
@@ -104,6 +105,11 @@ struct wz_engine {
     // Source rings (P2). Fixed slots: 16 taps × up to 2 stereo rings + headroom.
     // unique_ptr because SourceRing holds atomics. A null slot is free.
     std::vector<std::unique_ptr<wz::SourceRing>> rings;
+    // Per-ring ASRC (created with the ring) + planar engine-rate scratch the
+    // render pre-pass fills; tap strips read the scratch like decks read theirs.
+    std::vector<std::unique_ptr<wz::SourceAsrc>> ringAsrc;
+    std::vector<std::vector<float>> ringOutL, ringOutR;
+    std::vector<float> asrcInter; // interleaved ASRC output, deinterleaved into L/R
     wz::World* builder;                   // non-null between begin() and commit()
     wz::ChannelState* builderChannel;     // open channel inside the builder
     uint64_t revisionCounter;
@@ -142,6 +148,10 @@ wz_engine* wz_engine_create(double sample_rate,
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->rings.resize(40); // fixed slot table; grown-never in steady state
+    e->ringAsrc.resize(40);
+    e->ringOutL.assign(40, std::vector<float>(max_block_frames, 0.0f));
+    e->ringOutR.assign(40, std::vector<float>(max_block_frames, 0.0f));
+    e->asrcInter.assign(static_cast<size_t>(max_block_frames) * 2u, 0.0f);
     e->builder = nullptr;
     e->builderChannel = nullptr;
     e->revisionCounter = 0;
@@ -255,6 +265,7 @@ void wz_world_channel_set(wz_engine* e, int32_t key, double value) {
         case kWkMute: ch.params.mute.store(value, std::memory_order_relaxed); break;
         case kWkSolo: ch.params.solo.store(value, std::memory_order_relaxed); break;
         case kWkDeckIndex: ch.deckIndex = static_cast<int32_t>(value); break;
+        case kWkRingId: ch.ringId = static_cast<int32_t>(value); break;
         default: break; // unknown key ignored, never misread
     }
 }
@@ -316,13 +327,21 @@ uint32_t wz_world_deck_count(const wz_engine* e) {
 /* --- source rings (P2) --------------------------------------------------- */
 
 int32_t wz_source_ring_open(wz_engine* e, const char* source_key,
-                            uint32_t channels, uint32_t capacity_frames) {
-    if (e == nullptr || channels == 0 || capacity_frames == 0) return -1;
+                            uint32_t channels, uint32_t capacity_frames,
+                            double nominal_rate) {
+    if (e == nullptr || channels == 0 || capacity_frames == 0 || nominal_rate <= 0.0)
+        return -1;
     for (size_t i = 0; i < e->rings.size(); ++i) {
         if (e->rings[i] == nullptr) {
             auto r = std::make_unique<wz::SourceRing>();
             r->init(source_key, channels, capacity_frames);
+            // The per-source ASRC pulls this ring onto the engine rate. Created
+            // here on the control thread (it allocates a SINC_BEST state).
+            auto a = std::make_unique<wz::SourceAsrc>();
+            a->init(r.get(), e->sampleRate.load(std::memory_order_relaxed),
+                    nominal_rate, e->maxBlockFrames);
             e->rings[i] = std::move(r);
+            e->ringAsrc[i] = std::move(a);
             return static_cast<int32_t>(i);
         }
     }
@@ -343,6 +362,7 @@ void wz_source_ring_close(wz_engine* e, int32_t ring) {
     // delivery + detaches the strip before closing), same discipline as decks.
     if (e == nullptr || ring < 0 || static_cast<size_t>(ring) >= e->rings.size()) return;
     e->rings[static_cast<size_t>(ring)].reset();
+    e->ringAsrc[static_cast<size_t>(ring)].reset();
 }
 
 static const wz::SourceRing* ringAt(const wz_engine* e, int32_t ring) {
@@ -473,6 +493,30 @@ void wz_engine_render_io(wz_engine* e,
     double* monR = e->accMonR.data();
     for (uint32_t i = 0; i < frames; ++i) accL[i] = accR[i] = monL[i] = monR[i] = 0.0;
 
+    // Source-ring ASRC pre-pass: each open ring's ASRC produces ONE block of
+    // engine-rate output into planar scratch (deinterleaved); tap strips read
+    // it. Runs once per ring so multiple strips can share a source.
+    for (size_t r = 0; r < e->rings.size(); ++r) {
+        auto* asrc = e->ringAsrc[r].get();
+        auto* ring = e->rings[r].get();
+        float* dl = e->ringOutL[r].data();
+        float* dr = e->ringOutR[r].data();
+        if (asrc == nullptr || ring == nullptr) {
+            for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
+            continue;
+        }
+        const uint32_t ch = ring->channels;
+        const uint32_t got = asrc->process(e->asrcInter.data(), frames);
+        for (uint32_t i = 0; i < frames; ++i) {
+            if (i < got) {
+                dl[i] = e->asrcInter[static_cast<size_t>(i) * ch];
+                dr[i] = ch > 1 ? e->asrcInter[static_cast<size_t>(i) * ch + 1] : dl[i];
+            } else {
+                dl[i] = 0.0f; dr[i] = 0.0f; // starved: silence (counted on the ring)
+            }
+        }
+    }
+
     // Deck pre-pass: each playing deck advances ONCE per block, into its
     // preallocated scratch; deck strips read the scratch like any source.
     for (uint32_t di = 0; di < wz::kMaxDecks; ++di) {
@@ -541,6 +585,14 @@ void wz_engine_render_io(wz_engine* e,
                        static_cast<uint32_t>(ch.deckIndex) < wz::kMaxDecks) {
                 srcL = e->deckOutL[ch.deckIndex].data();
                 srcR = e->deckOutR[ch.deckIndex].data();
+            } else if ((ch.srcKind == wz::SourceKind::appTap ||
+                        ch.srcKind == wz::SourceKind::systemMixExcept ||
+                        ch.srcKind == wz::SourceKind::virtualDeviceInput) &&
+                       ch.ringId >= 0 &&
+                       static_cast<size_t>(ch.ringId) < e->rings.size() &&
+                       e->rings[static_cast<size_t>(ch.ringId)] != nullptr) {
+                srcL = e->ringOutL[static_cast<size_t>(ch.ringId)].data();
+                srcR = e->ringOutR[static_cast<size_t>(ch.ringId)].data();
             }
 
             // Block-rate targets; per-sample smoothing below.
@@ -676,9 +728,23 @@ uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) 
             out[idx++] = ch->mPeakR.load(std::memory_order_relaxed);
             out[idx++] = ch->mRmsL.load(std::memory_order_relaxed);
             out[idx++] = ch->mRmsR.load(std::memory_order_relaxed);
-            out[idx++] = 0.0;
-            out[idx++] = 0.0;
-            out[idx++] = 0.0;
+            // srcRingFill (0..1), srcDriftPpm, srcDropouts — populated for
+            // tap strips bound to a ring (D-WZ-CLOCK-01: drift visible live).
+            double fill = 0.0, drift = 0.0, drops = 0.0;
+            if (ch->ringId >= 0 && static_cast<size_t>(ch->ringId) < e->rings.size()) {
+                const auto* ring = e->rings[static_cast<size_t>(ch->ringId)].get();
+                const auto* asrc = e->ringAsrc[static_cast<size_t>(ch->ringId)].get();
+                if (ring != nullptr) {
+                    const double cap = static_cast<double>(ring->capacityFrames);
+                    fill = cap > 0.0 ? static_cast<double>(ring->fillFrames()) / cap : 0.0;
+                    drops = static_cast<double>(ring->overruns.load(std::memory_order_relaxed) +
+                                                ring->underruns.load(std::memory_order_relaxed));
+                }
+                if (asrc != nullptr) drift = asrc->driftPpm();
+            }
+            out[idx++] = fill;
+            out[idx++] = drift;
+            out[idx++] = drops;
         }
         // Per-deck blocks (stride 7, order per schema DECK_BLOCK_FIELDS):
         // state playhead loopStart loopEnd rate recordLengthSamples

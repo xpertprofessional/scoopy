@@ -74,6 +74,10 @@ target_include_directories(asrc_drift_test PRIVATE src)
 target_link_libraries(asrc_drift_test PRIVATE wz_engine samplerate)
 add_test(NAME asrc_drift_test COMMAND asrc_drift_test)
 
+add_executable(source_strip_test tools/source_strip_test.cpp)
+target_link_libraries(source_strip_test PRIVATE wz_engine)
+add_test(NAME source_strip_test COMMAND source_strip_test)
+
 # Smoke: proves the vendored libsamplerate builds, links, and resamples with
 # SINC_BEST before the ASRC/varispeed path (P2) is built on it.
 add_executable(libsamplerate_smoke tools/libsamplerate_smoke.cpp)

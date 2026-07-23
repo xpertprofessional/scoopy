@@ -39,6 +39,7 @@ struct ChannelState {
     int32_t srcChan0 = -1; // deviceInput: device input channel L (or mono)
     int32_t srcChan1 = -1; // deviceInput: device input channel R (-1 = mono)
     int32_t deckIndex = -1; // srcKind==deck: which deck unit feeds this strip
+    int32_t ringId = -1;    // tap kinds: which source ring (+ its ASRC) feeds this strip
     bool toMonitor = false; // cue assign (main is always fed)
     ChannelParams params;
     // Render-side smoother state — owned by the render thread; lives here so

@@ -3,54 +3,41 @@
  * radius in the Wizard web UI. Nothing outside web/src/design/ may hardcode a
  * visual constant; the check:tokens gate enforces it.
  *
- * Wizard is the THIRD wearer of the shared suite identity (after ScoopyLoops and
- * Parlante). Per D-WZ-DESIGN-01 this file vendors the shared *token core* only —
- * the neutral-grey chrome, the mono-dominant type scale, shape and motion — with
- * the DEFAULT values byte-identical to the sibling apps (the SHARED_CHROME /
- * SHARED_TYPE constants below; the portability fixture pins them so drift across
- * the three apps fails CI). Scoopy's interaction primitives (DragBox, semantic
- * send/mod/deck arrays, waveform styling) are NOT copied — Wizard's channel and
- * deck anatomy is built app-local. The full shared identity is applied at PD.
+ * Wizard is one wearer of the shared suite identity (with ScoopyLoops and
+ * Parlante). The neutral-grey chrome, the mono-dominant type scale, shape and
+ * base motion are NOT defined here — they are vendored, byte-identical across
+ * the line, from `shared/design/tokens.core.ts` (see shared/README.md) and
+ * re-exported below so existing importers are unaffected. The value pins live
+ * in tokens.core.test.ts, vendored alongside; drift from a sibling fails CI.
  *
- * The one app-local group is WIZARD_ACCENTS: channel-kind tints and the record /
- * feedback lamps, which are Wizard's own vocabulary, not the shared chrome.
+ * This file adds only Wizard's own composition and vocabulary: DEFAULT_TOKENS,
+ * the WIZARD_ACCENTS group (channel-kind tints + the record/feedback lamps),
+ * and the tokenVars()/applyTokens() emitter.
  */
+import {
+  FONT_MONO,
+  FONT_UI,
+  SHARED_CHROME,
+  SHARED_MOTION,
+  SHARED_SHAPE,
+  SHARED_TYPE,
+  type ChromeColors,
+  type MotionBase,
+  type ShapeTokens,
+  type TypeStep,
+  // Explicit .ts extension: the check:tokens gate loads this module under raw
+  // `node --experimental-strip-types`, which (unlike Vite) will not resolve an
+  // extensionless relative import.
+} from './tokens.core.ts'
 
-export interface ChromeColors {
-  bg: string
-  bgRaised: string
-  line: string
-  text: string
-  textDim: string
-  /** ONE accent: selection, focus, active. */
-  accent: string
-  /** Meters, playhead, live activity. */
-  signal: string
-  warn: string
-  hot: string
-}
+// Re-export the shared identity so existing importers (and tokens.test.ts)
+// keep resolving these from './tokens'.
+export { SHARED_CHROME, SHARED_TYPE }
+export type { ChromeColors, ShapeTokens, TypeStep }
 
-export interface TypeStep {
-  sizePx: number
-  weight: number
-  trackingEm: number
-  family: 'mono' | 'ui'
-  uppercase: boolean
-}
-
-export interface ShapeTokens {
-  /** 0 = sharp (the instrument default). Drives --radius and derived radii. */
-  radiusPx: number
-  /** Border width. */
-  hairlinePx: number
-}
-
-export interface MotionTokens {
+export interface MotionTokens extends MotionBase {
   /** Master lever: 0 collapses every duration to instant, no rule branching. */
   scale: number
-  fastMs: number
-  baseMs: number
-  ease: string
 }
 
 /** Wizard-local accents — channel-kind tints + the record/feedback lamps. Not
@@ -87,43 +74,16 @@ export interface DesignTokens {
   accents: WizardAccents
 }
 
-// --- SHARED IDENTITY (byte-identical across ScoopyLoops / Parlante / Wizard) --
-// These values are the suite's neutral-grey instrument identity. The portability
-// fixture (tokens.test.ts) pins every hex; changing one here without the sibling
-// apps agreeing is exactly the drift the fixture exists to catch.
-export const SHARED_CHROME: ChromeColors = {
-  bg: '#141414',
-  bgRaised: '#1e1e1e',
-  line: '#2e2e2e',
-  text: '#d8d8d8',
-  textDim: '#7f7f7f',
-  accent: '#ef8b9a',
-  signal: '#57c07a',
-  warn: '#d9a13f',
-  hot: '#d95c5c',
-}
-
-export const SHARED_TYPE = {
-  display: { sizePx: 16, weight: 500, trackingEm: 0.12, family: 'ui', uppercase: true },
-  title: { sizePx: 11, weight: 600, trackingEm: 0.08, family: 'mono', uppercase: true },
-  label: { sizePx: 11, weight: 500, trackingEm: 0.02, family: 'mono', uppercase: true },
-  value: { sizePx: 11, weight: 500, trackingEm: 0, family: 'mono', uppercase: false },
-  caption: { sizePx: 10, weight: 400, trackingEm: 0, family: 'ui', uppercase: false },
-} as const satisfies DesignTokens['type']
-
 export const DEFAULT_TOKENS: DesignTokens = {
   polarity: 'dark',
   chrome: { ...SHARED_CHROME },
-  // Sharp + hairline: the instrument default.
-  shape: { radiusPx: 0, hairlinePx: 1 },
+  shape: { ...SHARED_SHAPE },
   motion: {
     scale: 1,
-    fastMs: 90,
-    baseMs: 120,
-    ease: 'cubic-bezier(0.2, 0, 0.2, 1)',
+    ...SHARED_MOTION,
   },
-  fontMono: '"SF Mono", ui-monospace, Menlo, monospace',
-  fontUI: '-apple-system, system-ui, sans-serif',
+  fontMono: FONT_MONO,
+  fontUI: FONT_UI,
   type: {
     display: { ...SHARED_TYPE.display },
     title: { ...SHARED_TYPE.title },

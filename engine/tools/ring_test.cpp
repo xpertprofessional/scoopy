@@ -20,11 +20,11 @@ int main() {
     CHECK(e != nullptr);
 
     // Bad args.
-    CHECK(wz_source_ring_open(e, "x", 0, 100) == -1);
-    CHECK(wz_source_ring_open(e, "x", 2, 0) == -1);
+    CHECK(wz_source_ring_open(e, "x", 0, 100, 48000.0) == -1);
+    CHECK(wz_source_ring_open(e, "x", 2, 0, 48000.0) == -1);
 
     // Open a stereo ring holding 8 frames.
-    const int32_t ring = wz_source_ring_open(e, "spotify", 2, 8);
+    const int32_t ring = wz_source_ring_open(e, "spotify", 2, 8, 48000.0);
     CHECK(ring >= 0);
     CHECK(wz_source_ring_fill(e, ring) == 0);
 
@@ -55,10 +55,10 @@ int main() {
     CHECK(wz_source_ring_overruns(e, ring) == 2);
 
     // Distinct rings get distinct ids; closing frees the slot for reuse.
-    const int32_t ring2 = wz_source_ring_open(e, "sysmix", 1, 16);
+    const int32_t ring2 = wz_source_ring_open(e, "sysmix", 1, 16, 48000.0);
     CHECK(ring2 >= 0 && ring2 != ring);
     wz_source_ring_close(e, ring2);
-    const int32_t ring3 = wz_source_ring_open(e, "reused", 1, 16);
+    const int32_t ring3 = wz_source_ring_open(e, "reused", 1, 16, 48000.0);
     CHECK(ring3 == ring2); // freed slot reused
 
     // Telemetry on a bad/closed ring is 0, not a crash.
@@ -69,7 +69,7 @@ int main() {
 
     // Slot-table exhaustion returns -1 rather than growing unbounded.
     std::vector<int32_t> many;
-    for (int i = 0; i < 60; ++i) many.push_back(wz_source_ring_open(e, "m", 1, 4));
+    for (int i = 0; i < 60; ++i) many.push_back(wz_source_ring_open(e, "m", 1, 4, 48000.0));
     CHECK(many.back() == -1); // 40-slot table exhausted before 60
 
     wz_engine_destroy(e);

@@ -106,8 +106,13 @@ uint32_t wz_world_deck_count(const wz_engine* e);
  * anything independently clocked. The strip<->ring binding (a source-kind strip
  * reads its ring through the ASRC) lands in P2-03/04; P2-02 is the ring
  * plumbing + telemetry. */
+/* Opening a ring also creates its per-source ASRC (SINC_BEST, D-WZ-ASRC-01),
+ * which pulls the ring onto the engine rate. `nominal_rate` is the source's
+ * FORMAT-reported rate (for the srcDriftPpm readout + ASRC fallback); the true
+ * rate is discovered from write timestamps. Control thread (allocates). */
 int32_t wz_source_ring_open(wz_engine* e, const char* source_key,
-                            uint32_t channels, uint32_t capacity_frames);
+                            uint32_t channels, uint32_t capacity_frames,
+                            double nominal_rate);
 /* RT-safe, lock-free, SINGLE writer. `interleaved` is frames x channels. */
 void    wz_source_write(wz_engine* e, int32_t ring, const float* interleaved,
                         uint32_t frames, double source_rate, uint64_t host_time_ns);
