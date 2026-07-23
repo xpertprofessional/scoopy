@@ -78,7 +78,7 @@
 | P0-AUDIT | spec | Phase audit: diff P0 specs/CONFIRMs against built rows, materialize every gap as a row before offering P0-G1 | done | all P0-01..12 done; follow-ups materialized (P0-11a, P1-metering); only awaiting-user rows left (P0-R, remote). No P0 gaps unrowed |
 | P0-G1 | gate | **Phase gate (human):** shell boots on macOS + Linux, sound out, meters move, all gates green | done (macOS) | **SIGNED 2026-07-23: user heard the boot tone on macOS** — device→engine→meter→UI path confirmed end-to-end. Clean Release build + ctest 4/4 + all 6 web gates green. Remaining legs carried as their own rows: P0-G1-LINUX (visual boot) + P0-G1-CI (GitHub remote) — neither blocks P1 (macOS is the primary platform; Linux is the P2 abstraction proof) |
 | P0-G1-LINUX | gate | Linux visual boot check (CI builds but cannot run a GUI) | awaiting-user | do before P2's PipeWire backend lands; not a P1 blocker |
-| P0-G1-CI | gate | Create GitHub remote + push so the CI matrix actually runs (outward-facing — user's call) | awaiting-user | local CI-form runs green; remote proves ubuntu leg |
+| P0-G1-CI | gate | Create GitHub remote + push so the CI matrix actually runs (outward-facing — user's call) | done (push) / blocked(gh-actions-billing) | 2026-07-23: private repo github.com/xpertprofessional/wizard created, branch main pushed (31 commits — history now safe off-disk). CI jobs DID NOT START: GitHub Actions billing/spend limit exhausted on the account ("recent account payments have failed or your spending limit needs to be increased"). Not a code failure. Actions run once the user resolves billing; gates stay locally-verified until then |
 
 ## Phase P1 — mixer slice (same-clock only)
 
