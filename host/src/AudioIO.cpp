@@ -78,6 +78,41 @@ juce::String AudioIO::deviceName() const {
     return device != nullptr ? device->getName() : juce::String();
 }
 
+juce::StringArray AudioIO::availableInputDevices() const {
+    if (auto* type = deviceManager.getCurrentDeviceTypeObject())
+        return type->getDeviceNames(true);
+    return {};
+}
+
+juce::StringArray AudioIO::availableOutputDevices() const {
+    if (auto* type = deviceManager.getCurrentDeviceTypeObject())
+        return type->getDeviceNames(false);
+    return {};
+}
+
+juce::String AudioIO::setDevices(const juce::String& inName, const juce::String& outName,
+                                 double sampleRate) {
+    if (sampleRate <= 0.0) return "invalid sample rate";
+    if (!initialised) return open(sampleRate); // nothing open yet
+    detach();
+    auto setup = deviceManager.getAudioDeviceSetup();
+    if (inName.isNotEmpty()) setup.inputDeviceName = inName;
+    if (outName.isNotEmpty()) setup.outputDeviceName = outName;
+    setup.sampleRate = sampleRate;
+    setup.useDefaultInputChannels = true;
+    setup.useDefaultOutputChannels = true;
+    const auto err = deviceManager.setAudioDeviceSetup(setup, true);
+    if (err.isNotEmpty()) return err;
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr) return "no audio device";
+    if (std::abs(device->getCurrentSampleRate() - sampleRate) > 0.5)
+        return "device does not support " + juce::String(sampleRate, 0) + " Hz";
+    wz_engine_set_sample_rate(engine, sampleRate);
+    openedRate = sampleRate;
+    attach();
+    return {};
+}
+
 juce::String AudioIO::inputDeviceName() const {
     // macOS pairs separate input/output devices behind one callback; the
     // combined device's getName() reports the OUTPUT side, which read as "it

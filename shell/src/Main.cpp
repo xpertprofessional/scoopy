@@ -66,6 +66,14 @@ public:
                             complete(deviceInfoReply());
                             return;
                         }
+                        if (method == "listDevices") {
+                            complete(listDevicesReply());
+                            return;
+                        }
+                        if (method == "setDevice") {
+                            complete(setDeviceReply(params));
+                            return;
+                        }
                         // File-open needs the window + an async native dialog,
                         // so it lives here rather than in the pure dispatcher.
                         if (method == "deckLoadFile") {
@@ -153,6 +161,41 @@ private:
             envelope->setProperty("result", juce::var(result));
             complete(juce::var(envelope));
         });
+    }
+
+    static juce::var strArray(const juce::StringArray& in) {
+        juce::Array<juce::var> a;
+        for (const auto& s : in) a.add(s);
+        return juce::var(a);
+    }
+
+    juce::var listDevicesReply() const {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("inputs", strArray(audioIO.availableInputDevices()));
+        result->setProperty("outputs", strArray(audioIO.availableOutputDevices()));
+        result->setProperty("currentInput", audioIO.inputDeviceName());
+        result->setProperty("currentOutput", audioIO.deviceName());
+        auto* env = new juce::DynamicObject();
+        env->setProperty("ok", true);
+        env->setProperty("result", juce::var(result));
+        return juce::var(env);
+    }
+
+    juce::var setDeviceReply(const juce::var& params) {
+        const auto in = params.getProperty("input", "").toString();
+        const auto out = params.getProperty("output", "").toString();
+        // Re-open at the current engine rate; decks survive (the engine is not
+        // recreated). whileSuspended isn't needed — setDevices detaches/attaches
+        // the callback itself around the switch.
+        const auto err = audioIO.setDevices(in, out, wz_engine_sample_rate(engine));
+        deviceError = err;
+        auto* result = new juce::DynamicObject();
+        result->setProperty("ok", err.isEmpty());
+        result->setProperty("error", err);
+        auto* env = new juce::DynamicObject();
+        env->setProperty("ok", true);
+        env->setProperty("result", juce::var(result));
+        return juce::var(env);
     }
 
     juce::var deviceInfoReply() const {

@@ -32,7 +32,7 @@ juce::var capabilities() {
     obj->setProperty("virtualDevice", false);
     obj->setProperty("pluginHosting", false);
     obj->setProperty("fileSystem", true);
-    obj->setProperty("audioDeviceSelection", false);
+    obj->setProperty("audioDeviceSelection", true); // P1-10 device picker
     return juce::var(obj);
 }
 

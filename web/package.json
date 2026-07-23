@@ -14,7 +14,9 @@
     "protocol:generate": "node --experimental-strip-types scripts/generate-protocol.ts",
     "protocol:check": "node --experimental-strip-types scripts/generate-protocol.ts --check",
     "abi:check": "node --experimental-strip-types scripts/checkAbiCoverage.ts",
-    "check:tokens": "node --experimental-strip-types scripts/check-tokens.ts"
+    "check:tokens": "node --experimental-strip-types scripts/check-tokens.ts",
+    "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
+    "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write"
   },
   "dependencies": {
     "react": "^18.3.1",

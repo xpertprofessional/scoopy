@@ -41,6 +41,15 @@ public:
     // srcChan i in a deviceInput SourceRef.
     juce::String deviceName() const;
     juce::String inputDeviceName() const;
+    // Available devices for the picker (current device type). Message thread.
+    juce::StringArray availableInputDevices() const;
+    juce::StringArray availableOutputDevices() const;
+    // Switch input and/or output device (empty = leave that side unchanged),
+    // re-opening at `sampleRate`. Empty string on success, else the error.
+    // The engine world + decks survive (this does not recreate the engine);
+    // only the device changes. Message thread only.
+    juce::String setDevices(const juce::String& inName, const juce::String& outName,
+                            double sampleRate);
     int activeInputChannelCount() const;
     int activeOutputChannelCount() const;
     juce::StringArray activeInputChannelNames() const;

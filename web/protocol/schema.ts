@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -288,6 +288,28 @@ export const COMMANDS = {
         monitorAvailable: z.boolean(),
       })
       .strict(),
+  },
+  // Available devices for the picker (shell-owned). inputs/outputs are device
+  // NAMES for the current device type.
+  listDevices: {
+    params: z.object({}).strict(),
+    result: z
+      .object({
+        inputs: z.array(z.string()),
+        outputs: z.array(z.string()),
+        currentInput: z.string(),
+        currentOutput: z.string(),
+      })
+      .strict(),
+  },
+  // Switch input and/or output device (empty string = leave that side). Re-opens
+  // at the CURRENT engine rate; ok=false + error when the device can't run it
+  // (D-WZ-RATE-01: no silent coercion). The world + decks survive; but decks
+  // loaded before a rate-differing switch would be at the wrong rate — the UI
+  // warns (P0-11a will auto-reload). Shell-owned (needs the device layer).
+  setDevice: {
+    params: z.object({ input: z.string(), output: z.string() }).strict(),
+    result: z.object({ ok: z.boolean(), error: z.string() }).strict(),
   },
   // WorldPublish: the full Patch document. The engine RCU-installs the world;
   // `revision` echoes a monotonic install counter so the UI can correlate

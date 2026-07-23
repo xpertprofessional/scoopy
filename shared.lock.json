@@ -1,0 +1,21 @@
+{
+  "sharedCommit": "3270a8c18d755835d265e9896a99babdd0eb9aed",
+  "files": {
+    "web/scripts/sharedSync.ts": {
+      "from": "scripts/sharedSync.ts",
+      "sha256": "0aa2bf709facd107ea24527c0e43e1ace94e5abb28737a756f948cc94533808a"
+    },
+    "web/scripts/webdistFresh.ts": {
+      "from": "protocol/webdistFresh.ts",
+      "sha256": "88ffb43aebab2845288f62e53db61c8628c3c02bcad0926db0cbf813ee213185"
+    },
+    "engine/tools/libsamplerate_smoke.cpp": {
+      "from": "engine/tools/libsamplerate_smoke.cpp",
+      "sha256": "51755f12c17c30a379bc0a45be49f19ee56241a82e4773a60e0facf78c8244f1"
+    },
+    "engine/ThirdParty/libsamplerate": {
+      "from": "engine/third_party/libsamplerate",
+      "sha256": "6a26271e9c8c0503d57bfb1b3be5d059861efa2c27bffd7ef9850a17b51a9187"
+    }
+  }
+}
