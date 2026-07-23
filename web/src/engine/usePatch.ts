@@ -8,10 +8,26 @@
 import type { Patch, SourceRef } from '../../protocol/schema'
 import { useAppStore } from '../store/appStore'
 import type { EngineLink } from './engineLink'
+import { validatePatch } from './patchValidation'
 
 export function publishPatch(link: EngineLink | null, patch: Patch): void {
   if (!link) return
-  void link.command('publishWorld', { patch }).catch(() => {
+  // Edit-time DAG/integrity guard (routing.md §5): the engine never sees an
+  // illegal world. Store paths only build legal edits, so a hit here is a bug
+  // worth being loud about.
+  const errors = validatePatch(patch)
+  if (errors.length > 0) {
+    console.error('publish refused:', errors)
+    return
+  }
+  // Output map v0 follows the device (routing.md §4): monitor → device 3/4
+  // only when the hardware has the pair; never silently re-routed.
+  const info = useAppStore.getState().deviceInfo
+  const withMap: Patch = {
+    ...patch,
+    outputMap: { main: [0, 1], monitor: info?.monitorAvailable ? [2, 3] : null },
+  }
+  void link.command('publishWorld', { patch: withMap }).catch(() => {
     // A refused publish leaves the previous world running; the document stays
     // authoritative and the next successful publish reconciles.
   })

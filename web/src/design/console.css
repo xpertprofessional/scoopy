@@ -296,3 +296,38 @@ input.pan {
 canvas.meter {
   border: var(--hairline) solid var(--line);
 }
+
+/* --- routing matrix ------------------------------------------------------- */
+
+.matrix {
+  padding: 6px;
+}
+
+.matrix table {
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.matrix th {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  padding: 2px 10px;
+  text-align: center;
+}
+
+.matrix td {
+  padding: 2px 10px;
+  text-align: center;
+}
+
+.matrix-name {
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  text-align: left;
+}
+
+.matrix-fixed {
+  color: var(--text-dim);
+}

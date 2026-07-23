@@ -10,6 +10,7 @@ import { SourcesBrowser } from './panels/SourcesBrowser'
 import { ChannelRack } from './panels/ChannelRack'
 import { DeckRack } from './panels/DeckRack'
 import { MasterSection } from './panels/MasterSection'
+import { RoutingMatrix } from './panels/RoutingMatrix'
 
 const STATUS_LABEL: Record<string, string> = {
   disconnected: 'disconnected',
@@ -43,6 +44,7 @@ export function App() {
         <MasterSection link={link} />
       </div>
       <DeckRack link={link} />
+      <RoutingMatrix link={link} />
     </div>
   )
 }
