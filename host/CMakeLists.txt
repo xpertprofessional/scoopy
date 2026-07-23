@@ -41,3 +41,13 @@ target_include_directories(wz_wav PUBLIC src)
 add_executable(wav_killtest tools/wav_killtest.cpp)
 target_link_libraries(wav_killtest PRIVATE wz_wav)
 add_test(NAME wav_killtest COMMAND wav_killtest)
+
+# RecordService (P3-05): drain thread engine -> WavWriter. Links wz_engine for
+# the drain ABI; no JUCE (this tier stays portable).
+add_library(wz_record STATIC src/RecordService.cpp)
+target_include_directories(wz_record PUBLIC src)
+target_link_libraries(wz_record PUBLIC wz_wav PRIVATE wz_engine)
+
+add_executable(recorder_drain_test tools/recorder_drain_test.cpp)
+target_link_libraries(recorder_drain_test PRIVATE wz_record wz_engine)
+add_test(NAME recorder_drain_test COMMAND recorder_drain_test)
