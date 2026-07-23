@@ -20,6 +20,5 @@ add_subdirectory(ThirdParty/JUCE)
 add_compile_definitions(JUCE_USE_CURL=0)
 
 add_subdirectory(engine)
+add_subdirectory(host)
 add_subdirectory(shell)
-
-# host/ (JUCE duplex IO, capture backends) is added in P0-11.

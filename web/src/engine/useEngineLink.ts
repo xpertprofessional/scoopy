@@ -6,6 +6,8 @@ import { createEngineLink, fetchCapabilities, type EngineLink } from './engineLi
 
 const ENGINE_TIME_INDEX = HOT_FRAME_SCALARS.indexOf('engineTimeSamples')
 const FEEDBACK_INDEX = HOT_FRAME_SCALARS.indexOf('feedbackAlarm')
+const MAIN_PEAK_L_INDEX = HOT_FRAME_SCALARS.indexOf('mainPeakL')
+const MAIN_PEAK_R_INDEX = HOT_FRAME_SCALARS.indexOf('mainPeakR')
 
 /**
  * Boots the transport once on mount: runs the capabilities handshake and
@@ -45,6 +47,11 @@ export function useEngineLink(): EngineLink | null {
       // Boolean changes rarely; zustand subscribers only re-render on change.
       if (FEEDBACK_INDEX >= 0 && frame.length > FEEDBACK_INDEX)
         store.setFeedbackAlarm(frame[FEEDBACK_INDEX] === 1)
+      // P0 walking-skeleton meter. The real per-strip meters render on the
+      // HotSurface canvas (outside React) in P1 — this store path is only for
+      // the single boot-tone main meter and is replaced then.
+      if (MAIN_PEAK_L_INDEX >= 0 && MAIN_PEAK_R_INDEX >= 0 && frame.length > MAIN_PEAK_R_INDEX)
+        store.setMainPeaks(frame[MAIN_PEAK_L_INDEX]!, frame[MAIN_PEAK_R_INDEX]!)
     })
 
     return () => {

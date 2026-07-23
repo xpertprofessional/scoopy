@@ -17,7 +17,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 /**
  * ParamWrite atomics. Adding one is a schema increment: extend here, regenerate,
@@ -75,6 +75,13 @@ export const COMMANDS = {
   getCapabilities: {
     params: z.object({}).strict(),
     result: CapabilitiesSchema,
+  },
+  // Boot tone (P0 walking-skeleton affordance): toggles a metered -18 dBFS sine
+  // on the main bus so the device→engine→meter→UI path is provable before real
+  // channels exist. Removed when P1 builds channels.
+  setTestTone: {
+    params: z.object({ enabled: z.boolean() }).strict(),
+    result: z.object({}).strict(),
   },
 } as const
 export type Method = keyof typeof COMMANDS

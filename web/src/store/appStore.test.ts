@@ -7,6 +7,8 @@ beforeEach(() => {
     capabilities: null,
     engineTimeSamples: 0,
     feedbackAlarm: false,
+    mainPeakL: 0,
+    mainPeakR: 0,
   })
 })
 
@@ -19,13 +21,16 @@ test('shell status transitions through the handshake states', () => {
   expect(useAppStore.getState().shellStatus).toBe('connected')
 })
 
-test('engine clock and feedback alarm mirror from hotframe', () => {
+test('engine clock, feedback alarm and main peaks mirror from hotframe', () => {
   const s = useAppStore.getState()
   s.setEngineTimeSamples(48000)
   s.setFeedbackAlarm(true)
+  s.setMainPeaks(0.5, 0.25)
   const now = useAppStore.getState()
   expect(now.engineTimeSamples).toBe(48000)
   expect(now.feedbackAlarm).toBe(true)
+  expect(now.mainPeakL).toBe(0.5)
+  expect(now.mainPeakR).toBe(0.25)
 })
 
 test('capabilities are stored from the handshake', () => {

@@ -40,7 +40,7 @@ target_sources(Wizard PRIVATE src/Main.cpp)
 # generated/ holds WZProtocol.h (codegen from web/protocol/schema.ts); include/
 # holds the engine ABI. Main.cpp creates the engine directly (single explicit
 # link), same as parlante's shell.
-target_include_directories(Wizard PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include)
+target_include_directories(Wizard PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include ${CMAKE_SOURCE_DIR}/host/src)
 
 target_compile_definitions(Wizard PRIVATE
     JUCE_WEB_BROWSER=1
@@ -55,6 +55,7 @@ target_link_libraries(Wizard PRIVATE
     wz_engine # Main.cpp calls the engine directly
     wz_webresources
     wz_command # Main.cpp's wzCommand native fn dispatches through this
+    wz_audio_io # host/ duplex device layer: drives wz_engine_render
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

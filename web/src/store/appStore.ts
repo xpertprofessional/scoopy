@@ -12,10 +12,14 @@ interface AppState {
   engineTimeSamples: number
   /** Mirrored from HotFrame 'feedbackAlarm' — the watchdog lamp (P4). */
   feedbackAlarm: boolean
+  /** Mirrored from HotFrame main-bus peaks (linear amplitude), L / R. */
+  mainPeakL: number
+  mainPeakR: number
   setShellStatus: (s: ShellStatus) => void
   setCapabilities: (c: Capabilities) => void
   setEngineTimeSamples: (n: number) => void
   setFeedbackAlarm: (a: boolean) => void
+  setMainPeaks: (l: number, r: number) => void
 }
 
 // The Patch document (channels, buses, decks, sends, output map, UI mode) is
@@ -27,8 +31,11 @@ export const useAppStore = create<AppState>((set) => ({
   capabilities: null,
   engineTimeSamples: 0,
   feedbackAlarm: false,
+  mainPeakL: 0,
+  mainPeakR: 0,
   setShellStatus: (shellStatus) => set({ shellStatus }),
   setCapabilities: (capabilities) => set({ capabilities }),
   setEngineTimeSamples: (engineTimeSamples) => set({ engineTimeSamples }),
   setFeedbackAlarm: (feedbackAlarm) => set({ feedbackAlarm }),
+  setMainPeaks: (mainPeakL, mainPeakR) => set({ mainPeakL, mainPeakR }),
 }))

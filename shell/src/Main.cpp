@@ -8,6 +8,7 @@
 // else here is a bug.
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "AudioIO.h"
 #include "CommandDispatch.h"
 #include "WZProtocol.h"
 #include "WebResources.h"
@@ -41,7 +42,12 @@ public:
         : juce::DocumentWindow("Wizard",
                                juce::Colours::black,
                                juce::DocumentWindow::allButtons),
-          engine(engineToUse) {
+          engine(engineToUse),
+          audioIO(engineToUse) {
+        // Open the default duplex device at the engine's rate (D-WZ-RATE-01).
+        // A failure (no device / unsupported rate) leaves the app running,
+        // silent; the boot tone simply won't be audible until a device opens.
+        deviceError = audioIO.open(wz_engine_sample_rate(engine));
         webView = std::make_unique<juce::WebBrowserComponent>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
@@ -92,6 +98,8 @@ private:
     }
 
     wz_engine* engine;
+    wizard::host::AudioIO audioIO; // host device layer (host/), drives render
+    juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;
 };
 

@@ -5,6 +5,7 @@
 #include "wz_engine.h"
 
 #include <cstdio>
+#include <vector>
 
 #define CHECK(cond)                                                              \
     do {                                                                         \
@@ -42,6 +43,30 @@ int main() {
         CHECK(caps.hasProperty("fileSystem"));
         CHECK(caps.hasProperty("audioDeviceSelection"));
         CHECK(static_cast<bool>(caps.getProperty("fileSystem", false)));
+    }
+
+    // setTestTone toggles the metered boot tone: enabling it makes the main-bus
+    // peak non-zero after a render; disabling returns to silence.
+    {
+        auto* p = new juce::DynamicObject();
+        p->setProperty("enabled", true);
+        const auto reply = dispatch(e, "setTestTone", juce::var(p));
+        CHECK(static_cast<bool>(reply.getProperty("ok", false)));
+
+        constexpr uint32_t frames = 256;
+        std::vector<float> l(frames), r(frames);
+        float* buses[2] = {l.data(), r.data()};
+        wz_engine_render(e, buses, 2, frames);
+        double hot[8] = {};
+        CHECK(wz_engine_hotframe(e, hot, 8) == 8);
+        CHECK(hot[4] > 0.0); // mainPeakL non-zero with the tone on
+
+        auto* off = new juce::DynamicObject();
+        off->setProperty("enabled", false);
+        dispatch(e, "setTestTone", juce::var(off));
+        wz_engine_render(e, buses, 2, frames);
+        CHECK(wz_engine_hotframe(e, hot, 8) == 8);
+        CHECK(hot[4] == 0.0);
     }
 
     // Unknown method → structured failure, not a crash.

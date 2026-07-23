@@ -73,8 +73,26 @@ int main() {
     CHECK(hot[1] == 5 * 512.0);                // engineTimeSamples: 5 render calls
     CHECK(hot[2] == 0.0);                      // cpuLoad placeholder
     CHECK(hot[3] == 0.0);                      // feedbackAlarm idle
-    CHECK(hot[4] == 0.0 && hot[5] == 0.0);     // main peak L/R: silence
+    CHECK(hot[4] == 0.0 && hot[5] == 0.0);     // main peak L/R: silence (tone off)
     CHECK(hot[6] == 0.0 && hot[7] == 0.0);     // monitor peak L/R: silence
+
+    // Boot tone: enabling it produces a metered signal on the main bus; the
+    // peak lands near -18 dBFS amplitude (0.1259), scaled by mainGain (0.5 here).
+    wz_engine_set_test_tone(e, 1);
+    for (uint32_t b = 0; b < kBuses; ++b) busPtrs[b] = busBufs[b].data();
+    wz_engine_render(e, busPtrs.data(), kBuses, kFrames);
+    CHECK(wz_engine_hotframe(e, hot, 8) == 8);
+    CHECK(hot[4] > 0.0 && hot[4] <= 0.13);     // mainPeakL: tone present, below full scale
+    CHECK(hot[5] == hot[4]);                    // stereo tone: L == R
+    // A non-silent sample actually landed on the main bus.
+    bool nonzero = false;
+    for (uint32_t i = 0; i < kFrames; ++i) nonzero = nonzero || (busBufs[0][i] != 0.0f);
+    CHECK(nonzero);
+    // Turning it off returns to silence on the next block.
+    wz_engine_set_test_tone(e, 0);
+    wz_engine_render(e, busPtrs.data(), kBuses, kFrames);
+    CHECK(wz_engine_hotframe(e, hot, 8) == 8);
+    CHECK(hot[4] == 0.0 && hot[5] == 0.0);
 
     wz_engine_destroy(e);
     std::printf("null_smoke OK\n");

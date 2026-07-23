@@ -67,6 +67,13 @@ const char* wz_param_name(uint32_t id); /* NULL if out of range */
 void wz_param_set(wz_engine* e, uint32_t channel, int32_t id, double value);
 double wz_param_get(const wz_engine* e, uint32_t channel, int32_t id);
 
+/* --- boot tone (P0 walking-skeleton affordance) -----------------------
+ * Toggles a low-level (-18 dBFS) 440 Hz sine on the main bus so the whole
+ * device→engine→meter→UI path is provable before real channels exist. Default
+ * OFF (the engine boots silent). Removed when P1 builds channels; the metering
+ * it exercises stays. RT-safe. */
+void wz_engine_set_test_tone(wz_engine* e, uint32_t enabled);
+
 /* --- audio ------------------------------------------------------------- */
 /* Renders `frames` (<= max_block_frames) into `bus_count` output buffers, one
  * pointer per output channel in `bus_out` (the host maps up to 8 output buses +
