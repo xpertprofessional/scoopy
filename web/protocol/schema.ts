@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -275,7 +275,11 @@ export const COMMANDS = {
     params: z.object({}).strict(),
     result: z
       .object({
-        deviceName: z.string(),
+        deviceName: z.string(), // output side (macOS pairs separate in/out devices)
+        inputDeviceName: z.string(), // '' when no input device opened
+        // Non-empty when the duplex open failed or was degraded (e.g. mic
+        // permission denied) — the UI explains silence instead of hiding it.
+        error: z.string(),
         sampleRate: z.number().nonnegative(),
         inputs: z.array(
           z.object({ index: z.number().int().nonnegative(), name: z.string() }).strict(),

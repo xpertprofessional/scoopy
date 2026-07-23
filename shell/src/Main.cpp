@@ -158,6 +158,8 @@ private:
     juce::var deviceInfoReply() const {
         auto* result = new juce::DynamicObject();
         result->setProperty("deviceName", audioIO.deviceName());
+        result->setProperty("inputDeviceName", audioIO.inputDeviceName());
+        result->setProperty("error", deviceError);
         result->setProperty("sampleRate", audioIO.openedSampleRate());
         juce::Array<juce::var> inputs;
         const auto names = audioIO.activeInputChannelNames();

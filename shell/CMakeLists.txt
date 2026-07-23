@@ -33,7 +33,12 @@ add_test(NAME command_dispatch_test COMMAND command_dispatch_test)
 juce_add_gui_app(Wizard
     PRODUCT_NAME "Wizard"
     COMPANY_NAME "Wizard"
-    BUNDLE_ID com.wizard.wizard)
+    BUNDLE_ID com.wizard.wizard
+    # Without this, macOS TCC silently starves the duplex input side: the
+    # device opens but input buffers arrive as zeros (P1-G1 field finding).
+    # This injects NSMicrophoneUsageDescription and JUCE's permission request.
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Wizard mixes and records audio inputs; microphone access makes your hardware inputs available as channel strips.")
 
 target_sources(Wizard PRIVATE src/Main.cpp)
 

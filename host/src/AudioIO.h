@@ -40,6 +40,7 @@ public:
     // Input names are compacted to ACTIVE channels, so index i == the engine's
     // srcChan i in a deviceInput SourceRef.
     juce::String deviceName() const;
+    juce::String inputDeviceName() const;
     int activeInputChannelCount() const;
     int activeOutputChannelCount() const;
     juce::StringArray activeInputChannelNames() const;

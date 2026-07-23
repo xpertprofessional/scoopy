@@ -78,6 +78,14 @@ juce::String AudioIO::deviceName() const {
     return device != nullptr ? device->getName() : juce::String();
 }
 
+juce::String AudioIO::inputDeviceName() const {
+    // macOS pairs separate input/output devices behind one callback; the
+    // combined device's getName() reports the OUTPUT side, which read as "it
+    // views the output?" in the sources rail (P1-G1 field finding). Report the
+    // input side by its own name.
+    return deviceManager.getAudioDeviceSetup().inputDeviceName;
+}
+
 int AudioIO::activeInputChannelCount() const {
     auto* device = deviceManager.getCurrentAudioDevice();
     return device != nullptr ? device->getActiveInputChannels().countNumberOfSetBits() : 0;

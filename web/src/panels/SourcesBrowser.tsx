@@ -18,7 +18,10 @@ export function SourcesBrowser({ link }: { link: EngineLink | null }) {
   return (
     <aside className="sources raised">
       <h2>Sources</h2>
-      <h3>{deviceInfo ? deviceInfo.deviceName : 'no device'}</h3>
+      {deviceInfo && deviceInfo.error !== '' && (
+        <p className="dim">device: {deviceInfo.error}</p>
+      )}
+      <h3>{deviceInfo ? deviceInfo.inputDeviceName || 'no input device' : 'no device'}</h3>
       <ul>
         {inputs.map((input, i) => {
           const next = inputs[i + 1]
