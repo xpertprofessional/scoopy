@@ -17,8 +17,10 @@ import {
 
 export interface EngineLink {
   command<M extends Method>(method: M, params: Params<M>): Promise<Result<M>>
-  /** Fire-and-forget live control; coalesced to one write per key per frame. */
-  paramWrite(id: ParamId, value: number): void
+  /** Fire-and-forget live control; coalesced to one write per (key, channel)
+      per frame. `channel` is the strip index; master-global params (mainGain)
+      ignore it and default to 0. */
+  paramWrite(id: ParamId, value: number, channel?: number): void
   onHotFrame(cb: (frame: Float64Array) => void): () => void
 }
 
@@ -45,7 +47,9 @@ export class JuceLink implements EngineLink {
   private nextPromiseId = 0
   private readonly pending = new Map<number, Pending>()
   private readonly hotFrameCbs = new Set<(frame: Float64Array) => void>()
-  private readonly paramQueue = new Map<ParamId, number>()
+  // Keyed by `${id}:${channel}` so a gain move on strip 3 never swallows one
+  // on strip 4 within the same frame.
+  private readonly paramQueue = new Map<string, { id: ParamId; channel: number; value: number }>()
   private flushScheduled = false
 
   constructor(
@@ -85,13 +89,14 @@ export class JuceLink implements EngineLink {
     })
   }
 
-  paramWrite(id: ParamId, value: number): void {
-    this.paramQueue.set(id, value)
+  paramWrite(id: ParamId, value: number, channel = 0): void {
+    this.paramQueue.set(`${id}:${channel}`, { id, channel, value })
     if (this.flushScheduled) return
     this.flushScheduled = true
     this.schedule(() => {
       this.flushScheduled = false
-      for (const [pid, v] of this.paramQueue) this.backend.emitEvent(PARAM_EVENT, { id: pid, value: v })
+      for (const w of this.paramQueue.values())
+        this.backend.emitEvent(PARAM_EVENT, { id: w.id, channel: w.channel, value: w.value })
       this.paramQueue.clear()
     })
   }

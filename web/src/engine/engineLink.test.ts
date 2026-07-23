@@ -85,21 +85,29 @@ test('concurrent commands resolve to their own replies by promiseId', async () =
   await expect(b).resolves.toEqual({ pong: true })
 })
 
-test('paramWrite coalesces to one emit per key per frame', () => {
+test('paramWrite coalesces to one emit per (key, channel) per frame', () => {
   const scheduled: Array<() => void> = []
   const link = new JuceLink(backend, (cb) => scheduled.push(cb))
 
   link.paramWrite('mainGain', 0.1)
   link.paramWrite('mainGain', 0.2)
   link.paramWrite('mainGain', 0.5)
+  // Same param on two different strips must NOT swallow each other.
+  link.paramWrite('gain', 0.3, 3)
+  link.paramWrite('gain', 0.9, 3)
+  link.paramWrite('gain', 0.4, 4)
   expect(backend.emitted.filter((e) => e.eventId === 'wzParam')).toHaveLength(0)
 
   expect(scheduled).toHaveLength(1) // only one frame scheduled for the burst
   scheduled[0]!()
 
   const writes = backend.emitted.filter((e) => e.eventId === 'wzParam')
-  expect(writes).toHaveLength(1)
-  expect(writes[0]!.payload).toEqual({ id: 'mainGain', value: 0.5 }) // last value wins
+  expect(writes).toHaveLength(3)
+  expect(writes.map((w) => w.payload)).toEqual([
+    { id: 'mainGain', channel: 0, value: 0.5 }, // last value wins
+    { id: 'gain', channel: 3, value: 0.9 },
+    { id: 'gain', channel: 4, value: 0.4 },
+  ])
 })
 
 test('hot frames are delivered as Float64Array to subscribers', () => {

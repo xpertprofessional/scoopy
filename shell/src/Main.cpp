@@ -64,12 +64,14 @@ public:
                     "wzParam", [this](juce::var payload) {
                         // Keyed by NAME across the ABI (never a hardcoded id):
                         // JS resolved the name at boot, the engine resolves it
-                        // again here. Channel index arrives with the mixer (P1);
-                        // master-global params use channel 0.
+                        // again here. `channel` selects the strip; master-global
+                        // params (mainGain) ignore it.
                         const auto name = payload.getProperty("id", juce::var()).toString();
+                        const auto channel = static_cast<uint32_t>(
+                            static_cast<int>(payload.getProperty("channel", 0)));
                         const auto value = static_cast<double>(payload.getProperty("value", 0.0));
                         const auto id = wz_param_id_for_name(name.toRawUTF8());
-                        if (id != WZ_PARAM_UNKNOWN) wz_param_set(engine, 0, id, value);
+                        if (id != WZ_PARAM_UNKNOWN) wz_param_set(engine, channel, id, value);
                     }));
 
         setUsingNativeTitleBar(true);

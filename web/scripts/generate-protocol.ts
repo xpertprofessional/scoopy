@@ -15,6 +15,8 @@ import {
   PARAM_IDS,
   HOT_FRAME_SCALARS,
   HOT_FRAME_LENGTH,
+  CHANNEL_BLOCK_FIELDS,
+  DECK_BLOCK_FIELDS,
   COMMANDS,
 } from '../protocol/schema.ts'
 
@@ -41,12 +43,29 @@ lines.push('inline constexpr const char* kParamIdNames[] = {')
 PARAM_IDS.forEach((id) => lines.push(`    "${id}",`))
 lines.push('};')
 lines.push('')
-lines.push('// HotFrame Float64 index map.')
+lines.push('// HotFrame Float64 index map: scalars, then per-CHANNEL blocks, then')
+lines.push('// per-DECK blocks (docs/specs/routing.md §8). Offsets are derived from')
+lines.push('// these strides on both sides — never hand-computed.')
 lines.push('namespace hotframe {')
 HOT_FRAME_SCALARS.forEach((name, i) =>
   lines.push(`inline constexpr std::uint32_t k_${name} = ${i};`),
 )
+lines.push(`inline constexpr std::uint32_t kScalarCount = ${HOT_FRAME_SCALARS.length};`)
+lines.push('// kFrameLength is the SCALAR section only; the full frame is')
+lines.push('// kScalarCount + nChannels*channel_block::kStride + nDecks*deck_block::kStride.')
 lines.push(`inline constexpr std::uint32_t kFrameLength = ${HOT_FRAME_LENGTH};`)
+lines.push('namespace channel_block {')
+CHANNEL_BLOCK_FIELDS.forEach((name, i) =>
+  lines.push(`inline constexpr std::uint32_t k_${name} = ${i};`),
+)
+lines.push(`inline constexpr std::uint32_t kStride = ${CHANNEL_BLOCK_FIELDS.length};`)
+lines.push('} // namespace channel_block')
+lines.push('namespace deck_block {')
+DECK_BLOCK_FIELDS.forEach((name, i) =>
+  lines.push(`inline constexpr std::uint32_t k_${name} = ${i};`),
+)
+lines.push(`inline constexpr std::uint32_t kStride = ${DECK_BLOCK_FIELDS.length};`)
+lines.push('} // namespace deck_block')
 lines.push('} // namespace hotframe')
 lines.push('')
 lines.push('// Command method names (JSON-RPC style).')
