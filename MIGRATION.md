@@ -56,6 +56,10 @@
     gate (third-wearer contract applied).
   - **PD design identity** interleaves after P1. **D-WZ-SHARED-01** (extract
     @suite/design-tokens + slp-codegen) decided after P2.
+- **MORNING DECISIONS queue:** `docs/MORNING-DECISIONS.md` — (1) ⭐ the UI vision change
+  (one unified freely-arranged item; user 2026-07-24) proposed as phase PD-CANVAS after P3,
+  (2) take naming/storage, (3) monitor-while-recording default, (4) GRM manual deep read
+  (needs a PDF/app from the user). The loop parks these and keeps building.
 - **Blocked on user:** P0-G1 sign-off — (1) launch Wizard + confirm boot tone/meter,
   (2) Linux visual boot, (3) create a GitHub remote so CI proves Linux · P0-R (AudioCap/TCC
   spike — runbook written at `docs/specs/capture.md`, user fills the blanks).
