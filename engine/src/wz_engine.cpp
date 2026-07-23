@@ -567,9 +567,29 @@ void wz_engine_render_io(wz_engine* e,
         if (arm == 1u) { // start: stamp the exact engine sample capture begins
             d.recStartSample = blockStartSample;
             d.state.store(static_cast<uint32_t>(wz::DeckState::recording), std::memory_order_release);
-        } else if (arm == 2u) { // stop → idle (the Law C-3 handoff lands in P3-03)
-            if (d.state.load(std::memory_order_relaxed) == static_cast<uint32_t>(wz::DeckState::recording))
-                d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_release);
+        } else if (arm == 2u) { // stop — THE LAW C-3 HANDOFF
+            if (d.state.load(std::memory_order_relaxed) ==
+                static_cast<uint32_t>(wz::DeckState::recording)) {
+                // The record buffer IS the playback buffer (same chunks, no copy,
+                // no realloc, no file touch). With loop enabled the deck becomes
+                // looping playback of what it just captured IN THIS BLOCK — the
+                // instant turnaround. Otherwise → idle, buffer retained.
+                uint32_t le = 0; uint64_t ls = 0, lend = 0;
+                d.readLoop(le, ls, lend);
+                const uint64_t len = d.frames.load(std::memory_order_acquire);
+                if (le != 0 && len > 0) {
+                    // A loop region set before/while recording is honored if it
+                    // fits the captured length; otherwise the take IS the loop.
+                    if (!(ls < lend && lend <= len)) d.publishLoop(1u, 0, len);
+                    d.playhead = static_cast<double>(ls < lend && lend <= len ? ls : 0);
+                    d.pendingReset.store(0, std::memory_order_relaxed);
+                    d.state.store(static_cast<uint32_t>(wz::DeckState::looping),
+                                  std::memory_order_release);
+                } else {
+                    d.state.store(static_cast<uint32_t>(wz::DeckState::idle),
+                                  std::memory_order_release);
+                }
+            }
         }
         if (d.state.load(std::memory_order_acquire) != static_cast<uint32_t>(wz::DeckState::recording))
             continue;

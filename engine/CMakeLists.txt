@@ -74,6 +74,10 @@ target_include_directories(asrc_drift_test PRIVATE src)
 target_link_libraries(asrc_drift_test PRIVATE wz_engine samplerate)
 add_test(NAME asrc_drift_test COMMAND asrc_drift_test)
 
+add_executable(deck_handoff_test tools/deck_handoff_test.cpp)
+target_link_libraries(deck_handoff_test PRIVATE wz_engine)
+add_test(NAME deck_handoff_test COMMAND deck_handoff_test)
+
 add_executable(source_strip_test tools/source_strip_test.cpp)
 target_link_libraries(source_strip_test PRIVATE wz_engine)
 add_test(NAME source_strip_test COMMAND source_strip_test)
