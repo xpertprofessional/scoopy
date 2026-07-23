@@ -8,6 +8,7 @@
 // else here is a bug.
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "CommandDispatch.h"
 #include "WZProtocol.h"
 #include "WebResources.h"
 #include "wz_engine.h"
@@ -29,7 +30,12 @@ provideResource(const juce::String& path) {
 
 } // namespace
 
-class MainWindow final : public juce::DocumentWindow {
+// Hosts the WebView and owns the three WZP transport paths:
+//   Command    — native function "wzCommand" -> CommandDispatch
+//   ParamWrite — event "wzParam" {id, value}, keyed by NAME across the ABI
+//   HotFrame   — 30 Hz timer emitting "wzHotFrame" as a flat Float64 array
+class MainWindow final : public juce::DocumentWindow,
+                         private juce::Timer {
 public:
     explicit MainWindow(wz_engine* engineToUse)
         : juce::DocumentWindow("Wizard",
@@ -39,7 +45,26 @@ public:
         webView = std::make_unique<juce::WebBrowserComponent>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
-                .withResourceProvider(provideResource));
+                .withResourceProvider(provideResource)
+                .withNativeFunction(
+                    "wzCommand",
+                    [this](const juce::Array<juce::var>& args,
+                           juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+                        const auto method = args.size() > 0 ? args[0].toString() : juce::String();
+                        const auto params = args.size() > 1 ? args[1] : juce::var();
+                        complete(wizard::command::dispatch(engine, method, params));
+                    })
+                .withEventListener(
+                    "wzParam", [this](juce::var payload) {
+                        // Keyed by NAME across the ABI (never a hardcoded id):
+                        // JS resolved the name at boot, the engine resolves it
+                        // again here. Channel index arrives with the mixer (P1);
+                        // master-global params use channel 0.
+                        const auto name = payload.getProperty("id", juce::var()).toString();
+                        const auto value = static_cast<double>(payload.getProperty("value", 0.0));
+                        const auto id = wz_param_id_for_name(name.toRawUTF8());
+                        if (id != WZ_PARAM_UNKNOWN) wz_param_set(engine, 0, id, value);
+                    }));
 
         setUsingNativeTitleBar(true);
         setContentNonOwned(webView.get(), false);
@@ -48,16 +73,24 @@ public:
         setVisible(true);
 
         webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
-        // The engine is wired into the WebView's command/param/hotframe paths in
-        // P0-07; held here so that increment is a pure addition.
-        juce::ignoreUnused(engine);
+        startTimerHz(30);
     }
+
+    ~MainWindow() override { stopTimer(); }
 
     void closeButtonPressed() override {
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
 
 private:
+    void timerCallback() override {
+        double frame[wz::protocol::hotframe::kFrameLength] = {};
+        const auto n = wz_engine_hotframe(engine, frame, wz::protocol::hotframe::kFrameLength);
+        juce::Array<juce::var> values;
+        for (uint32_t i = 0; i < n; ++i) values.add(frame[i]);
+        webView->emitEventIfBrowserIsVisible("wzHotFrame", juce::var(values));
+    }
+
     wz_engine* engine;
     std::unique_ptr<juce::WebBrowserComponent> webView;
 };

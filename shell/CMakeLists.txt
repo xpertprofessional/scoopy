@@ -13,6 +13,23 @@ add_executable(web_resources_test tools/web_resources_test.cpp)
 target_link_libraries(web_resources_test PRIVATE wz_webresources)
 add_test(NAME web_resources_test COMMAND web_resources_test)
 
+# Command JSON-RPC dispatch, shared by the app and its headless test. wz_engine
+# is PRIVATE (CommandDispatch.h only forward-declares it): consumers that create
+# engines link wz_engine directly, keeping it on the final link line once.
+add_library(wz_command STATIC src/CommandDispatch.cpp)
+target_include_directories(wz_command PUBLIC src generated)
+target_link_libraries(wz_command
+    PUBLIC juce::juce_core
+    PRIVATE wz_engine juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+# The test creates engines directly, but wz_command already propagates the
+# static wz_engine onto the link line (PRIVATE deps of a static lib can't be
+# hidden), so linking it again would just warn about a duplicate library.
+add_executable(command_dispatch_test tools/command_dispatch_test.cpp)
+target_include_directories(command_dispatch_test PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include)
+target_link_libraries(command_dispatch_test PRIVATE wz_command)
+add_test(NAME command_dispatch_test COMMAND command_dispatch_test)
+
 juce_add_gui_app(Wizard
     PRODUCT_NAME "Wizard"
     COMPANY_NAME "Wizard"
@@ -37,6 +54,7 @@ target_compile_definitions(Wizard PRIVATE
 target_link_libraries(Wizard PRIVATE
     wz_engine # Main.cpp calls the engine directly
     wz_webresources
+    wz_command # Main.cpp's wzCommand native fn dispatches through this
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
