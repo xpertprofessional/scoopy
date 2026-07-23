@@ -841,7 +841,7 @@ uint32_t wz_engine_hotframe_length(const wz_engine* e) {
     auto* w = e->world.load(std::memory_order_acquire);
     const uint32_t channels = w != nullptr ? static_cast<uint32_t>(w->channels.size()) : 0;
     const uint32_t decks = w != nullptr ? w->deckCount : 0;
-    return kHotFrameLength + channels * 7u + decks * 7u;
+    return kHotFrameLength + channels * 7u + decks * 8u;
 }
 
 uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) {
@@ -899,8 +899,13 @@ uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) 
             out[idx++] = static_cast<double>(ls);
             out[idx++] = static_cast<double>(lend);
             out[idx++] = d.rate.load(std::memory_order_relaxed);
-            out[idx++] = 0.0;
-            out[idx++] = 0.0;
+            // P3 record telemetry: committed buffer length, drain backlog (0..1),
+            // and the D-WZ-DECK-01 cap indicator.
+            out[idx++] = static_cast<double>(d.frames.load(std::memory_order_acquire));
+            const auto& drain = e->deckDrain[di];
+            const double cap = static_cast<double>(drain.capacityFrames);
+            out[idx++] = cap > 0.0 ? static_cast<double>(drain.fillFrames()) / cap : 0.0;
+            out[idx++] = static_cast<double>(d.recCapReached.load(std::memory_order_relaxed));
         }
     }
     return idx;

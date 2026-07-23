@@ -90,9 +90,9 @@ int main() {
     for (int i = 0; i < 256; ++i) CHECK(std::isfinite(l[i]) && std::isfinite(r[i]));
 
     // HotFrame now carries 1 channel + 1 deck block.
-    CHECK(wz_engine_hotframe_length(e) == 8 + 7 + 7);
-    std::vector<double> hot(8 + 14, 0.0);
-    CHECK(wz_engine_hotframe(e, hot.data(), 8 + 14) == 8 + 14);
+    CHECK(wz_engine_hotframe_length(e) == 8 + 7 + 8); // deck block grew to 8 (recordCapReached)
+    std::vector<double> hot(8 + 7 + 8, 0.0);
+    CHECK(wz_engine_hotframe(e, hot.data(), 8 + 7 + 8) == 8 + 7 + 8);
     CHECK(hot[8 + 7 + 0] == 1.0); // deck state: looping
     CHECK(hot[8 + 7 + 4] == 1.0); // rate 1.0 until P4
 

@@ -5,7 +5,7 @@
 
 namespace wz::protocol {
 
-inline constexpr std::int32_t kSchemaVersion = 7;
+inline constexpr std::int32_t kSchemaVersion = 8;
 
 // ParamWrite atomics. JS resolves ids BY NAME at boot (never hardcodes
 // integers); this enum is for the C++ side only.
@@ -59,7 +59,8 @@ inline constexpr std::uint32_t k_loopEnd = 3;
 inline constexpr std::uint32_t k_rate = 4;
 inline constexpr std::uint32_t k_recordLengthSamples = 5;
 inline constexpr std::uint32_t k_recordDrainFill = 6;
-inline constexpr std::uint32_t kStride = 7;
+inline constexpr std::uint32_t k_recordCapReached = 7;
+inline constexpr std::uint32_t kStride = 8;
 } // namespace deck_block
 } // namespace hotframe
 
@@ -73,8 +74,12 @@ inline constexpr const char* kMethodNames[] = {
     "publishWorld",
     "deckLoadFile",
     "deckTrigger",
+    "deckRecordStart",
+    "deckRecordStop",
+    "listTakes",
+    "deckLoadTake",
     "deckSetLoop",
 };
-inline constexpr std::uint32_t kMethodCount = 9;
+inline constexpr std::uint32_t kMethodCount = 13;
 
 } // namespace wz::protocol

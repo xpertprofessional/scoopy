@@ -90,8 +90,8 @@ int main() {
     CHECK(l[0] == 64.0f);
     CHECK(l[35] == 99.0f);
     CHECK(l[36] == 0.0f); // finished mid-block: exact cutoff, no wrap
-    std::vector<double> hot(8 + 14, 0.0);
-    CHECK(wz_engine_hotframe(e, hot.data(), 8 + 14) == 8 + 14);
+    std::vector<double> hot(8 + 7 + 8, 0.0); // 1 channel block (7) + 1 deck block (8)
+    CHECK(wz_engine_hotframe(e, hot.data(), 8 + 7 + 8) == 8 + 7 + 8);
     CHECK(hot[8 + 7 + 0] == 0.0); // deck state back to idle
 
     // Retrigger from idle starts a oneShot from the region start.

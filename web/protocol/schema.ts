@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -69,8 +69,9 @@ export const DECK_BLOCK_FIELDS = [
   'loopStart',
   'loopEnd',
   'rate', // signed varispeed (engine plays 1.0 until P4)
-  'recordLengthSamples', // P3
-  'recordDrainFill', // P3
+  'recordLengthSamples', // P3: committed record-buffer length, live
+  'recordDrainFill', // P3: drain-ring backlog (0..1) — file writer falling behind
+  'recordCapReached', // P3: 1 when the 256 MB/deck cap stopped this recording (D-WZ-DECK-01)
 ] as const
 
 export const HOT_FRAME_LENGTH = HOT_FRAME_SCALARS.length // scalar section only
@@ -254,6 +255,25 @@ export function makeChannel(key: string, name: string, source: SourceRef): Chann
 }
 
 /**
+ * A recorded artifact (CONCEPT §3). `startEngineSample` is the Law C-2 anchor:
+ * any two takes realign by the DELTA of their stamps — a subtraction, not an
+ * editing session. The same stamp is written into the BWF bext TimeReference,
+ * so a take carries its anchor even outside a session.
+ */
+export const TakeSchema = z
+  .object({
+    deckId: z.number().int().min(0).max(7),
+    path: z.string(),
+    startEngineSample: z.number().int().nonnegative(),
+    frames: z.number().int().nonnegative(),
+    sampleRate: z.number().positive(),
+    channels: z.number().int().positive(),
+    sourceDesc: z.string(),
+  })
+  .strict()
+export type Take = z.infer<typeof TakeSchema>
+
+/**
  * Command registry: method → { params, result } zod schemas.
  * The C++ side gets the method-name table; TS gets full typing.
  */
@@ -345,6 +365,55 @@ export const COMMANDS = {
       })
       .strict(),
     result: z.object({}).strict(),
+  },
+  // --- recording (P3) ------------------------------------------------------
+  // Arm + begin capturing the deck's source. The host opens the take file and
+  // begins draining; the engine stamps the exact engine sample capture began.
+  deckRecordStart: {
+    params: z
+      .object({
+        deck: z.number().int().min(0).max(7),
+        // Engine input channels to capture (chan1 = -1 for mono).
+        chan0: z.number().int().min(-1),
+        chan1: z.number().int().min(-1),
+        sourceDesc: z.string(), // human label, stored in the sidecar
+      })
+      .strict(),
+    result: z.object({ ok: z.boolean(), error: z.string() }).strict(),
+  },
+  // Stop capturing. Returns the take's startEngineSample (Law C-2 anchor) and
+  // the finalized Take. If the deck's loop is enabled it is ALREADY looping the
+  // captured buffer by the time this returns (Law C-3 — the handoff happened in
+  // the engine, in the same render block as the stop).
+  deckRecordStop: {
+    params: z.object({ deck: z.number().int().min(0).max(7) }).strict(),
+    result: z
+      .object({
+        ok: z.boolean(),
+        startEngineSample: z.number().int().nonnegative(),
+        take: TakeSchema.nullable(),
+      })
+      .strict(),
+  },
+  // The session's takes, newest last. Click one to load it into any deck.
+  listTakes: {
+    params: z.object({}).strict(),
+    result: z.object({ takes: z.array(TakeSchema) }).strict(),
+  },
+  // Load a previously recorded take into a deck (same path as deckLoadFile but
+  // by take path, no dialog).
+  deckLoadTake: {
+    params: z
+      .object({ deck: z.number().int().min(0).max(7), path: z.string().min(1) })
+      .strict(),
+    result: z
+      .object({
+        ok: z.boolean(),
+        channels: z.number().int().nonnegative(),
+        engineFrames: z.number().int().nonnegative(),
+        error: z.string(),
+      })
+      .strict(),
   },
   // Half-open [startSample, endSample); published atomically (seqlock — the
   // render thread never observes a torn pair). Dispatch lands P1-07.

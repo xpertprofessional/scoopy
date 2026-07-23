@@ -11,6 +11,7 @@
 #include "AudioIO.h"
 #include "CommandDispatch.h"
 #include "Decoder.h"
+#include "RecordService.h"
 #include "WZProtocol.h"
 #include "WebResources.h"
 #include "wz_engine.h"
@@ -49,6 +50,10 @@ public:
         // A failure (no device / unsupported rate) leaves the app running,
         // silent; the boot tone simply won't be audible until a device opens.
         deviceError = audioIO.open(wz_engine_sample_rate(engine));
+        // Takes live beside the session; a dedicated dir until P7's package.
+        recorder.start(engine,
+                       juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                           .getChildFile("Wizard/Takes").getFullPathName().toStdString());
         webView = std::make_unique<juce::WebBrowserComponent>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
@@ -64,6 +69,11 @@ public:
                         // (parlante's chooseAndLoadFile precedent).
                         if (method == "getDeviceInfo") {
                             complete(deviceInfoReply());
+                            return;
+                        }
+                        if (method == "deckRecordStart" || method == "deckRecordStop" ||
+                            method == "listTakes" || method == "deckLoadTake") {
+                            complete(recordCommand(method, params));
                             return;
                         }
                         if (method == "listDevices") {
@@ -169,6 +179,75 @@ private:
         return juce::var(a);
     }
 
+    // Record commands are shell-owned: they need the host RecordService (file
+    // paths, drain thread) which the pure dispatcher must not know about.
+    juce::var recordCommand(const juce::String& method, const juce::var& params) {
+        auto* result = new juce::DynamicObject();
+        if (method == "deckRecordStart") {
+            const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+            const auto c0 = static_cast<int32_t>(static_cast<int>(params.getProperty("chan0", 0)));
+            const auto c1 = static_cast<int32_t>(static_cast<int>(params.getProperty("chan1", -1)));
+            const auto desc = params.getProperty("sourceDesc", "").toString();
+            wz_deck_set_record_source(engine, deck, c0, c1);
+            wz_deck_record_service(engine); // pre-allocate before capture begins
+            wz_deck_record_start(engine, deck);
+            const bool ok = recorder.beginTake(deck, c1 >= 0 ? 2u : 1u,
+                                               wz_engine_sample_rate(engine),
+                                               0 /* stamped by the engine */,
+                                               desc.toStdString());
+            result->setProperty("ok", ok);
+            result->setProperty("error", ok ? "" : "could not open take file");
+        } else if (method == "deckRecordStop") {
+            const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+            const auto stamp = wz_deck_record_stop(engine, deck);
+            const bool ok = recorder.endTake(deck);
+            result->setProperty("ok", ok);
+            result->setProperty("startEngineSample", static_cast<juce::int64>(stamp));
+            const auto all = recorder.takes();
+            result->setProperty("take", all.empty() ? juce::var()
+                                                    : takeToVar(all.back()));
+        } else if (method == "listTakes") {
+            juce::Array<juce::var> arr;
+            for (const auto& t : recorder.takes()) arr.add(takeToVar(t));
+            result->setProperty("takes", juce::var(arr));
+        } else if (method == "deckLoadTake") {
+            const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+            const auto path = params.getProperty("path", "").toString();
+            const auto audio = wizard::decode::loadForDeck(juce::File(path),
+                                                          wz_engine_sample_rate(engine));
+            bool loaded = false;
+            if (audio.ok) {
+                std::vector<const float*> planar;
+                planar.reserve(audio.data.size());
+                for (const auto& ch : audio.data) planar.push_back(ch.data());
+                audioIO.whileSuspended([&] {
+                    loaded = wz_deck_load(engine, deck, audio.channels, audio.engineFrames(),
+                                          planar.data(), wz_engine_sample_rate(engine)) == 1;
+                });
+            }
+            result->setProperty("ok", loaded);
+            result->setProperty("channels", static_cast<int>(audio.channels));
+            result->setProperty("engineFrames", static_cast<juce::int64>(audio.engineFrames()));
+            result->setProperty("error", loaded ? "" : audio.error);
+        }
+        auto* env = new juce::DynamicObject();
+        env->setProperty("ok", true);
+        env->setProperty("result", juce::var(result));
+        return juce::var(env);
+    }
+
+    static juce::var takeToVar(const wizard::record::TakeInfo& t) {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("deckId", static_cast<int>(t.deckId));
+        o->setProperty("path", juce::String(t.path));
+        o->setProperty("startEngineSample", static_cast<juce::int64>(t.startEngineSample));
+        o->setProperty("frames", static_cast<juce::int64>(t.frames));
+        o->setProperty("sampleRate", t.sampleRate);
+        o->setProperty("channels", static_cast<int>(t.channels));
+        o->setProperty("sourceDesc", juce::String(t.sourceDesc));
+        return juce::var(o);
+    }
+
     juce::var listDevicesReply() const {
         auto* result = new juce::DynamicObject();
         result->setProperty("inputs", strArray(audioIO.availableInputDevices()));
@@ -238,7 +317,8 @@ private:
     wz_engine* engine;
     std::vector<double> hotFrameBuf; // grown-only hotframe staging
     std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
-    wizard::host::AudioIO audioIO; // host device layer (host/), drives render
+    wizard::host::AudioIO audioIO;
+    wizard::record::Service recorder; // P3: drain thread -> take files // host device layer (host/), drives render
     juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;
 };

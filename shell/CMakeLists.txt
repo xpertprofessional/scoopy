@@ -62,6 +62,7 @@ target_link_libraries(Wizard PRIVATE
     wz_command # Main.cpp's wzCommand native fn dispatches through this
     wz_audio_io # host/ duplex device layer: drives wz_engine_render
     wz_decode   # deckLoadFile: decode + SINC_BEST resample (D-WZ-DECKSRC-01)
+    wz_record   # P3: drain thread -> crash-safe take files
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
