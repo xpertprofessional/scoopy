@@ -78,6 +78,10 @@ add_executable(deck_handoff_test tools/deck_handoff_test.cpp)
 target_link_libraries(deck_handoff_test PRIVATE wz_engine)
 add_test(NAME deck_handoff_test COMMAND deck_handoff_test)
 
+add_executable(deck_stamp_test tools/deck_stamp_test.cpp)
+target_link_libraries(deck_stamp_test PRIVATE wz_engine)
+add_test(NAME deck_stamp_test COMMAND deck_stamp_test)
+
 add_executable(source_strip_test tools/source_strip_test.cpp)
 target_link_libraries(source_strip_test PRIVATE wz_engine)
 add_test(NAME source_strip_test COMMAND source_strip_test)
