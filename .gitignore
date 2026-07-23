@@ -31,3 +31,6 @@ web/dist/
 
 # JUCE / libsamplerate are committed deliberately when added (ThirdParty/) —
 # do not ignore them.
+
+# clangd compile DB symlink (points into ignored build/)
+/compile_commands.json
