@@ -141,6 +141,66 @@ groups for channel-kind accents and the record/feedback lamps only. `D-WZ-SHARED
 (rule of three → extract `@suite/design-tokens`) is decided after P2, once this third copy
 has proven itself.
 
+## D-WZ-PAN-01 · 2026-07-23 · Pan law: −3 dB constant-power
+
+**Decision:** Every channel strip pans with the **−3 dB constant-power (sine/cosine)
+law**: `gainL = cos(θ)`, `gainR = sin(θ)`, `θ = (pan+1)·π/4`. Center = −3 dB per side.
+
+**Rationale:** Perceived loudness stays constant while a source moves — the correct
+behavior for a live performance mixer, and the de-facto industry default (analog
+consoles, Logic, Live). Mono-sum of a centered source lands at unity, so no center
+build-up feeds the watchdog.
+
+**Consequences:** Bakes into `channel.cpp` summing math (float64 per D-WZ-DSP-01) and
+into every null-test fixture from P1 onward. The pan smoother rides the D-WZ-RAMP-01
+constant.
+
+## D-WZ-FADER-01 · 2026-07-23 · Fader taper & range: −∞..+6 dB, parlante mapping
+
+**Decision:** Channel and main faders run **−∞ to +6 dB** with parlante's audio-taper
+mapping (unity at 0.75 of the throw; bottom of throw = true −∞ mute). One curve family
+across the suite.
+
+**Rationale:** Suite coherence — one muscle memory across Parlante and Wizard. +6 dB is
+enough boost for a quiet tap without handing a feedback-capable graph more rope than the
+watchdog's +6 dBFS RMS trip point.
+
+**Consequences:** The fader→dB curve is a shared web-side utility + an engine-side gain
+application; the two are pinned against each other by a fixture. UI fader rendering gets
+a unity detent at 0.75.
+
+## D-WZ-RAMP-01 · 2026-07-23 · Click-free ramp: 10 ms raised-cosine
+
+**Decision:** One engine-wide smoothing constant: **10 ms**. Mute/unmute is a
+raised-cosine gain ramp over 10 ms; fader and pan changes settle through a one-pole
+smoother with ~10 ms time constant. No parameter reaches the summing math as a step.
+
+**Rationale:** Scoopy's `SL_T_MIX_MUTED` lesson (hard switches click) + parlante's
+raised-cosine declick family. 10 ms is inaudible as a fade yet guaranteed click-free on
+bass-heavy material; 5 ms can thump, 20 ms feels soft when the mute button is a
+performance gesture.
+
+**Consequences:** 480 samples at 48 k. `channel.cpp` owns the smoothers; fixtures assert
+no sample-to-sample gain step exceeds the ramp's slope bound. Applies to every future
+switched path (solo, monitor assign, insert bypass).
+
+## D-WZ-DECKSRC-01 · 2026-07-23 · Deck file loading: resample at load, SINC_BEST
+
+**Decision:** Files whose rate differs from the engine rate are resampled **once, at
+load time, off the audio thread**, with libsamplerate **SINC_BEST_QUALITY**, into the
+deck buffer at the engine rate. Playback is a straight buffer read — zero per-block SRC
+on the render path.
+
+**Rationale:** D-WZ-RATE-01's clean-path principle extended to decks: the live path
+carries no resampler. Parlante D-05 precedent — best quality for anything baked. Keeps
+Law C-3's symmetry intact: buffer rate == engine rate == take rate, so record→loop
+handoff and take realignment stay sample-exact with no rate bookkeeping.
+
+**Consequences:** Load of a long mismatched-rate file costs seconds (off-thread,
+progress surfaced); RAM holds the converted copy (input to the D-WZ-DECK-01 memory
+decision before P3). Live varispeed (P4) remains a separate engine-side streaming SRC
+regardless of source rate.
+
 ---
 
 ## Parked — awaiting decision (do not block earlier phases)

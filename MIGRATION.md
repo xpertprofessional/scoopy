@@ -9,25 +9,44 @@
 
 ## Top-level roadmap (read FIRST every orient — the reflected view; update at phase entry/exit)
 
-- **Now — P0 walking skeleton COMPLETE, at gate P0-G1 (awaiting user sign-off).** Repo stood
-  up on the parlante-next template (`engine`/`host`/`shell`/`web`, keyed C ABI, ledger,
-  signed decisions). All 12 build rows + P0-R done; **every gate green from commit 1**
-  (protocol · abi · check:tokens · webdist · ctest). Walking skeleton: JUCE shell boots +
-  serves the bundle, WZP transport round-trips, a duplex device drives the engine, a metered
-  boot tone proves device→engine→meter→UI. Seven decisions signed
-  (D-WZ-NAME/RATE/CLOCK/DSP/CORE-01/CORE-02/DESIGN-01). **Schema v2.** P0-G1 needs the user
-  to (1) hear the boot tone + see the meter move, (2) confirm Linux boot, (3) create a
-  GitHub remote so CI runs.
-- **Next — P1 mixer slice (same-clock only).** Channels bound to hardware inputs + one deck
-  playing a decoded file; faders/pan/mute/sends; main + monitor buses; strip meters;
-  routing matrix (DAG-only). No ASRC yet — everything on the device clock. First rows:
-  P0-11a (engine block = device quantum) + P1-metering (per-strip meters on HotSurface).
-  **PD design identity** interleaves after P1.
-- **Later — P2 capture + ASRC** (the drift fixture is the centerpiece; `wz_capture.h` +
-  fake backend → macOS taps → ASRC → Linux PipeWire) · **P3 deck recorder** (Law C-3
-  gapless handoff + crash-safe BWF) · **P4 playback composer** (1–8 decks, signed
-  varispeed, loopback + watchdog, 8-bus spatial map, strip mode) · **P5 virtual device**
-  (clean-room AudioServerPlugIn) · **P6 plugins** · **P7 sessions** · **P8 release**.
+- **Now — P1 mixer slice OPEN (entered 2026-07-23; P0-G1 signed on macOS — user heard the
+  boot tone).** Same-clock only: channels bound to duplex hardware inputs + one deck
+  playing a decoded file; faders/pan/mute/solo; main + monitor buses; per-strip meters on
+  HotSurface; routing matrix (DAG-only). No ASRC — everything on the device clock. Four
+  P1 audio decisions signed 2026-07-23: **D-WZ-PAN-01** (−3 dB constant-power),
+  **D-WZ-FADER-01** (−∞..+6 dB parlante taper, unity at 0.75), **D-WZ-RAMP-01** (10 ms
+  raised-cosine mute / one-pole smoothers), **D-WZ-DECKSRC-01** (resample at load,
+  SINC_BEST, zero SRC on the live path). Build order P1-01 → P1-09 below; the boot tone
+  is DELETED in P1-04 (replaced by real summing + metering). **Gate P1-G1: mix mic + file;
+  cue-monitor on device channels 3/4.**
+- **Later — phase by phase, each with its centerpiece fixture and its blocking decision:**
+  - **P2 capture + ASRC.** Order: `wz_capture.h` + deterministic fake backend (fixtures
+    first) → macOS taps (open/close/format-change/process-vanish lifecycle) → source rings
+    + ASRC PI controller (**centerpiece: `asrc_drift_test`, 48000 vs 48000.3 Hz synthetic
+    clocks, simulated hour, <1 ms**) → source picker + TCC UX (needs P0-R findings) →
+    Linux PipeWire backend (the abstraction proof; needs P0-G1-LINUX). Listening gate:
+    zipper-free small ratio walks, else the polyphase fallback (risk register).
+  - **P3 deck recorder.** Record with live monitor; **centerpiece: `deck_handoff_test` —
+    record-stop → looping playback, gapless, sample-exact (Law C-3)**; parallel crash-safe
+    BWF drain (`wav_killtest`: SIGKILL mid-record → recoverable); engine-sample stamps +
+    "align to deck N" (Law C-2). **Blocked on D-WZ-DECK-01 (deck RAM policy) — sign before
+    build.**
+  - **P4 playback composer.** Full 1–8 deck rack; signed varispeed incl. reverse;
+    LoopbackBus + watchdog (**centerpiece: `watchdog_test` — feedback ramp engages limiter
+    within budget**); 8-bus output map + spatial UI; **strip mode as its own increment**
+    (compact-first deck rack; shell adds only window constraints + always-on-top).
+  - **P5 virtual device.** Clean-room AudioServerPlugIn from Apple's sample (GPL sources
+    read-for-API-understanding ONLY — signed); sign/notarize/install scripts;
+    channel-count decision row (2ch vs 2×2ch vs 16ch). Gate: ScoopyLoops selects "Wizard
+    Out" and appears as a strip. *Parallelizable with P4.*
+  - **P6 plugins.** Out-of-process scanner (Scoopy pattern), 4 inserts/strip, 4 FX
+    send/returns as ordinary Channels. **Blocked on D-WZ-PDC-01 — sign before build.**
+  - **P7 sessions.** STORED-zip package (`session.json` + `Takes/` + `Samples/`),
+    preserve-don't-drop golden corpus, autosave + kill-restore soak.
+  - **P8 release.** Notarized DMG bundling the driver pkg; Linux deb/flatpak; PD identity
+    gate (third-wearer contract applied).
+  - **PD design identity** interleaves after P1. **D-WZ-SHARED-01** (extract
+    @suite/design-tokens + slp-codegen) decided after P2.
 - **Blocked on user:** P0-G1 sign-off — (1) launch Wizard + confirm boot tone/meter,
   (2) Linux visual boot, (3) create a GitHub remote so CI proves Linux · P0-R (AudioCap/TCC
   spike — runbook written at `docs/specs/capture.md`, user fills the blanks).
@@ -54,7 +73,25 @@
 | P1-metering | build | Move per-strip meters off the React store onto the HotSurface canvas (one rAF loop, ≤2 ms/frame budget). P0-11's store-routed main peak is the walking-skeleton path only — the real per-channel/bus meters render outside React | todo | seeded from P0-11 |
 | P0-R | spec | docs/specs/capture.md: AudioCap/TCC empirical runbook with blanks — exact prompt text, when it fires, tccutil reset behavior, denial recovery, NSAudioCaptureUsageDescription hand-typing, signing requirement. User fills the blanks; loop skips it | awaiting-user | written. ROADMAP "P0-R first" reinterpreted as parallel per approved plan — no P0/P1 code depends on TCC; first dependent code is P2 taps |
 | P0-AUDIT | spec | Phase audit: diff P0 specs/CONFIRMs against built rows, materialize every gap as a row before offering P0-G1 | done | all P0-01..12 done; follow-ups materialized (P0-11a, P1-metering); only awaiting-user rows left (P0-R, remote). No P0 gaps unrowed |
-| P0-G1 | gate | **Phase gate (human):** shell boots on macOS + Linux, sound out, meters move, all gates green | awaiting-signoff | macOS: clean Release configure+build+ctest green; app builds + boots (window created at boot); all 6 web gates green in CI form. NEEDS USER: (1) launch Wizard, click "Play boot tone" → confirm 440 Hz out + main-peak readout moves; (2) Linux visual boot (CI builds but can't run a GUI); (3) create GitHub remote so CI proves Linux. Then P1 opens |
+| P0-G1 | gate | **Phase gate (human):** shell boots on macOS + Linux, sound out, meters move, all gates green | done (macOS) | **SIGNED 2026-07-23: user heard the boot tone on macOS** — device→engine→meter→UI path confirmed end-to-end. Clean Release build + ctest 4/4 + all 6 web gates green. Remaining legs carried as their own rows: P0-G1-LINUX (visual boot) + P0-G1-CI (GitHub remote) — neither blocks P1 (macOS is the primary platform; Linux is the P2 abstraction proof) |
+| P0-G1-LINUX | gate | Linux visual boot check (CI builds but cannot run a GUI) | awaiting-user | do before P2's PipeWire backend lands; not a P1 blocker |
+| P0-G1-CI | gate | Create GitHub remote + push so the CI matrix actually runs (outward-facing — user's call) | awaiting-user | local CI-form runs green; remote proves ubuntu leg |
+
+## Phase P1 — mixer slice (same-clock only)
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P1-01 | spec | `docs/specs/routing.md`: channel-strip param set (gain/pan/mute/solo now; sends/arm/monitor-switch fields reserved), bus set (main + monitor now; fx1..4 + ≤8 user outputs reserved), pan/fader/ramp math transcribed from D-WZ-PAN/FADER/RAMP-01, DAG rule (loopback = P4), HotFrame per-channel block layout, same-clock input rule | todo | spec BEFORE build (port-by-spec law) |
+| P1-02 | schema | Patch v3: Channel/Bus/Deck(playback-stub)/OutputMap schemas, WorldPublish envelope (strict, preserve-don't-drop), per-channel ParamWrite (name + channel index), commands: publishWorld, deckLoadFile, deckTrigger, transport-ish deck state in HotFrame per-deck block | todo | |
+| P1-03 | build | Engine world builder: wz_world_begin/channel_begin/set/end/commit — RCU snapshot install (Scoopy sl_snapshot_* pattern), per-channel param table, precomputed acyclic render order (trivial in P1: channels → buses) | todo | |
+| P1-04 | build | Engine summing: channel DSP (D-WZ-PAN-01 pan, D-WZ-FADER-01 gain, D-WZ-RAMP-01 smoothers — no param reaches summing as a step), float64 accumulate (D-WZ-DSP-01) into main + monitor, per-strip peak/RMS, HotFrame per-channel blocks + real monitor peaks. **DELETE the boot tone** (setTestTone command + engine path + UI toggle) | todo | the delete is part of this row — no dead skeleton affordances |
+| P1-05 | fixture | Summing null-tests: pan-law table exact to 1e-12, ramp slope bound (no step > raised-cosine slope), 2-strip sum vs double-precision reference, NaN/denormal guards, fader-curve web↔engine pin fixture | todo | ctest + vitest twin |
+| P1-06 | build | Host same-clock input feed: duplex input channels → deviceInput Sources → strips inside the same callback (no rings, no ASRC — same clock, D-WZ-RATE-01); input enumeration into the world; audioDeviceSelection capability true | todo | |
+| P1-07 | build | Deck v0 (playback only): host Decoder (JUCE AudioFormatManager) → off-thread SINC_BEST resample at load (D-WZ-DECKSRC-01, progress surfaced) → wz_deck_load; engine deck unit idle→looping/oneShot (wz_deck_trigger, seqlock loop spec); deckLoadFile + deckTrigger commands; record states are P3 | todo | |
+| P1-08 | build | Web console v0: channel rack (fader w/ unity detent at 0.75, pan, mute/solo, HotSurface strip meters ≤2 ms/frame), sources browser v0 (device inputs + file-open), deck cell (load/play/loop), main+monitor meters; Patch store + WorldPublish wiring | todo | consumes P1-metering row |
+| P1-09 | build | Routing matrix v0 (channels × main/monitor/outputs, DAG-validated at edit time, loopback cells absent until P4) + output map v0 (bus → device channel pairs; monitor → device 3/4 when present) | todo | |
+| P1-AUDIT | spec | Phase audit: diff P1 spec/CONFIRMs vs built rows; materialize gaps | todo | before the gate, always |
+| P1-G1 | gate | **Phase gate (human): mix a mic and a file; cue-monitor on device channels 3/4** | todo | |
 
 ## Parked decisions
 
