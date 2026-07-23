@@ -130,6 +130,9 @@ struct SourceRing {
     uint64_t fillFrames() const {
         return head.load(std::memory_order_acquire) - tail.load(std::memory_order_acquire);
     }
+    // Monotonic totals — no sawtooth, for measuring consumption/feed RATES.
+    uint64_t consumedTotal() const { return tail.load(std::memory_order_acquire); }
+    uint64_t writtenTotal() const { return framesWritten.load(std::memory_order_relaxed); }
 };
 
 } // namespace wz

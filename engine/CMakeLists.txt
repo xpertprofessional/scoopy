@@ -33,7 +33,8 @@ endif()
 
 add_library(wz_engine STATIC
     src/wz_engine.cpp
-    src/fader.cpp)
+    src/fader.cpp
+    src/asrc.cpp)
 target_include_directories(wz_engine PUBLIC include)
 # libsamplerate is an implementation detail of the engine (ASRC/varispeed);
 # PRIVATE so its header doesn't leak through the C ABI, but the static lib still
@@ -66,6 +67,12 @@ add_test(NAME deck_test COMMAND deck_test)
 add_executable(ring_test tools/ring_test.cpp)
 target_link_libraries(ring_test PRIVATE wz_engine)
 add_test(NAME ring_test COMMAND ring_test)
+
+# The ASRC drift soak reads the engine-internal asrc.h + libsamplerate directly.
+add_executable(asrc_drift_test tools/asrc_drift_test.cpp)
+target_include_directories(asrc_drift_test PRIVATE src)
+target_link_libraries(asrc_drift_test PRIVATE wz_engine samplerate)
+add_test(NAME asrc_drift_test COMMAND asrc_drift_test)
 
 # Smoke: proves the vendored libsamplerate builds, links, and resamples with
 # SINC_BEST before the ASRC/varispeed path (P2) is built on it.
