@@ -201,6 +201,49 @@ progress surfaced); RAM holds the converted copy (input to the D-WZ-DECK-01 memo
 decision before P3). Live varispeed (P4) remains a separate engine-side streaming SRC
 regardless of source rate.
 
+## D-WZ-ASRC-01 · 2026-07-23 · Live-tap ASRC converter tier: SINC_BEST always
+
+**Decision:** Every source that needs asynchronous sample-rate conversion — process
+taps, the virtual-device input, any independently-clocked source — runs its live
+streaming ASRC at **libsamplerate `SRC_SINC_BEST_QUALITY`** (~145 dB SNR), uniformly. No
+per-ratio tier switching; the near-unity drift-correction case and the genuine
+rate-conversion case (e.g. 44.1→48 kHz) both use best quality.
+
+**Rationale:** The user prioritized uniform mastering-grade audio over
+maximum-concurrent-taps. One converter tier is simpler (no re-pick on `formatChanged`, no
+branch that could pick wrong), removes a class of "why does this tap sound different" bugs,
+and keeps every captured signal at the same fidelity as the hardware-input path. The CPU
+cost is bounded by the tap cap (D-WZ-TAPCAP-01), and libsamplerate SINC_BEST at
+near-unity ratios is cheaper than at large ratios (little actual filtering), so the drift
+case is not as expensive as the worst case.
+
+**Consequences:** `asrc.cpp` instantiates one `SRC_STATE` per source at
+`SRC_SINC_BEST_QUALITY` via the streaming `src_process` API; the PI controller
+(ARCHITECTURE §2: timestamp error + ring-fill deviation) steers `src_ratio` each block.
+Device inputs on the duplex clock still **bypass ASRC entirely** (D-WZ-RATE-01). The
+per-tap CPU cost sets the tap cap. Revisit only if the cap proves too low on target
+hardware (then a MEDIUM tier for near-unity drift becomes the escape hatch — logged, not
+built).
+
+## D-WZ-TAPCAP-01 · 2026-07-23 · Concurrent-tap cap: 16, soft
+
+**Decision:** At most **16 concurrent taps** (feasibility §7 risk-register figure). The cap
+is **soft**: the UI warns as the count approaches it and refuses to arm the 17th with a
+clear reason; it never tears down an existing tap. Hardware inputs and decks do not count
+against it (only capture sources that spawn an aggregate device + IO thread + ring do).
+
+**Rationale:** feasibility §7 flags aggregate-device thread proliferation as a real cost —
+"N taps = N capture threads + N rings." 16 covers realistic use ("tap every app I have
+open") while bounding thread/CPU/memory. Soft-refuse (not degrade-everyone) keeps the
+running mix stable; the number pairs with the SINC_BEST tier (D-WZ-ASRC-01) as a
+documented envelope.
+
+**Consequences:** `wz_capture.h` / the host capture manager tracks the active tap count and
+returns a `WZ_CAP_AT_CAPACITY` status past 16; the source picker surfaces the count
+(e.g. "13/16") and the refusal. The CPU/memory envelope at 16 × SINC_BEST is measured and
+documented in `docs/specs/capture.md`. The constant is a named `kMaxConcurrentTaps` so
+raising it later is one edit + a re-measure.
+
 ---
 
 ## Parked — awaiting decision (do not block earlier phases)

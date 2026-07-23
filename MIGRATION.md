@@ -101,6 +101,24 @@
 | PD-GRM | spec | Layout research (user request): study INA GRM Player's interface for deck-rack/console/strip layout inspiration → docs/specs/design-notes-grm-player.md (steal/adapt/avoid + ASCII sketches). | done | subagent died on a spend limit mid-research; completed inline (WebFetch/Search, 4 cited sources). Key: GRM anatomy Workspace→Sequences→Readers→Plug-ins; its core gesture = N readers over ONE sound = Wizard's decks-over-a-Take → validates the 1–8 deck rack as a PERFORMANCE surface. STEAL: N-readers model, speed-tracking resample (bar for P4 varispeed), edit-without-stopping, tooltip-first onboarding. AVOID: timeline/arrangement, discoverability tax, skeuomorphic styling. Console+strip ASCII sketches in the doc |
 | P1-G1 | gate | **Phase gate (human): mix a mic and a file; cue-monitor on device channels 3/4** | done | **SIGNED 2026-07-23: user confirmed mic input works** (after P1-G1-FIX mic permission + P1-10 device picker) and deck file playback works. P1 mixer slice COMPLETE — the same-clock console mixes hardware inputs + decks with real summing (pan/fader/ramps per signed decisions), per-strip + main/cue meters, DAG-validated routing. P2 (capture + ASRC) opens |
 
+## Phase P2 — capture + ASRC
+
+Decisions signed 2026-07-23: **D-WZ-ASRC-01** (SINC_BEST always), **D-WZ-TAPCAP-01**
+(16 taps, soft). Front half (capture ABI → rings → ASRC → drift fixture) is headless-
+verifiable and builds now; taps/TCC/Linux need the user's machine + P0-R findings.
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P2-01 | build | `host/include/wz_capture.h` (ARCHITECTURE §4: status enums not bools, caller-owned buffers, POLLED topology generation, push-with-timestamps deliver) + deterministic fake backend (`host/tools/capture_fake_backend`) delivering synthetic blocks at a chosen rate/drift for fixtures | done | wz_capture.h: status enums (OK/UNSUPPORTED/PERMISSION/AT_CAPACITY/…), opaque ids, polled topology_generation, push deliver carrying host_time_ns + actual rate every block, control-thread notify (formatChanged/sourceGone/permissionDenied). CaptureFake (dependency-free, no threads): synthetic topology + wz_cap_fake_deliver (sine, timestamps advance at the TRUE rate = the drift the ASRC must correct). capture_fake_test: gen bumps, enumerate, NOT_FOUND, 16-tap soft cap w/ existing-untouched, timestamped delivery (104.49 ms over 10×512@44.1k), source-gone notify keeps handle (preserve-don't-drop). 9 native + 41 web green |
+| P2-02 | build | Engine source rings: wz_source_ring_open/write/close (SPSC lock-free, every write carries {host_time_ns, source_rate}); ring depth 1.5× quantum adaptive (D-WZ-CLOCK-01); srcRingFill/srcDropouts counters into the per-channel HotFrame block (reserved since P1) | todo | |
+| P2-03 | build | ASRC (`asrc.cpp`): per-source SINC_BEST streaming SRC (D-WZ-ASRC-01), PI controller on timestamp error + ring-fill deviation → src_ratio; srcDriftPpm published per strip. **Centerpiece fixture `asrc_drift_test`: 48000 vs 48000.3 Hz synthetic clocks, simulated hour, alignment error < 1 ms; zipper-free small-ratio-walk listening bound** | todo | the drift fixture is the phase's proof |
+| P2-04 | build | Source-kind strips wired to rings: appTap / systemMixExcept / virtualDeviceInput SourceRefs resolve to source rings in the engine world; strips read the ASRC output. Capability processCapture gated on backend presence | todo | |
+| P2-05 | build | macOS taps `host/src/capture/mac/` (TapSource.mm + ProcessWatch.mm): feasibility §3.2 sequence; own-PID excluded from system-mix by default (feedback guard); tap cap 16 soft (D-WZ-TAPCAP-01). Needs signing + the user's machine to run | blocked(P0-R + signed build + user machine) | write behind wz_capture.h; TCC UX needs P0-R findings |
+| P2-06 | build | Source picker UI + TCC UX: arm-time permission prompt surfaced inline; tap-cap count (13/16) + refusal; per-strip srcDriftPpm/srcDropouts visible | blocked(P0-R) | |
+| P2-07 | build | Linux PipeWire backend (`host/src/capture/linux/PipeWireBackend.cpp`): the abstraction proof — same wz_capture.h. Null-sink virtual device parity | blocked(P0-G1-LINUX) | |
+| P2-AUDIT | spec | Phase audit before the gate | todo | |
+| P2-G1 | gate | **Phase gate (human): tap Spotify + system-mix-except simultaneously; one-hour drift soak audibly clean; srcDriftPpm visible per strip** | todo | needs macOS taps (P2-05/06) → the user's machine |
+
 ## Parked decisions
 
 | id | needed before | status | question |

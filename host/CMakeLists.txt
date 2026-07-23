@@ -21,3 +21,14 @@ target_link_libraries(wz_decode
 add_executable(decode_test tools/decode_test.cpp)
 target_link_libraries(decode_test PRIVATE wz_decode wz_engine juce::juce_audio_formats)
 add_test(NAME decode_test COMMAND decode_test)
+
+# Capture layer (P2): the wz_capture.h backends. The deterministic fake backend
+# is the fixture substrate for source rings + ASRC; mac/pipewire backends join
+# this lib in P2-05/07 behind the same ABI. Dependency-free (no JUCE, no
+# platform APIs) so it links into headless test tools.
+add_library(wz_capture STATIC src/CaptureFake.cpp)
+target_include_directories(wz_capture PUBLIC include)
+
+add_executable(capture_fake_test tools/capture_fake_test.cpp)
+target_link_libraries(capture_fake_test PRIVATE wz_capture)
+add_test(NAME capture_fake_test COMMAND capture_fake_test)
