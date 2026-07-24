@@ -88,7 +88,7 @@ interface AppState {
   /** Live param edits (caller also sends the ParamWrite; no republish). */
   setChannelParam: (
     index: number,
-    key: 'gain' | 'pan' | 'mute' | 'solo' | 'toMonitor' | 'outBus',
+    key: 'gain' | 'pan' | 'mute' | 'solo' | 'toMonitor' | 'outBus' | 'monitorSwitch',
     value: number | boolean,
   ) => void
   /** Move a Strip on the map. Document-only: geometry NEVER crosses the ABI, so

@@ -40,8 +40,13 @@ export function publishPatch(
     // own `source` is left untouched, so the Strip never forgets what it records
     // FROM. This is why recording can become a verb on any Strip without an
     // engine change and without the rebind that would have erased provenance.
+    // A Strip holding material plays it — UNLESS it is monitoring. `monitorSwitch`
+    // is the user's own choice to listen to the input instead (P3-10,
+    // D-WZ-MON-01); monitorIndex is the same thing forced during a take. Without
+    // it, a mic strip that had recorded once could never be heard again: material
+    // won permanently and the input was unreachable.
     channels: patch.channels.map((ch, i) =>
-      ch.material && i !== monitorIndex
+      ch.material && i !== monitorIndex && !ch.monitorSwitch
         ? { ...ch, source: { kind: 'deck' as const, id: String(ch.material.deckId), name: ch.name } }
         : ch,
     ),
@@ -200,6 +205,11 @@ export function usePatchActions(link: EngineLink | null) {
         Bus 0 IS main; a spatial layout is simply strips on different buses. */
     setOutBus(index: number, bus: number) {
       setChannelParam(index, 'outBus', bus)
+      publishPatch(link, useAppStore.getState().patch)
+    },
+    /** Monitor the INPUT instead of the material (P3-10). Topology — republish. */
+    setMonitorSwitch(index: number, on: boolean) {
+      setChannelParam(index, 'monitorSwitch', on)
       publishPatch(link, useAppStore.getState().patch)
     },
     /** Cue assign is topology (the engine world carries it) — republish. */

@@ -355,6 +355,25 @@ export function Strip({
           ◼
         </button>
         <StripLoad index={index} link={link} />
+        {/* IN — listen to the source instead of the material. Only meaningful
+            when the Strip has BOTH: without material there is nothing else to
+            hear, and without a capturable source there is nothing to switch to.
+            Before this, a mic strip that had recorded once could never be
+            monitored again — material won permanently. */}
+        {hasMaterial && canRecord && (
+          <button
+            type="button"
+            className={channel.monitorSwitch ? 'latched-signal' : ''}
+            title={
+              channel.monitorSwitch
+                ? `listening to ${channel.source.name} — click to hear the recorded material instead`
+                : `listening to the recorded material — click to hear ${channel.source.name} instead`
+            }
+            onClick={() => actions.setMonitorSwitch(index, !channel.monitorSwitch)}
+          >
+            IN
+          </button>
+        )}
         <span className="plane-strip-switches">
           <button
             type="button"
