@@ -124,3 +124,26 @@ test('hot frames are delivered as Float64Array to subscribers', () => {
   backend.fire('wzHotFrame', [2, 512, 0.3])
   expect(seen).toHaveLength(1) // unsubscribed
 })
+
+test('deck-load events are coerced, clamped, and unsubscribe cleanly (P1-11a)', () => {
+  const link = new JuceLink(backend)
+  const seen: Array<{ deck: number; progress: number; loading: boolean }> = []
+  const off = link.onDeckLoad((e) => seen.push(e))
+
+  backend.fire('wzDeckLoad', { deck: 2, progress: 0.5, loading: true })
+  expect(seen).toEqual([{ deck: 2, progress: 0.5, loading: true }])
+
+  // Out-of-range progress is clamped so a bad payload can't paint past 100%.
+  backend.fire('wzDeckLoad', { deck: 2, progress: 1.4, loading: true })
+  backend.fire('wzDeckLoad', { deck: 2, progress: -0.2, loading: false })
+  expect(seen[1]).toEqual({ deck: 2, progress: 1, loading: true })
+  expect(seen[2]).toEqual({ deck: 2, progress: 0, loading: false })
+
+  // A payload with no usable deck is dropped, not delivered as deck -1.
+  backend.fire('wzDeckLoad', { progress: 0.3, loading: true })
+  expect(seen).toHaveLength(3)
+
+  off()
+  backend.fire('wzDeckLoad', { deck: 2, progress: 1, loading: false })
+  expect(seen).toHaveLength(3) // unsubscribed
+})

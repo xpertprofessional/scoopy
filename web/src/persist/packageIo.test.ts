@@ -30,6 +30,7 @@ function link(replies: Record<string, unknown>, present: string[] = []) {
     }) as unknown as EngineLink['command'],
     paramWrite: () => {},
     onHotFrame: () => () => {},
+    onDeckLoad: () => () => {},
   } as EngineLink
   return { link: l, calls }
 }

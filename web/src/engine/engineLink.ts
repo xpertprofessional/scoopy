@@ -22,6 +22,17 @@ export interface EngineLink {
       ignore it and default to 0. */
   paramWrite(id: ParamId, value: number, channel?: number): void
   onHotFrame(cb: (frame: Float64Array) => void): () => void
+  /** Deck-load progress pushed from the shell's decode worker (P1-11a). Fired
+      0..1 while a deck decodes, then once with loading=false when it settles.
+      Separate from HotFrame because it is event-driven and rare, not a
+      per-frame stream. */
+  onDeckLoad(cb: (e: DeckLoadEvent) => void): () => void
+}
+
+export interface DeckLoadEvent {
+  deck: number
+  progress: number // 0..1
+  loading: boolean
 }
 
 /** The subset of `window.__JUCE__.backend` this transport uses. */
@@ -37,6 +48,7 @@ export type FrameScheduler = (cb: () => void) => void
 const NATIVE_COMMAND = 'wzCommand'
 const HOT_FRAME_EVENT = 'wzHotFrame'
 const PARAM_EVENT = 'wzParam'
+const DECK_LOAD_EVENT = 'wzDeckLoad'
 
 interface Pending {
   resolve: (v: unknown) => void
@@ -47,6 +59,7 @@ export class JuceLink implements EngineLink {
   private nextPromiseId = 0
   private readonly pending = new Map<number, Pending>()
   private readonly hotFrameCbs = new Set<(frame: Float64Array) => void>()
+  private readonly deckLoadCbs = new Set<(e: DeckLoadEvent) => void>()
   // Keyed by `${id}:${channel}` so a gain move on strip 3 never swallows one
   // on strip 4 within the same frame.
   private readonly paramQueue = new Map<string, { id: ParamId; channel: number; value: number }>()
@@ -68,6 +81,17 @@ export class JuceLink implements EngineLink {
     backend.addEventListener(HOT_FRAME_EVENT, (payload) => {
       const frame = Float64Array.from(payload as ArrayLike<number>)
       this.hotFrameCbs.forEach((cb) => cb(frame))
+    })
+
+    backend.addEventListener(DECK_LOAD_EVENT, (payload) => {
+      const p = payload as { deck?: unknown; progress?: unknown; loading?: unknown }
+      // The shell is trusted, but a malformed payload must not throw inside an
+      // event listener and tear down the bridge — clamp and coerce defensively.
+      const deck = typeof p.deck === 'number' ? p.deck : -1
+      if (deck < 0) return
+      const progress = typeof p.progress === 'number' ? Math.min(1, Math.max(0, p.progress)) : 0
+      const loading = p.loading === true
+      this.deckLoadCbs.forEach((cb) => cb({ deck, progress, loading }))
     })
   }
 
@@ -104,6 +128,11 @@ export class JuceLink implements EngineLink {
   onHotFrame(cb: (frame: Float64Array) => void): () => void {
     this.hotFrameCbs.add(cb)
     return () => this.hotFrameCbs.delete(cb)
+  }
+
+  onDeckLoad(cb: (e: DeckLoadEvent) => void): () => void {
+    this.deckLoadCbs.add(cb)
+    return () => this.deckLoadCbs.delete(cb)
   }
 }
 

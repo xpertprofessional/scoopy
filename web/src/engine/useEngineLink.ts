@@ -82,9 +82,18 @@ export function useEngineLink(): EngineLink | null {
       }
     })
 
+    // Deck-load progress (P1-11a): the command wrapper owns the loading
+    // boolean's lifecycle (reliable — it awaits completion); this event only
+    // fills in the PERCENTAGE in between. We deliberately ignore the event's own
+    // `loading=false`, so a missed final event can never strand the bar.
+    const offDeckLoad = created.onDeckLoad(({ deck, progress }) => {
+      useAppStore.getState().setDeckLoadProgress(deck, progress)
+    })
+
     return () => {
       cancelled = true
       off()
+      offDeckLoad()
     }
   }, [])
 

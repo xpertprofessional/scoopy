@@ -552,18 +552,31 @@ canvas.meter {
   text-align: center;
 }
 
-/* Deck decoding on the shell's worker thread (P1-11). A quiet, non-alarming
-   pulse — this is progress, not an error like .deck-unresolved. */
+/* Deck decoding on the shell's worker thread (P1-11 / P1-11a). A determinate
+   bar — this is progress, not an error like .deck-unresolved. The label sits
+   over the fill so a narrow cell never truncates the percentage. */
 .deck-loading {
+  position: relative;
+  height: 1.2em;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.deck-loading-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.deck-loading-label {
+  position: relative;
+  display: block;
   font-family: var(--type-caption-family);
   font-size: var(--type-caption-size);
   text-transform: var(--type-label-transform);
-  color: var(--text-dim);
+  color: var(--text);
   text-align: center;
-  animation: deck-loading-pulse 1s ease-in-out infinite;
-}
-
-@keyframes deck-loading-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  line-height: 1.2em;
 }

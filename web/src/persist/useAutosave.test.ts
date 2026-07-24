@@ -81,6 +81,7 @@ function fakeLink(present: string[]): EngineLink {
     })) as unknown as EngineLink['command'],
     paramWrite: () => {},
     onHotFrame: () => () => {},
+    onDeckLoad: () => () => {},
   }
 }
 

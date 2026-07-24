@@ -20,6 +20,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
   const deckCapReached = useAppStore((s) => s.deckCapReached)
   const deckUnresolved = useAppStore((s) => s.deckUnresolved)
   const deckLoading = useAppStore((s) => s.deckLoading)
+  const deckLoadProgress = useAppStore((s) => s.deckLoadProgress)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const deckRevisions = useAppStore((s) => s.deckRevisions)
   const takes = useAppStore((s) => s.takes)
@@ -35,6 +36,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
         const capped = deckCapReached[deck.id] ?? false
         const unresolved = deckUnresolved[deck.id] ?? false
         const loading = deckLoading[deck.id] ?? false
+        const loadProgress = deckLoadProgress[deck.id] ?? 0
         const fileName = deck.sourcePath.split('/').pop() ?? ''
         // Record the first input channel by default; the source picker gets a
         // per-deck input choice when the unified-cell UI lands (PD-CANVAS).
@@ -66,10 +68,16 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
             {loading && (
               <div
                 className="deck-loading"
-                role="status"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={loadProgress}
                 title="decoding on a background thread — the rest of the app stays live (P1-11)"
               >
-                decoding…
+                <div className="deck-loading-bar" style={{ width: `${loadProgress * 100}%` }} />
+                <span className="deck-loading-label">
+                  decoding… {Math.round(loadProgress * 100)}%
+                </span>
               </div>
             )}
             {unresolved && (

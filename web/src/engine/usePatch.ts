@@ -160,6 +160,7 @@ export function usePatchActions(link: EngineLink | null) {
       if (!link) return
       // The decode runs on the shell's worker thread now (P1-11); mark the deck
       // busy so the UI shows it working instead of looking frozen.
+      useAppStore.getState().setDeckLoadProgress(deck, 0)
       useAppStore.getState().setDeckLoading(deck, true)
       try {
         const r = await link.command('deckLoadTake', { deck, path })
@@ -177,6 +178,7 @@ export function usePatchActions(link: EngineLink | null) {
       // The dialog itself is quick; the decode after it is the slow part, and
       // only starts once a file is chosen. Marking busy around the whole call is
       // harmless (the dialog is brief) and covers the decode.
+      useAppStore.getState().setDeckLoadProgress(deck, 0)
       useAppStore.getState().setDeckLoading(deck, true)
       try {
         const r = await link.command('deckLoadFile', { deck })

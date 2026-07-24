@@ -204,10 +204,19 @@ private:
         }
         const uint32_t myGen = ++deckLoadGen[deck];
         const double engineRate = wz_engine_sample_rate(engine);
+        emitDeckLoad(deck, 0.0f, /*loading*/ true); // a definite "started" before any decode
         loadPool.addJob([this, deck, file, fromDialog, myGen, engineRate, complete] {
             wizard::decode::LoadControl ctl;
             ctl.isCancelled = [this, deck, myGen] {
                 return deckLoadGen[deck].load() != myGen; // a newer load arrived
+            };
+            ctl.onProgress = [this, deck, myGen](float p) {
+                // Progress fires on THIS worker thread; the WebView may only be
+                // touched from the message thread. Drop the tick if a newer load
+                // has taken over — its own ticks are the ones that matter now.
+                juce::MessageManager::callAsync([this, deck, myGen, p] {
+                    if (deckLoadGen[deck].load() == myGen) emitDeckLoad(deck, p, true);
+                });
             };
             auto audio = std::make_shared<wizard::decode::DeckAudio>(
                 wizard::decode::loadForDeck(file, engineRate, ctl));
@@ -240,9 +249,24 @@ private:
                     result->setProperty("error",
                                         loaded ? "" : (stale ? "superseded" : audio->error));
                 }
+                // Terminal event: the bar settles. A superseded load stays quiet
+                // — the newer load owns the deck's progress now and will emit its
+                // own terminal event, so emitting here would fight it.
+                if (!stale) emitDeckLoad(deck, loaded ? 1.0f : 0.0f, /*loading*/ false);
                 complete(wrapResult(result));
             });
         });
+    }
+
+    /** Push deck-load progress to the web (P1-11a). Message thread only — it
+        touches the WebView. Mirrors the wzHotFrame emit path. */
+    void emitDeckLoad(uint32_t deck, float progress, bool loading) {
+        if (webView == nullptr) return;
+        auto* o = new juce::DynamicObject();
+        o->setProperty("deck", static_cast<int>(deck));
+        o->setProperty("progress", static_cast<double>(progress));
+        o->setProperty("loading", loading);
+        webView->emitEventIfBrowserIsVisible("wzDeckLoad", juce::var(o));
     }
 
     static juce::var strArray(const juce::StringArray& in) {

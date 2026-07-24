@@ -95,6 +95,10 @@ interface AppState {
       property of the document. */
   deckLoading: boolean[]
   setDeckLoading: (id: number, loading: boolean) => void
+  /** 0..1 decode progress for a loading deck (P1-11a), pushed from the shell.
+      Only meaningful while deckLoading[id] is true. */
+  deckLoadProgress: number[]
+  setDeckLoadProgress: (id: number, progress: number) => void
 }
 
 let nextKey = 1
@@ -111,6 +115,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   takes: [],
   deckRevisions: [],
   deckLoading: [],
+  deckLoadProgress: [],
   alignReferencePath: null,
   sessionNotice: '',
   patch: emptyPatch(),
@@ -132,6 +137,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const flags = get().deckLoading.slice()
     flags[id] = loading
     set({ deckLoading: flags })
+  },
+  setDeckLoadProgress: (id, progress) => {
+    const p = get().deckLoadProgress.slice()
+    p[id] = progress
+    set({ deckLoadProgress: p })
   },
   setTakes: (takes) => set({ takes }),
   addTake: (t) => set({ takes: [...get().takes, t] }),
