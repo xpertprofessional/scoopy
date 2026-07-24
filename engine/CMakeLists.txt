@@ -64,6 +64,12 @@ add_executable(deck_test tools/deck_test.cpp)
 target_link_libraries(deck_test PRIVATE wz_engine)
 add_test(NAME deck_test COMMAND deck_test)
 
+# P0-11a correctness foundation: rendering must be a pure function of the engine
+# clock, not of block boundaries — the property AudioIO's chunking relies on.
+add_executable(render_chunk_invariance_test tools/render_chunk_invariance_test.cpp)
+target_link_libraries(render_chunk_invariance_test PRIVATE wz_engine)
+add_test(NAME render_chunk_invariance_test COMMAND render_chunk_invariance_test)
+
 add_executable(ring_test tools/ring_test.cpp)
 target_link_libraries(ring_test PRIVATE wz_engine)
 add_test(NAME ring_test COMMAND ring_test)
