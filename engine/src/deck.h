@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -48,7 +49,7 @@ struct Deck {
     // --- control → render ----------------------------------------------------
     std::atomic<uint32_t> state{0};        // DeckState
     std::atomic<uint32_t> pendingReset{0}; // retrigger/start: seek region start next block
-    std::atomic<double> rate{1.0};         // signed varispeed — engine PLAYS 1.0 until P4
+    std::atomic<double> rate{1.0};         // signed varispeed; <0 = reverse (P4-02)
 
     // Seqlock loop spec (writer: control thread; reader: render, once per block).
     std::atomic<uint32_t> loopSeq{0};
@@ -65,6 +66,8 @@ struct Deck {
 
     // --- render-owned ---------------------------------------------------------
     double playhead = 0.0;
+    double smRate = 0.0; // D-WZ-RAMP-01-smoothed rate; 0 = seed from target
+
 
     // --- render → UI (HotFrame deck block) ------------------------------------
     std::atomic<double> pubPlayhead{0.0};
@@ -76,6 +79,18 @@ struct Deck {
         const uint64_t off = frame % kDeckChunkFrames;
         const auto& p = chunks[ci]->plane;
         return ch < p.size() ? p[ch][off] : p[0][off];
+    }
+
+    // Linear interpolation between two frames (P4-02). Only reached when the
+    // rate is NOT exactly ±1 — the identity path never calls this, so a deck at
+    // unity is bit-exact by construction.
+    float sampleLerp(uint32_t ch, double pos) const {
+        const double floorPos = std::floor(pos);
+        const auto i0 = static_cast<uint64_t>(floorPos);
+        const double frac = pos - floorPos;
+        const float a = sample(ch, i0);
+        if (frac == 0.0) return a; // landed exactly on a frame: no filtering
+        return static_cast<float>(a + (sample(ch, i0 + 1) - a) * frac);
     }
 
     // Append one frame's worth of samples (RT-safe: writes into an already-
@@ -110,6 +125,7 @@ struct Deck {
         frames.store(0, std::memory_order_relaxed);
         chunkCount.store(0, std::memory_order_release);
         playhead = 0.0;
+        smRate = 0.0;
         recCapReached.store(0, std::memory_order_relaxed);
     }
 

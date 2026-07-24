@@ -456,6 +456,16 @@ void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
     e->decks[deck].publishLoop(enabled, start, end);
 }
 
+void wz_deck_set_rate(wz_engine* e, uint32_t deck, double rate) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].rate.store(rate, std::memory_order_relaxed);
+}
+
+double wz_deck_rate(const wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return 0.0;
+    return e->decks[deck].rate.load(std::memory_order_relaxed);
+}
+
 /* --- deck recording (P3) ------------------------------------------------- */
 
 void wz_deck_set_record_source(wz_engine* e, uint32_t deck,
@@ -688,25 +698,83 @@ void wz_engine_render_io(wz_engine* e,
         d.readLoop(le, ls, lend);
         uint64_t rs = 0, re = dFrames;
         if (le != 0 && ls < lend && ls < dFrames) { rs = ls; re = lend < dFrames ? lend : dFrames; }
-        if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = static_cast<double>(rs);
+        // A (re)trigger seeks the region's ENTRY edge, which depends on
+        // direction: forward starts at `rs`, reverse starts just inside `re`.
+        const bool reversing = d.rate.load(std::memory_order_relaxed) < 0.0;
+        const double entry = reversing ? static_cast<double>(re) - 1.0 : static_cast<double>(rs);
+        if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = entry;
         if (d.playhead < static_cast<double>(rs) || d.playhead >= static_cast<double>(re))
-            d.playhead = static_cast<double>(rs);
+            d.playhead = entry;
 
+        // --- signed varispeed (P4-02, docs/specs/playback-composer.md §1) ----
+        // The rate is smoothed with the ONE D-WZ-RAMP-01 constant so a knob
+        // sweep glides like tape instead of zippering. Reverse is NOT a special
+        // case: a negative rate advances the playhead backwards through the very
+        // same reader.
+        double tgtRate = d.rate.load(std::memory_order_relaxed);
+        if (!std::isfinite(tgtRate)) tgtRate = 1.0;
+        // Clamp |rate| into [1/16, 16] (spec §1); 0 would stall the playhead.
+        const double mag = std::abs(tgtRate);
+        if (mag < 1.0 / 16.0) tgtRate = tgtRate < 0.0 ? -1.0 / 16.0 : 1.0 / 16.0;
+        else if (mag > 16.0) tgtRate = tgtRate < 0.0 ? -16.0 : 16.0;
+        if (d.smRate == 0.0) d.smRate = tgtRate; // seed: no glide on first block
+
+        const double regionLen = static_cast<double>(re) - static_cast<double>(rs);
         bool finished = false;
         for (uint32_t i = 0; i < frames; ++i) {
             if (finished) { dl[i] = 0.0f; dr[i] = 0.0f; continue; }
-            const auto idx = static_cast<uint64_t>(d.playhead);
-            dl[i] = d.sample(0, idx);
-            dr[i] = d.channels > 1 ? d.sample(1, idx) : dl[i];
-            d.playhead += 1.0; // varispeed plays 1.0 until P4
-            if (d.playhead >= static_cast<double>(re)) {
-                if (st == static_cast<uint32_t>(wz::DeckState::looping)) {
-                    d.playhead = static_cast<double>(rs); // gapless wrap
-                } else {
-                    finished = true; // oneShot: region done → idle
-                    d.state.store(static_cast<uint32_t>(wz::DeckState::idle),
-                                  std::memory_order_release);
-                    d.playhead = static_cast<double>(rs);
+            d.smRate += alpha * (tgtRate - d.smRate);
+            // SNAP once the glide is inaudibly close. A one-pole only approaches
+            // its target asymptotically, so without this the smoothed rate would
+            // never EQUAL ±1 and the bit-exact identity path below would be
+            // unreachable — the deck would interpolate forever at "unity".
+            // 1e-6 = 1 ppm of rate: inaudible as a pitch/speed error, and it
+            // lets a settled deck reach EXACT identity in ~0.1 s rather than
+            // creeping toward it forever.
+            if (std::abs(tgtRate - d.smRate) < 1e-6) d.smRate = tgtRate;
+            // IDENTITY PATH: at exactly ±1 the reader does a direct integer read
+            // — no interpolation, no filter, bit-exact (spec §1).
+            const bool identity = d.smRate == 1.0 || d.smRate == -1.0;
+            if (identity) {
+                const auto idx = static_cast<uint64_t>(d.playhead);
+                dl[i] = d.sample(0, idx);
+                dr[i] = d.channels > 1 ? d.sample(1, idx) : dl[i];
+            } else {
+                dl[i] = d.sampleLerp(0, d.playhead);
+                dr[i] = d.channels > 1 ? d.sampleLerp(1, d.playhead) : dl[i];
+            }
+            d.playhead += d.smRate;
+
+            if (d.smRate >= 0.0) {
+                if (d.playhead >= static_cast<double>(re)) {
+                    if (st == static_cast<uint32_t>(wz::DeckState::looping)) {
+                        // Gapless forward wrap: carry the fractional overshoot so
+                        // the loop stays phase-continuous at non-unity rates.
+                        d.playhead = regionLen > 0.0
+                            ? static_cast<double>(rs) +
+                                  std::fmod(d.playhead - static_cast<double>(rs), regionLen)
+                            : static_cast<double>(rs);
+                    } else {
+                        finished = true; // oneShot: region done → idle
+                        d.state.store(static_cast<uint32_t>(wz::DeckState::idle),
+                                      std::memory_order_release);
+                        d.playhead = static_cast<double>(rs);
+                    }
+                }
+            } else {
+                // REVERSE: the region's other edge is the wrap point.
+                if (d.playhead < static_cast<double>(rs)) {
+                    if (st == static_cast<uint32_t>(wz::DeckState::looping)) {
+                        d.playhead = regionLen > 0.0
+                            ? static_cast<double>(re) -
+                                  std::fmod(static_cast<double>(rs) - d.playhead, regionLen)
+                            : static_cast<double>(rs);
+                    } else {
+                        finished = true; // reverse oneShot ends at the region start
+                        d.state.store(static_cast<uint32_t>(wz::DeckState::idle),
+                                      std::memory_order_release);
+                        d.playhead = static_cast<double>(re) - 1.0;
+                    }
                 }
             }
         }

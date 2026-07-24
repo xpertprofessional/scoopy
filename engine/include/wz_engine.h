@@ -144,6 +144,13 @@ void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
 void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end);
 
+/* Signed varispeed (P4-02, docs/specs/playback-composer.md §1). Negative =
+ * reverse; |rate| is clamped to [1/16, 16]. Exactly +-1.0 takes the IDENTITY
+ * path (direct integer read, bit-exact — no resampler in the signal path). The
+ * rate is smoothed with the D-WZ-RAMP-01 constant, so a sweep glides. RT-safe. */
+void wz_deck_set_rate(wz_engine* e, uint32_t deck, double rate);
+double wz_deck_rate(const wz_engine* e, uint32_t deck);
+
 /* --- deck recording (P3, docs/specs/recorder.md) -------------------------
  * The deck records `channels` ENGINE-input channels (chan0 = L/mono, chan1 = R
  * or -1) into its buffer — the same chunked storage playback uses, so stop→loop
