@@ -4,6 +4,15 @@
 item and keeps building elsewhere. Each entry states the question, the options with
 trade-offs, and my recommendation. Signing one moves it to `docs/DECISIONS.md`.*
 
+> **Loop status:** the safe autonomous work has been taken as far as it honestly goes —
+> every remaining build row is blocked on one of these decisions, a human gate, or your
+> machine (P2 backends / device-rate test / Actions billing). Overnight the loop shipped
+> P7 sessions+package, async deck load + progress (P1-11/11a), render chunk-invariance
+> (P0-11b) and the ramp-trajectory lock (P1-RAMP), plus three GRM/PD-CANVAS design passes.
+> **These decisions are now the critical path** — #1 (PD-CANVAS) unblocks the largest
+> phase, so it's the highest-leverage one to sign first. Decisions #7/#8 were added by the
+> loop's own audits (device-absent policy; ring re-centering).
+
 ## 1. ⭐ THE BIG ONE — UI vision: one unified item, freely arranged
 
 **Your words (2026-07-24):** *"free arrangable players / decks / input in a field, only
@@ -28,27 +37,40 @@ a channel*; the current UI violates that by splitting inputs from decks).
   collapse (CONCEPT §6) would need rethinking as "zoom out" rather than "different
   layout".
 
-**Cost:** P1-08's console panels are ~600 lines of UI; the engine/schema underneath is
-unaffected (this is why building engine-first was right). Realistically a PD-phase
-rewrite of the *panels*, not the app.
+**Cost (now spelled out concretely — this brief is a summary; the plan is the source):**
+- **Engine: zero.** Geometry never crosses the ABI; the engine has never known where a
+  strip is drawn. `protocol:check`/`abi:check` see no change.
+- **Schema: additive, and NO array merge** — the load-bearing finding of the later passes.
+  `Channel` is *already* the one strip type (`source.kind` = deviceInput | appTap | deck |
+  busTap …) and `decks[]` is just material storage, not a second species. So "one object
+  type" is a **rendering** change, not a data-model change. PD-CANVAS-01 adds only
+  `cell{x,y,w,h}` on Channel + `plane{scale,panX,panY}` on Patch + one SCHEMA_VERSION bump
+  with a named auto-layout migration (§7 of the plan gives the exact Zod).
+- **UI: ~600 lines of panels rewritten to `Plane` + `Cell` + `Inspector` + drawers**
+  (+~150 for the Inspector; the routing matrix's per-strip bus choice largely *moves into*
+  the Inspector rather than being rebuilt). All logic (usePatch, takeAlign, MeterCanvas,
+  faderCurve, VarispeedSlider, DeckWaveform) is reusable as-is.
 
-**My recommendation: ADOPT.** A full design plan is now written:
-**`docs/specs/pd-canvas.md`** — read that, not this summary. Headlines:
-- The GRM Player documentation was FOUND and read (it is public HTML at
-  sites.inagrm.com, not the paywalled PDF I hit first). Its workspace is literally
-  *"un plan sans limite apparente"* — a plane with no apparent limits — with drag
-  placement and zoom/pan. **Your instinct matches a shipping instrument's model.**
-- GRM goes one step further than you asked: it splits *material* (séquence) from *ways of
-  reading it* (lecteurs), and lets **N readers live on one sound** — window size alone
-  takes you "from repetition to granular synthesis". Our engine can already do this
-  (decks are independent readers). Parked as PD-CANVAS-2, deliberately out of the first
-  cut.
-- **Engine cost: zero.** Schema cost: small and additive (x/y/w/h). UI cost: a real
-  rewrite of ~600 lines of panels, with all the logic (usePatch, takeAlign, MeterCanvas,
-  faderCurve) reusable as-is.
+**My recommendation: ADOPT.** A full design plan is now written and has been deepened over
+three research passes: **`docs/specs/pd-canvas.md`** — read that, not this summary.
+Headlines that changed since this brief was first drafted:
+- **The GRM manual was found and read in full** (public HTML at sites.inagrm.com). Its
+  workspace is literally *"un plan sans limite apparente"* with drag placement + zoom/pan.
+  **Your instinct matches a shipping instrument's model.**
+- **The "clutter" objection is answered (§3.0).** Putting *every* control on every Cell is
+  unbuildable — a plane of a dozen Cells each showing loop points + bus + cue would be less
+  legible, not more. GRM's real answer (which we'd misread): the Cell carries what you
+  touch *while playing*; an always-visible, selection-driven **Inspector** carries what you
+  set *precisely*. Not a hidden mode. This also gives "strip mode = zoom-out" its mechanism
+  (a strip Cell is just the Cell's left column).
+- **Two futures, deliberately out of the first cut:** PD-CANVAS-2 = GRM's N-readers-on-one-
+  sound (granular; our decks already do this — it's UI+scheduling, not new DSP); PD-CANVAS-3
+  = GRM's A/B/C/D snapshot slots with a glide time ("instrument, not mixer").
 
-**Decide:** (a) adopt, sequence as PD-CANVAS-01..04 · (b) adopt + also take the N-readers
-model now · (c) refine the vision further before committing.
+**Decide:** (a) adopt, sequence as **PD-CANVAS-01..05** (schema → Plane+Cell → Inspector →
+drag-to-create → retire old panels) · (b) adopt **and** pull the N-readers model (CANVAS-2)
+into the first cut · (c) refine the vision further before committing. My rec is **(a)** —
+ship the free-placement + one-item model first; add readers/snapshots once it's proven.
 
 ## 2. Take naming + storage layout (needed by P3-05/07, soon)
 
