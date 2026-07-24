@@ -70,8 +70,31 @@ official copy + forum accounts. **Next step needs you:** the in-app documentatio
 real deep read. If you can point me at a PDF path or install GRM Player, I'll mine it
 properly for the canvas design.
 
+## 5. Live varispeed converter tier (P4-02, soon)
+
+A deck bending speed live needs a streaming resampler. GRM Player's bar: "the slower a
+sound is played, the more accurately it is resampled" — clean at 1/100, 1/1000 speed.
+- (a) **SINC_MEDIUM while the rate is moving, SINC_BEST once it's been stationary
+  ~250 ms, identity (no resampler at all) at rate 1.0** — **recommended**: cheap during a
+  sweep, mastering-grade for the common "set a speed and leave it" case, and bit-exact
+  when you aren't bending at all.
+- (b) SINC_BEST always — simplest, most CPU during sweeps (8 decks sweeping at once is
+  the worst case).
+- (c) SINC_MEDIUM always — lightest, gives up quality on a parked extreme slow-down.
+
+## 6. Feedback-watchdog threshold (P4-04, soon)
+
+External feedback loops (out → another app → "Wizard Out" → back in) are structurally
+undetectable; the watchdog is the only guard.
+- **Proposed (from ARCHITECTURE §2): engage a ramped hard limiter + raise the alarm when
+  bus RMS exceeds +6 dBFS sustained over 250 ms**, releasing only after a hold period
+  below threshold. RMS-not-peak so a single transient never trips it.
+- Alternatives: a lower threshold (0 dBFS) trips earlier but risks false positives on
+  loud legitimate material; a shorter window (100 ms) reacts faster but is twitchier.
+
 ---
 
-*Loop status when this was written: P3-02 done (record buffer + drain + stamps), P3-03
-(the Law C-3 gapless handoff) next. Parked: P2-05/06/07 (your machine + TCC runbook +
-Linux). CI: blocked on GitHub Actions billing.*
+*Loop status: **P3 is BUILD-COMPLETE** (recorder, C-3 handoff, crash-safe takes, C-2
+align, cap, UI, take management) — only P3-10 (decision #3) and the human gate P3-G1
+remain. **P4 playback composer is open**; its spec landed and rows are seeded. Parked:
+P2-05/06/07 (your machine + TCC runbook + Linux). CI: blocked on GitHub Actions billing.*

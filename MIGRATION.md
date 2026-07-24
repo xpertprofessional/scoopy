@@ -22,7 +22,19 @@
   per-strip srcDriftPpm/srcDropouts. Signed D-WZ-ASRC-01, D-WZ-TAPCAP-01. PARKED (need the
   user's machine + TCC runbook + a Linux box): P2-05/06 macOS taps, P2-07 Linux PipeWire.
   wz_capture.h makes these additive — no rewrite.
-- **Now — P3 deck recorder (ENTERING).** Record into a deck with live monitor; **stop->loop
+- **P3 deck recorder — BUILD-COMPLETE (P3-01..09, 11 + audit).** Record with live capture,
+  the Law C-3 gapless stop→loop handoff (deck_handoff_test: sample-exact), crash-safe
+  BWF/RF64 takes (wav_killtest: real SIGKILL, 114688 frames recovered), RecordService drain,
+  C-2 stamps + align (deck_stamp_test: delta == real gap), the 256 MB cap (RT never
+  allocates), recorder UI + TAKES panel with the align column, take discard-to-Trash.
+  Signed D-WZ-DECK-01. REMAINING: P3-10 (monitor switch — morning decision #3) and the
+  human gate P3-G1.
+- **Now — P4 playback composer (ENTERING).** Spec landed (P4-01). Where Wizard becomes an
+  instrument: signed varispeed incl. reverse, the LoopbackBus (record-own-output through
+  the one legal cycle), the feedback watchdog, and the 8-bus spatial output map. Two
+  provisional values parked as morning decisions #5/#6 — rows build with the proposal and
+  re-tune on sign-off. P4-08 strip mode is HELD for decision #1 (PD-CANVAS).
+- **P3 deck recorder (superseded line).** Record into a deck with live monitor; **stop->loop
   instant gapless turnaround (Law C-3)** — the in-engine record buffer that doubles as the
   playback buffer; parallel crash-safe BWF drain (D-WZ-CORE-02); engine-sample stamps +
   align-to-deck-N (Law C-2). Centerpieces: deck_handoff_test (gapless, sample-exact),
@@ -150,6 +162,27 @@ Spec: docs/specs/recorder.md. Mostly headless — builds without the user's mach
 | P3-10 | build | Per-deck monitor switch (spec §2: monitoring is optional/switchable). Blocked on morning decision #3 (default ON vs OFF, and whether recording a strip mutes it) | awaiting-decision | seeded by P3-AUDIT |
 | P3-11 | build | Take management: delete/reveal takes, prune the Takes dir (they accumulate with no UI today) | done | schema v9 deleteTake/revealTake. **Destructive-action care: the WAV + sidecar are moved to the system TRASH, never unlinked** — a committed mistake is still recoverable — and the UI arms on the first click ('sure?') and commits on the second, so a stray click cannot discard a take. RecordService.forgetTake REFUSES a take a deck is still recording into. Deleting the align reference clears it rather than leaving a dangling pointer. Reveal opens the file in the system browser. 17 native + 50 web green |
 | P3-G1 | gate | **Phase gate (human): record on deck 1; mid-take start deck 2 from a different input; stop both → both loop instantly; realignment sample-exact over a 30-min session** | awaiting-signoff | READY TO TEST: launch → add 2 decks → ●Rec deck 1 → mid-take ●Rec deck 2 → ■Stop both (each loops INSTANTLY per C-3) → TAKES panel: set deck 1's take as ref, deck 2 shows its exact offset (⧉ = simultaneous). Takes land in ~/Music/Wizard/Takes as crash-safe BWF (kill the app mid-record — the take is still there + playable). Engine half already proven headlessly: deck_handoff_test (sample-exact), deck_stamp_test (delta == real gap), wav_killtest (114688 frames recovered from SIGKILL). 17 native + 50 web green |
+
+## Phase P4 — playback composer
+
+Spec: docs/specs/playback-composer.md. Engine-side work is decision-independent EXCEPT
+the two provisional values (morning decisions #5 varispeed tier, #6 watchdog threshold) —
+those rows build with the proposed value and are re-tuned on sign-off, never blocked.
+**P4-08 strip mode must NOT be built before morning decision #1 (PD-CANVAS)** — if the
+unified-cell UI is adopted, strip mode becomes "zoom out" and this row is re-scoped.
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P4-01 | spec | docs/specs/playback-composer.md: signed varispeed model (identity bit-exact, reverse not a special case), LoopbackBus one-block-delay cycle, watchdog, 8-bus spatial map, deck-rack completion, strip-mode sequencing caveat, 4 fixtures | done | GRM's speed-tracking resample set as the varispeed quality bar; provisional values parked as morning decisions #5/#6 |
+| P4-02 | build | Signed varispeed in the deck reader: fractional playhead, `|rate|==1` bit-exact short-circuit, reverse via negative advance (same path), D-WZ-RAMP-01 rate smoothing, forward+reverse loop wrap. varispeed_test | todo | uses proposal #5 until signed |
+| P4-03 | build | LoopbackBus: previous-block read of a bus into a channel; schedule stays acyclic by construction; ↺ cells in the matrix + patchValidation still refusing non-loopback cycles. loopback_test | todo | |
+| P4-04 | build | Feedback watchdog: sustained-RMS detector → ramped hard limiter + feedbackAlarm (HotFrame scalar已 wired since P0/P1-08); transient must not trip it; hold before release. watchdog_test | todo | uses proposal #6 until signed |
+| P4-05 | build | 8 output buses + output map: per-channel bus assign, bus→device-channel map, honest refusal when the layout exceeds the device. output_map_test | todo | CONCEPT §4: spatial falls out of the bus map |
+| P4-06 | build | Deck rack completion: add/remove decks 1–8 in the UI, waveform + loop brace per deck, align-to-deck-N verb (P3-07 math) | todo | |
+| P4-07 | build | Varispeed UI: signed rate slider with a reverse zone + unity detent; rate readout | todo | |
+| P4-08 | build | Strip mode (compact layout, shell window constraints + always-on-top) | blocked(morning decision #1 / PD-CANVAS) | re-scope to "zoom out" if the canvas UI is adopted |
+| P4-AUDIT | spec | Phase audit before the gate | todo | |
+| P4-G1 | gate | **Phase gate (human) — the loop-jam demo:** record → instant deck-loop → reverse/varispeed it → overdub live on other decks → resample the mix, with decks spread across a >2-channel output layout | todo | |
 
 ## Parked decisions
 
