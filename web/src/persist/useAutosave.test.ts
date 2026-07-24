@@ -88,13 +88,13 @@ test('restore rehydrates deck audio from its references', async () => {
   const patch = { ...emptyPatch(), decks: [deck(0, '/takes/a.wav'), deck(1, '/takes/b.wav')] }
   const marks: Array<[number, boolean]> = []
   const bumped: number[] = []
-  const missing = await rehydrateDecks(
+  const { unresolved } = await rehydrateDecks(
     fakeLink(['/takes/a.wav', '/takes/b.wav']),
     patch,
     (d, u) => marks.push([d, u]),
     (d) => bumped.push(d),
   )
-  expect(missing).toBe(0)
+  expect(unresolved).toBe(0)
   expect(marks).toEqual([[0, false], [1, false]])
   expect(bumped).toEqual([0, 1]) // both waveforms refetch
 })
@@ -102,13 +102,13 @@ test('restore rehydrates deck audio from its references', async () => {
 test('a missing take leaves its deck IN PLACE, marked — never dropped', async () => {
   const patch = { ...emptyPatch(), decks: [deck(0, '/takes/gone.wav'), deck(1, '/takes/here.wav')] }
   const marks: Array<[number, boolean]> = []
-  const missing = await rehydrateDecks(
+  const { unresolved } = await rehydrateDecks(
     fakeLink(['/takes/here.wav']),
     patch,
     (d, u) => marks.push([d, u]),
     () => {},
   )
-  expect(missing).toBe(1)
+  expect(unresolved).toBe(1)
   expect(marks).toContainEqual([0, true]) // marked unresolved
   expect(marks).toContainEqual([1, false])
   // The DOCUMENT is untouched: the reference survives, so restoring the file
@@ -119,7 +119,8 @@ test('a missing take leaves its deck IN PLACE, marked — never dropped', async 
 test('an empty deck is not an unresolved deck', async () => {
   const patch = { ...emptyPatch(), decks: [deck(0, '')] }
   const marks: Array<[number, boolean]> = []
-  const missing = await rehydrateDecks(fakeLink([]), patch, (d, u) => marks.push([d, u]), () => {})
-  expect(missing).toBe(0) // never recorded into ≠ lost its audio
+  const { unresolved } = await rehydrateDecks(
+    fakeLink([]), patch, (d, u) => marks.push([d, u]), () => {})
+  expect(unresolved).toBe(0) // never recorded into ≠ lost its audio
   expect(marks).toEqual([[0, false]])
 })

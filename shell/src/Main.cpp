@@ -10,6 +10,7 @@
 
 #include "AudioIO.h"
 #include "CommandDispatch.h"
+#include "PackageStore.h"
 #include "SessionStore.h"
 #include "Decoder.h"
 #include "RecordService.h"
@@ -80,6 +81,17 @@ public:
                         }
                         if (method == "saveAutosave" || method == "loadAutosave") {
                             complete(sessionCommand(method, params));
+                            return;
+                        }
+                        // Package save/load need the window + an async native
+                        // dialog, so they live here rather than in the pure
+                        // dispatcher (same reason as deckLoadFile).
+                        if (method == "savePackage") {
+                            savePackage(params, std::move(complete));
+                            return;
+                        }
+                        if (method == "loadPackage") {
+                            loadPackage(std::move(complete));
                             return;
                         }
                         if (method == "listDevices") {
@@ -280,6 +292,92 @@ private:
     juce::File sessionDir() const {
         return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
             .getChildFile("Wizard");
+    }
+
+    /** Where a package's embedded takes are extracted to. Beside the app's own
+        takes rather than into them: a package's contents are the package's, and
+        mixing them into the user's own recordings would make the two
+        indistinguishable the moment they open a second package. */
+    juce::File packageTakesDir(const juce::File& pkg) const {
+        return sessionDir()
+            .getChildFile("Packages")
+            .getChildFile(pkg.getFileNameWithoutExtension());
+    }
+
+    void savePackage(const juce::var& params,
+                     juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Save Wizard package", juce::File{}, "*.wizard");
+        const auto flags = juce::FileBrowserComponent::saveMode |
+                           juce::FileBrowserComponent::canSelectFiles |
+                           juce::FileBrowserComponent::warnAboutOverwriting;
+        const auto text = params.getProperty("text", "").toString();
+        juce::Array<wizard::package::Entry> takes;
+        juce::StringArray used;
+        if (const auto* arr = params.getProperty("takes", juce::var()).getArray()) {
+            for (const auto& t : *arr) {
+                const juce::File f(t.toString());
+                takes.add({f, wizard::package::entryNameFor(f, used)});
+            }
+        }
+        fileChooser->launchAsync(flags, [takes, text,
+                                         complete](const juce::FileChooser& fc) {
+            auto* result = new juce::DynamicObject();
+            auto file = fc.getResult();
+            if (file == juce::File{}) { // cancelled — not an error
+                result->setProperty("ok", false);
+                result->setProperty("path", "");
+                result->setProperty("missing", juce::var(juce::Array<juce::var>{}));
+                result->setProperty("error", "");
+            } else {
+                if (!file.hasFileExtension("wizard")) file = file.withFileExtension("wizard");
+                const auto r = wizard::package::save(file, text, takes);
+                juce::Array<juce::var> missing;
+                for (const auto& m : r.missing) missing.add(m);
+                result->setProperty("ok", r.ok);
+                result->setProperty("path", r.ok ? file.getFullPathName() : juce::String());
+                result->setProperty("missing", juce::var(missing));
+                result->setProperty("error", r.error);
+            }
+            complete(wrapResult(result));
+        });
+    }
+
+    void loadPackage(juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Open Wizard package", juce::File{}, "*.wizard");
+        const auto flags = juce::FileBrowserComponent::openMode |
+                           juce::FileBrowserComponent::canSelectFiles;
+        fileChooser->launchAsync(flags, [this, complete](const juce::FileChooser& fc) {
+            auto* result = new juce::DynamicObject();
+            const auto file = fc.getResult();
+            juce::Array<juce::var> takes;
+            if (file == juce::File{}) { // cancelled — not an error
+                result->setProperty("ok", false);
+                result->setProperty("text", "");
+                result->setProperty("error", "");
+            } else {
+                const auto r = wizard::package::load(file, packageTakesDir(file));
+                for (const auto& t : r.takes) {
+                    auto* e = new juce::DynamicObject();
+                    e->setProperty("name", t.name);
+                    e->setProperty("path", t.source.getFullPathName());
+                    takes.add(juce::var(e));
+                }
+                result->setProperty("ok", r.ok);
+                result->setProperty("text", r.sessionText);
+                result->setProperty("error", r.error);
+            }
+            result->setProperty("takes", juce::var(takes));
+            complete(wrapResult(result));
+        });
+    }
+
+    static juce::var wrapResult(juce::DynamicObject* result) {
+        auto* env = new juce::DynamicObject();
+        env->setProperty("ok", true);
+        env->setProperty("result", juce::var(result));
+        return juce::var(env);
     }
 
     juce::var sessionCommand(const juce::String& method, const juce::var& params) {

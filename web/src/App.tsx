@@ -7,6 +7,8 @@
 import { useAppStore } from './store/appStore'
 import { useEngineLink } from './engine/useEngineLink'
 import { useAutosave } from './persist/useAutosave'
+import { openPackage, savePackage } from './persist/packageIo'
+import { publishPatch } from './engine/usePatch'
 import { SourcesBrowser } from './panels/SourcesBrowser'
 import { ChannelRack } from './panels/ChannelRack'
 import { DeckRack } from './panels/DeckRack'
@@ -31,6 +33,28 @@ export function App() {
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const sessionNotice = useAppStore((s) => s.sessionNotice)
 
+  // Package save/open. The shell owns the dialog; packageIo owns the decisions.
+  const onSave = async () => {
+    if (!link) return
+    const store = useAppStore.getState()
+    const r = await savePackage(link, store.patch, nowIso())
+    if (r.notice !== '') store.setSessionNotice(r.notice)
+  }
+  const onOpen = async () => {
+    if (!link) return
+    const store = useAppStore.getState()
+    const r = await openPackage(
+      link,
+      (p) => {
+        store.setPatch(p)
+        publishPatch(link, p) // opening IS a publish, same path as any edit
+      },
+      store.setDeckUnresolved,
+      store.bumpDeckRevision,
+    )
+    if (r.notice !== '') useAppStore.getState().setSessionNotice(r.notice)
+  }
+
   const seconds = deviceInfo && deviceInfo.sampleRate > 0
     ? (engineTimeSamples / deviceInfo.sampleRate).toFixed(1) + ' s'
     : engineTimeSamples.toLocaleString() + ' spl'
@@ -43,6 +67,14 @@ export function App() {
           {STATUS_LABEL[shellStatus] ?? shellStatus}
         </span>
         <span className="value" data-testid="engine-time">{seconds}</span>
+        <span className="topbar-actions">
+          <button type="button" onClick={() => void onOpen()} disabled={!link}>
+            Open package…
+          </button>
+          <button type="button" onClick={() => void onSave()} disabled={!link}>
+            Save package…
+          </button>
+        </span>
       </header>
       {sessionNotice !== '' && (
         <div className="session-notice" role="status">

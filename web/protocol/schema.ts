@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 14
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -357,6 +357,38 @@ export const COMMANDS = {
       .object({
         text: z.string(),
         source: z.enum(['primary', 'backup', 'none']),
+      })
+      .strict(),
+  },
+  // --- `.wizard` package (P7-07) -------------------------------------------
+  // Opens a native SAVE dialog and writes a STORED zip of session.json + the
+  // referenced takes. The UI passes the take paths because the UI is what knows
+  // which takes the document actually references; the shell owns the dialog and
+  // the bytes. `missing` names takes that no longer exist — the package is
+  // still written without them, because one lost take is no reason to deny the
+  // user a package of everything else. ok=false + empty path on cancel.
+  savePackage: {
+    params: z.object({ text: z.string(), takes: z.array(z.string()) }).strict(),
+    result: z
+      .object({
+        ok: z.boolean(),
+        path: z.string(),
+        missing: z.array(z.string()),
+        error: z.string(),
+      })
+      .strict(),
+  },
+  // Opens a native OPEN dialog and extracts a package. `takes` are where the
+  // embedded copies landed, so the UI can fall back to them for references that
+  // no longer resolve on THIS machine. ok=false + empty text on cancel.
+  loadPackage: {
+    params: z.object({}).strict(),
+    result: z
+      .object({
+        ok: z.boolean(),
+        text: z.string(),
+        takes: z.array(z.object({ name: z.string(), path: z.string() }).strict()),
+        error: z.string(),
       })
       .strict(),
   },
