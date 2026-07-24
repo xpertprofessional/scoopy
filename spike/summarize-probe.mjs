@@ -103,6 +103,21 @@ if (reloads > 0) {
   }
 }
 
+// The navigation guard (the Q3 defect's fix). Reported whether or not a drop
+// happened, because the guard is what stops a drop from taking the shell away
+// from the app — and a guard that quietly stopped working would otherwise look
+// exactly like a run where nobody dragged anything.
+const refused = of('nav-REFUSED')
+const guard = of('nav-guard')
+if (guard.length > 0 || refused.length > 0) {
+  const held = guard.length > 0 && guard.every((g) => g.payload.survived && g.payload.rootsAfter > 0)
+  console.log(`\nnavigation guard: ${guard.length > 0 ? (held ? 'HOLDS' : 'LEAKED') : 'untested'}` +
+    ` · ${refused.length} refused, ${of('nav-allowed').length} allowed`)
+  for (const r of refused.slice(0, 5)) console.log(`  refused [${r.source}] ${r.payload.url}`)
+  if (guard.length > 0 && !held)
+    console.log('  ⚠ a probe navigation SUCCEEDED — the shell can be navigated away from the app')
+}
+
 const errs = [...of('pageerror'), ...of('rejection')]
 console.log(`\npage errors / unhandled rejections: ${errs.length}`)
 for (const e of errs.slice(0, 10)) console.log(`  [${e.source}] ${e.payload.message ?? e.payload.reason}`)

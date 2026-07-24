@@ -140,9 +140,34 @@ navigation happened anyway.
 
 This is a real P1 blocker for file drop, not a spike artifact: in the merged
 shell a stray drop would navigate the app away mid-session, silently losing
-UI state. It needs handling ABOVE the DOM — the WKWebView/WebKitGTK navigation
-policy — not only a page-level `preventDefault`. Tracked as the first item in
-"Consequences" below.
+UI state. It needs handling ABOVE the DOM — not only a page-level
+`preventDefault`.
+
+### The fix, and what it is verified to do
+
+`GuardedWebView` overrides `WebBrowserComponent::pageAboutToLoad` and returns
+`false` for anything that is not the app itself. Deliberately an **allowlist**
+(the resource-provider root, plus `about:blank` which is WebKit's own setup
+scratch page) rather than a denylist of `file://` URLs: the set of things the
+shell should ever navigate to is exactly one, and enumerating what to forbid is
+how guards like this get bypassed.
+
+**Verified by machine** (so the fix is not resting on a human remembering to
+drag something): the probe provokes a navigation to
+`https://example.invalid/nav-probe` from the page. The log shows the initial
+`juce://juce.backend/` load **allowed**, the probe navigation **REFUSED**, and
+the page still alive afterwards — same `href`, React root intact, no reboot, no
+errors. `summarize-probe.mjs` reports this as `navigation guard: HOLDS` on
+every run, so a guard that silently stopped working cannot be mistaken for a
+run where nobody dragged anything.
+
+**⚠️ NOT yet verified: that the guard catches the DROP path specifically.** A
+dropped file navigates to a `file://` URL, which this allowlist refuses — but
+whether macOS WKWebView routes a drop-navigation through `pageAboutToLoad` at
+all has not been observed. **One more human drag settles it:** run the spike,
+drop an audio file on the grid window, and check that the summary still says
+`navigation guard: HOLDS` with a `refused … file://…` line and **no** reload
+warning. Until that is seen, treat drop-navigation as mitigated, not closed.
 
 Everything in this document that concerns what is *on screen* remains unverified
 visually — the agent cannot see the UI. What is verified is that the bundle
@@ -151,10 +176,11 @@ human pass above.
 
 ## Consequences for P1 plumbing
 
-0. **Block drop-navigation before wiring file drop** (Q3 defect). A dropped file
-   currently reloads the webview. Page-level `preventDefault` is not sufficient
-   — the navigation must be refused at the webview's navigation policy. Until
-   that holds, any drop-to-load feature would intermittently reset the UI.
+0. **Carry the navigation guard into the shell** (Q3 defect, fix proven in the
+   spike). `pageAboutToLoad` must allowlist the resource-provider root and
+   refuse everything else, or a stray drop navigates the app away mid-session.
+   This is ~15 lines and belongs in the real `WebBrowserComponent` subclass from
+   the first increment that hosts scoopy's UI — not retrofitted later.
 1. Host scoopy's UI in `DocumentWindow` × `WebBrowserComponent`, one per panel,
    `window.__slPanel` per window. No docking layer. File drop is handled in the
    PAGE via `dataTransfer` (Q3) — not with a native `FileDragAndDropTarget`.

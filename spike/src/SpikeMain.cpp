@@ -205,6 +205,23 @@ juce::String probeUserScript(const juce::String& panel) {
     ...lanes, firstFrameLen, lastFrameCounter, uiStateTopic, eventType,
   }), 3000);
 
+  // Q3-defect verification. A file drop navigates the webview away; rather than
+  // needing a human to drag something to test the fix, provoke the same thing
+  // directly — a navigation the guard must refuse. If the page is still here
+  // afterwards with its React root intact, the guard held.
+  setTimeout(() => {
+    const before = location.href;
+    const rootsBefore = document.getElementById("root")?.childElementCount ?? -1;
+    try { location.href = "https://example.invalid/nav-probe"; } catch (e) {}
+    setTimeout(() => send("nav-guard", {
+      before,
+      after: location.href,
+      survived: location.href === before,
+      rootsBefore,
+      rootsAfter: document.getElementById("root")?.childElementCount ?? -1,
+    }), 1200);
+  }, 4000);
+
   // Boot facts: proof the page is the real bundle, talking to a real backend.
   window.addEventListener("error", (e) => send("pageerror", { message: String(e.message) }));
   window.addEventListener("unhandledrejection", (e) =>
@@ -226,6 +243,40 @@ juce::String probeUserScript(const juce::String& panel) {
 )JS").replace("__PANEL__", panel);
 }
 
+/** The navigation guard for the Q3 defect.
+ *
+ * Dropping a file on the WebView NAVIGATES it — the human pass caught the grid
+ * page rebooting with a fresh React root, having silently lost its UI state.
+ * `preventDefault()` on `dragover`/`drop` at window capture does NOT stop it,
+ * because the navigation is decided above the DOM. This is where it can be
+ * refused: anything that is not the app itself is denied, so a stray drop (or
+ * a link, or a redirect) can never take the shell away from the app.
+ *
+ * Deliberately an allowlist, not a "block file:// URLs" denylist: the set of
+ * things the shell should navigate to is exactly one, and enumerating what to
+ * forbid is how these guards get bypassed. */
+class GuardedWebView final : public juce::WebBrowserComponent {
+public:
+    GuardedWebView(const Options& options, ProbeLog& logToUse, juce::String panel)
+        : juce::WebBrowserComponent(options), probe(logToUse), panelName(std::move(panel)) {}
+
+    bool pageAboutToLoad(const juce::String& newURL) override {
+        const auto root = juce::WebBrowserComponent::getResourceProviderRoot();
+        // about:blank is WebKit's own scratch page during setup, not a navigation
+        // away from the app.
+        const bool allowed = newURL.startsWith(root) || newURL.startsWithIgnoreCase("about:blank");
+        auto* o = new juce::DynamicObject();
+        o->setProperty("kind", allowed ? "nav-allowed" : "nav-REFUSED");
+        o->setProperty("url", newURL);
+        probe.write(panelName, juce::var(o));
+        return allowed;
+    }
+
+private:
+    ProbeLog& probe;
+    juce::String panelName;
+};
+
 } // namespace
 
 /** One spike window: a DocumentWindow whose content is the whole scoopy UI.
@@ -241,7 +292,7 @@ public:
                                juce::DocumentWindow::allButtons),
           probe(logToUse),
           panelName(panel) {
-        webView = std::make_unique<juce::WebBrowserComponent>(
+        webView = std::make_unique<GuardedWebView>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
                 .withResourceProvider(provideResource)
@@ -260,7 +311,8 @@ public:
                 })
                 .withEventListener("slSpikeProbe", [this](juce::var payload) {
                     probe.write(panelName, payload);
-                }));
+                }),
+            probe, panelName);
 
         setUsingNativeTitleBar(true);
         setContentNonOwned(webView.get(), false);

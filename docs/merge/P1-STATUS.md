@@ -98,10 +98,13 @@ both and compares, not a ctest case. That job does not exist yet.
 ## Outstanding, not mine to close
 
 - ~~Human pass on spike Q1/Q3~~ — **DONE 2026-07-24, both PASS.** It found a
-  real defect: a file drop RELOADS the webview (see `P1-SPIKE-JUCE-WEBVIEW.md`
-  §Q3). Drop-navigation must be refused at the webview navigation policy before
-  any drop-to-load feature is wired, and file drop belongs in the PAGE
+  real defect: a file drop RELOADS the webview (`P1-SPIKE-JUCE-WEBVIEW.md` §Q3).
+  **Fixed in the spike** by a `pageAboutToLoad` allowlist (`GuardedWebView`);
+  machine-verified that a provoked navigation is refused and the page survives.
+  Still to confirm with ONE more drag: that the DROP path routes through
+  `pageAboutToLoad` on WKWebView. File drop itself belongs in the PAGE
   (`dataTransfer`), not a native `FileDragAndDropTarget`.
+  The guard must be carried into the real shell — it is consequence 0 there.
 - **Nothing is pushed.** `apps/wizard` is 8 commits ahead; `shared/` is 3 ahead
   (the `--lock` flag and two follow-ups). Note `origin` still points at the old
   `wizard.git` while `main` tracks `scoopy` — a bare `git push` may not go where
