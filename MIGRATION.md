@@ -34,12 +34,6 @@
   the one legal cycle), the feedback watchdog, and the 8-bus spatial output map. Two
   provisional values parked as morning decisions #5/#6 — rows build with the proposal and
   re-tune on sign-off. P4-08 strip mode is HELD for decision #1 (PD-CANVAS).
-- **P3 deck recorder (superseded line).** Record into a deck with live monitor; **stop->loop
-  instant gapless turnaround (Law C-3)** — the in-engine record buffer that doubles as the
-  playback buffer; parallel crash-safe BWF drain (D-WZ-CORE-02); engine-sample stamps +
-  align-to-deck-N (Law C-2). Centerpieces: deck_handoff_test (gapless, sample-exact),
-  wav_killtest (SIGKILL mid-record recoverable). Decision D-WZ-DECK-01 (deck RAM policy)
-  signed before the record buffer.
 - **Later — phase by phase, each with its centerpiece fixture and its blocking decision:**
   - **P2 capture + ASRC.** Order: `wz_capture.h` + deterministic fake backend (fixtures
     first) → macOS taps (open/close/format-change/process-vanish lifecycle) → source rings
