@@ -179,6 +179,45 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       },
     },
 
+    // v29 -> v30: REPAIR duplicate strip keys. The key counter restarted at 1
+    // on every launch, so the first strip added after restoring a session took a
+    // `ch-1` the document already had. `validatePatch` refuses a patch with a
+    // duplicate key — correctly — so from that moment EVERY publish was refused
+    // and the engine held no world: nothing played, nothing recorded, and the
+    // only evidence was a console.error inside a WebView.
+    //
+    // The engine fix (seeding the counter) cannot help a document that is
+    // already broken, so duplicates are renamed here. The FIRST occurrence keeps
+    // its key — anything else would renumber strips that were fine.
+    29: {
+      to: 30,
+      name: 'dedupe-strip-keys',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        const channels = Array.isArray(patch.channels) ? patch.channels : []
+        const seen = new Set<string>()
+        let next = 1
+        return {
+          ...s,
+          patch: {
+            ...patch,
+            channels: channels.map((c) => {
+              const ch = (c ?? {}) as Record<string, unknown>
+              const key = typeof ch.key === 'string' ? ch.key : ''
+              if (key !== '' && !seen.has(key)) {
+                seen.add(key)
+                return ch
+              }
+              let fresh = `ch-r${next++}`
+              while (seen.has(fresh)) fresh = `ch-r${next++}`
+              seen.add(fresh)
+              return { ...ch, key: fresh }
+            }),
+          },
+        }
+      },
+    },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.

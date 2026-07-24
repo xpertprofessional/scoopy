@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { DEFAULT_CELL, SCHEMA_VERSION, emptyPatch, makeChannel } from '../../protocol/schema'
 import { loadSession, makeSession, serializeSession } from './session'
+import { validatePatch } from '../engine/patchValidation'
 
 const NOW = '2026-07-24T03:00:00Z'
 
@@ -311,4 +312,22 @@ test('v28 -> v29 closes a monitor switch stuck open by a take', () => {
   // No material means the open switch is a deliberate "listen to my input" —
   // repairing that would break the control this migration exists to protect.
   expect(r.patch.channels[1]!.monitorSwitch).toBe(true)
+})
+
+test('v29 -> v30 repairs duplicate strip keys, keeping the first occurrence', () => {
+  const base = JSON.parse(serializeSession(makeSession(emptyPatch(), '2026-07-24T00:00:00Z')))
+  base.schemaVersion = 29
+  const mk = (key: string, name: string) =>
+    makeChannel(key, name, { kind: 'deviceInput', id: '0', name: 'In' })
+  base.patch.channels = [mk('ch-1', 'first'), mk('ch-2', 'other'), mk('ch-1', 'collided')]
+  const r = loadSession(JSON.stringify(base))
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  const keys = r.patch.channels.map((c) => c.key)
+  expect(new Set(keys).size).toBe(3) // no duplicates survive
+  expect(keys[0]).toBe('ch-1') // the first occurrence keeps its key...
+  expect(keys[1]).toBe('ch-2') // ...and so does anything that was already fine
+  expect(r.patch.channels[2]!.name).toBe('collided') // only the key changed
+  // The document is now publishable, which is the entire point.
+  expect(validatePatch(r.patch)).toEqual([])
 })

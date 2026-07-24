@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
+import { validatePatch } from '../engine/patchValidation'
 import { emptyPatch } from '../../protocol/schema'
 import { useAppStore } from './appStore'
 
@@ -125,4 +126,22 @@ test('a strip listening to a bus is the one legal cycle, and arrives muted', () 
   expect(lb.mute).toBe(true)
   const cue = s.addChannel('↺ cue', { kind: 'busTap', id: '1', name: 'cue bus' })
   expect(cue.channels[1]!.source.id).toBe('1')
+})
+
+test('a restored session never has its keys reused by the next strip', () => {
+  // THE INERT-APP BUG: the key counter restarted at 1 each launch, so the first
+  // strip added after a restore took a `ch-1` the document already had.
+  // validatePatch refuses a duplicate key, so from then on EVERY publish was
+  // refused — the engine held no world, and nothing played or recorded.
+  const s = useAppStore.getState()
+  s.addChannel('A', { kind: 'none', id: '', name: '' })
+  s.addChannel('B', { kind: 'none', id: '', name: '' })
+  const restored = useAppStore.getState().patch
+  useAppStore.setState({ patch: { ...restored, channels: [] } })
+  s.setPatch(restored) // what restore does
+
+  s.addChannel('C', { kind: 'none', id: '', name: '' })
+  const keys = useAppStore.getState().patch.channels.map((c) => c.key)
+  expect(new Set(keys).size).toBe(keys.length)
+  expect(validatePatch(useAppStore.getState().patch)).toEqual([])
 })

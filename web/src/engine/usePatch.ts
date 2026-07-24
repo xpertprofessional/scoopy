@@ -18,7 +18,19 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
   // worth being loud about.
   const errors = validatePatch(patch)
   if (errors.length > 0) {
+    // LOUD. A refused publish means the engine keeps running the LAST world it
+    // accepted — and if the very first publish is refused, that is no world at
+    // all: every strip is silent, ⟳ does nothing, recording produces nothing.
+    // This used to be a console.error inside a WebView with no console attached,
+    // so the app sat completely inert with no visible reason (a duplicate strip
+    // key did exactly this). An invisible refusal is indistinguishable from a
+    // broken app, so it goes on screen.
     console.error('publish refused:', errors)
+    useAppStore
+      .getState()
+      .setSessionNotice(
+        `patch refused, engine not updated — ${errors.join('; ')}. Nothing will play until this is fixed.`,
+      )
     return
   }
   // Output map v0 follows the device (routing.md §4): monitor → device 3/4

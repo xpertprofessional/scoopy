@@ -125,7 +125,22 @@ interface AppState {
   setDeckLoadProgress: (id: number, progress: number) => void
 }
 
+// Strip keys must be unique: `validatePatch` refuses a patch with a duplicate,
+// and React lists them. This counter used to restart at 1 on every launch, so
+// the first strip added after RESTORING a session collided with a `ch-1` already
+// in it — and from that moment every publish was refused and the engine had no
+// world at all. Nothing played, nothing recorded, and the only trace was a
+// console.error inside a WebView. `setPatch` now seeds it past whatever the
+// document already contains.
 let nextKey = 1
+
+/** Advance the key counter past every `ch-N` in this patch. */
+function seedKeyCounter(patch: Patch): void {
+  for (const ch of patch.channels) {
+    const m = /^ch-(\d+)$/.exec(ch.key)
+    if (m) nextKey = Math.max(nextKey, Number(m[1]) + 1)
+  }
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   shellStatus: 'disconnected',
@@ -164,7 +179,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEngineTimeSamples: (engineTimeSamples) => set({ engineTimeSamples }),
   setFeedbackAlarm: (feedbackAlarm) => set({ feedbackAlarm }),
   setDeckStates: (deckStates) => set({ deckStates }),
-  setPatch: (patch) => set({ patch }),
+  setPatch: (patch) => {
+    seedKeyCounter(patch) // never mint a key the loaded document already uses
+    set({ patch })
+  },
   setSessionNotice: (sessionNotice) => set({ sessionNotice }),
   setDeckCapReached: (deckCapReached) => set({ deckCapReached }),
   setDeckUnresolved: (id, unresolved) => {
