@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -178,7 +178,11 @@ export const ChannelSchema = z
     pan: z.number().min(-1).max(1),
     mute: z.boolean(),
     solo: z.boolean(),
-    toMonitor: z.boolean(), // cue assign (main is always fed; spec §2)
+    toMonitor: z.boolean(), // cue assign (independent of the output bus)
+    // Which of the 8 output buses this strip feeds (P4-10). Bus 0 IS main —
+    // there is no separate main path, which is exactly why a spatial layout
+    // (quad / 5.1 / octophonic) is just strips on different buses.
+    outBus: z.number().int().min(0).max(7),
     sends: z.array(z.number().min(0).max(1)).length(4), // P6 (reserved)
     recordArm: z.boolean(), // P3 (reserved)
     monitorSwitch: z.boolean(), // P3 per-deck input monitoring (reserved)
@@ -247,6 +251,7 @@ export function makeChannel(key: string, name: string, source: SourceRef): Chann
     mute: false,
     solo: false,
     toMonitor: false,
+    outBus: 0, // main
     sends: [0, 0, 0, 0],
     recordArm: false,
     monitorSwitch: false,
@@ -306,6 +311,10 @@ export const COMMANDS = {
         ),
         outputChannels: z.number().int().nonnegative(),
         monitorAvailable: z.boolean(),
+        // How many of the 8 output buses this device can actually carry
+        // (wz_engine_mappable_buses). Buses beyond it are UNMAPPED — dropped
+        // and labelled, never folded into another bus.
+        mappableBuses: z.number().int().nonnegative(),
       })
       .strict(),
   },

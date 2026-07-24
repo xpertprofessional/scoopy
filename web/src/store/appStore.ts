@@ -62,7 +62,7 @@ interface AppState {
   /** Live param edits (caller also sends the ParamWrite; no republish). */
   setChannelParam: (
     index: number,
-    key: 'gain' | 'pan' | 'mute' | 'solo' | 'toMonitor',
+    key: 'gain' | 'pan' | 'mute' | 'solo' | 'toMonitor' | 'outBus',
     value: number | boolean,
   ) => void
   setDeckSourcePath: (id: number, path: string) => void

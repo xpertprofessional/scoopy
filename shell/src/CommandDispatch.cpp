@@ -64,6 +64,7 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         const auto kMute = wz_world_key_for_name("mute");
         const auto kSolo = wz_world_key_for_name("solo");
         const auto kDeckIndex = wz_world_key_for_name("deckIndex");
+        const auto kOutBus = wz_world_key_for_name("outBus");
 
         // Schema enum order (SourceKindSchema) → numeric srcKind.
         const auto kindIndex = [](const juce::String& kind) -> int {
@@ -104,6 +105,9 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
                                  static_cast<bool>(chVar.getProperty("mute", false)) ? 1.0 : 0.0);
             wz_world_channel_set(engine, kSolo,
                                  static_cast<bool>(chVar.getProperty("solo", false)) ? 1.0 : 0.0);
+            wz_world_channel_set(engine, kOutBus,
+                                 static_cast<double>(static_cast<int>(
+                                     chVar.getProperty("outBus", 0))));
             wz_world_channel_end(engine);
         }
         const auto revision = wz_world_commit(engine);

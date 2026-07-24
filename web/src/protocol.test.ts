@@ -80,6 +80,16 @@ test('Patch schema: empty patch validates; unknown key fails loudly', () => {
   expect(() => PatchSchema.parse({ ...p, mystery: 1 })).toThrow() // preserve-don't-drop
 })
 
+test('a strip carries its output bus; bus 0 is main (P4-10)', () => {
+  const ch = makeChannel('c', 'x', { kind: 'none', id: '', name: '' })
+  expect(ch.outBus).toBe(0) // main by default — no separate main path exists
+  const patch = { ...emptyPatch(), channels: [{ ...ch, outBus: 7 }] }
+  expect(PatchSchema.parse(patch).channels[0]!.outBus).toBe(7)
+  // Out-of-range buses are refused at the boundary, not clamped silently.
+  expect(() => PatchSchema.parse({ ...emptyPatch(), channels: [{ ...ch, outBus: 8 }] })).toThrow()
+  expect(() => PatchSchema.parse({ ...emptyPatch(), channels: [{ ...ch, outBus: -1 }] })).toThrow()
+})
+
 test('makeChannel defaults follow the signed decisions', () => {
   const ch = makeChannel('ch-1', 'Mic', { kind: 'deviceInput', id: '0,1', name: 'Built-in' })
   expect(ch.gain).toBe(0.75) // unity detent (D-WZ-FADER-01)

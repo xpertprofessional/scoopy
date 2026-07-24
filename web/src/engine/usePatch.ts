@@ -77,6 +77,12 @@ export function usePatchActions(link: EngineLink | null) {
       setChannelParam(index, 'solo', on)
       link?.paramWrite('solo', on ? 1 : 0, index)
     },
+    /** Output-bus assign is topology (it lives in the engine world) — republish.
+        Bus 0 IS main; a spatial layout is simply strips on different buses. */
+    setOutBus(index: number, bus: number) {
+      setChannelParam(index, 'outBus', bus)
+      publishPatch(link, useAppStore.getState().patch)
+    },
     /** Cue assign is topology (the engine world carries it) — republish. */
     setToMonitor(index: number, on: boolean) {
       setChannelParam(index, 'toMonitor', on)

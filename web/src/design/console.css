@@ -477,3 +477,37 @@ canvas.meter {
   cursor: crosshair;
   touch-action: none;
 }
+
+/* --- output-bus assign ---------------------------------------------------- */
+
+.strip-bus {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+}
+
+.strip-bus select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+}
+
+/* An unmapped strip is announced, never silently silent. */
+.strip-unmapped {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  text-transform: var(--type-label-transform);
+  color: var(--bg);
+  background: var(--warn);
+  border-radius: var(--radius);
+  text-align: center;
+}

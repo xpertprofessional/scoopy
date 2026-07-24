@@ -28,7 +28,13 @@ function faderLabel(position: number): string {
 
 export function ChannelRack({ link }: { link: EngineLink | null }) {
   const channels = useAppStore((s) => s.patch.channels)
+  const deviceInfo = useAppStore((s) => s.deviceInfo)
   const actions = usePatchActions(link)
+  // How many buses this device can actually carry. Buses past it still appear
+  // in the picker but are labelled unmapped — the user should be able to BUILD
+  // a spatial patch on a stereo laptop and see honestly what won't be heard,
+  // rather than have the option silently missing.
+  const mappable = deviceInfo?.mappableBuses ?? 1
 
   return (
     <section className="rack">
@@ -80,6 +86,28 @@ export function ChannelRack({ link }: { link: EngineLink | null }) {
             onDoubleClick={() => actions.setPan(i, 0)}
             title={`pan ${ch.pan.toFixed(2)}`}
           />
+          <label className="strip-bus" title="output bus — bus 1 is main; a spatial layout is just strips on different buses">
+            <span>out</span>
+            <select
+              value={ch.outBus}
+              onChange={(ev) => actions.setOutBus(i, Number(ev.target.value))}
+            >
+              {Array.from({ length: 8 }, (_, b) => (
+                <option key={b} value={b}>
+                  {b === 0 ? 'main' : `bus ${b + 1}`}
+                  {b >= mappable ? ' (unmapped)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {ch.outBus >= mappable && (
+            <div
+              className="strip-unmapped"
+              title={`this device has ${deviceInfo?.outputChannels ?? 0} output channels, which carries ${mappable} bus${mappable === 1 ? '' : 'es'} — this strip is not heard`}
+            >
+              unmapped
+            </div>
+          )}
           <div className="strip-switches">
             <button
               type="button"

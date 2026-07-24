@@ -28,7 +28,7 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
             <thead>
               <tr>
                 <th />
-                <th>main</th>
+                <th>out bus</th>
                 <th>monitor</th>
               </tr>
             </thead>
@@ -36,8 +36,8 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
               {channels.map((ch, i) => (
                 <tr key={ch.key}>
                   <td className="matrix-name">{ch.name}</td>
-                  <td className="matrix-fixed" title="every channel feeds main (P1)">
-                    ●
+                  <td className="matrix-fixed" title="output bus (bus 1 = main)">
+                    {ch.outBus === 0 ? 'main' : `bus ${ch.outBus + 1}`}
                   </td>
                   <td>
                     <button
@@ -64,6 +64,9 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
             {deviceInfo?.monitorAvailable
               ? 'monitor → out 3/4'
               : 'monitor unmapped (device has <4 outputs)'}
+            {' · '}
+            bus 2+ → out 5/6, 7/8, … ·{' '}
+            {`this device carries ${deviceInfo?.mappableBuses ?? 1} of 8 buses`}
           </p>
         </>
       )}

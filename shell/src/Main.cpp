@@ -319,6 +319,9 @@ private:
         result->setProperty("outputChannels", outs);
         // routing.md §4: the cue pair exists only on a ≥4-output device.
         result->setProperty("monitorAvailable", outs >= 4);
+        result->setProperty("mappableBuses",
+                            static_cast<int>(wz_engine_mappable_buses(
+                                static_cast<uint32_t>(outs))));
         auto* envelope = new juce::DynamicObject();
         envelope->setProperty("ok", true);
         envelope->setProperty("result", juce::var(result));
