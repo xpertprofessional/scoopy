@@ -1,6 +1,5 @@
 #include "AudioIO.h"
 
-#include "wz_engine.h"
 
 #include <algorithm>
 #include <array>
@@ -8,7 +7,7 @@
 
 namespace wizard::host {
 
-AudioIO::AudioIO(wz_engine* engineToUse) : engine(engineToUse) {}
+AudioIO::AudioIO(RenderSink& sinkToUse) : sink(sinkToUse) {}
 
 AudioIO::~AudioIO() { close(); }
 
@@ -40,7 +39,13 @@ juce::String AudioIO::open(double sampleRate) {
         return "device does not support " + juce::String(sampleRate, 0) + " Hz";
     }
 
-    wz_engine_set_sample_rate(engine, sampleRate);
+    // The engine half of D-WZ-RATE-01. If it refuses, the device is unusable at
+    // this rate: attaching anyway would run the callback against an engine
+    // clocked for something else.
+    if (!sink.setSampleRate(sampleRate)) {
+        close();
+        return "engine could not run at " + juce::String(sampleRate, 0) + " Hz";
+    }
     openedRate = sampleRate;
     attach();
     return {};
@@ -107,7 +112,8 @@ juce::String AudioIO::setDevices(const juce::String& inName, const juce::String&
     if (device == nullptr) return "no audio device";
     if (std::abs(device->getCurrentSampleRate() - sampleRate) > 0.5)
         return "device does not support " + juce::String(sampleRate, 0) + " Hz";
-    wz_engine_set_sample_rate(engine, sampleRate);
+    if (!sink.setSampleRate(sampleRate))
+        return "engine could not run at " + juce::String(sampleRate, 0) + " Hz";
     openedRate = sampleRate;
     attach();
     return {};
@@ -149,36 +155,16 @@ void AudioIO::audioDeviceIOCallbackWithContext(
     const float* const* input, int numInputChannels,
     float* const* output, int numOutputChannels, int numSamples,
     const juce::AudioIODeviceCallbackContext&) {
-    if (numOutputChannels <= 0 || numSamples <= 0) return;
-
     // The engine renders straight into the device's output channel buffers as
     // its bus buffers (bus 0/1 = main L/R, 2/3 = monitor). Inputs ride the SAME
     // callback — same clock, no rings, no ASRC (D-WZ-RATE-01): deviceInput
-    // strips read them inside wz_engine_render_io. The device block can exceed
-    // the engine's max render block, so chunk both sides together.
-    const auto maxBlock = static_cast<int>(wz_engine_max_block_frames(engine));
-    if (maxBlock <= 0) {
-        for (int c = 0; c < numOutputChannels; ++c)
-            if (output[c] != nullptr) juce::FloatVectorOperations::clear(output[c], numSamples);
-        return;
-    }
-
-    for (int offset = 0; offset < numSamples;) {
-        const int chunk = std::min(numSamples - offset, maxBlock);
-        // Offset each channel pointer into the current chunk.
-        std::array<const float*, 32> ins{};
-        std::array<float*, 32> outs{};
-        const int nIn = std::min(numInputChannels, static_cast<int>(ins.size()));
-        const int nOut = std::min(numOutputChannels, static_cast<int>(outs.size()));
-        for (int c = 0; c < nIn; ++c)
-            ins[static_cast<size_t>(c)] = input[c] != nullptr ? input[c] + offset : nullptr;
-        for (int c = 0; c < nOut; ++c)
-            outs[static_cast<size_t>(c)] = output[c] != nullptr ? output[c] + offset : nullptr;
-        wz_engine_render_io(engine, ins.data(), static_cast<uint32_t>(nIn),
-                            outs.data(), static_cast<uint32_t>(nOut),
-                            static_cast<uint32_t>(chunk));
-        offset += chunk;
-    }
+    // strips read them inside the sink's renderIo.
+    //
+    // The body lives in renderChunked so the chunking, pointer offsetting and
+    // unconfigured-engine handling are testable without a device or a display
+    // (render_sink_test) — everything that used to be untestable about this
+    // callback was the part with the arithmetic in it.
+    renderChunked(sink, input, numInputChannels, output, numOutputChannels, numSamples);
 }
 
 } // namespace wizard::host

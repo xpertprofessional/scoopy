@@ -9,6 +9,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "AudioIO.h"
+#include "WzRenderSink.h"
 #include "CommandDispatch.h"
 #include "PackageStore.h"
 #include "SessionStore.h"
@@ -47,7 +48,8 @@ public:
                                juce::Colours::black,
                                juce::DocumentWindow::allButtons),
           engine(engineToUse),
-          audioIO(engineToUse) {
+          engineSink(engineToUse),
+          audioIO(engineSink) {
         // Open the default duplex device at the engine's rate (D-WZ-RATE-01).
         // A failure (no device / unsupported rate) leaves the app running,
         // silent; the boot tone simply won't be audible until a device opens.
@@ -584,6 +586,9 @@ private:
     }
 
     wz_engine* engine;
+    // Declared before audioIO: the device layer holds a REFERENCE to the sink,
+    // so the sink must outlive it, and member destruction runs in reverse.
+    wizard::host::WzRenderSink engineSink;
     std::vector<double> hotFrameBuf; // grown-only hotframe staging
     std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
     wizard::host::AudioIO audioIO;

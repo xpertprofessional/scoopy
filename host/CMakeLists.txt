@@ -2,7 +2,7 @@
 # hold only transport/chrome/dialogs). JUCE device code lives here. Capture
 # backends (macOS taps, Linux PipeWire) and the WAV writer join this tier in
 # P2/P3.
-add_library(wz_audio_io STATIC src/AudioIO.cpp)
+add_library(wz_audio_io STATIC src/AudioIO.cpp src/RenderSink.cpp)
 target_include_directories(wz_audio_io PUBLIC src)
 target_link_libraries(wz_audio_io
     PUBLIC juce::juce_audio_devices   # AudioIO.h uses JUCE types in its interface
@@ -82,3 +82,10 @@ target_link_libraries(wz_package
 add_executable(package_store_test tools/package_store_test.cpp)
 target_link_libraries(package_store_test PRIVATE wz_package)
 add_test(NAME package_store_test COMMAND package_store_test)
+
+# The device callback's arithmetic (chunking, offsetting, ceilings) plus proof
+# that SL ABI v3 renders through the same seam wizard's engine does. Links both
+# engines because it drives both sinks — the ONE place that is legitimate.
+add_executable(render_sink_test tools/render_sink_test.cpp)
+target_link_libraries(render_sink_test PRIVATE wz_audio_io wz_engine wz_sl_engine)
+add_test(NAME render_sink_test COMMAND render_sink_test)

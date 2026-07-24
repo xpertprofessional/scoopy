@@ -14,15 +14,18 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
-#include <functional>
+#include "RenderSink.h"
 
-struct wz_engine;
+#include <functional>
 
 namespace wizard::host {
 
 class AudioIO final : public juce::AudioIODeviceCallback {
 public:
-    explicit AudioIO(wz_engine* engineToUse);
+    /** Drives whatever engine the sink wraps (see EngineSinks.h). The sink must
+        outlive this AudioIO — it is a reference, not ownership, because the
+        shell owns the engine and the device layer only borrows it to render. */
+    explicit AudioIO(RenderSink& sinkToUse);
     ~AudioIO() override;
 
     // (Re)opens the default duplex device at `sampleRate` and attaches the
@@ -67,7 +70,7 @@ private:
     void attach();
     void detach();
 
-    wz_engine* engine;
+    RenderSink& sink;
     juce::AudioDeviceManager deviceManager;
     double openedRate = 0.0;
     bool attached = false;
