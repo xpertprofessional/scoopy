@@ -11,15 +11,7 @@ import { useAppStore } from '../store/appStore'
 import type { EngineLink } from './engineLink'
 import { validatePatch } from './patchValidation'
 
-export function publishPatch(
-  link: EngineLink | null,
-  patch: Patch,
-  /** Channel index that must publish its INPUT even though it holds material —
-      used while recording, so you hear and meter what you are capturing rather
-      than the deck you are capturing INTO. Without this, arming a take silently
-      swapped the strip over to an empty deck and recording looked dead. */
-  monitorIndex?: number,
-): void {
+export function publishPatch(link: EngineLink | null, patch: Patch): void {
   if (!link) return
   // Edit-time DAG/integrity guard (routing.md §5): the engine never sees an
   // illegal world. Store paths only build legal edits, so a hit here is a bug
@@ -45,8 +37,8 @@ export function publishPatch(
     // D-WZ-MON-01); monitorIndex is the same thing forced during a take. Without
     // it, a mic strip that had recorded once could never be heard again: material
     // won permanently and the input was unreachable.
-    channels: patch.channels.map((ch, i) =>
-      ch.material && i !== monitorIndex && !ch.monitorSwitch
+    channels: patch.channels.map((ch) =>
+      ch.material && !ch.monitorSwitch
         ? { ...ch, source: { kind: 'deck' as const, id: String(ch.material.deckId), name: ch.name } }
         : ch,
     ),
@@ -125,10 +117,11 @@ export function usePatchActions(link: EngineLink | null) {
       if (!link) return -1
       const { patch, deckId } = attachDeck(index)
       if (deckId < 0) return -1
-      // Publish with THIS strip monitoring its input: the deck must exist in
-      // the world before capture, but the strip must still pass the signal it is
-      // recording (D-WZ-MON-01, monitor default ON).
-      publishPatch(link, patch, index)
+      // ARMED ⇒ MONITORING ON (D-WZ-MON-01). Set the document's own switch
+      // rather than forcing it through a parallel publish argument: one
+      // mechanism, and the user can SEE that the strip is listening to its input.
+      useAppStore.getState().setChannelParam(index, 'monitorSwitch', true)
+      publishPatch(link, useAppStore.getState().patch)
       await link.command('deckRecordStart', { deck: deckId, chan0, chan1, sourceDesc })
       return deckId
     },
