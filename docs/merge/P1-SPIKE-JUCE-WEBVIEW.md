@@ -11,7 +11,8 @@ resolves to multi-window, not panel docking.**
 
 **All four questions are now answered.** Q2 and Q4 were machine-captured; Q1
 (keys) and Q3 (drag-in) were confirmed by the user's human pass on 2026-07-24,
-which also surfaced one real defect — a file drop **reloads the webview** (§Q3).
+§Q3 also carries a **retraction**: a "drop reloads the webview" defect I
+reported was a false correlation, disproved by a clean drop-only run.
 
 ## How to reproduce
 
@@ -31,7 +32,7 @@ runs the probe, appends to `~/wizard-spike-probe.jsonl`, and quits.
 | Q0 | Real bundle mounts on a real backend | **PASS** | both windows: `hasJuceBackend=true`, React `#root` mounted, **0 page errors, 0 unhandled rejections** |
 | Q1 | Key-event fidelity | **PASS** | 187 keydown (150 auto-repeat) / 28 keyup; physical `code`, correct `repeat`, matched hold |
 | Q2 | Multi-window | **PASS** | 2 `DocumentWindow`s, each an independent React root with its own live JuceLink |
-| Q3 | File drag-in | **PASS, with a defect** | the **page** receives the drop, not JUCE — and the drop **reloads the webview** |
+| Q3 | File drag-in | **PASS** | the **page** receives the drop (filename + MIME), not JUCE. No reload, no navigation — an earlier "reload" claim is retracted below |
 | Q4 | OPFS | **PASS, with a shape constraint** | available; writes work **only off the main thread** |
 
 ### The JuceLink contract — all five lanes, machine-verified
@@ -122,65 +123,54 @@ Bonus signal: `forwardKey` was called 4 times, so scoopy's own native
 key-forwarding relay (`useNativeKeyForwarding`) engaged against this backend
 unmodified.
 
-## Q3 — drag-in: PASS, and it found a defect
+## Q3 — drag-in: PASS
 
 Dragging an audio file (`HERMAN.wav`) onto the grid window produced
-**`web-drop` × 2 and `native-filesDropped` × 0.**
+**`web-drop` × 2 and `native-filesDropped` × 0**, with the payload intact:
+`files: ["HERMAN.wav"]`, `items: ["file:audio/x-wav"]`.
 
 **Verdict: the PAGE owns file drop.** In P1 it must be handled in JS via
 `dataTransfer` — a JUCE `FileDragAndDropTarget` on the window never sees it,
-because the WebView consumes the drag first.
+because the WebView consumes the drag first. Filename and MIME type are both
+available page-side, so a drop-to-load feature has what it needs.
 
-**⚠️ DEFECT: the drop RELOADS the webview.** The probe log shows the grid page
-booting a third time, 7 records after the second `web-drop` — with a fresh
-React root and a HotFrame counter of 1633 (i.e. ~54 s into the run), having
-missed the one-shot `slEvent`/`slUiState` pushes. The probe already calls
-`preventDefault()` on `dragover` and `drop` at window capture phase, and the
-navigation happened anyway.
+Nothing visible happens on drop in the spike, and that is correct: the stub has
+no engine, so there is no code to load a file into. The drop is captured, not
+acted on.
 
-This is a real P1 blocker for file drop, not a spike artifact: in the merged
-shell a stray drop would navigate the app away mid-session, silently losing
-UI state. It needs handling ABOVE the DOM — not only a page-level
-`preventDefault`.
+### ⚠️ CORRECTION — the "drop reloads the webview" claim was wrong
 
-### The fix, and what it is verified to do
+An earlier revision of this document recorded a **defect: file drop reloads the
+webview**, based on the grid page booting a third time 7 records after a drop.
+**That was a false correlation and is retracted.**
 
-`GuardedWebView` overrides `WebBrowserComponent::pageAboutToLoad` and returns
-`false` for anything that is not the app itself. Deliberately an **allowlist**
-(the resource-provider root, plus `about:blank` which is WebKit's own setup
-scratch page) rather than a denylist of `file://` URLs: the set of things the
-shell should ever navigate to is exactly one, and enumerating what to forbid is
-how guards like this get bypassed.
+A clean drop-only run (2 drops, **0 keystrokes**) produced **0 reloads and no
+navigation attempt at all** — no `file://` ever reached `pageAboutToLoad`. The
+run that showed the reload also contained **187 keystrokes including Meta**, so
+the overwhelmingly likely cause was a stray **⌘R**, not the drop. The reload was
+attributed to the nearest preceding drop purely on proximity, which is not
+evidence of causation.
 
-**Verified by machine** (so the fix is not resting on a human remembering to
-drag something): the probe provokes a navigation to
-`https://example.invalid/nav-probe` from the page. The log shows the initial
-`juce://juce.backend/` load **allowed**, the probe navigation **REFUSED**, and
-the page still alive afterwards — same `href`, React root intact, no reboot, no
-errors. `summarize-probe.mjs` reports this as `navigation guard: HOLDS` on
-every run, so a guard that silently stopped working cannot be mistaken for a
-run where nobody dragged anything.
+Two things follow, and the second matters:
 
-**⚠️ NOT yet verified: that the guard catches the DROP path specifically.** A
-dropped file navigates to a `file://` URL, which this allowlist refuses — but
-whether macOS WKWebView routes a drop-navigation through `pageAboutToLoad` at
-all has not been observed. **One more human drag settles it:** run the spike,
-drop an audio file on the grid window, and check that the summary still says
-`navigation guard: HOLDS` with a `refused … file://…` line and **no** reload
-warning. Until that is seen, treat drop-navigation as mitigated, not closed.
+- **A drop does not navigate the WebView.** Drop-to-load is unblocked; there is
+  no drop defect to design around.
+- **The navigation guard would not have prevented that reload anyway.** ⌘R
+  reloads the *same* root URL, which the allowlist permits. A guard that was
+  justified by a defect it could not have stopped was justified badly.
 
-Everything in this document that concerns what is *on screen* remains unverified
-visually — the agent cannot see the UI. What is verified is that the bundle
-mounted, every transport lane carried real payloads, nothing threw, and the
-human pass above.
+The guard is nonetheless **kept**, on its own merits rather than that one: the
+shipping shell had *no* navigation policy whatsoever, so a link, a redirect, or
+a `javascript:` URL could take the running app away and lose its state. That is
+a real hole, cheap to close, and now unit-tested. It is defence in depth — not
+a fix for an observed drop failure.
 
 ## Consequences for P1 plumbing
 
-0. **Carry the navigation guard into the shell** (Q3 defect, fix proven in the
-   spike). `pageAboutToLoad` must allowlist the resource-provider root and
-   refuse everything else, or a stray drop navigates the app away mid-session.
-   This is ~15 lines and belongs in the real `WebBrowserComponent` subclass from
-   the first increment that hosts scoopy's UI — not retrofitted later.
+0. **The navigation guard is already in the shell** (`c1176db`) — kept as
+   defence in depth, NOT as a drop fix (see the §Q3 retraction). Drop-to-load is
+   unblocked: handle it page-side via `dataTransfer`, which carries filename and
+   MIME.
 1. Host scoopy's UI in `DocumentWindow` × `WebBrowserComponent`, one per panel,
    `window.__slPanel` per window. No docking layer. File drop is handled in the
    PAGE via `dataTransfer` (Q3) — not with a native `FileDragAndDropTarget`.

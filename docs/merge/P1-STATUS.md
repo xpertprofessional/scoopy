@@ -98,13 +98,15 @@ both and compares, not a ctest case. That job does not exist yet.
 ## Outstanding, not mine to close
 
 - ~~Human pass on spike Q1/Q3~~ — **DONE 2026-07-24, both PASS.** It found a
-  real defect: a file drop RELOADS the webview (`P1-SPIKE-JUCE-WEBVIEW.md` §Q3).
-  **Fixed in the spike** by a `pageAboutToLoad` allowlist (`GuardedWebView`);
-  machine-verified that a provoked navigation is refused and the page survives.
-  Still to confirm with ONE more drag: that the DROP path routes through
-  `pageAboutToLoad` on WKWebView. File drop itself belongs in the PAGE
-  (`dataTransfer`), not a native `FileDragAndDropTarget`.
-  The guard must be carried into the real shell — it is consequence 0 there.
+  real defect: an apparent "file drop reloads the webview" defect (`P1-SPIKE-JUCE-WEBVIEW.md` §Q3).
+  **RETRACTED** — a clean drop-only run (2 drops, 0 keystrokes) showed 0 reloads
+  and no navigation attempt. The reload came from the run with 187 keystrokes
+  (stray ⌘R), not the drop. A navigation guard WAS added to the shell anyway
+  (`c1176db`) and is kept on its own merit — the shipping shell had no
+  navigation policy at all — but it is defence in depth, not a drop fix, and
+  would not have stopped a ⌘R reload. File drop belongs in the PAGE
+  (`dataTransfer`, which carries filename and MIME), not a native
+  `FileDragAndDropTarget`.
 - **Nothing is pushed.** `apps/wizard` is 8 commits ahead; `shared/` is 3 ahead
   (the `--lock` flag and two follow-ups). Note `origin` still points at the old
   `wizard.git` while `main` tracks `scoopy` — a bare `git push` may not go where
