@@ -23,6 +23,8 @@ add_subdirectory(engine)
 # The hash-pinned scoopy core + its C ABI. Added BEFORE host/shell so the
 # merged engine target is available to them as P1 plumbing proceeds.
 add_subdirectory(vendor)
+# SL ABI v3 over the vendored core. After vendor/ (it links scoopy_engine).
+add_subdirectory(slengine)
 add_subdirectory(host)
 add_subdirectory(shell)
 # TEMPORARY (P1 spike): removed with spike/ once the WebView verdict is written.
