@@ -129,6 +129,10 @@
     "vendor/scoopy/ThirdParty/pffft": {
       "from": "ThirdParty/pffft",
       "sha256": "668b34399a46ec9b84090e6f4ff8b970040f63067b335b5e875ce97daec21872"
+    },
+    "vendor/scoopy/web-protocol/schema.ts": {
+      "from": "web/protocol/schema.ts",
+      "sha256": "5410e65fe73e85fa96aefdd0ff1590f965d621bdc2e9cfec2536295cbfa03ef7"
     }
   }
 }

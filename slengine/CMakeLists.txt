@@ -45,3 +45,8 @@ add_test(NAME track_params_test COMMAND track_params_test)
 add_executable(sl_snapshot_test tools/sl_snapshot_test.cpp)
 target_link_libraries(sl_snapshot_test PRIVATE wz_sl_engine)
 add_test(NAME sl_snapshot_test COMMAND sl_snapshot_test)
+
+# The generated HotFrame layout compiles and matches scoopy's schema indices.
+add_executable(sl_hotframe_test tools/sl_hotframe_test.cpp)
+target_include_directories(sl_hotframe_test PRIVATE generated)
+add_test(NAME sl_hotframe_test COMMAND sl_hotframe_test)

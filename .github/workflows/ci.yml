@@ -45,6 +45,10 @@ jobs:
       # the one edit in this merge where a silent stale copy would write a value
       # into the wrong parameter.
       - run: npm run trackparams:check
+      # The HotFrame layout is DERIVED from scoopy's pinned HOT_FRAME_SCALARS;
+      # this fails if the schema moved and the 284-slot index header was not
+      # regenerated — a mismatch would make every UI meter read a wrong slot.
+      - run: npm run hotframe:check
       - run: npm run abi:check
       - run: npm run check:tokens
       - run: npm run webdist:check
