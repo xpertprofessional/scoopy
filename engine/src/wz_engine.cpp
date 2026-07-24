@@ -63,6 +63,14 @@ constexpr uint32_t kHotFrameLength = 8;
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRampSeconds = 0.010; // D-WZ-RAMP-01: one 10 ms constant
+
+// Feedback watchdog (P4-04, playback-composer.md §3). PROVISIONAL values —
+// morning decision #6 governs them; the mechanism is what is being built here.
+// RMS, not peak: a single transient must NEVER trip the limiter.
+constexpr double kWatchdogThresholdDb = 6.0;    // +6 dBFS sustained...
+constexpr double kWatchdogWindowSec = 0.250;    // ...over 250 ms
+constexpr double kWatchdogHoldSec = 1.000;      // stay engaged this long after it clears
+constexpr double kWatchdogCeiling = 1.0;        // the hard ceiling the limiter enforces
 } // namespace
 
 struct wz_engine {
@@ -93,6 +101,14 @@ struct wz_engine {
     // CONSTRUCTION — no cycle detection ever runs on the audio thread.
     std::vector<float> loopbackMainL, loopbackMainR, loopbackMonL, loopbackMonR;
     uint32_t loopbackFrames = 0; // valid frames in the snapshot
+    // Watchdog state (render-thread-owned): a leaky RMS integrator over the
+    // main bus, the engaged flag + its hold countdown, and the limiter's
+    // smoothed gain (never a step — D-WZ-RAMP-01).
+    double wdMeanSquare = 0.0;
+    double wdHoldRemaining = 0.0;
+    double wdLimiterGain = 1.0;
+    std::atomic<uint32_t> wdEngaged{0};
+    std::atomic<uint32_t> wdEnabled{1}; // test seam only; always 1 in the app
 
     // Deck units — stable engine objects (world commits never rebuild them) —
     // plus per-deck preallocated block scratch the deck strips read from.
@@ -162,6 +178,11 @@ wz_engine* wz_engine_create(double sample_rate,
     e->loopbackMonL.assign(max_block_frames, 0.0f);
     e->loopbackMonR.assign(max_block_frames, 0.0f);
     e->loopbackFrames = 0;
+    e->wdMeanSquare = 0.0;
+    e->wdHoldRemaining = 0.0;
+    e->wdLimiterGain = 1.0;
+    e->wdEngaged.store(0, std::memory_order_relaxed);
+    e->wdEnabled.store(1, std::memory_order_relaxed);
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->rings.resize(40); // fixed slot table; grown-never in steady state
@@ -465,6 +486,17 @@ void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     e->decks[deck].publishLoop(enabled, start, end);
+}
+
+void wz_engine_set_watchdog_enabled(wz_engine* e, uint32_t enabled) {
+    if (e == nullptr) return;
+    e->wdEnabled.store(enabled ? 1u : 0u, std::memory_order_relaxed);
+    if (enabled == 0) { // leave no residual limiting behind
+        e->wdEngaged.store(0u, std::memory_order_relaxed);
+        e->wdLimiterGain = 1.0;
+        e->wdMeanSquare = 0.0;
+        e->wdHoldRemaining = 0.0;
+    }
 }
 
 void wz_deck_set_rate(wz_engine* e, uint32_t deck, double rate) {
@@ -897,6 +929,14 @@ void wz_engine_render_io(wz_engine* e,
     const double mainTgt = wz::faderPositionToLinear(e->params[0].load(std::memory_order_relaxed));
     if (e->smMain < 0.0) e->smMain = mainTgt;
 
+    // --- feedback watchdog (P4-04) ------------------------------------------
+    // Internal cycles are structurally impossible except through the
+    // LoopbackBus; an EXTERNAL loop (out → another app → "Wizard Out" → back in)
+    // is undetectable by construction, so this level guard is the only defence.
+    const double wdAlpha = 1.0 - std::exp(-1.0 / (kWatchdogWindowSec * fs));
+    const double wdThresholdSq = std::pow(10.0, kWatchdogThresholdDb / 10.0); // dB→power
+    const double wdReleaseStep = 1.0 / (kRampSeconds * fs);
+
     double mainPkL = 0.0, mainPkR = 0.0, monPkL = 0.0, monPkR = 0.0;
     float* outL = (bus_out != nullptr && bus_count >= 1) ? bus_out[0] : nullptr;
     float* outR = (bus_out != nullptr && bus_count >= 2) ? bus_out[1] : nullptr;
@@ -904,8 +944,35 @@ void wz_engine_render_io(wz_engine* e,
     float* cueR = (bus_out != nullptr && bus_count >= 4) ? bus_out[3] : nullptr;
     for (uint32_t i = 0; i < frames; ++i) {
         e->smMain += alpha * (mainTgt - e->smMain);
-        const double l = accL[i] * e->smMain;
-        const double r = accR[i] * e->smMain;
+        double l = accL[i] * e->smMain;
+        double r = accR[i] * e->smMain;
+
+        // Leaky RMS integrator over the main bus (mono power sum). Because it
+        // integrates over 250 ms, a single transient cannot move it past the
+        // threshold — only a SUSTAINED runaway can.
+        const bool wdOn = e->wdEnabled.load(std::memory_order_relaxed) != 0;
+        const double power = wdOn ? 0.5 * (l * l + r * r) : 0.0;
+        if (wdOn) e->wdMeanSquare += wdAlpha * (power - e->wdMeanSquare);
+        if (wdOn && e->wdMeanSquare > wdThresholdSq) {
+            e->wdHoldRemaining = kWatchdogHoldSec; // (re)arm the hold
+            e->wdEngaged.store(1u, std::memory_order_relaxed);
+        } else if (wdOn && e->wdHoldRemaining > 0.0) {
+            e->wdHoldRemaining -= 1.0 / fs; // still holding after the level cleared
+            if (e->wdHoldRemaining <= 0.0) e->wdEngaged.store(0u, std::memory_order_relaxed);
+        }
+
+        // Hard ceiling, engaged/released through a ramp so it can never click.
+        const double target = e->wdEngaged.load(std::memory_order_relaxed) != 0
+                                  ? kWatchdogCeiling / std::sqrt(std::max(e->wdMeanSquare,
+                                                                          wdThresholdSq))
+                                  : 1.0;
+        if (e->wdLimiterGain > target) {
+            e->wdLimiterGain = std::max(target, e->wdLimiterGain - wdReleaseStep);
+        } else if (e->wdLimiterGain < target) {
+            e->wdLimiterGain = std::min(target, e->wdLimiterGain + wdReleaseStep);
+        }
+        if (e->wdLimiterGain < 1.0) { l *= e->wdLimiterGain; r *= e->wdLimiterGain; }
+
         if (outL != nullptr) outL[i] = static_cast<float>(l);
         if (outR != nullptr) outR[i] = static_cast<float>(r);
         if (cueL != nullptr) cueL[i] = static_cast<float>(monL[i]);
@@ -965,7 +1032,7 @@ uint32_t wz_engine_hotframe(const wz_engine* e, double* out, uint32_t capacity) 
     out[0] = static_cast<double>(e->schemaVersion);
     out[1] = static_cast<double>(e->engineTimeSamples.load(std::memory_order_relaxed));
     out[2] = 0.0; // cpuLoad — placeholder until the render path is measured
-    out[3] = 0.0; // feedbackAlarm — watchdog lands in P4
+    out[3] = static_cast<double>(e->wdEngaged.load(std::memory_order_relaxed));
     out[4] = e->mainPeakL.load(std::memory_order_relaxed);
     out[5] = e->mainPeakR.load(std::memory_order_relaxed);
     out[6] = e->monitorPeakL.load(std::memory_order_relaxed);

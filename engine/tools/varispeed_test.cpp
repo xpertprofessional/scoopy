@@ -39,6 +39,10 @@ void buildDeckWorld(wz_engine* e) {
 int main() {
     wz_engine* e = wz_engine_create(kRate, kQ, 9);
     CHECK(e != nullptr);
+    // This fixture drives synthetic ramps far above full scale so every sample
+    // identifies its own frame; the watchdog would (correctly) limit them, so
+    // disable it to measure the path under test rather than the safety net.
+    wz_engine_set_watchdog_enabled(e, 0);
 
     // Ramp buffer: every sample identifies its own frame index.
     std::vector<float> ramp(kLen);

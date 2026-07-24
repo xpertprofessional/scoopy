@@ -41,6 +41,10 @@ void buildDeckWorld(wz_engine* e, uint32_t deck) {
 int main() {
     wz_engine* e = wz_engine_create(kRate, kQ, 7);
     CHECK(e != nullptr);
+    // This fixture drives synthetic ramps far above full scale so every sample
+    // identifies its own frame; the watchdog would (correctly) limit them, so
+    // disable it to measure the path under test rather than the safety net.
+    wz_engine_set_watchdog_enabled(e, 0);
     buildDeckWorld(e, 0);
 
     // Record engine input channel 0 (mono) into deck 0.

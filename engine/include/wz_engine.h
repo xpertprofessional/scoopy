@@ -212,6 +212,14 @@ void wz_engine_render(wz_engine* e,
                       uint32_t bus_count,
                       uint32_t frames);
 
+/* Test/diagnostic seam: disable the feedback watchdog (P4-04). The shipping app
+ * NEVER calls this — the watchdog is the only guard against an external
+ * feedback loop. Fixtures that assert exact sample values use synthetic ramps
+ * far above full scale (a ramp buffer holding 0..255 is ~+48 dBFS), which the
+ * watchdog would legitimately limit; disabling it lets those tests measure the
+ * path under test rather than the safety net. Enabled by default. */
+void wz_engine_set_watchdog_enabled(wz_engine* e, uint32_t enabled);
+
 /* --- hotframe ----------------------------------------------------------
  * Frame = scalars + one block per channel + one block per deck (strides in the
  * generated WZProtocol.h; block counts follow the current world). Returns the
