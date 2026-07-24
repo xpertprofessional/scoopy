@@ -259,6 +259,13 @@ export function usePatchActions(link: EngineLink | null) {
       if (r.ok && r.take) {
         addTake(r.take)
         useAppStore.getState().setDeckFrames(deck, r.take.frames)
+        // THE TAKE IS NOW THIS DECK'S MATERIAL. Law C-3 already has the engine
+        // looping the captured buffer; this points the DOCUMENT at the file that
+        // buffer came from. Without it the strip fell straight back to "empty"
+        // the instant recording stopped — the wave vanished and the name read
+        // empty — because material is defined as "has a sourcePath", and the
+        // session would have had no reference to rehydrate the take from.
+        setDeckSourcePath(deck, r.take.path)
       }
       bumpDeckRevision(deck) // a take just became this deck's buffer (Law C-3)
       // Hand the strip back to its material: it was monitoring its input during
