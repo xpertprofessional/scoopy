@@ -20,6 +20,9 @@ add_subdirectory(ThirdParty/JUCE)
 add_compile_definitions(JUCE_USE_CURL=0)
 
 add_subdirectory(engine)
+# The hash-pinned scoopy core + its C ABI. Added BEFORE host/shell so the
+# merged engine target is available to them as P1 plumbing proceeds.
+add_subdirectory(vendor)
 add_subdirectory(host)
 add_subdirectory(shell)
 # TEMPORARY (P1 spike): removed with spike/ once the WebView verdict is written.
