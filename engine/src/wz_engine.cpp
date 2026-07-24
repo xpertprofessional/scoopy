@@ -799,6 +799,23 @@ void wz_engine_render_io(wz_engine* e,
         // the record pass below); playback resumes on the Law C-3 stop→loop.
         if (st == static_cast<uint32_t>(wz::DeckState::idle) ||
             st == static_cast<uint32_t>(wz::DeckState::recording) || dFrames == 0) {
+            // DRAIN THE SCRUB MAILBOX EVEN WHEN NOT PLAYING. Two reasons, both
+            // bugs before this: a scrub on a STOPPED deck must still move the
+            // visible head (otherwise dragging a stopped player does nothing at
+            // all), and a request left pending here would be applied on some
+            // LATER block — overriding the next trigger's reset, so ⟳ would
+            // silently start from wherever you last scrubbed instead of the
+            // region entry.
+            const int64_t idleSeek = d.pendingSeek.exchange(-1, std::memory_order_acq_rel);
+            // While RECORDING the playhead is the write head and is not the
+            // user's to move: drain and discard, never apply.
+            if (idleSeek >= 0 && dFrames > 0 &&
+                st != static_cast<uint32_t>(wz::DeckState::recording)) {
+                const double t = static_cast<double>(idleSeek);
+                d.playhead = t < static_cast<double>(dFrames)
+                                 ? t
+                                 : static_cast<double>(dFrames - 1);
+            }
             for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
             continue;

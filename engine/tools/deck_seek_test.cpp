@@ -91,6 +91,26 @@ int main() {
     const double clamped = playheadOf(e, 1, 0);
     CHECK(clamped >= 0.0 && clamped <= static_cast<double>(kFrames));
 
+    // --- a STOPPED deck still moves its head, and does not hoard the request --
+    // Both were bugs: the idle branch returned before draining the mailbox, so
+    // scrubbing a stopped player did nothing visible, and the stale request was
+    // then applied on a later block — overriding the next trigger's reset, so a
+    // ⟳ silently started from wherever you last scrubbed.
+    wz_deck_trigger(e, 0, 2); // stop
+    render(e, 64);
+    wz_deck_seek(e, 0, 2000);
+    render(e, 64);
+    const double stoppedHead = playheadOf(e, 1, 0);
+    CHECK(std::abs(stoppedHead - 2000.0) < 1.0); // moved, and did not drift: it is not playing
+
+    // Now trigger: the region entry must win, because the scrub was already
+    // consumed rather than left pending.
+    wz_deck_set_loop(e, 0, 0, 0, 0); // whole buffer
+    wz_deck_trigger(e, 0, 0);        // loop from the entry edge
+    render(e, 64);
+    const double afterTrigger = playheadOf(e, 1, 0);
+    CHECK(afterTrigger < 1000.0); // started at the entry, NOT at the scrubbed 2000
+
     // --- and the engine is still producing finite audio afterwards -----------
     std::vector<float> l(256), r(256), cl(256), cr(256);
     float* outs[4] = {l.data(), r.data(), cl.data(), cr.data()};

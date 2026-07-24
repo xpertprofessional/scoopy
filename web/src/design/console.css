@@ -569,6 +569,14 @@ canvas.meter {
   flex: 1;
   text-align: left;
 }
+/* The waveform is the scrub surface, so it must SAY so. This rule sits after
+   the generic `.plane-strip canvas` below and is more specific, which is what
+   the earlier version got wrong: the strip's cursor:default silently won and
+   the wave announced nothing. */
+.plane-strip canvas.deck-waveform {
+  cursor: ew-resize;
+}
+
 /* A Strip is grabbable to move it; its controls keep their own cursors. */
 .plane-strip {
   cursor: grab;
