@@ -45,6 +45,31 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
   })
 }
 
+/** Load a take into a deck, carrying the loading/progress/unresolved posture.
+    Shared so loading INTO A STRIP and loading into a deck cannot drift apart. */
+async function loadTakeInto(
+  link: EngineLink,
+  deck: number,
+  path: string,
+  setDeckSourcePath: (id: number, p: string) => void,
+  bumpDeckRevision: (id: number) => void,
+): Promise<boolean> {
+  const store = useAppStore.getState()
+  store.setDeckLoadProgress(deck, 0)
+  store.setDeckLoading(deck, true)
+  try {
+    const r = await link.command('deckLoadTake', { deck, path })
+    useAppStore.getState().setDeckUnresolved(deck, !r.ok)
+    if (r.ok) {
+      setDeckSourcePath(deck, path)
+      bumpDeckRevision(deck)
+    }
+    return r.ok
+  } finally {
+    useAppStore.getState().setDeckLoading(deck, false)
+  }
+}
+
 export function usePatchActions(link: EngineLink | null) {
   const addChannel = useAppStore((s) => s.addChannel)
   const addDeck = useAppStore((s) => s.addDeck)
@@ -87,6 +112,53 @@ export function usePatchActions(link: EngineLink | null) {
       publishPatch(link, patch) // the deck must exist in the world before capture
       await link.command('deckRecordStart', { deck: deckId, chan0, chan1, sourceDesc })
       return deckId
+    },
+    /**
+     * LOAD MATERIAL INTO A STRIP — the Strip is where material lives, so this is
+     * how a take reaches one without a takes panel. Attaches a deck first when
+     * the Strip has none, exactly as recording does.
+     */
+    async loadIntoStrip(index: number, path: string) {
+      if (!link) return
+      const { patch, deckId } = attachDeck(index)
+      if (deckId < 0) return
+      publishPatch(link, patch)
+      const ok = await loadTakeInto(link, deckId, path, setDeckSourcePath, bumpDeckRevision)
+      if (!ok) return
+      // Law C-2 survives the takes panel: with a reference take set, loading
+      // ALSO aligns — the stamp DELTA becomes this deck's loop origin. Without
+      // this, retiring the panel would quietly drop the align verb.
+      const st = useAppStore.getState()
+      const loaded = st.takes.find((t) => t.path === path)
+      const reference = st.takes.find((t) => t.path === st.alignReferencePath)
+      if (loaded && reference && reference.path !== loaded.path) {
+        const start = alignedStartSample(loaded, reference)
+        setDeckLoopRegion(deckId, start, loaded.frames)
+        void link.command('deckSetLoop', {
+          deck: deckId,
+          enabled: true,
+          startSample: start,
+          endSample: loaded.frames,
+        })
+      }
+    },
+    /** Same, from a file the user picks in a native dialog. */
+    async loadFileIntoStrip(index: number) {
+      if (!link) return
+      const { patch, deckId } = attachDeck(index)
+      if (deckId < 0) return
+      publishPatch(link, patch)
+      useAppStore.getState().setDeckLoadProgress(deckId, 0)
+      useAppStore.getState().setDeckLoading(deckId, true)
+      try {
+        const r = await link.command('deckLoadFile', { deck: deckId })
+        if (r.ok) {
+          setDeckSourcePath(deckId, r.path)
+          bumpDeckRevision(deckId)
+        }
+      } finally {
+        useAppStore.getState().setDeckLoading(deckId, false)
+      }
     },
     /** Remove a strip (and its deck when it is the last deck) and publish. */
     removeStrip(index: number) {

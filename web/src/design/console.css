@@ -11,7 +11,6 @@
   gap: 8px;
   padding: 8px;
 }
-
 .topbar {
   display: flex;
   align-items: baseline;
@@ -19,46 +18,23 @@
   border-bottom: var(--hairline) solid var(--line);
   padding-bottom: 6px;
 }
-
 .topbar h1 {
   margin: 0;
 }
-
-/* Pushed to the right so the destructive-adjacent actions are never next to
-   the status text a user glances at. */
-.topbar-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
 .console-body {
   display: flex;
   flex: 1;
   gap: 8px;
   min-height: 0;
 }
-
 .value {
   font-family: var(--type-value-family);
   font-size: var(--type-value-size);
   color: var(--text-dim);
 }
-
 .dim {
   color: var(--text-dim);
 }
-
-/* --- sources rail --------------------------------------------------------- */
-
-.sources {
-  width: 180px;
-  flex: none;
-  padding: 8px;
-  overflow-y: auto;
-}
-
-.sources h2,
 .master h2 {
   font-family: var(--type-title-family);
   font-size: var(--type-title-size);
@@ -68,29 +44,6 @@
   color: var(--text-dim);
   margin: 0 0 6px;
 }
-
-.sources h3 {
-  font-family: var(--type-label-family);
-  font-size: var(--type-label-size);
-  font-weight: var(--type-label-weight);
-  letter-spacing: var(--type-label-tracking);
-  text-transform: var(--type-label-transform);
-  color: var(--text);
-  margin: 10px 0 4px;
-}
-
-.sources ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.sources li {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 3px;
-}
-
 /* --- buttons (token-consuming baseline; the DS control kit lands at PD) ---- */
 
 button {
@@ -104,77 +57,28 @@ button {
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease);
 }
-
 button:hover:not(:disabled) {
   border-color: var(--accent);
 }
-
 button:disabled {
   color: var(--text-dim);
   cursor: default;
 }
-
 .latched-hot {
   background: var(--hot);
   color: var(--bg);
   border-color: var(--hot);
 }
-
 .latched-accent {
   background: var(--accent);
   color: var(--bg);
   border-color: var(--accent);
 }
-
 .latched-signal {
   background: var(--signal);
   color: var(--bg);
   border-color: var(--signal);
 }
-
-/* --- channel rack ----------------------------------------------------------- */
-
-.rack {
-  display: flex;
-  gap: 6px;
-  flex: 1;
-  overflow-x: auto;
-  align-items: flex-start;
-  padding: 2px;
-}
-
-.strip {
-  width: 96px;
-  flex: none;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.strip-name {
-  font-family: var(--type-label-family);
-  font-size: var(--type-label-size);
-  letter-spacing: var(--type-label-tracking);
-  text-transform: var(--type-label-transform);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.strip-body {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.fader-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
 /* Vertical fader from a native range input; the DragBox-grade control arrives
    with the PD design phase. */
 input.fader {
@@ -184,18 +88,10 @@ input.fader {
   width: 22px;
   accent-color: var(--accent);
 }
-
 input.pan {
   width: 100%;
   accent-color: var(--accent);
 }
-
-.strip-switches {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-}
-
 /* --- master / monitor -------------------------------------------------------- */
 
 .master {
@@ -207,17 +103,14 @@ input.pan {
   align-items: center;
   gap: 8px;
 }
-
 .master input.fader {
   height: 120px;
 }
-
 .master-meters {
   display: flex;
   gap: 12px;
   text-align: center;
 }
-
 .lamp {
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
@@ -226,96 +119,37 @@ input.pan {
   font-size: var(--type-caption-size);
   padding: 2px 8px;
 }
-
 .lamp-on {
   background: var(--feedback-lamp);
   color: var(--bg);
   border-color: var(--feedback-lamp);
 }
-
-/* --- deck rack ---------------------------------------------------------------- */
-
-.deck-rack {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 2px;
-}
-
-.deck {
-  width: 150px;
-  flex: none;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.deck-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.deck-name {
-  font-family: var(--type-label-family);
-  font-size: var(--type-label-size);
-  text-transform: var(--type-label-transform);
-  color: var(--chan-deck);
-}
-
 .deck-state {
   font-family: var(--type-caption-family);
   font-size: var(--type-caption-size);
   color: var(--text-dim);
 }
-
 .deck-state-1 {
   color: var(--chan-deck);
 }
-
 .deck-state-2 {
   color: var(--accent);
 }
-
 .deck-state-3 {
   color: var(--rec-lamp);
 }
-
-.deck-playhead {
-  width: 100%;
-  height: 4px;
-}
-
-.deck-file {
-  font-family: var(--type-caption-family);
-  font-size: var(--type-caption-size);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.deck-buttons {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-}
-
 canvas.meter {
   border: var(--hairline) solid var(--line);
 }
-
 /* --- routing matrix ------------------------------------------------------- */
 
 .matrix {
   padding: 6px;
 }
-
 .matrix table {
   border-collapse: collapse;
   margin-top: 6px;
 }
-
 .matrix th {
   font-family: var(--type-label-family);
   font-size: var(--type-label-size);
@@ -324,34 +158,18 @@ canvas.meter {
   padding: 2px 10px;
   text-align: center;
 }
-
 .matrix td {
   padding: 2px 10px;
   text-align: center;
 }
-
 .matrix-name {
   font-family: var(--type-value-family);
   font-size: var(--type-value-size);
   text-align: left;
 }
-
 .matrix-fixed {
   color: var(--text-dim);
 }
-
-.strip-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.strip-remove {
-  padding: 0 4px;
-  color: var(--text-dim);
-}
-
 /* --- device picker -------------------------------------------------------- */
 
 .device-picker {
@@ -360,7 +178,6 @@ canvas.meter {
   gap: 4px;
   margin-bottom: 8px;
 }
-
 .device-picker label {
   display: flex;
   align-items: center;
@@ -370,7 +187,6 @@ canvas.meter {
   text-transform: var(--type-label-transform);
   color: var(--text-dim);
 }
-
 .device-picker select {
   flex: 1;
   min-width: 0;
@@ -382,7 +198,6 @@ canvas.meter {
   font-size: var(--type-value-size);
   padding: 2px 4px;
 }
-
 /* --- recording + takes ---------------------------------------------------- */
 
 .latched-rec {
@@ -390,7 +205,6 @@ canvas.meter {
   color: var(--bg);
   border-color: var(--rec-lamp);
 }
-
 .deck-cap {
   font-family: var(--type-caption-family);
   font-size: var(--type-caption-size);
@@ -401,13 +215,6 @@ canvas.meter {
   padding: 0 4px;
   align-self: flex-start;
 }
-
-.takes {
-  padding: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
 .takes h2 {
   font-family: var(--type-title-family);
   font-size: var(--type-title-size);
@@ -416,12 +223,10 @@ canvas.meter {
   color: var(--text-dim);
   margin: 0 0 4px;
 }
-
 .takes table {
   border-collapse: collapse;
   width: 100%;
 }
-
 .takes th {
   font-family: var(--type-label-family);
   font-size: var(--type-label-size);
@@ -430,11 +235,9 @@ canvas.meter {
   text-align: left;
   padding: 2px 6px;
 }
-
 .takes td {
   padding: 2px 6px;
 }
-
 .take-name {
   font-family: var(--type-value-family);
   font-size: var(--type-value-size);
@@ -443,61 +246,12 @@ canvas.meter {
   text-overflow: ellipsis;
   max-width: 220px;
 }
-
-.take-load {
-  display: flex;
-  gap: 3px;
-}
-
-.take-manage {
-  display: flex;
-  gap: 3px;
-  justify-content: flex-end;
-}
-
-/* --- varispeed ------------------------------------------------------------ */
-
-.varispeed {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* One slider spans reverse and forward — reverse is the negative half of the
-   same control, not a separate mode. The reversed state re-tints the accent so
-   direction is readable at a glance. */
-.varispeed-slider {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.varispeed-slider.reversed {
-  accent-color: var(--warn);
-}
-
-.varispeed-unity {
-  color: var(--signal);
-}
-
 .deck-waveform {
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
   cursor: crosshair;
   touch-action: none;
 }
-
-/* --- output-bus assign ---------------------------------------------------- */
-
-.strip-bus {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--type-label-family);
-  font-size: var(--type-label-size);
-  text-transform: var(--type-label-transform);
-  color: var(--text-dim);
-}
-
 .strip-bus select {
   flex: 1;
   min-width: 0;
@@ -508,28 +262,6 @@ canvas.meter {
   font-family: var(--type-value-family);
   font-size: var(--type-value-size);
 }
-
-/* An unmapped strip is announced, never silently silent. */
-.strip-unmapped {
-  font-family: var(--type-caption-family);
-  font-size: var(--type-caption-size);
-  text-transform: var(--type-label-transform);
-  color: var(--bg);
-  background: var(--warn);
-  border-radius: var(--radius);
-  text-align: center;
-}
-
-/* A loopback strip states its one-block cost rather than hiding it. */
-.strip-loopback {
-  font-family: var(--type-caption-family);
-  font-size: var(--type-caption-size);
-  color: var(--bg);
-  background: var(--chan-bus);
-  border-radius: var(--radius);
-  text-align: center;
-}
-
 /* A persistence problem is announced, never swallowed. */
 .session-notice {
   font-family: var(--type-value-family);
@@ -539,7 +271,6 @@ canvas.meter {
   border-radius: var(--radius);
   padding: 2px 8px;
 }
-
 /* A deck whose audio vanished is MARKED, never removed — the reference is
    preserved so restoring the file brings it back. */
 .deck-unresolved {
@@ -551,7 +282,6 @@ canvas.meter {
   border-radius: var(--radius);
   text-align: center;
 }
-
 /* Deck decoding on the shell's worker thread (P1-11 / P1-11a). A determinate
    bar — this is progress, not an error like .deck-unresolved. The label sits
    over the fill so a narrow cell never truncates the percentage. */
@@ -562,14 +292,12 @@ canvas.meter {
   overflow: hidden;
   background: var(--bg-raised);
 }
-
 .deck-loading-bar {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--accent);
   transition: width 120ms linear;
 }
-
 .deck-loading-label {
   position: relative;
   display: block;
@@ -580,14 +308,7 @@ canvas.meter {
   text-align: center;
   line-height: 1.2em;
 }
-
 /* --- PD-CANVAS plane (PD-CANVAS-02) ---------------------------------------- */
-
-/* View toggle in the top bar — console vs the new plane, during the transition. */
-.view-toggle {
-  display: flex;
-  gap: 4px;
-}
 
 .plane {
   flex: 1;
@@ -600,11 +321,9 @@ canvas.meter {
   cursor: grab;
   touch-action: none; /* pointer-drag pans; don't let the browser scroll instead */
 }
-
 .plane:active {
   cursor: grabbing;
 }
-
 /* The transformed layer: strips are absolutely placed inside it by their cell
    geometry; one transform pans/zooms the whole workspace. */
 .plane-layer {
@@ -615,7 +334,6 @@ canvas.meter {
   width: 0; /* children are absolute; the layer itself has no box */
   height: 0;
 }
-
 /* Horizontal, player-shaped (the Parlante reference): a header line, a wide
    waveform as the centre of gravity, a transport row, then Layout-B rows. */
 .plane-strip {
@@ -631,13 +349,11 @@ canvas.meter {
   overflow: hidden;
   box-sizing: border-box;
 }
-
 .plane-strip-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 .plane-strip-name {
   font-family: var(--type-label-family);
   font-size: var(--type-label-size);
@@ -649,20 +365,17 @@ canvas.meter {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .plane-strip-state {
   font-family: var(--type-caption-family);
   font-size: var(--type-caption-size);
   color: var(--text-dim);
   flex: 0 0 auto;
 }
-
 .plane-strip-meter {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
 }
-
 /* Transport + switches share one row; switches sit right so the play verbs
    stay together on the left where the hand expects them. */
 .plane-strip-transport {
@@ -670,20 +383,11 @@ canvas.meter {
   align-items: center;
   gap: 3px;
 }
-
 .plane-strip-switches {
   display: flex;
   gap: 3px;
   margin-left: auto;
 }
-
-.plane-strip-loading {
-  font-family: var(--type-caption-family);
-  font-size: var(--type-caption-size);
-  color: var(--text-dim);
-  text-align: center;
-}
-
 .plane-empty {
   position: absolute;
   top: 50%;
@@ -691,7 +395,6 @@ canvas.meter {
   transform: translate(-50%, -50%);
   margin: 0;
 }
-
 /* Zoom controls, bottom-right (GRM's placement) with a Default reset + fit. */
 .plane-controls {
   position: absolute;
@@ -705,12 +408,10 @@ canvas.meter {
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
 }
-
 .plane-controls .value {
   min-width: 3.2em;
   text-align: center;
 }
-
 /* --- shared control idiom (Layout B) --------------------------------------
    label left · geometric bar centre · value right. Adapted from Scoopy's
    design/controls.css to Wizard's token set (D-WZ-DESIGN-01's PD-phase
@@ -722,7 +423,6 @@ canvas.meter {
   gap: 6px;
   min-height: 18px;
 }
-
 .ds-row > .ds-label {
   flex: 0 0 auto;
   width: 34%;
@@ -735,7 +435,6 @@ canvas.meter {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .ds-row > .ds-value {
   flex: 0 0 auto;
   min-width: 6ch; /* scales with the value font, not a px assumption */
@@ -744,14 +443,12 @@ canvas.meter {
   font-size: var(--type-value-size);
   color: var(--text);
 }
-
 .ds-geo {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
 }
-
 /* The painted bar. The gradient fill is set inline (it encodes the value), so
    only the chrome lives here. */
 .ds-range {
@@ -764,7 +461,6 @@ canvas.meter {
   outline: none;
   cursor: ew-resize;
 }
-
 .ds-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -775,7 +471,6 @@ canvas.meter {
   border-radius: 0;
   cursor: ew-resize;
 }
-
 .ds-range::-moz-range-thumb {
   width: 3px;
   height: 14px;
@@ -784,7 +479,6 @@ canvas.meter {
   border-radius: 0;
   cursor: ew-resize;
 }
-
 /* Kind swatch: kind is what a Strip IS. Carried as a block of colour rather
    than as the name's text colour, which kept contrast low and competed with
    the bus chip for meaning. */
@@ -794,7 +488,6 @@ canvas.meter {
   height: 6px;
   border-radius: var(--radius-sm);
 }
-
 /* Bus chip: where a Strip GOES (D-WZ-ROUTINGVIEW-01). Always on, on every
    Strip — the smallest thing that answers "where does this go?" at a glance,
    and the surface any richer routing layer would sit on top of. */
@@ -808,7 +501,6 @@ canvas.meter {
   border-radius: var(--radius-sm);
   padding: 0 4px;
 }
-
 /* Routed somewhere this device cannot carry: built, but not heard. Loud, since
    silence with no explanation is the worst outcome. */
 .plane-strip-bus-unmapped {
@@ -816,19 +508,16 @@ canvas.meter {
   background: var(--warn);
   border-color: var(--warn);
 }
-
 /* Settings — a summoned surface, same idiom as the routing matrix (PD-MERGE). */
 .settings {
   padding: 6px;
 }
-
 .settings-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 6px;
 }
-
 .settings-body h3 {
   font-family: var(--type-label-family);
   font-size: var(--type-label-size);
@@ -837,19 +526,16 @@ canvas.meter {
   color: var(--text-dim);
   margin: 6px 0 2px;
 }
-
 .settings-actions {
   display: flex;
   gap: 6px;
 }
-
 /* Add-strip: the one creation gesture on the map (PD-MERGE-02). The menu opens
    UPWARD from the bottom-right controls, so it never covers the strips you are
    about to place next to. */
 .add-strip {
   position: relative;
 }
-
 .add-strip-menu {
   position: absolute;
   right: 0;
@@ -862,7 +548,6 @@ canvas.meter {
   flex-direction: column;
   gap: 4px;
 }
-
 .add-strip-menu h3 {
   font-family: var(--type-label-family);
   font-size: var(--type-label-size);
@@ -871,33 +556,85 @@ canvas.meter {
   color: var(--text-dim);
   margin: 6px 0 2px;
 }
-
 .add-strip-menu p {
   margin: 0;
 }
-
 .add-strip-row {
   display: flex;
   gap: 4px;
 }
-
 .add-strip-row button:first-child {
   flex: 1;
   text-align: left;
 }
-
 /* A Strip is grabbable to move it; its controls keep their own cursors. */
 .plane-strip {
   cursor: grab;
 }
-
 .plane-strip:active {
   cursor: grabbing;
 }
-
 .plane-strip button,
 .plane-strip input,
 .plane-strip canvas,
 .plane-strip label {
   cursor: default;
+}
+/* Load-material menu, opened from a Strip. Opens upward and above the plane
+   layer so a Strip near the bottom edge can still reach its own takes. */
+.strip-load {
+  position: relative;
+}
+.strip-load-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  width: 210px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.strip-load-menu h3 {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  margin: 4px 0 2px;
+}
+.strip-load-menu button {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strip-load-menu p {
+  margin: 0;
+}
+/* Session-level take list inside Settings (the takes panel's job, rehomed). */
+.settings-takes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.settings-takes li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+.settings-takes .take-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

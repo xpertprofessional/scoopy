@@ -24,6 +24,7 @@ import { MeterCanvas } from '../hotsurface/MeterCanvas'
 import { useAppStore } from '../store/appStore'
 import { DeckWaveform } from '../panels/DeckWaveform'
 import { ParamRow } from '../design/controls'
+import { StripLoad } from './StripLoad'
 import { rateToPosition, positionToRate, formatRate, snapUnity } from '../panels/VarispeedSlider'
 
 const KIND_VAR: Record<string, string> = {
@@ -302,6 +303,7 @@ export function Strip({
             </button>
           </>
         )}
+        <StripLoad index={index} link={link} />
         <span className="plane-strip-switches">
           <button
             type="button"

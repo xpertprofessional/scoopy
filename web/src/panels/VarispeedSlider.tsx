@@ -1,5 +1,11 @@
 /**
- * Signed varispeed control (P4-07, playback-composer.md §1).
+ * Signed varispeed MATH (P4-07, playback-composer.md §1).
+ *
+ * The slider component itself is gone: the Strip renders speed with the shared
+ * Layout-B ParamRow like every other parameter, so a bespoke control would be a
+ * second idiom for no gain. These helpers are the part that carries the design —
+ * the logarithmic travel, the reverse half, and snapUnity, which is what makes
+ * the engine's bit-exact identity path reachable by dragging.
  *
  * ONE slider spanning reverse and forward, because the engine has one signed
  * rate — reverse is not a mode, it is the negative half of the same control
@@ -61,25 +67,4 @@ interface Props {
   rate: number
   onChange: (rate: number) => void
   width?: number
-}
-
-export function VarispeedSlider({ rate, onChange, width = 120 }: Props) {
-  const pos = rateToPosition(rate)
-  const atUnity = Math.abs(Math.abs(rate) - 1) < 1e-9
-  return (
-    <div className="varispeed" style={{ width }}>
-      <input
-        type="range"
-        min={-1}
-        max={1}
-        step={0.001}
-        value={pos}
-        className={rate < 0 ? 'varispeed-slider reversed' : 'varispeed-slider'}
-        onChange={(ev) => onChange(snapUnity(positionToRate(Number(ev.target.value))))}
-        onDoubleClick={() => onChange(rate < 0 ? -1 : 1)} // double-click → unity
-        title={`speed ${formatRate(rate)} — double-click for 1.00×, drag left of centre to reverse`}
-      />
-      <span className={atUnity ? 'value varispeed-unity' : 'value'}>{formatRate(rate)}</span>
-    </div>
-  )
 }
