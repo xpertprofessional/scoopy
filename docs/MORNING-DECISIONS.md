@@ -1,17 +1,17 @@
 # Morning decisions — for the user, 2026-07-24
 
-*Queue built by the autonomous loop overnight. Nothing here blocks the loop: it parks each
-item and keeps building elsewhere. Each entry states the question, the options with
-trade-offs, and my recommendation. Signing one moves it to `docs/DECISIONS.md`.*
+> ## ✅ ALL DECIDED — 2026-07-24
+> Every open decision below was answered (each matched the recommendation) and **signed into
+> `docs/DECISIONS.md`**: D-WZ-PDCANVAS-01 (adopt the unified Cell UI, sequence
+> PD-CANVAS-01..05) · D-WZ-TAKE-01 (timestamped take names) · D-WZ-MON-01 (monitor default
+> ON, no auto-mute of the source) · D-WZ-VARISPEED-01 (adaptive converter tier) ·
+> D-WZ-WATCHDOG-01 (+6 dBFS / 250 ms RMS) · D-WZ-DEVGONE-01 (fall back to default + loud
+> notice) · D-WZ-RINGRECOVER-01 (adaptive ring growth now, servo later behind a soak
+> fixture). The five gated ledger rows are unblocked (P3-10, P4-08, P4-09, P7-08, P2-03a)
+> and PD-CANVAS-01..05 build rows are seeded. **The queue below is kept for the record.**
 
-> **Loop status:** the safe autonomous work has been taken as far as it honestly goes —
-> every remaining build row is blocked on one of these decisions, a human gate, or your
-> machine (P2 backends / device-rate test / Actions billing). Overnight the loop shipped
-> P7 sessions+package, async deck load + progress (P1-11/11a), render chunk-invariance
-> (P0-11b) and the ramp-trajectory lock (P1-RAMP), plus three GRM/PD-CANVAS design passes.
-> **These decisions are now the critical path** — #1 (PD-CANVAS) unblocks the largest
-> phase, so it's the highest-leverage one to sign first. Decisions #7/#8 were added by the
-> loop's own audits (device-absent policy; ring re-centering).
+*Queue built by the autonomous loop overnight. Each entry states the question, the options
+with trade-offs, and my recommendation. All are now signed (see banner).*
 
 ## 1. ⭐ THE BIG ONE — UI vision: one unified item, freely arranged
 

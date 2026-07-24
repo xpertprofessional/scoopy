@@ -271,6 +271,139 @@ only ever reads a committed length).
 
 ---
 
+## D-WZ-PDCANVAS-01 · 2026-07-24 · UI vision: one unified Cell on a boundless plane
+
+**Decision:** Adopt the unified-item UI. The three visual species (sources rail, channel
+rack, deck rack) collapse into **one object type — a "Cell" — freely placed on a boundless,
+pannable/zoomable plane**. Every current strip (device input, app tap, deck, bus tap,
+loopback) is the same Cell in a different state; "recording" is just the verb that gives a
+Cell material. Sequence the build as **PD-CANVAS-01..05** (schema → Plane+Cell →
+selection-driven Inspector → drag-to-create → retire the old panels). The two deeper GRM
+ideas — N readers per sound (granular) and A/B/C/D snapshot morphing — are **out of the
+first cut** (PD-CANVAS-2 / -3).
+
+**Rationale:** CONCEPT's founding law is *everything is a channel*; the fixed console
+violated it by splitting inputs from decks. The schema already models one strip type
+(`Channel.source.kind` covers every species; `decks[]` is material storage, not a second
+model), so this is a **rendering** change, not a data-model change — no array merge. GRM
+Player proves the boundless-plane interaction model works in a shipping instrument. The
+"everything inline is cluttered" objection is answered by an always-visible,
+selection-driven **Inspector** (the Cell carries what you touch while playing; the
+Inspector holds what you set precisely) — not a hidden mode.
+
+**Consequences:** Engine cost **zero** — geometry never crosses the ABI. Schema is additive:
+`cell{x,y,w,h}` on Channel + `plane{scale,panX,panY}` on Patch + one SCHEMA_VERSION bump
+with a NAMED auto-layout migration (old Patches lay out into rows). `uiMode`'s "strip"
+becomes a zoom-out view, not a separate layout. ~600 lines of panels are rewritten to
+`Plane`+`Cell`+`Inspector`+drawers (+~150 for the Inspector; the routing matrix's per-strip
+bus choice moves into it); all logic (usePatch, takeAlign, MeterCanvas, faderCurve,
+VarispeedSlider, DeckWaveform) is reused as-is. Full plan: `docs/specs/pd-canvas.md`.
+Unblocks P4-08 (re-scoped to zoom-out). Supersedes the parked D-WZ-PDC-01? No — that is PDC
+latency, unrelated.
+
+## D-WZ-TAKE-01 · 2026-07-24 · Take file naming & storage: timestamped, in the package
+
+**Decision:** A recorded take is written as **`Takes/deck<N>_YYYY-MM-DD_HH-MM-SS.wav`**
+inside the session's Takes area (the `.wizard` package's `Takes/` folder, D-WZ-CORE-02 /
+P7). Self-describing, human-readable, sorts by time. No content-hash names; no name prompt
+at stop.
+
+**Rationale:** Wizard is a looper — interrupting a take-stop to ask for a filename kills the
+flow. Timestamped names are self-describing and chronologically sortable, which matches how
+a performer thinks about takes. Content-hash names dedupe but are unreadable, and the
+package already handles collisions on load.
+
+**Consequences:** `RecordService`/host WavWriter name the file at `beginTake` from the deck
+index + wall-clock; the sidecar `.json` (Law C-2 stamp) sits beside it. Unblocks P3-05/07
+naming. The package (P7-04) already carries and de-duplicates these by basename.
+
+## D-WZ-MON-01 · 2026-07-24 · Monitor-while-recording default ON; no auto-mute of the source
+
+**Decision:** When a deck is armed to record, **per-deck monitoring defaults ON** — you hear
+what you are capturing. Separately: when a deck records a strip that is already audible in
+the mix, Wizard does **NOT** auto-mute the source strip; the (possible) doubling is
+**accepted**, and the user mutes manually if they want.
+
+**Rationale:** Monitor-on is the looper expectation. On the source-mute sub-question: an app
+that silently changes another strip's state during a take is doing something behind the
+user's back — the exact "hidden state change" Wizard avoids elsewhere (vanished-source,
+unresolved-deck postures all *keep working and say what changed*). Predictability beats
+cleverness; the user has a mute button.
+
+**Consequences:** P3-10 builds the per-deck monitor switch defaulting ON. Recording does not
+touch the source strip's mute/gain. Doubling is a user-visible, user-fixable condition, not
+a silent auto-behavior. `monitorSwitch` (reserved Channel field) drives it.
+
+## D-WZ-VARISPEED-01 · 2026-07-24 · Live varispeed converter: adaptive tier
+
+**Decision:** A deck bending speed live uses an **adaptive** streaming resampler:
+**SINC_MEDIUM while the rate is moving**, upgrading to **SINC_BEST once the rate has been
+stationary ~250 ms**, and **identity (no resampler at all) at rate exactly 1.0**.
+
+**Rationale:** Meets GRM's quality bar ("the slower a sound is played, the more accurately
+it is resampled") for the common "set a speed and leave it" case, stays cheap during a live
+sweep (8 decks sweeping at once is the worst case), and is bit-exact when not bending. This
+mirrors the deck-load decision's spirit (D-WZ-DECKSRC-01) applied to the live path, and is
+distinct from D-WZ-ASRC-01 (live *taps*, always SINC_BEST — a tap cannot be "parked").
+
+**Consequences:** P4-02/P4-09 replace the current linear interpolation with a libsamplerate
+streaming converter carrying two quality states + an identity bypass; the identity path
+stays bit-exact (the varispeed `snapUnity` UI + engine 1 ppm snap already make rate 1.0
+reachable). A ~250 ms stationary timer in the deck render state picks the moment to upgrade.
+
+## D-WZ-WATCHDOG-01 · 2026-07-24 · Feedback watchdog: +6 dBFS RMS sustained 250 ms
+
+**Decision:** The feedback watchdog engages a **ramped hard limiter and raises the alarm
+when a bus's RMS exceeds +6 dBFS sustained over 250 ms**, releasing only after a hold period
+below threshold. **RMS, not peak**, so a single loud transient never trips it.
+
+**Rationale:** External feedback loops (out → another app → "Wizard Out" → back in) are
+structurally undetectable — the watchdog is the only guard. +6 dBFS/250 ms distinguishes a
+runaway loop (sustained, climbing) from loud-but-legitimate material (transient). A lower
+threshold (0 dBFS) or shorter window (100 ms) reacts sooner but false-trips on real content
+— worse for a performance tool than a slightly later catch.
+
+**Consequences:** P4-04 builds the per-bus RMS detector + ramped limiter + `feedbackAlarm`
+HotFrame scalar (already reserved). Threshold/window/hold are signed constants, tunable
+later without a design change. The limiter ramp uses the D-WZ-RAMP-01 shape.
+
+## D-WZ-DEVGONE-01 · 2026-07-24 · Absent session device: fall back to default, loudly
+
+**Decision:** Device selection is saved in the session (name + fallback). When the named
+device is absent on open (different machine, or unplugged), Wizard **falls back to the
+default device AND surfaces a loud, non-blocking notice** naming the device it wanted versus
+the one it got.
+
+**Rationale:** Same posture the app already takes for a vanished capture source or an
+unresolved deck: keep working, keep the reference, and *say what changed*. Silent fallback
+risks recording the wrong input unnoticed (the failure Wizard exists to prevent); opening
+with no device teaches distrust (an instrument that boots silent feels broken). Per-machine
+memory is a nice later refinement but is invisible state — deferred.
+
+**Consequences:** P7-08 adds device identity to the session schema (name + a fallback) and
+the open path emits a session notice through the existing banner. Per-machine device memory
+is explicitly a **later** enhancement, not this cut.
+
+## D-WZ-RINGRECOVER-01 · 2026-07-24 · Ring latency recovery: adaptive growth now, servo later
+
+**Decision:** A source ring recovers from a one-time upset (glitch / stall / device format
+change) via the already-signed **adaptive ring growth** (D-WZ-CLOCK-01): on sustained
+underrun the ring grows 1.5×→3× and logs it. A gentle **average-based fill servo** to claw
+back latency is deferred until it can ship **behind an hour-long soak fixture** proving it
+never fights the ASRC feedforward path.
+
+**Rationale:** Growth handles the *dangerous* direction (underrun → dropout) with no
+control-law subtlety, and is already signed. A continuous fill servo is the "right" answer
+for latency recovery but is exactly the class of feedback loop that fought the ASRC
+feedforward once before and had to be torn out — it earns its place only with a soak
+fixture at the `asrc_drift_test` bar, not by feel.
+
+**Consequences:** P2-03a scope for now is confined to adaptive growth (largely already
+present per D-WZ-CLOCK-01) + logging; the average-fill servo becomes a separate future row
+gated on its soak fixture. No servo lands unattended. Latency after a non-underrun upset may
+stay a few ms off until the source is re-armed — an accepted, logged condition.
+
+
 ## Parked — awaiting decision (do not block earlier phases)
 
 | id | needed before | question |
