@@ -269,6 +269,7 @@ export function Strip({
           onScrub={(frame) => actions.deckSeek(deck.id, frame)}
           onTapeScrub={(phase, frame) => actions.deckScrub(deck.id, phase, frame)}
           scale={scale}
+          sampleRate={sampleRate}
           width={waveWidth}
           height={44}
           recording={recording}

@@ -32,6 +32,8 @@ interface Props {
   onTapeScrub?: (phase: 'begin' | 'to' | 'end', frame: number) => void
   /** The plane's zoom, so the head stays ~1 device px at any scale. */
   scale?: number
+  /** Engine rate, so a scrub can say WHERE it is in time rather than samples. */
+  sampleRate?: number
   width?: number
   height?: number
   /** While true the take is still being captured: the envelope is re-fetched on
@@ -53,6 +55,7 @@ export function DeckWaveform({
   onScrub,
   onTapeScrub,
   scale = 1,
+  sampleRate = 0,
   width = 150,
   height = 40,
   recording = false,
@@ -150,6 +153,8 @@ export function DeckWaveform({
     const brace = css.getPropertyValue('--accent').trim()
     const line = css.getPropertyValue('--line').trim()
     const rec = css.getPropertyValue('--rec-lamp').trim()
+    const textCol = css.getPropertyValue('--text').trim()
+    const mono = css.getPropertyValue('--font-mono').trim() || 'monospace'
 
     const recIdx = deckFieldIndex(channelCount, deck, 'recordLengthSamples')
 
@@ -216,9 +221,30 @@ export function DeckWaveform({
         const hw = Math.max(1, dpr / scale)
         ctx.fillStyle = recording ? rec : brace
         ctx.fillRect(Math.min(x, w - hw), 0, scrubbing !== null ? hw * 2 : hw, h)
+
+        // While scrubbing, SAY where you are. A 380px strip holding minutes of
+        // audio is about half a second per pixel, so the head's position alone
+        // cannot tell you — and this is drawn by the existing drawer, on the
+        // canvas, so a per-frame readout still never touches React.
+        if (scrubbing !== null && sampleRate > 0) {
+          const secs = scrubbing / sampleRate
+          const label =
+            secs >= 60
+              ? `${Math.floor(secs / 60)}:${(secs % 60).toFixed(1).padStart(4, '0')}`
+              : `${secs.toFixed(2)}s`
+          const fh = Math.max(9, 10 * dpr / scale)
+          ctx.font = `${fh}px ${mono}`
+          const tw = ctx.measureText(label).width
+          // Flip to the other side near the right edge so it never clips off.
+          const tx = x + 4 * dpr + tw > w ? x - tw - 4 * dpr : x + 4 * dpr
+          ctx.fillStyle = bg
+          ctx.fillRect(tx - 2 * dpr, 1, tw + 4 * dpr, fh + 2 * dpr)
+          ctx.fillStyle = textCol
+          ctx.fillText(label, tx, fh)
+        }
       }
     })
-  }, [deck, channelCount, frames, loopStart, loopEnd, width, height, recording, scale])
+  }, [deck, channelCount, frames, loopStart, loopEnd, width, height, recording, scale, sampleRate])
 
   /** Post at most one scrub per animation frame, always the newest position. */
   const postScrub = (frame: number) => {
