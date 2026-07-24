@@ -126,6 +126,13 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         return ok(juce::var(new juce::DynamicObject()));
     }
 
+    if (method == "deckSetRate") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto rate = static_cast<double>(params.getProperty("rate", 1.0));
+        wz_deck_set_rate(engine, deck, rate);
+        return ok(juce::var(new juce::DynamicObject()));
+    }
+
     if (method == "deckSetLoop") {
         const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
         const auto enabled = static_cast<bool>(params.getProperty("enabled", false));

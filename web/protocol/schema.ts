@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -429,6 +429,16 @@ export const COMMANDS = {
   },
   // Half-open [startSample, endSample); published atomically (seqlock — the
   // render thread never observes a torn pair). Dispatch lands P1-07.
+  // Signed varispeed (P4-02/07): negative = reverse, |rate| clamped to
+  // [1/16, 16] by the engine. Exactly ±1 takes the bit-exact identity path.
+  // Live control — sent as a command rather than a ParamWrite because it is a
+  // deck property, not a channel param.
+  deckSetRate: {
+    params: z
+      .object({ deck: z.number().int().min(0).max(7), rate: z.number() })
+      .strict(),
+    result: z.object({}).strict(),
+  },
   deckSetLoop: {
     params: z
       .object({

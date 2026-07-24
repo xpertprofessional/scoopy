@@ -42,6 +42,7 @@ export function usePatchActions(link: EngineLink | null) {
   const addTake = useAppStore((s) => s.addTake)
   const setTakes = useAppStore((s) => s.setTakes)
   const removeTake = useAppStore((s) => s.removeTake)
+  const setDeckRate = useAppStore((s) => s.setDeckRate)
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
@@ -80,6 +81,12 @@ export function usePatchActions(link: EngineLink | null) {
     },
     setMainFader(value: number) {
       link?.paramWrite('mainGain', value)
+    },
+    /** Signed varispeed — live control, document + command (no republish; the
+        next publish carries the same rate, so the paths cannot diverge). */
+    setDeckRate(deck: number, rate: number) {
+      setDeckRate(deck, rate)
+      void link?.command('deckSetRate', { deck, rate })
     },
     /** Deck transport intents; state truth returns via HotFrame. */
     deckTrigger(deck: number, mode: 'loop' | 'oneShot' | 'stop' | 'retrigger') {

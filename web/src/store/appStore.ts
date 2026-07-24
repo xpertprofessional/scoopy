@@ -66,6 +66,7 @@ interface AppState {
     value: number | boolean,
   ) => void
   setDeckSourcePath: (id: number, path: string) => void
+  setDeckRate: (id: number, rate: number) => void
 }
 
 let nextKey = 1
@@ -158,6 +159,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const channels = patch.channels.slice()
     channels[index] = nextCh
     set({ patch: { ...patch, channels } })
+  },
+
+  setDeckRate: (id, rate) => {
+    const patch = get().patch
+    const decks = patch.decks.map((d) => (d.id === id ? { ...d, rate } : d))
+    set({ patch: { ...patch, decks } })
   },
 
   setDeckSourcePath: (id, path) => {

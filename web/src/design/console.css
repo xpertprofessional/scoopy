@@ -446,3 +446,27 @@ canvas.meter {
   gap: 3px;
   justify-content: flex-end;
 }
+
+/* --- varispeed ------------------------------------------------------------ */
+
+.varispeed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* One slider spans reverse and forward — reverse is the negative half of the
+   same control, not a separate mode. The reversed state re-tints the accent so
+   direction is readable at a glance. */
+.varispeed-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.varispeed-slider.reversed {
+  accent-color: var(--warn);
+}
+
+.varispeed-unity {
+  color: var(--signal);
+}

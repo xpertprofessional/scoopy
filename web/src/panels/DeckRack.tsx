@@ -10,6 +10,7 @@ import { usePatchActions } from '../engine/usePatch'
 import { useEffect, useRef } from 'react'
 import { registerHotDrawer } from '../hotsurface/hotSurface'
 import { useAppStore } from '../store/appStore'
+import { VarispeedSlider } from './VarispeedSlider'
 
 const STATE_LABEL = ['idle', 'loop', 'shot', 'rec']
 const RECORDING = 3
@@ -75,6 +76,10 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
                 cap
               </div>
             )}
+            <VarispeedSlider
+              rate={deck.rate}
+              onChange={(rate) => actions.setDeckRate(deck.id, rate)}
+            />
             <div className="deck-buttons">
               <button
                 type="button"
