@@ -133,6 +133,13 @@
     "vendor/scoopy/web-protocol/schema.ts": {
       "from": "web/protocol/schema.ts",
       "sha256": "5410e65fe73e85fa96aefdd0ff1590f965d621bdc2e9cfec2536295cbfa03ef7"
+    },
+    "vendor/scoopy/webdist": {
+      "from": "webdist",
+      "exclude": [
+        ".map"
+      ],
+      "sha256": "53a62986dd549c77aaf51d4e7abcea689ccb3036616c5db3b068f64e52811911"
     }
   }
 }

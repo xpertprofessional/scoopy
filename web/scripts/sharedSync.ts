@@ -52,6 +52,9 @@ interface LockEntry {
   sha256: string
   /** Deliberate local fork — integrity check skipped, reported by freshness. */
   diverged?: boolean
+  /** Suffixes to leave OUT of a vendored directory (not copied, not hashed),
+      e.g. `[".map"]` for a webdist bundle's dev sourcemaps. */
+  exclude?: string[]
 }
 
 interface Lock {
@@ -70,21 +73,31 @@ function hashFile(abs: string): string {
   return createHash('sha256').update(norm).digest('hex')
 }
 
-function walk(dir: string): string[] {
+/** Files matching an `exclude` suffix are OUTSIDE the vendored artifact — not
+ * copied and not hashed. The first user is the webdist bundle, whose `.map`
+ * sourcemaps are dev-only and would double the vendored size; excluding them in
+ * BOTH copy and hash means a stray map in the vendored tree is simply not part
+ * of the pin, so the two tiers never disagree. Suffix match, e.g. `.map`. */
+function isExcluded(name: string, exclude?: string[]): boolean {
+  return exclude != null && exclude.some((suf) => name.endsWith(suf.replace(/^\*/, '')))
+}
+
+function walk(dir: string, exclude?: string[]): string[] {
   const out: string[] = []
   for (const name of readdirSync(dir).sort()) {
     if (name.startsWith('.')) continue
+    if (isExcluded(name, exclude)) continue
     const full = join(dir, name)
-    if (statSync(full).isDirectory()) out.push(...walk(full))
+    if (statSync(full).isDirectory()) out.push(...walk(full, exclude))
     else out.push(full)
   }
   return out
 }
 
 /** Tree digest: each file's relpath + its LF-normalized content, sorted. */
-function hashTree(absDir: string): string {
+function hashTree(absDir: string, exclude?: string[]): string {
   const h = createHash('sha256')
-  for (const f of walk(absDir)) {
+  for (const f of walk(absDir, exclude)) {
     h.update(relative(absDir, f))
     h.update('\0')
     h.update(hashFile(f))
@@ -93,8 +106,8 @@ function hashTree(absDir: string): string {
   return h.digest('hex')
 }
 
-function hashPath(abs: string): string {
-  return statSync(abs).isDirectory() ? hashTree(abs) : hashFile(abs)
+function hashPath(abs: string, exclude?: string[]): string {
+  return statSync(abs).isDirectory() ? hashTree(abs, exclude) : hashFile(abs)
 }
 
 function gitHead(repo: string): string | null {
@@ -105,10 +118,10 @@ function gitHead(repo: string): string | null {
   }
 }
 
-function copyPath(fromAbs: string, toAbs: string): void {
+function copyPath(fromAbs: string, toAbs: string, exclude?: string[]): void {
   if (statSync(fromAbs).isDirectory()) {
     mkdirSync(toAbs, { recursive: true })
-    for (const f of walk(fromAbs)) {
+    for (const f of walk(fromAbs, exclude)) {
       const dest = join(toAbs, relative(fromAbs, f))
       mkdirSync(dirname(dest), { recursive: true })
       copyFileSync(f, dest)
@@ -144,8 +157,8 @@ if (mode === 'write') {
     }
     const src = resolve(sharedRoot, entry.from)
     const dst = resolve(appRoot, appRel)
-    copyPath(src, dst)
-    entry.sha256 = hashPath(dst)
+    copyPath(src, dst, entry.exclude)
+    entry.sha256 = hashPath(dst, entry.exclude)
     console.log(`synced ${appRel}  ←  ${relative(appRoot, src)}`)
   }
   const head = gitHead(sharedRoot)
@@ -165,7 +178,7 @@ if (mode === 'write') {
       errors.push(`missing vendored path: ${appRel}`)
       continue
     }
-    const actual = hashPath(abs)
+    const actual = hashPath(abs, entry.exclude)
     if (actual !== entry.sha256)
       errors.push(`drift: ${appRel} was edited locally — resync (edit in shared/, then npm run shared:sync)`)
   }
