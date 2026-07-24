@@ -143,12 +143,40 @@ made literal, and Wizard has no equivalent today. Also out of the first cut.
    ONE species. A Cell with material simply shows more.
 ```
 
+### 4.1 Verified workspace mechanics (from PlanTravail, not inferred)
+
+Reading the workspace page itself pins down the interaction model and, more usefully,
+shows where Wizard should *diverge* rather than copy:
+
+- **Zoom is discrete +/− with a Default reset, bottom-right** [PlanTravail]. Adopt the
+  position (bottom-right is where the hand already is after placing Cells), but add a
+  **fit-to-content** alongside Default — GRM has no overview aid at all, which is part of
+  its "where is everything?" problem.
+- **GRM has NO grid and NO snapping** — placement is entirely free [PlanTravail]. So the
+  "light snapping" this plan proposed is *our* addition, not GRM's, and it must stay
+  genuinely light: snap to alignment guides only when a Cell edge is within a few px of a
+  neighbour, never a forced grid. Placement is meaning (§4); a grid would impose a meaning
+  the user did not choose.
+- **No minimap/overview exists** [PlanTravail]. fit-to-content (frame all Cells) is the
+  cheap answer and is enough at Wizard's scale (≤ a few dozen Cells), so a minimap is
+  explicitly out of the first cut.
+- **Workspace rotation** (pivot the whole plane left/right) exists in GRM [PlanTravail] and
+  is **explicitly rejected** for Wizard: it serves GRM's multi-user around-a-table touch
+  model, and for a single pointer user it only adds disorientation with no gain for
+  role-based arrangement.
+- **Selection is tap-and-drag on the object; a marquee is additive later.** GRM's
+  double-click / shift-click modifiers are for *temporal* selection inside a track — an
+  editor gesture Wizard does not want (§4.5 of design-notes: editing is Parlante's job).
+
 ## 5. What it costs (honest)
 
 - **Engine: zero.** Nothing below the UI changes — this is why building engine-first was
   right. Varispeed, loopback, watchdog, buses, recorder all stand.
-- **Schema: small, additive.** Add `x, y, w, h` (+ a `uiScale`/pan for the plane) to
-  Channel/Patch. `uiMode` becomes a view state. Old Patches load with an auto-layout.
+- **Schema: small, additive** — and now spelled out concretely in §7. A `cell {x,y,w,h}` on
+  Channel, a `plane {scale,panX,panY}` on Patch, one SCHEMA_VERSION bump with a named
+  migration that auto-lays-out old Patches. Crucially **no array merge**: `Channel` is
+  already the one strip type and `decks[]` is material storage, so the "one object type"
+  is a rendering change, not a data-model change.
 - **UI: a real rewrite of the panels** — `ChannelRack`, `DeckRack`, `SourcesBrowser`,
   `RoutingMatrix` (~600 lines) become `Plane` + `Cell` + `Inspector` + drawers (add ~150
   lines for the Inspector; the routing matrix's per-strip bus choice largely *moves into*
@@ -179,9 +207,50 @@ made literal, and Wizard has no equivalent today. Also out of the first cut.
 for, the engine is untouched, and GRM Player proves the interaction model works in a
 shipping instrument.
 
+## 7. Concrete schema (PD-CANVAS-01) — so the decision is a yes/no to a real plan
+
+The single most important schema fact, verified against `web/protocol/schema.ts`: **the
+unification needs no array merge.** `Channel` is *already* the one strip type — its
+`source.kind` is `deviceInput | appTap | deck | virtualDeviceInput | busTap`. The `decks[]`
+array is not a second species; it is **material storage** (buffer/loop/rate/sourcePath) that
+a Channel with `source.kind === 'deck'` points into. The three racks are a *rendering*
+split over one model, not two models. So the Cell is a Channel; "a Cell with material" is a
+Channel whose source resolves to a deck.
+
+That makes PD-CANVAS-01 purely additive:
+
+```ts
+// added to ChannelSchema — every strip becomes placeable
+cell: z.object({
+  x: z.number(), y: z.number(),          // plane coordinates (unbounded, like GRM)
+  w: z.number().positive(),              // Cell size; height derives from state
+  h: z.number().positive(),              // (a material Cell is taller — waveform)
+}).strict(),
+
+// added to PatchSchema — the viewport is document state (persists per §4)
+plane: z.object({
+  scale: z.number().positive(),          // zoom; Default resets to 1
+  panX: z.number(), panY: z.number(),    // pan offset
+}).strict(),
+// uiMode: keep the field, reinterpret 'strip' as "zoomed-out view", not a layout.
+```
+
+- **Bump SCHEMA_VERSION once.** The migration is a NAMED per-version step (sessions.md §3
+  discipline): a pre-Cell Patch has no `cell`/`plane`, so the migration **auto-lays-out**
+  existing channels into rows (the current rack order → a tidy grid) and defaults
+  `plane = {scale:1, panX:0, panY:0}`. No user data is invented or dropped — geometry is
+  the only new axis and it gets a deterministic default.
+- **Strictness holds.** Both new objects are `.strict()`; the preserve-don't-drop law is
+  unaffected because nothing existing is removed.
+- **Engine/protocol untouched.** Geometry never crosses the ABI — the engine has never
+  known where a strip is drawn, and still won't. `protocol:check`/`abi:check` see no change.
+
+This is the whole schema surface. Everything else in PD-CANVAS is UI over it.
+
 ## Sources
 
-- [Plan de travail](https://sites.inagrm.com/download/grmplayer/documentation/co/PlanTravail.html) — "un plan sans limite apparente", drag placement, zoom/pan/Default
+- [Plan de travail](https://sites.inagrm.com/download/grmplayer/documentation/co/PlanTravail.html) — "un plan sans limite apparente"; zoom +/−/Default bottom-right; NO grid/snap; workspace rotation; no minimap (all verified §4.1)
+- [Fonctionnalités avancées](https://sites.inagrm.com/download/grmplayer/documentation/co/05_Fonctionalites_avancees.html) — the advanced control surface is OSC + JavaScript (a pointer toward Wizard's own eventual scripting/automation posture, not v1)
 - [Interface](https://sites.inagrm.com/download/grmplayer/documentation/co/03-Interface.html) — named regions; "ardoises séquences réparties dans le plan de travail"
 - [Rajouter un lecteur](https://sites.inagrm.com/download/grmplayer/documentation/co/Rajouter_un_lecteur.html) — drag a player onto a sequence; Single Player vs Player × n; window span → granular
 - [Inspecteur](https://sites.inagrm.com/download/grmplayer/documentation/co/Inspecteur.html) — the always-visible, selection-driven property panel (§3.0's resolution)

@@ -136,3 +136,35 @@ it is wrong here — an app that opens silent teaches you to distrust it.
 The reason this is yours and not mine: A vs B vs C is a judgment about how loud Wizard
 should be when the world changed underneath a session, and that is a taste call about
 your app.
+
+---
+
+## Decision #8 — how a source ring recovers latency after a one-time upset (P2-03a)
+
+**Found by:** the loop reaching P2-03a (ring-fill re-centering). This is an audio-quality
+control-law call, so it is a decision, not a silent implementation — the last time I tuned a
+ring servo by feel (the ASRC PI trim) it fought the feedforward path and I had to tear it
+out. I will not re-introduce that class of bug unattended.
+
+**The situation.** The ASRC holds long-term rate perfectly (feedforward: 0.0002 ms/hr). But
+a *one-time* upset — a device format change, a glitch, a scheduling stall — can leave a
+source ring sitting at the wrong fill level (extra latency, or dangerously close to
+underrun). Pure feedforward matches the *rate* going forward but never re-centres that
+one-time offset. The question is what, if anything, should pull it back.
+
+| | option | behaviour | risk |
+|---|---|---|---|
+| **A** | **Leave it (status quo)** | the offset persists; latency is a few ms off until the source is re-armed | none — but a bad upset stays bad for the whole session |
+| **B** | **Slow fill servo, average-based** | a gentle bias nudges the ring back to target fill over seconds, driven by *average* fill so it is immune to per-block sawtooth and cannot fight the feedforward rate | a servo is exactly what bit us before; must be average-based + rate-limited, and proven by a soak fixture |
+| **C** | **Adaptive ring growth (D-WZ-CLOCK-01)** | on sustained underrun the ring grows 1.5×→3× and logs it; never shrinks | recovers headroom but not latency; a grown ring adds permanent latency |
+| **D** | **One-shot re-centre on detected upset** | only on a *flagged* discontinuity (format change/glitch), resnap fill once; no continuous servo | needs a reliable upset signal; silent if an upset goes undetected |
+
+**My recommendation: C now, B later, both behind a soak fixture.** C is the safe,
+already-signed mechanism (D-WZ-CLOCK-01) and handles the dangerous direction (underrun) with
+no control-law subtlety. B is the "right" answer for latency recovery but only earns its
+place once there is an hour-long soak fixture proving it never fights feedforward — the same
+bar `asrc_drift_test` set. D is elegant but only as good as its upset detector.
+
+Why this is yours: A vs B vs C/D is a judgment about how hard Wizard should work to claw
+back latency versus how much control-law risk that is worth — a taste call about the audio
+path, which you asked to sign.
