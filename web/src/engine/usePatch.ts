@@ -335,8 +335,19 @@ export function usePatchActions(link: EngineLink | null) {
         setDeckSourcePath(deck, r.take.path)
       }
       bumpDeckRevision(deck) // a take just became this deck's buffer (Law C-3)
-      // Hand the strip back to its material: it was monitoring its input during
-      // the take, and Law C-3 means the capture is ALREADY looping in the engine.
+      // HAND THE STRIP BACK TO ITS MATERIAL. This comment used to sit above a
+      // bare republish that did nothing of the kind: arming set monitorSwitch
+      // true (D-WZ-MON-01) and NOTHING ever set it back, so `material &&
+      // !monitorSwitch` stayed false and the strip published as its INPUT
+      // forever. The engine dutifully looped the take (Law C-3) into a channel
+      // nobody was listening to — so ⟳ looked dead on every strip that had ever
+      // recorded, including after a relaunch, because the stuck switch persists
+      // in the session. D-WZ-MON-02 says the handoff auto-closes monitoring;
+      // this is the line that makes it true.
+      const idx = useAppStore
+        .getState()
+        .patch.channels.findIndex((c) => c.material?.deckId === deck)
+      if (idx >= 0) setChannelParam(idx, 'monitorSwitch', false)
       publishPatch(link, useAppStore.getState().patch)
     },
     async refreshTakes() {

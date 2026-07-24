@@ -152,6 +152,33 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       },
     },
 
+    // v28 -> v29: REPAIR a stuck monitor switch. Arming a take opened
+    // `monitorSwitch` (D-WZ-MON-01) and the Law C-3 handoff never closed it, so
+    // a strip that had recorded published as its INPUT forever and ⟳ did nothing
+    // audible. The engine fix cannot reach a session already on disk — the stuck
+    // switch is a persisted field — so any strip that HOLDS MATERIAL has it
+    // closed here. A strip without material is left alone: there, an open switch
+    // is a deliberate "listen to my input", which is still the whole point of
+    // the control.
+    28: {
+      to: 29,
+      name: 'close-stuck-monitor-switch',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        const channels = Array.isArray(patch.channels) ? patch.channels : []
+        return {
+          ...s,
+          patch: {
+            ...patch,
+            channels: channels.map((c) => {
+              const ch = (c ?? {}) as Record<string, unknown>
+              return ch.material ? { ...ch, monitorSwitch: false } : ch
+            }),
+          },
+        }
+      },
+    },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.

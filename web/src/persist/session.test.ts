@@ -288,3 +288,27 @@ test('v20 → v21 REMOVES uiMode rather than ignoring it', () => {
   if (!r.ok) return
   expect('uiMode' in (r.patch as unknown as Record<string, unknown>)).toBe(false)
 })
+
+test('v28 -> v29 closes a monitor switch stuck open by a take', () => {
+  // The stuck switch is what made ⟳ look dead on any strip that had recorded,
+  // and it lived in the SESSION — so a fixed binary alone would still have
+  // opened a broken document.
+  const base = JSON.parse(serializeSession(makeSession(emptyPatch(), '2026-07-24T00:00:00Z')))
+  const withMaterial = makeChannel('a', 'Rec', { kind: 'deviceInput', id: '0', name: 'In' })
+  const without = makeChannel('b', 'Mic', { kind: 'deviceInput', id: '1', name: 'In 2' })
+  base.schemaVersion = 28
+  base.patch.channels = [
+    { ...withMaterial, material: { deckId: 0 }, monitorSwitch: true },
+    { ...without, material: null, monitorSwitch: true },
+  ]
+  base.patch.decks = [
+    { id: 0, name: 'a', loopEnabled: true, loopStartSample: 0, loopEndSample: 0, rate: 1, sourcePath: '/t.wav' },
+  ]
+  const r = loadSession(JSON.stringify(base))
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.patch.channels[0]!.monitorSwitch).toBe(false) // has material: repaired
+  // No material means the open switch is a deliberate "listen to my input" —
+  // repairing that would break the control this migration exists to protect.
+  expect(r.patch.channels[1]!.monitorSwitch).toBe(true)
+})

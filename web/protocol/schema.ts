@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 28
+export const SCHEMA_VERSION = 29
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
