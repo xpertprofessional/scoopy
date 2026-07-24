@@ -99,6 +99,11 @@ interface AppState {
       Document-only, like cell geometry: the engine has no opinion on where you
       are looking, so this never republishes. */
   setPlaneView: (scale: number, panX: number, panY: number) => void
+  /** Which Strip the Inspector is showing. Runtime-only: what you have selected
+      is not a property of the patch, and a session should not reopen with a
+      stale selection ring on something you were merely looking at. */
+  selectedKey: string | null
+  setSelected: (key: string | null) => void
   setDeckSourcePath: (id: number, path: string) => void
   setDeckRate: (id: number, rate: number) => void
   setDeckLoopRegion: (id: number, startSample: number, endSample: number) => void
@@ -142,6 +147,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   alignReferencePath: null,
   sessionNotice: '',
   patch: emptyPatch(),
+  selectedKey: null,
+  setSelected: (selectedKey) => set({ selectedKey }),
   setSessionDevice: (input, output) => {
     const p = get().patch
     set({

@@ -114,6 +114,8 @@ export function Strip({
   const deviceInfo = useAppStore((s) => s.deviceInfo)
 
   const setChannelCell = useAppStore((s) => s.setChannelCell)
+  const selected = useAppStore((s) => s.selectedKey === channel.key)
+  const setSelected = useAppStore((s) => s.setSelected)
   // Overdub is a live engine mode, not document state: it is armed and dropped
   // in the moment, and nothing about it should survive a save.
   const [overdubbing, setOverdubbing] = useState(false)
@@ -129,6 +131,10 @@ export function Strip({
    * fell through to the pan and appeared to move every Strip at once.
    */
   const onPointerDown = (e: React.PointerEvent) => {
+    // Selecting on pointer-DOWN (not click) means the Inspector follows you even
+    // when the gesture turns into a drag — you are working on the thing you just
+    // grabbed, which is what you would expect.
+    setSelected(channel.key)
     if ((e.target as HTMLElement).closest('button, input, select, textarea, canvas, label')) return
     e.stopPropagation()
     dragRef.current = { px: e.clientX, py: e.clientY, x: cell.x, y: cell.y }
@@ -170,7 +176,7 @@ export function Strip({
 
   return (
     <div
-      className="plane-strip raised"
+      className={`plane-strip raised${selected ? ' plane-strip-selected' : ''}`}
       style={{ left: cell.x, top: cell.y, width: cell.w, height: cell.h }}
       data-testid={`strip-${channel.key}`}
       onPointerDown={onPointerDown}

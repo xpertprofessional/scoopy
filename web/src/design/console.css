@@ -715,3 +715,76 @@ select.plane-strip-bus.plane-strip-bus-unmapped {
   background: var(--warn);
   color: var(--bg);
 }
+
+/* Inspector — the "set precisely" half of a Strip. Part of the MAP, not a fifth
+   surface: it is to the map what the zoom controls already are. */
+.inspector {
+  width: 210px;
+  flex: none;
+  padding: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspector h2 {
+  font-family: var(--type-title-family);
+  font-size: var(--type-title-size);
+  text-transform: var(--type-title-transform);
+  color: var(--text-dim);
+  margin: 0 0 4px;
+}
+
+.inspector h3 {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  margin: 8px 0 2px;
+}
+
+.inspector p {
+  margin: 0;
+}
+
+.inspector-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+}
+
+.inspector-facts dt {
+  color: var(--text-dim);
+}
+
+.inspector-facts dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-text,
+.inspector-num {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  padding: 1px 4px;
+}
+
+/* The selected Strip reads as a RING, never a colour change — colour already
+   means kind and bus on this object. */
+.plane-strip-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

@@ -16,6 +16,7 @@ import { MasterSection } from './panels/MasterSection'
 import { RoutingMatrix } from './panels/RoutingMatrix'
 import { Settings } from './panels/Settings'
 import { Plane } from './plane/Plane'
+import { Inspector } from './plane/Inspector'
 
 const STATUS_LABEL: Record<string, string> = {
   disconnected: 'disconnected',
@@ -79,6 +80,7 @@ export function App() {
       )}
       <div className="console-body">
         <Plane link={link} />
+        <Inspector link={link} />
         <MasterSection link={link} />
       </div>
       <RoutingMatrix link={link} />

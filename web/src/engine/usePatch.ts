@@ -200,6 +200,17 @@ export function usePatchActions(link: EngineLink | null) {
       setChannelParam(index, 'outBus', bus)
       publishPatch(link, useAppStore.getState().patch)
     },
+    /** Rename a strip. The engine world carries channel names (they key the
+        render state), so this republishes rather than being document-only. */
+    renameStrip(index: number, name: string) {
+      const st = useAppStore.getState()
+      const ch = st.patch.channels[index]
+      if (!ch) return
+      const channels = st.patch.channels.slice()
+      channels[index] = { ...ch, name }
+      st.setPatch({ ...st.patch, channels })
+      publishPatch(link, useAppStore.getState().patch)
+    },
     /** Monitor the INPUT instead of the material (P3-10). Topology — republish. */
     setMonitorSwitch(index: number, on: boolean) {
       setChannelParam(index, 'monitorSwitch', on)
@@ -222,8 +233,15 @@ export function usePatchActions(link: EngineLink | null) {
     /** Loop region from a waveform drag: document + engine (seqlock-published,
         so the render thread never sees a torn pair). */
     setDeckLoop(deck: number, startSample: number, endSample: number) {
-      setDeckLoopRegion(deck, startSample, endSample)
-      void link?.command('deckSetLoop', { deck, enabled: true, startSample, endSample })
+      // ORDER AND CLAMP THE PAIR HERE, once, rather than trusting every caller.
+      // validatePatch refuses a whole publish when loopEnd < loopStart, so an
+      // inverted pair — one typo in the Inspector's number fields — would not
+      // just be a bad loop, it would silently block every later edit from
+      // reaching the engine.
+      const a = Math.max(0, Math.round(Math.min(startSample, endSample)))
+      const b = Math.max(0, Math.round(Math.max(startSample, endSample)))
+      setDeckLoopRegion(deck, a, b)
+      void link?.command('deckSetLoop', { deck, enabled: true, startSample: a, endSample: b })
     },
     /**
      * ALIGN TO TAKE (Law C-2 as a verb): shift a deck's loop origin by the

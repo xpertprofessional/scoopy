@@ -78,6 +78,7 @@ export function Plane({ link }: { link: EngineLink | null }) {
   // --- pan: drag the empty background, never a strip -----------------------
   const onPointerDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.plane-strip')) return // a control, not the canvas
+    useAppStore.getState().setSelected(null) // empty background clears the selection
     drag.current = { px: e.clientX, py: e.clientY, panX: pan.x, panY: pan.y }
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }

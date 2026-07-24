@@ -73,3 +73,28 @@ test('a busTap is the one legal cycle — valid buses only', () => {
   }
   expect(validatePatch(bad).some((e) => e.includes('unknown bus'))).toBe(true)
 })
+
+test('an inverted loop pair would refuse the whole publish — so it must be impossible', () => {
+  // validatePatch rejects loopEnd < loopStart, and publishPatch refuses the
+  // ENTIRE patch on any error. So an inverted pair reaching the document does
+  // not merely break one loop: it silently blocks every later edit from ever
+  // reaching the engine. setDeckLoop orders the pair for exactly this reason;
+  // this pins the rule the guard exists to satisfy.
+  const patch = {
+    ...emptyPatch(),
+    decks: [
+      {
+        id: 0,
+        name: 'd',
+        loopEnabled: true,
+        loopStartSample: 9000,
+        loopEndSample: 100, // inverted
+        rate: 1,
+        sourcePath: '',
+      },
+    ],
+  }
+  const errors = validatePatch(patch)
+  expect(errors.length).toBeGreaterThan(0)
+  expect(errors.join(' ')).toContain('loop end before start')
+})
