@@ -137,6 +137,17 @@ interface JuceWindow {
 }
 
 /**
+ * Builds the app's link when the JUCE backend is present, else null. This is
+ * the one shared home of the "null means no engine" law: the backend is never
+ * inferred or faked, and each app decides WHAT to construct (usually its
+ * JuceLinkBase subclass) while this decides WHETHER.
+ */
+export function createJuceLink<L>(make: (backend: JuceBackend) => L): L | null {
+  const backend = juceBackend()
+  return backend === null ? null : make(backend)
+}
+
+/**
  * The JUCE backend if we are running inside the shell, else null. Never inferred
  * or faked: a null here means "no engine", and the UI must show a disconnected
  * state rather than a working-looking app with a dead backend.

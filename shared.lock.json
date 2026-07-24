@@ -1,5 +1,5 @@
 {
-  "sharedCommit": "5f5072665328ea7dd97f044c3125e2928309b8f3",
+  "sharedCommit": "e0069f5ccfe870c69227746e7e77bb111ebec0f7",
   "files": {
     "web/scripts/sharedSync.ts": {
       "from": "scripts/sharedSync.ts",
@@ -19,7 +19,7 @@
     },
     "web/protocol/envelope.ts": {
       "from": "protocol/envelope.ts",
-      "sha256": "f4bfd39bea171f6313c3325adc4232b76839d02b59b7292bdd6b38e3e893737a"
+      "sha256": "e2accae4a7050b01706e55d1ad7bb4a5327be0d0444d944c8f120c475335210b"
     },
     "web/protocol/types.ts": {
       "from": "protocol/types.ts",
@@ -43,7 +43,7 @@
     },
     "web/protocol/juceLink.ts": {
       "from": "protocol/juceLink.ts",
-      "sha256": "ff9e6ede9b7f00dee550dfcdbaca0f8c41363566d771695b89f185bca0766929"
+      "sha256": "73970a925704025c1b12ade18ed7c9b4dbc1cf0cd663dbf564dedab5fd9a9e21"
     }
   }
 }

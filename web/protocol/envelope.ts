@@ -7,9 +7,9 @@
  * error?}), so a change here is a wire-format change requiring both sides to
  * move together.
  *
- * NOTE: ScoopyLoops does NOT use this envelope today — its reply has no `ok`
- * field and is not `.strict()`. Converging it is a tracked, deferred step
- * (shared/ROLLOUT.md phase 5); until then this module is parlante + wizard only.
+ * All three apps speak this envelope. ScoopyLoops converged in phase 5
+ * (shared/ROLLOUT.md; P0-A of the wizard×scoopy merge): its WKWebView shell
+ * emits the same `{id, ok, result?, error?}` reply the JUCE dispatchers do.
  *
  * Vendored, not linked — see shared/README.md.
  */
