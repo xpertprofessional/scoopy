@@ -1,0 +1,33 @@
+{
+  "_README": [
+    "Fields of NativeTrackSnapshot the browser deliberately does NOT carry, each with a reason.",
+    "",
+    "This file is the second half of check-abi-coverage.mjs, and it is what lets the check be strict:",
+    "every engine field must be either CARRIED end-to-end or listed here. There is no third state — so",
+    "'nobody noticed', which is exactly how P8-10(a) happened (the ABI carried 12 of 125 fields and the",
+    "browser played a different piece of audio), stops being possible.",
+    "",
+    "Add a field to NativeTrackSnapshot and the check FAILS until you either wire it through (5 steps,",
+    "which it prints) or put it here and say why. Both are fine answers. Silence is not.",
+    "",
+    "AN ENTRY HERE IS A REAL GAP IN THE BROWSER, not a shrug. A session using one of these plays",
+    "WITHOUT it in the companion. It is still preserved in the file — PatternFile round-trips it",
+    "untouched (preserve-don't-drop), so nothing is LOST; it just does not SOUND. Keep this list short."
+  ],
+  "notCarried": {
+    "trackType": "MIDI/instrument. P8-9: a browser cannot host an AU/VST3, so instrument tracks are inert-but-preserved BY DESIGN, not by omission.",
+    "midiChannel": "MIDI hardware. The WASM build sets SCOOPY_MIDI_HARDWARE=0 — the engine's MIDI-out is compiled out entirely.",
+    "midiRootNote": "MIDI hardware — see midiChannel.",
+    "midiVelocity": "MIDI hardware — see midiChannel.",
+    "midiVelocities": "MIDI hardware — see midiChannel.",
+    "midiPitchBends": "MIDI hardware — see midiChannel.",
+    "midiGatePercent": "MIDI hardware — see midiChannel.",
+    "midiOutEnabled": "MIDI hardware — see midiChannel.",
+    "instrumentOutEnabled": "Instrument hosting. P8-9 — explicitly out of scope for the companion.",
+    "launchAnchorStep": "Transient launch scheduling, not document state. The engine sets it when a clip is launched; a session does not persist it and the companion has no launch surface.",
+    "launchStopStep": "Transient launch scheduling — see launchAnchorStep.",
+    "launchGateStep": "Transient launch scheduling — see launchAnchorStep.",
+    "grainEnabled": "Runtime gate, not document state. The document stores grainModeEnabled — which IS carried; grainEnabled is the engine's own armed flag.",
+    "tpMorphEligible": "Rate Morph v1 runtime gate (T+P × REG, resolved by the desktop facade). The browser applies detent changes instantly — rateMorphFrames defaults to 0 there, so the flag is inert. Nothing is lost: the document stores speedMode, which PatternFile round-trips."
+  }
+}

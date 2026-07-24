@@ -1,9 +1,9 @@
 {
-  "sharedCommit": "e0069f5ccfe870c69227746e7e77bb111ebec0f7",
+  "sharedCommit": "16a4131e2aa901803e84efad708ebe2962b280ba",
   "files": {
     "web/scripts/sharedSync.ts": {
       "from": "scripts/sharedSync.ts",
-      "sha256": "0aa2bf709facd107ea24527c0e43e1ace94e5abb28737a756f948cc94533808a"
+      "sha256": "e7a09c7602eb14a02683d53bfb7aed7a173134892fbb97966e934ac569e1addc"
     },
     "web/scripts/webdistFresh.ts": {
       "from": "protocol/webdistFresh.ts",

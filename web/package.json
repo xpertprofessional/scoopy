@@ -16,7 +16,9 @@
     "abi:check": "node --experimental-strip-types scripts/checkAbiCoverage.ts",
     "check:tokens": "node --experimental-strip-types scripts/check-tokens.ts",
     "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
-    "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write"
+    "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write",
+    "engine:check": "node --experimental-strip-types scripts/sharedSync.ts --check --lock engine.lock.json",
+    "engine:sync": "node --experimental-strip-types scripts/sharedSync.ts --write --lock engine.lock.json"
   },
   "dependencies": {
     "react": "^18.3.1",

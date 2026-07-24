@@ -8,6 +8,11 @@
  *   node --experimental-strip-types scripts/sharedSync.ts --check   (CI gate)
  *   node --experimental-strip-types scripts/sharedSync.ts --write   (resync from shared/)
  *
+ * `--lock <file>` selects a different lock at the app root (default
+ * shared.lock.json). A second lock with its own `sharedRoot` lets an app pin
+ * vendored copies from a SIBLING repo with the same mechanism — the merge's
+ * engine lock (wizard vendoring scoopy's portable core) is the first user.
+ *
  * Two tiers:
  *   integrity — every vendored path hashes to the sha the lock records. ALWAYS
  *               runs, needs no network and no umbrella sibling: a lifted-out app
@@ -30,7 +35,13 @@ import { fileURLToPath } from 'node:url'
 
 // web/scripts/sharedSync.ts → web/scripts → web → <appRoot>
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const lockPath = resolve(appRoot, 'shared.lock.json')
+const lockFlag = process.argv.indexOf('--lock')
+const lockName = lockFlag >= 0 ? (process.argv[lockFlag + 1] ?? '') : 'shared.lock.json'
+if (!lockName) {
+  console.error('--lock needs a file name (app-root-relative)')
+  process.exit(1)
+}
+const lockPath = resolve(appRoot, lockName)
 // apps live at <umbrella>/apps/<app>; shared/ is <umbrella>/shared.
 const defaultSharedRoot = resolve(appRoot, '../../shared')
 
@@ -135,12 +146,12 @@ if (mode === 'write') {
     const dst = resolve(appRoot, appRel)
     copyPath(src, dst)
     entry.sha256 = hashPath(dst)
-    console.log(`synced ${appRel}  ←  shared/${entry.from}`)
+    console.log(`synced ${appRel}  ←  ${relative(appRoot, src)}`)
   }
   const head = gitHead(sharedRoot)
   if (head) lock.sharedCommit = head
   writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n')
-  console.log(`updated shared.lock.json (sharedCommit ${lock.sharedCommit.slice(0, 12)})`)
+  console.log(`updated ${lockName} (sharedCommit ${lock.sharedCommit.slice(0, 12)})`)
 } else {
   const errors: string[] = []
   const notes: string[] = []

@@ -36,6 +36,10 @@ jobs:
       # the build.
       - run: npm run protocol:check
       - run: npm run shared:check
+      # The engine lock: scoopy's portable core is vendored under vendor/scoopy,
+      # hash-pinned. apps/scoopy stays the ONLY writable home until the P3 flip;
+      # this check makes local edits to the vendored copy loud, not forbidden.
+      - run: npm run engine:check
       - run: npm run abi:check
       - run: npm run check:tokens
       - run: npm run webdist:check
