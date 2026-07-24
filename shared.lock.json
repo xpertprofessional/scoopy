@@ -1,5 +1,5 @@
 {
-  "sharedCommit": "f9d3da7a304f27653a6640c162275785fa3ec7d3",
+  "sharedCommit": "5f5072665328ea7dd97f044c3125e2928309b8f3",
   "files": {
     "web/scripts/sharedSync.ts": {
       "from": "scripts/sharedSync.ts",
@@ -17,6 +17,22 @@
       "from": "design/tokens.core.test.ts",
       "sha256": "697a55e68d791a8ee67128f3cef9a1f6655d9f55ac1fa5ca4356d05066b16b12"
     },
+    "web/protocol/envelope.ts": {
+      "from": "protocol/envelope.ts",
+      "sha256": "f4bfd39bea171f6313c3325adc4232b76839d02b59b7292bdd6b38e3e893737a"
+    },
+    "web/protocol/types.ts": {
+      "from": "protocol/types.ts",
+      "sha256": "888acd136f9932da79236f7b408a0831690fe07cc705dcf87bc4ca4ee7485517"
+    },
+    "web/scripts/abiCoverage.ts": {
+      "from": "protocol/abiCoverage.ts",
+      "sha256": "f8be1790427088dea9f47ded30225082879abdac647dfe57510d749ed2bfc228"
+    },
+    "web/scripts/protocolCodegen.ts": {
+      "from": "protocol/codegen.ts",
+      "sha256": "614b3bdc1dcafe7b6653efb550959a1e4d4fc690c1aa91716c41a5071bf08c19"
+    },
     "engine/tools/libsamplerate_smoke.cpp": {
       "from": "engine/tools/libsamplerate_smoke.cpp",
       "sha256": "51755f12c17c30a379bc0a45be49f19ee56241a82e4773a60e0facf78c8244f1"
@@ -24,6 +40,10 @@
     "engine/ThirdParty/libsamplerate": {
       "from": "engine/third_party/libsamplerate",
       "sha256": "6a26271e9c8c0503d57bfb1b3be5d059861efa2c27bffd7ef9850a17b51a9187"
+    },
+    "web/protocol/juceLink.ts": {
+      "from": "protocol/juceLink.ts",
+      "sha256": "ff9e6ede9b7f00dee550dfcdbaca0f8c41363566d771695b89f185bca0766929"
     }
   }
 }

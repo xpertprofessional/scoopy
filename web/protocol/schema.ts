@@ -16,6 +16,10 @@
  * Domain math (pan/fader/ramps) is normative in docs/specs/routing.md.
  */
 import { z } from 'zod'
+// Explicit .ts extensions: the protocol:generate / abi:check gates load this
+// module under raw `node --experimental-strip-types`, which will not resolve an
+// extensionless relative import.
+import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
 export const SCHEMA_VERSION = 18
@@ -588,23 +592,11 @@ export const COMMANDS = {
     result: z.object({}).strict(),
   },
 } as const
-export type Method = keyof typeof COMMANDS
-export type Params<M extends Method> = z.infer<(typeof COMMANDS)[M]['params']>
-export type Result<M extends Method> = z.infer<(typeof COMMANDS)[M]['result']>
+export type Method = MethodOf<typeof COMMANDS>
+export type Params<M extends Method> = ParamsOf<typeof COMMANDS, M>
+export type Result<M extends Method> = ResultOf<typeof COMMANDS, M>
 
-export const CommandEnvelopeSchema = z
-  .object({
-    id: z.number().int().nonnegative(),
-    method: z.string(),
-    params: z.unknown(),
-  })
-  .strict()
-
-export const CommandReplySchema = z
-  .object({
-    id: z.number().int().nonnegative(),
-    ok: z.boolean(),
-    result: z.unknown().optional(),
-    error: z.string().optional(),
-  })
-  .strict()
+// The command envelope is the shared wire format every JUCE-hosted app speaks
+// (shared/protocol/envelope.ts, vendored). Re-exported so importers keep
+// resolving it from the schema.
+export { CommandEnvelopeSchema, CommandReplySchema } from './envelope.ts'
