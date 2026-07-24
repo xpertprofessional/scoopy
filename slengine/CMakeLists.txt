@@ -11,6 +11,9 @@
 # those are v3's; the target name is just a build-system label.
 add_library(wz_sl_engine STATIC src/sl_engine.cpp)
 target_include_directories(wz_sl_engine PUBLIC include)
+# generated/ holds the derived track-param mapping (PRIVATE: an implementation
+# detail, resolved by name across the ABI).
+target_include_directories(wz_sl_engine PRIVATE generated)
 
 # scoopy_engine is PUBLIC: the core's headers are an implementation detail of
 # this tier, but the static lib must stay on consumers' link line.
@@ -35,3 +38,10 @@ target_include_directories(track_params_test PRIVATE generated)
 target_link_libraries(track_params_test PRIVATE scoopy_engine)
 target_compile_options(track_params_test PRIVATE -ffp-contract=off)
 add_test(NAME track_params_test COMMAND track_params_test)
+
+# §6 session snapshots: name resolution across the ABI, the refused deck axis,
+# and the thing that matters most — a committed world with a registered sample
+# renders non-silence.
+add_executable(sl_snapshot_test tools/sl_snapshot_test.cpp)
+target_link_libraries(sl_snapshot_test PRIVATE wz_sl_engine)
+add_test(NAME sl_snapshot_test COMMAND sl_snapshot_test)

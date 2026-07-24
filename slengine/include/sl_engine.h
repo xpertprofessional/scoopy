@@ -96,6 +96,69 @@ void sl_render(sl_engine* e,
                float* const* bus_out, uint32_t bus_count,
                uint32_t frames);
 
+/* ── Session snapshots (§6) ─────────────────────────────────────────────────
+ *
+ * The world a deck plays: samples, tracks, per-step patterns. Built
+ * incrementally and published to the audio thread by one lock-free commit.
+ *
+ * Track parameters are KEYED BY NAME, never by hardcoded integer. Resolve once
+ * at boot and cache the ints. The mapping behind these names is GENERATED from
+ * the pinned v2 ABI (web/scripts/generateTrackParams.ts) rather than
+ * hand-written, because a hand-mirrored table's failure mode is a value written
+ * silently into the WRONG parameter — worse than one not carried at all. */
+
+/** Register decoded audio under `sample_id`. The engine COPIES, so the caller
+    may free `left`/`right` immediately. `right` NULL = mono (duplicated).
+    Returns 1 on success. */
+int sl_engine_register_sample(sl_engine* e,
+                              const char* sample_id,
+                              const float* left,
+                              const float* right,
+                              uint32_t frames,
+                              double sample_rate);
+
+/** Begin a new world for `deck`. Any snapshot in progress is discarded.
+    Returns 1 if the build started, 0 if it was refused.
+
+    ⚠️ THE DECK AXIS IS DECLARED BUT ONLY DECK 0 IS IMPLEMENTED. §6 specifies up
+    to 8 coexisting session worlds; the vendored core holds exactly one
+    sequencer state, and giving it more is a CORE change that must happen in
+    apps/scoopy (the only writable home until the P3 flip) — not here. So the
+    axis is in the signature, where §6 puts it, and any deck > 0 is REFUSED
+    rather than silently writing over deck 0's world. A refusal is a bug report;
+    a silent aliasing is a mystery. */
+int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step);
+
+/** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
+int sl_snapshot_track_begin(sl_engine* e,
+                            const char* sample_id,
+                            const uint8_t* steps,
+                            uint32_t step_count);
+
+/** Set a scalar / per-step array on the track in progress. An unknown key is
+    IGNORED, never misread — that is the point of resolving by name. */
+void sl_snapshot_track_set(sl_engine* e, int32_t param, double value);
+void sl_snapshot_track_set_array(sl_engine* e, int32_t param, const double* values, uint32_t count);
+
+/** Push the track in progress into the pending world. */
+void sl_snapshot_track_end(sl_engine* e);
+
+/** Resolve a track parameter by name; SL_PARAM_UNKNOWN if unknown.
+    (v2 spelled these sl_param_id / sl_array_param_id — renamed in v3 to free
+    the deck-scope param namespace, SL-ABI-V3.md §3.) */
+int32_t sl_track_param_id(const char* name);
+int32_t sl_track_array_id(const char* name);
+
+/** Introspection, so a host can enumerate rather than hardcode. */
+uint32_t    sl_track_param_count(void);
+uint32_t    sl_track_array_count(void);
+const char* sl_track_param_name(uint32_t id);  /* NULL if out of range */
+const char* sl_track_array_name(uint32_t id);
+
+/** Publish the pending world to the audio thread. Returns the world generation,
+    or 0 if nothing was published. */
+uint64_t sl_snapshot_commit(sl_engine* e);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

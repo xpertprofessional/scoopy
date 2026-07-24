@@ -11,7 +11,7 @@ unedited as the historical record). This file is the CURRENT state. Updated
 | 1 | P0-B remainder — CI | **done** (`5f7e796`) |
 | 2 | P0-B remainder — engine vendoring lock | **done** (`8e04212`) |
 | 3 | P1 spike — JUCE WebView | **done, no disqualifier; all 4 questions answered** (`900a7a7`) — verdicts in `P1-SPIKE-JUCE-WEBVIEW.md` |
-| 4 | P1 plumbing | **3 of 4 bullets done** — see below |
+| 4 | P1 plumbing | **engine side done; UI wiring remains** — see below |
 
 ### P1 plumbing detail
 
@@ -23,8 +23,14 @@ unedited as the historical record). This file is the CURRENT state. Updated
   declare only what is implemented).
 - **Render into `AudioIO`** — done (`ee9a3a1`). `AudioIO` drives a `RenderSink`;
   `SlRenderSink` and `WzRenderSink` are the two adapters.
-- **GridPanel + transport live, load/play a `.scoopySession`** — **NOT STARTED.**
-  Blocked on the session-snapshot surface; see below.
+- **`sl_engine.h` v3 §6 session snapshots** — done (`f460385`, this increment).
+  The 112-entry keyed track-param mapping is GENERATED from the pinned v2 ABI,
+  not hand-ported, with a CI gate proven to bite. `sl_snapshot_test` shows a
+  committed world with a registered sample rendering non-silence — the engine
+  half of `.scoopySession` playback works.
+- **GridPanel + transport live** — **NOT STARTED.** No longer blocked on the
+  engine: what remains is UI-side wiring (the shell's CommandDispatch answering
+  scoopy's commands against a real engine instead of the spike's stub).
 
 ## Decisions taken during P1 (and why)
 
@@ -46,16 +52,25 @@ unedited as the historical record). This file is the CURRENT state. Updated
 5. **The ctest registration for vendored gates lives in `vendor/CMakeLists.txt`**,
    not in the pinned tree — editing the pinned copy would fail `engine:check`.
 
-## The next increment, and its real blocker
+## The next increment
 
-`.scoopySession` playback needs SL-ABI-V3 §6 — the session snapshot surface:
+**Resolved: the §6 blocker below is done** — the mapping was generated rather
+than hand-ported, exactly as this section recommended (route 1). Kept for the
+reasoning, which still governs any future re-derivation.
 
-```
-sl_engine_register_sample · sl_snapshot_begin(deck, …) · track_begin/set/
-set_array/end · sl_track_param_id · sl_track_array_id · sl_snapshot_commit
-```
+What remains for the kickoff's last bullet is UI-side: the shell's
+`CommandDispatch` answering scoopy's command surface (`getUiState`, `gridEdit`,
+`publishTrackPattern`, transport) against a real v3 engine instead of the
+spike's stub. The spike proved the transport; nothing about it is unknown.
 
-**The blocker is not design, it is volume.** v2's keyed-param layer (the
+**⚠️ Known limitation to carry forward:** `sl_snapshot_begin` declares the deck
+axis but REFUSES any deck > 0 — the vendored core holds one sequencer world, and
+giving it more is a CORE change that belongs in `apps/scoopy`, the only writable
+home until the P3 flip. Multi-deck sessions need that change first.
+
+### Historical: why the mapping is generated
+
+**The blocker was not design, it was volume.** v2's keyed-param layer (the
 `SL_T_*` / `SL_TA_*` enums plus the switch that maps ~60 keys onto
 `NativeTrackSnapshot` fields) lives in `vendor/scoopy/engine/src/sl_engine.cpp`,
 which v3 cannot link. So v3 needs its own mapping, and that mapping is ~250

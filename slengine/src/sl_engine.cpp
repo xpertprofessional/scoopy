@@ -4,8 +4,10 @@
 #include "sl_engine.h"
 
 #include "NativeAudioEngineCore.hpp"
+#include "NativeToneFilter.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <array>
 #include <cstddef>
 #include <new>
@@ -66,6 +68,11 @@ struct sl_engine {
     // and in WASM it may be a heap growth.
     std::array<std::vector<float>, NativeAudioEngineCore::laneCount> lanes;
     std::array<float*, NativeAudioEngineCore::laneCount> lanePtrs{};
+    // The world being built by sl_snapshot_* — one track open at a time.
+    NativeSequencerSnapshot pending;
+    NativeTrackSnapshot track;
+    bool trackOpen = false;
+
     std::vector<float> silenceIn;
     std::uint32_t blockFrames = 0;
     double sampleRate = 0.0;
@@ -98,6 +105,18 @@ struct sl_engine {
 };
 
 namespace {
+
+// The keyed track-param mapping, GENERATED from the pinned v2 ABI. Never edit
+// it here: `npm run trackparams:generate`, and CI's trackparams:check fails if
+// this copy drifts from the vendored source it was derived from.
+#include "sl_track_params.inc"
+
+int lookupName(const char* const* table, uint32_t count, const char* name) {
+    if (name == nullptr) return SL_PARAM_UNKNOWN;
+    for (uint32_t k = 0; k < count; ++k)
+        if (std::strcmp(table[k], name) == 0) return static_cast<int>(k);
+    return SL_PARAM_UNKNOWN;
+}
 
 /** The one render path; sl_render is sl_render_io with no inputs. Kept single
     so the input-carrying and silent cases can never diverge in lane handling. */
@@ -186,6 +205,98 @@ void sl_render(sl_engine* e,
                uint32_t frames) {
     if (e == nullptr) return;
     renderInto(e, e->silenceIn.data(), e->silenceIn.data(), bus_out, bus_count, frames);
+}
+
+int sl_engine_register_sample(sl_engine* e, const char* sample_id,
+                              const float* left, const float* right,
+                              uint32_t frames, double sample_rate) {
+    if (e == nullptr || sample_id == nullptr || left == nullptr || frames == 0) return 0;
+    NativeSample s;
+    s.id = sample_id;
+    s.sampleRate = sample_rate;
+    // COPY: the caller must be free to release its buffer immediately.
+    s.left.assign(left, left + frames);
+    const float* r = right != nullptr ? right : left; // mono duplicates into both sides
+    s.right.assign(r, r + frames);
+    return e->core.registerSample(std::move(s)) ? 1 : 0;
+}
+
+int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {
+    if (e == nullptr) return 0;
+    // Refused, not aliased onto deck 0 — see the header. The core carries one
+    // sequencer world, and pretending otherwise would make two decks silently
+    // share state, which is the kind of bug that presents as "the wrong pattern
+    // plays" hours later.
+    if (deck != 0) return 0;
+    e->pending = NativeSequencerSnapshot{};
+    e->pending.bpm = bpm;
+    e->pending.isPlaying = is_playing != 0;
+    e->pending.startStep = start_step;
+    e->trackOpen = false; // a half-built track from a discarded world never carries over
+    return 1;
+}
+
+int sl_snapshot_track_begin(sl_engine* e, const char* sample_id,
+                            const uint8_t* steps, uint32_t step_count) {
+    if (e == nullptr || sample_id == nullptr || steps == nullptr || step_count == 0) return 0;
+    e->track = NativeTrackSnapshot{};
+    e->track.sampleId = sample_id;
+    e->track.steps.assign(steps, steps + step_count);
+    // The engine indexes pitchOffsets per step unconditionally, so it must be
+    // step_count long even when the caller never sets it.
+    e->track.pitchOffsets.assign(step_count, 0.0);
+    e->trackOpen = true;
+    return 1;
+}
+
+void sl_snapshot_track_set(sl_engine* e, int32_t param, double v) {
+    if (e == nullptr || !e->trackOpen) return;
+    NativeTrackSnapshot& t = e->track;
+    SL_V3_SCALAR_PARAM_LAMBDAS
+    switch (param) {
+        SL_V3_SCALAR_PARAM_CASES
+        default: break; // unknown key is IGNORED, never misread
+    }
+}
+
+void sl_snapshot_track_set_array(sl_engine* e, int32_t param, const double* v, uint32_t n) {
+    if (e == nullptr || !e->trackOpen || v == nullptr || n == 0) return;
+    NativeTrackSnapshot& t = e->track;
+    SL_V3_ARRAY_PARAM_LAMBDAS
+    switch (param) {
+        SL_V3_ARRAY_PARAM_CASES
+        default: break;
+    }
+}
+
+void sl_snapshot_track_end(sl_engine* e) {
+    if (e == nullptr || !e->trackOpen) return;
+    e->pending.tracks.push_back(std::move(e->track));
+    e->trackOpen = false;
+}
+
+int32_t sl_track_param_id(const char* name) {
+    return lookupName(kScalarParamNames, SL_T_SCALAR_COUNT, name);
+}
+
+int32_t sl_track_array_id(const char* name) {
+    return lookupName(kArrayParamNames, SL_TA_COUNT, name);
+}
+
+uint32_t sl_track_param_count(void) { return static_cast<uint32_t>(SL_T_SCALAR_COUNT); }
+uint32_t sl_track_array_count(void) { return static_cast<uint32_t>(SL_TA_COUNT); }
+
+const char* sl_track_param_name(uint32_t id) {
+    return id < static_cast<uint32_t>(SL_T_SCALAR_COUNT) ? kScalarParamNames[id] : nullptr;
+}
+
+const char* sl_track_array_name(uint32_t id) {
+    return id < static_cast<uint32_t>(SL_TA_COUNT) ? kArrayParamNames[id] : nullptr;
+}
+
+uint64_t sl_snapshot_commit(sl_engine* e) {
+    if (e == nullptr) return 0;
+    return e->core.publishSequencerState(e->pending);
 }
 
 } // extern "C"
