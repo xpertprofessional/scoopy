@@ -245,6 +245,18 @@ export function usePatchActions(link: EngineLink | null) {
     deckSeek(deck: number, frame: number) {
       void link?.command('deckSeek', { deck, frame: Math.max(0, Math.round(frame)) })
     },
+    /**
+     * OVERDUB (D-WZ-OVERDUB-01): keep playing and sum the input into the loop.
+     * Works on ANY material — a loaded file layers exactly like a recorded take,
+     * because a strip is a strip and every function belongs to every strip.
+     * Monitoring stays OPEN while layering: hearing the input against the loop
+     * is the point, and it is D-WZ-MON-02's one exception to the auto-close.
+     */
+    setOverdub(index: number, deck: number, on: boolean) {
+      useAppStore.getState().setChannelParam(index, 'monitorSwitch', on)
+      publishPatch(link, useAppStore.getState().patch)
+      void link?.command('deckOverdub', { deck, on })
+    },
     /** TAPE SCRUB (turntable): pitch follows hand speed, because the engine
         derives the rate from the gap. Distinct from deckSeek, which jumps at
         unchanged pitch — both are wanted, they are different instruments. */

@@ -14,7 +14,7 @@
  * Precise settings (exact loop points, output bus, cue routing) move to the
  * Inspector in PD-CANVAS-03 — this stays what you touch while playing.
  */
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { Channel } from '../../protocol/schema'
 import { channelFieldIndex } from '../../protocol/schema'
 import type { EngineLink } from '../engine/engineLink'
@@ -114,6 +114,9 @@ export function Strip({
   const deviceInfo = useAppStore((s) => s.deviceInfo)
 
   const setChannelCell = useAppStore((s) => s.setChannelCell)
+  // Overdub is a live engine mode, not document state: it is armed and dropped
+  // in the moment, and nothing about it should survive a save.
+  const [overdubbing, setOverdubbing] = useState(false)
   const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
 
   const cell = channel.cell
@@ -355,6 +358,29 @@ export function Strip({
           ◼
         </button>
         <StripLoad index={index} link={link} />
+        {/* OVR — sound-on-sound. Available on ANY strip that HAS material and a
+            capturable source: a loaded file layers exactly like a recorded take,
+            because a strip is a strip. Monitoring stays open while layering
+            (D-WZ-MON-02's one exception), since hearing yourself against the
+            loop is the entire point. */}
+        {hasMaterial && canRecord && deck && (
+          <button
+            type="button"
+            className={overdubbing ? 'latched-rec' : ''}
+            title={
+              overdubbing
+                ? 'overdubbing — layering into the loop; click to stop'
+                : `overdub ${channel.source.name} into this loop (sound-on-sound)`
+            }
+            onClick={() => {
+              const next = !overdubbing
+              setOverdubbing(next)
+              actions.setOverdub(index, deck.id, next)
+            }}
+          >
+            OVR
+          </button>
+        )}
         {/* IN — listen to the source instead of the material. Only meaningful
             when the Strip has BOTH: without material there is nothing else to
             hear, and without a capturable source there is nothing to switch to.

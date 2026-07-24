@@ -86,6 +86,10 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // hits a gap and refuses the load.
     22: { to: 23, name: 'deckScrub added (command-only, patch unchanged)', run: (s) => s },
 
+    // v23 -> v24: deckOverdub added — a COMMAND, not a document field. The step
+    // must exist even though the patch is unchanged, or migrate() hits a gap.
+    23: { to: 24, name: 'deckOverdub added (command-only, patch unchanged)', run: (s) => s },
+
     // v20 -> v21: `uiMode` is DELETED. It named 'console' | 'strip' as document
     // state, but the console no longer exists and "strip mode" is just a
     // zoomed-out plane, which `plane.scale` already carries. Leaving the field

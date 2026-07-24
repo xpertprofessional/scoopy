@@ -472,6 +472,24 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame) {
     e->decks[deck].pendingSeek.store(static_cast<int64_t>(frame), std::memory_order_release);
 }
 
+void wz_deck_overdub_start(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    auto& d = e->decks[deck];
+    // Overdub layers INTO existing material; with nothing there it would just be
+    // a recording, which is what the record verb is for.
+    if (d.frames.load(std::memory_order_acquire) == 0) return;
+    // Never while capturing a fresh take: that path appends and grows.
+    if (d.state.load(std::memory_order_acquire) ==
+        static_cast<uint32_t>(wz::DeckState::recording))
+        return;
+    d.overdub.store(1, std::memory_order_release);
+}
+
+void wz_deck_overdub_stop(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].overdub.store(0, std::memory_order_release);
+}
+
 void wz_deck_scrub_begin(wz_engine* e, uint32_t deck) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     auto& d = e->decks[deck];
@@ -923,6 +941,20 @@ void wz_engine_render_io(wz_engine* e,
         else if (mag > 16.0) tgtRate = tgtRate < 0.0 ? -16.0 : 16.0;
         if (d.smRate == 0.0) d.smRate = tgtRate; // seed: no glide on first block
 
+        // --- OVERDUB (D-WZ-OVERDUB-01) --------------------------------------
+        // Sound-on-sound: keep playing, and SUM the input into the same buffer
+        // at the playhead. Works on ANY material — a loaded file overdubs
+        // exactly like a recorded take, because a strip is a strip.
+        const bool overdubbing = d.overdub.load(std::memory_order_acquire) != 0;
+        const float* od0 = (overdubbing && in_bus != nullptr && d.recSrcChan0 >= 0 &&
+                            static_cast<uint32_t>(d.recSrcChan0) < in_count)
+                               ? in_bus[d.recSrcChan0] : nullptr;
+        const float* od1 = (overdubbing && in_bus != nullptr && d.recSrcChan1 >= 0 &&
+                            static_cast<uint32_t>(d.recSrcChan1) < in_count)
+                               ? in_bus[d.recSrcChan1] : nullptr;
+        float* odScratch = e->recScratch.data();
+        uint32_t odCaptured = 0;
+
         const double regionLen = static_cast<double>(re) - static_cast<double>(rs);
         bool finished = false;
         for (uint32_t i = 0; i < frames; ++i) {
@@ -946,6 +978,22 @@ void wz_engine_render_io(wz_engine* e,
             } else {
                 dl[i] = d.sampleLerp(0, d.playhead);
                 dr[i] = d.channels > 1 ? d.sampleLerp(1, d.playhead) : dl[i];
+            }
+            // Sum the input in at the position we just READ, so this pass and
+            // the next hear it at the same point in the loop.
+            if (overdubbing) {
+                float vals[2];
+                vals[0] = od0 != nullptr ? static_cast<float>(sanitize(od0[i])) : 0.0f;
+                if (d.channels > 1)
+                    vals[1] = od1 != nullptr ? static_cast<float>(sanitize(od1[i])) : vals[0];
+                const auto wpos = static_cast<uint64_t>(d.playhead);
+                if (wpos < dFrames) d.mixFrame(wpos, vals, d.channels);
+                // The RAM mix is destructive, so the drain is what preserves
+                // this pass: every overdub lands as its own stamped take file
+                // (recorder.md §9), even though the pre-mix buffer does not.
+                for (uint32_t c = 0; c < d.channels; ++c)
+                    odScratch[static_cast<size_t>(odCaptured) * d.channels + c] = vals[c];
+                ++odCaptured;
             }
             d.playhead += d.smRate;
 
@@ -982,6 +1030,10 @@ void wz_engine_render_io(wz_engine* e,
                 }
             }
         }
+        // Each overdub PASS drains to its own crash-safe stamped take file: the
+        // RAM mix is destructive, so the file is what preserves the material of
+        // every pass (recorder.md §9's invariant).
+        if (odCaptured > 0) e->deckDrain[di].write(odScratch, odCaptured, fs, blockStartSample);
         d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
     }
 

@@ -139,6 +139,15 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         return ok(juce::var(r));
     }
 
+    if (method == "deckOverdub") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        if (static_cast<bool>(params.getProperty("on", false))) wz_deck_overdub_start(engine, deck);
+        else wz_deck_overdub_stop(engine, deck);
+        auto* r = new juce::DynamicObject();
+        r->setProperty("ok", true);
+        return ok(juce::var(r));
+    }
+
     if (method == "deckTrigger") {
         const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
         const auto mode = params.getProperty("mode", "stop").toString();

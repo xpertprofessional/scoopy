@@ -163,6 +163,19 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame);
  *   to:    post where the finger is now (call as often as you like)
  *   end:   fade out and hand the deck back to its transport state
  */
+/* --- OVERDUB (D-WZ-OVERDUB-01) -------------------------------------------
+ * Sound-on-sound: the deck keeps playing its loop and SUMS the input into the
+ * same buffer at the playhead. Destructive in RAM by design — mixing in place
+ * grows nothing, so the 256 MB cap and the RT no-allocation rule are untouched.
+ * The drain still runs, so every pass lands as its own crash-safe stamped take
+ * file even though the pre-mix buffer state does not survive.
+ *
+ * Works on ANY material, whatever its origin: a strip is a strip, so a LOADED
+ * FILE overdubs exactly like a recorded take. Uses the deck's existing record
+ * source (wz_deck_set_record_source). Control thread. */
+void wz_deck_overdub_start(wz_engine* e, uint32_t deck);
+void wz_deck_overdub_stop(wz_engine* e, uint32_t deck);
+
 void wz_deck_scrub_begin(wz_engine* e, uint32_t deck);
 void wz_deck_scrub_to(wz_engine* e, uint32_t deck, double frame);
 void wz_deck_scrub_end(wz_engine* e, uint32_t deck);

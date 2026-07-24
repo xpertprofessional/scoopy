@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 23
+export const SCHEMA_VERSION = 24
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -530,6 +530,14 @@ export const COMMANDS = {
         frame: z.number().nonnegative(),
       })
       .strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
+  },
+  // OVERDUB (D-WZ-OVERDUB-01): sound-on-sound. The deck keeps playing and sums
+  // the input into the same buffer at the playhead. Works on ANY material — a
+  // loaded file layers exactly like a recorded take, because a strip is a strip.
+  // Refused on an empty deck: with nothing to layer into, that is just recording.
+  deckOverdub: {
+    params: z.object({ deck: z.number().int().min(0).max(7), on: z.boolean() }).strict(),
     result: z.object({ ok: z.boolean() }).strict(),
   },
   // Deck transport intent; state truth streams back via the HotFrame deck

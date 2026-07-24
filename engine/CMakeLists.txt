@@ -80,6 +80,11 @@ add_executable(deck_scrub_test tools/deck_scrub_test.cpp)
 target_link_libraries(deck_scrub_test PRIVATE wz_engine)
 add_test(NAME deck_scrub_test COMMAND deck_scrub_test)
 
+# Overdub: sound-on-sound into the same buffer, including a LOADED file.
+add_executable(deck_overdub_test tools/deck_overdub_test.cpp)
+target_link_libraries(deck_overdub_test PRIVATE wz_engine)
+add_test(NAME deck_overdub_test COMMAND deck_overdub_test)
+
 # D-WZ-RAMP-01 anti-click guarantee: gain/mute/solo TRANSITIONS glide, not step.
 add_executable(ramp_test tools/ramp_test.cpp)
 target_link_libraries(ramp_test PRIVATE wz_engine)

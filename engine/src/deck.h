@@ -64,6 +64,11 @@ struct Deck {
     // which becomes a higher rate, which IS the pitch bend. Deriving rate from
     // pixels instead (the reference implementation's approach) makes rate and
     // position disagree as soon as the view is zoomed.
+    // OVERDUB (D-WZ-OVERDUB-01): the deck keeps PLAYING its loop while input is
+    // summed into the same buffer at the playhead. Not a DeckState, deliberately
+    // — the deck really is still `looping`, and playback must not stop.
+    std::atomic<uint32_t> overdub{0};
+
     std::atomic<uint32_t> scrubActive{0};
     std::atomic<double> scrubTarget{0.0};  // where the finger is, in frames
     double scrubRate = 0.0;                // render-side smoothed travel rate
@@ -123,6 +128,23 @@ struct Deck {
         auto& p = chunks[ci]->plane;
         for (uint32_t c = 0; c < channels; ++c)
             p[c][off] = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
+        return true;
+    }
+
+    /** OVERDUB: SUM a frame into audio that is already there (D-WZ-OVERDUB-01,
+        destructive sound-on-sound). Distinct from appendFrame, which writes at
+        the growing END of the buffer: this writes INSIDE it, at the playhead, so
+        the buffer never grows — which is why overdub costs no allocation and
+        leaves the 256 MB cap untouched. Returns false past the allocated end. */
+    bool mixFrame(uint64_t frame, const float* chanVals, uint32_t nVals) {
+        const uint64_t ci = frame / kDeckChunkFrames;
+        if (ci >= chunkCount.load(std::memory_order_acquire)) return false;
+        const uint64_t off = frame % kDeckChunkFrames;
+        auto& p = chunks[ci]->plane;
+        for (uint32_t c = 0; c < channels; ++c) {
+            const float v = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
+            p[c][off] += v;
+        }
         return true;
     }
 
