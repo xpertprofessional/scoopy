@@ -78,6 +78,10 @@ add_executable(deck_handoff_test tools/deck_handoff_test.cpp)
 target_link_libraries(deck_handoff_test PRIVATE wz_engine)
 add_test(NAME deck_handoff_test COMMAND deck_handoff_test)
 
+add_executable(record_cap_test tools/record_cap_test.cpp)
+target_link_libraries(record_cap_test PRIVATE wz_engine)
+add_test(NAME record_cap_test COMMAND record_cap_test)
+
 add_executable(deck_stamp_test tools/deck_stamp_test.cpp)
 target_link_libraries(deck_stamp_test PRIVATE wz_engine)
 add_test(NAME deck_stamp_test COMMAND deck_stamp_test)

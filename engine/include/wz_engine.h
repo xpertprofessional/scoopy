@@ -164,6 +164,12 @@ uint64_t wz_deck_record_stop(wz_engine* e, uint32_t deck);
  * write position (so the RT path never allocates) and enforce the 256 MB cap
  * (D-WZ-DECK-01). The host calls this regularly while any deck records. */
 void wz_deck_record_service(wz_engine* e);
+/* Test/diagnostic seam: override the deck's RAM cap (D-WZ-DECK-01 = 256 MB per
+ * deck, computed from the channel count at record start). Fixtures use it to
+ * reach the cap in milliseconds instead of 23 minutes; the shipping app never
+ * calls it. 0 restores the signed default. Control thread. */
+void wz_deck_set_record_cap_frames(wz_engine* e, uint32_t deck, uint64_t cap_frames);
+
 /* Host drain of a deck's parallel file feed: copies up to `capacity` interleaved
  * frames of captured audio into `out`, returns frames written. Lock-free; an
  * empty drain returns 0. `out_start_sample` receives the take's startEngineSample

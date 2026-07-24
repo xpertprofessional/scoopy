@@ -489,6 +489,17 @@ uint64_t wz_deck_record_stop(wz_engine* e, uint32_t deck) {
     return d.recStartSample;
 }
 
+void wz_deck_set_record_cap_frames(wz_engine* e, uint32_t deck, uint64_t cap_frames) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    auto& d = e->decks[deck];
+    if (cap_frames == 0) { // restore the signed default for this deck's channels
+        const uint32_t ch = d.channels > 0 ? d.channels : 1u;
+        d.recCapFrames = (256ull * 1024ull * 1024ull) / (static_cast<uint64_t>(ch) * 4ull);
+    } else {
+        d.recCapFrames = cap_frames;
+    }
+}
+
 void wz_deck_record_service(wz_engine* e) {
     if (e == nullptr) return;
     for (uint32_t di = 0; di < wz::kMaxDecks; ++di) {
