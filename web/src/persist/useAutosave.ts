@@ -159,6 +159,10 @@ export function useAutosave(link: EngineLink | null, nowIso: () => string): void
         if (outcome.patch) {
           store.setPatch(outcome.patch)
           publishPatch(link, outcome.patch) // restore IS a publish
+          // The master level is a ParamWrite, so publishing the document does
+          // NOT set it — restoring the value without sending it would remember
+          // your master level and then ignore it.
+          link.paramWrite('mainGain', outcome.patch.mainGain)
           // Re-select the remembered device before rehydrating audio, so decks
           // load against the device the session expects (P7-08).
           void restoreDevice(link, outcome.patch).then((notice) => {

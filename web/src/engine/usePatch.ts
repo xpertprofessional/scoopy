@@ -241,6 +241,10 @@ export function usePatchActions(link: EngineLink | null) {
       publishPatch(link, useAppStore.getState().patch)
     },
     setMainFader(value: number) {
+      // Document + live write, like every other fader: the ParamWrite moves the
+      // engine now, the document is what survives a quit.
+      const st = useAppStore.getState()
+      st.setPatch({ ...st.patch, mainGain: value })
       link?.paramWrite('mainGain', value)
     },
     /** Signed varispeed — live control, document + command (no republish; the

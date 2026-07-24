@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 27
+export const SCHEMA_VERSION = 28
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -309,6 +309,11 @@ export const PatchSchema = z
     outputMap: OutputMapSchema,
     plane: PlaneSchema, // PD-CANVAS: viewport (UI-only, never crosses the ABI)
     device: SessionDeviceSchema, // P7-08: remembered device, '' = machine default
+    /** Master fader POSITION (same curve family as a strip's). It lived only as
+        a live ParamWrite, so it was never saved and silently returned to unity
+        on every reload — you would set your master level, quit, and come back
+        to a different mix. */
+    mainGain: z.number().min(0).max(1),
   })
   .strict()
 export type Patch = z.infer<typeof PatchSchema>
@@ -321,6 +326,7 @@ export function emptyPatch(): Patch {
     outputMap: { main: [0, 1], monitor: null },
     plane: { ...DEFAULT_PLANE },
     device: { input: '', output: '' },
+    mainGain: 0.75, // unity detent (D-WZ-FADER-01)
   }
 }
 

@@ -140,6 +140,18 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // v26 -> v27: deckInsertTake added — command-only, patch unchanged.
     26: { to: 27, name: 'deckInsertTake added (command-only, patch unchanged)', run: (s) => s },
 
+    // v27 -> v28: the master fader becomes part of the document. Additive with
+    // the unity default, which is exactly what an older session was silently
+    // getting anyway.
+    27: {
+      to: 28,
+      name: 'persist-master-fader',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        return { ...s, patch: { ...patch, mainGain: 0.75 } }
+      },
+    },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.

@@ -3,7 +3,6 @@
  * monitor HotSurface meters, the feedback lamp (lights in P4 when the watchdog
  * engages), and the cue-availability note when the device lacks ≥4 outputs.
  */
-import { useState } from 'react'
 import { HOT_FRAME_SCALARS } from '../../protocol/schema'
 import type { EngineLink } from '../engine/engineLink'
 import { FADER_UNITY_POSITION, faderPositionToDb } from '../engine/faderCurve'
@@ -20,7 +19,9 @@ export function MasterSection({ link }: { link: EngineLink | null }) {
   const feedbackAlarm = useAppStore((s) => s.feedbackAlarm)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const actions = usePatchActions(link)
-  const [mainFader, setMainFader] = useState(FADER_UNITY_POSITION)
+  // The master level is DOCUMENT state, not component state: it was local
+  // useState before, so it was forgotten on every reload.
+  const mainFader = useAppStore((s) => s.patch.mainGain)
 
   const db = mainFader <= 0 ? '−∞' : faderPositionToDb(mainFader).toFixed(1)
 
@@ -46,13 +47,9 @@ export function MasterSection({ link }: { link: EngineLink | null }) {
         value={mainFader}
         onChange={(ev) => {
           const v = Number(ev.target.value)
-          setMainFader(v)
           actions.setMainFader(v)
         }}
-        onDoubleClick={() => {
-          setMainFader(FADER_UNITY_POSITION)
-          actions.setMainFader(FADER_UNITY_POSITION)
-        }}
+        onDoubleClick={() => actions.setMainFader(FADER_UNITY_POSITION)}
       />
       <span className="value">main {db} dB</span>
       <div className={feedbackAlarm ? 'lamp lamp-on' : 'lamp'} title="feedback watchdog (P4)">
