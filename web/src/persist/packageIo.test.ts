@@ -43,14 +43,37 @@ test('a package carries each referenced take exactly once', () => {
 })
 
 test('saving reports takes that could not be included, rather than hiding it', async () => {
-  const { link: l } = link({ savePackage: { ok: true, path: '/x.wizard', missing: ['/t/gone.wav'], error: '' } })
+  const { link: l } = link({
+    savePackage: { ok: true, path: '/x.wizard', missing: ['/t/gone.wav'], excluded: [], error: '' },
+  })
   const r = await savePackage(l, { ...emptyPatch(), decks: [deck(0, '/t/gone.wav')] }, NOW)
   expect(r.ok).toBe(true)
   expect(r.notice).toContain('could not be included')
 })
 
+test("a package says when the user's OWN files stayed references", async () => {
+  // Spec §1: a loaded sample is never copied into our package. The user has to
+  // learn that BEFORE sharing it, not from whoever opens it.
+  const { link: l } = link({
+    savePackage: {
+      ok: true,
+      path: '/x.wizard',
+      missing: [],
+      excluded: ['/Users/me/Library/kick.wav'],
+      error: '',
+    },
+  })
+  const r = await savePackage(l, { ...emptyPatch(), decks: [deck(0, '/Users/me/Library/kick.wav')] }, NOW)
+  expect(r.ok).toBe(true)
+  expect(r.notice).toContain('stayed a reference')
+  // The two reasons must not be conflated — a loss and a boundary differ.
+  expect(r.notice).not.toContain('no longer exist')
+})
+
 test('cancelling a save is not an error and says nothing', async () => {
-  const { link: l } = link({ savePackage: { ok: false, path: '', missing: [], error: '' } })
+  const { link: l } = link({
+    savePackage: { ok: false, path: '', missing: [], excluded: [], error: '' },
+  })
   const r = await savePackage(l, emptyPatch(), NOW)
   expect(r.ok).toBe(false)
   expect(r.notice).toBe('') // a cancel must not look like a failure

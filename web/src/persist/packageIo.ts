@@ -38,16 +38,23 @@ export async function savePackage(
   try {
     const r = await link.command('savePackage', { text, takes })
     if (!r.ok) return { ok: false, notice: r.error ?? '' } // cancel => error ''
+    // Say exactly what the package does NOT contain. A package quietly missing
+    // audio is discovered by whoever opens it, far from here — and the two
+    // reasons are reported separately because they are different facts: one is
+    // a loss, the other is a deliberate boundary the user may want to know
+    // about before sharing.
+    const parts: string[] = []
     if (r.missing.length > 0)
-      return {
-        ok: true,
-        // Say exactly what the package does NOT contain. A package quietly
-        // missing audio is discovered by whoever opens it, far from here.
-        notice: `package saved, but ${r.missing.length} take${
-          r.missing.length === 1 ? '' : 's'
-        } no longer exist and could not be included`,
-      }
-    return { ok: true, notice: '' }
+      parts.push(
+        `${r.missing.length} take${r.missing.length === 1 ? '' : 's'} no longer exist and ` +
+          `could not be included`,
+      )
+    if (r.excluded.length > 0)
+      parts.push(
+        `${r.excluded.length} loaded file${r.excluded.length === 1 ? '' : 's'} stayed a ` +
+          `reference (your own library is never copied into a package)`,
+      )
+    return { ok: true, notice: parts.length > 0 ? `package saved, but ${parts.join('; ')}` : '' }
   } catch (e) {
     return { ok: false, notice: `could not save the package: ${String(e)}` }
   }

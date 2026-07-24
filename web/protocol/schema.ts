@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 14
+export const SCHEMA_VERSION = 15
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -366,7 +366,14 @@ export const COMMANDS = {
   // which takes the document actually references; the shell owns the dialog and
   // the bytes. `missing` names takes that no longer exist — the package is
   // still written without them, because one lost take is no reason to deny the
-  // user a package of everything else. ok=false + empty path on cancel.
+  // user a package of everything else.
+  //
+  // `excluded` names references the shell DELIBERATELY did not embed: files
+  // outside Wizard's own Takes folder are the user's own library, and copying
+  // someone's library into our package is not ours to do (spec §1). Kept
+  // separate from `missing` because "I chose not to" and "it was gone" are
+  // different facts and a user acts on them differently.
+  // ok=false + empty path on cancel.
   savePackage: {
     params: z.object({ text: z.string(), takes: z.array(z.string()) }).strict(),
     result: z
@@ -374,6 +381,7 @@ export const COMMANDS = {
         ok: z.boolean(),
         path: z.string(),
         missing: z.array(z.string()),
+        excluded: z.array(z.string()),
         error: z.string(),
       })
       .strict(),

@@ -106,3 +106,33 @@ undetectable; the watchdog is the only guard.
 align, cap, UI, take management) — only P3-10 (decision #3) and the human gate P3-G1
 remain. **P4 playback composer is open**; its spec landed and rows are seeded. Parked:
 P2-05/06/07 (your machine + TCC runbook + Linux). CI: blocked on GitHub Actions billing.*
+
+---
+
+## Decision #7 — what a session does when its audio device is gone
+
+**Found by:** P7-AUDIT. Blocks P7-08.
+
+`sessions.md` §1 says device selection belongs in the session, "as a name + a fallback,
+so a session opened on another machine **degrades, not fails**". Today it is not saved at
+all — reopening a session always lands on the default device. That is safe but forgetful:
+your interface selection does not survive a quit.
+
+Saving it raises the question the spec left open — what happens when the named device
+is not there (a different machine, or the interface simply unplugged)?
+
+| | option | what you get | cost |
+|---|---|---|---|
+| **A** | **Fall back to the default device, silently** | always makes sound | you can be recording to the wrong input without noticing — the failure Wizard exists to prevent |
+| **B** | **Fall back to the default device, and say so loudly** | always makes sound, and a banner names the device it wanted vs the one it got | one more notice to read |
+| **C** | **Open with no device until you choose** | never records the wrong input by accident | a session can open silent, which feels broken if you forget why |
+| **D** | **Remember per-machine**: each machine keeps its own device choice for the same session | a shared session works on both machines with no fuss | more state, and it is invisible — hard to explain when it surprises you |
+
+**My recommendation: B**, with **D** as a later refinement. B is the same posture the app
+already takes everywhere else (the vanished-source strip, the unresolved deck): keep
+working, keep the reference, and *say* what changed. C is the puritan reading and I think
+it is wrong here — an app that opens silent teaches you to distrust it.
+
+The reason this is yours and not mine: A vs B vs C is a judgment about how loud Wizard
+should be when the world changed underneath a session, and that is a taste call about
+your app.

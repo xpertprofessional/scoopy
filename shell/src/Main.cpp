@@ -53,9 +53,9 @@ public:
         // silent; the boot tone simply won't be audible until a device opens.
         deviceError = audioIO.open(wz_engine_sample_rate(engine));
         // Takes live beside the session; a dedicated dir until P7's package.
-        recorder.start(engine,
-                       juce::File::getSpecialLocation(juce::File::userMusicDirectory)
-                           .getChildFile("Wizard/Takes").getFullPathName().toStdString());
+        takesRoot = juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                        .getChildFile("Wizard/Takes");
+        recorder.start(engine, takesRoot.getFullPathName().toStdString());
         webView = std::make_unique<juce::WebBrowserComponent>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
@@ -313,14 +313,24 @@ private:
                            juce::FileBrowserComponent::warnAboutOverwriting;
         const auto text = params.getProperty("text", "").toString();
         juce::Array<wizard::package::Entry> takes;
+        juce::StringArray excluded;
         juce::StringArray used;
         if (const auto* arr = params.getProperty("takes", juce::var()).getArray()) {
             for (const auto& t : *arr) {
                 const juce::File f(t.toString());
+                // Only Wizard's OWN recordings travel. A file the user loaded
+                // from their library stays a reference: copying someone's
+                // library into our package is not ours to do (spec §1), and a
+                // package that quietly absorbs gigabytes of their sample folder
+                // is not one they would have agreed to share.
+                if (!f.isAChildOf(takesRoot)) {
+                    excluded.add(f.getFullPathName());
+                    continue;
+                }
                 takes.add({f, wizard::package::entryNameFor(f, used)});
             }
         }
-        fileChooser->launchAsync(flags, [takes, text,
+        fileChooser->launchAsync(flags, [takes, text, excluded,
                                          complete](const juce::FileChooser& fc) {
             auto* result = new juce::DynamicObject();
             auto file = fc.getResult();
@@ -328,15 +338,19 @@ private:
                 result->setProperty("ok", false);
                 result->setProperty("path", "");
                 result->setProperty("missing", juce::var(juce::Array<juce::var>{}));
+                result->setProperty("excluded", juce::var(juce::Array<juce::var>{}));
                 result->setProperty("error", "");
             } else {
                 if (!file.hasFileExtension("wizard")) file = file.withFileExtension("wizard");
                 const auto r = wizard::package::save(file, text, takes);
                 juce::Array<juce::var> missing;
                 for (const auto& m : r.missing) missing.add(m);
+                juce::Array<juce::var> notEmbedded;
+                for (const auto& e : excluded) notEmbedded.add(e);
                 result->setProperty("ok", r.ok);
                 result->setProperty("path", r.ok ? file.getFullPathName() : juce::String());
                 result->setProperty("missing", juce::var(missing));
+                result->setProperty("excluded", juce::var(notEmbedded));
                 result->setProperty("error", r.error);
             }
             complete(wrapResult(result));
@@ -475,6 +489,7 @@ private:
     std::vector<double> hotFrameBuf; // grown-only hotframe staging
     std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
     wizard::host::AudioIO audioIO;
+    juce::File takesRoot;             // P7: only OUR recordings travel in a package
     wizard::record::Service recorder; // P3: drain thread -> take files // host device layer (host/), drives render
     juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;
