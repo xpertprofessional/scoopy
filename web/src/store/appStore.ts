@@ -90,6 +90,11 @@ interface AppState {
       refetches. Distinct from the Patch: the buffer is engine state. */
   deckRevisions: number[]
   bumpDeckRevision: (id: number) => void
+  /** True while a deck's audio is decoding on the shell's worker thread
+      (P1-11). Runtime-only, never persisted — a load in flight is not a
+      property of the document. */
+  deckLoading: boolean[]
+  setDeckLoading: (id: number, loading: boolean) => void
 }
 
 let nextKey = 1
@@ -105,6 +110,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deckUnresolved: [],
   takes: [],
   deckRevisions: [],
+  deckLoading: [],
   alignReferencePath: null,
   sessionNotice: '',
   patch: emptyPatch(),
@@ -121,6 +127,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const flags = get().deckUnresolved.slice()
     flags[id] = unresolved
     set({ deckUnresolved: flags })
+  },
+  setDeckLoading: (id, loading) => {
+    const flags = get().deckLoading.slice()
+    flags[id] = loading
+    set({ deckLoading: flags })
   },
   setTakes: (takes) => set({ takes }),
   addTake: (t) => set({ takes: [...get().takes, t] }),

@@ -35,12 +35,16 @@ std::vector<float> resampleChannel(const std::vector<float>& in, double ratio,
 
 } // namespace
 
-DeckAudio loadForDeck(const juce::File& file, double engineRate) {
+DeckAudio loadForDeck(const juce::File& file, double engineRate, const LoadControl& ctl) {
     DeckAudio result;
+    const auto report = [&](float p) { if (ctl.onProgress) ctl.onProgress(p); };
+    const auto cancelled = [&] { return ctl.isCancelled && ctl.isCancelled(); };
+
     if (engineRate <= 0.0) {
         result.error = "engine rate not available (no device open?)";
         return result;
     }
+    report(0.02f);
 
     juce::AudioFormatManager formats;
     formats.registerBasicFormats(); // WAV/AIFF/FLAC/Ogg (+CoreAudio on macOS)
@@ -57,11 +61,13 @@ DeckAudio loadForDeck(const juce::File& file, double engineRate) {
         return result;
     }
 
+    if (cancelled()) { result.error = "cancelled"; return result; }
     juce::AudioBuffer<float> buf(static_cast<int>(channels), static_cast<int>(frames));
     if (!reader->read(&buf, 0, static_cast<int>(frames), 0, true, channels >= 2)) {
         result.error = "decode failed";
         return result;
     }
+    report(0.30f); // decode done; the resample is the long pole from here
 
     result.channels = channels;
     result.sourceRate = reader->sampleRate;
@@ -71,6 +77,9 @@ DeckAudio loadForDeck(const juce::File& file, double engineRate) {
     const double ratio = engineRate / reader->sampleRate;
     result.data.reserve(channels);
     for (uint32_t c = 0; c < channels; ++c) {
+        // A superseded load must not spend a second SINC_BEST pass on a file the
+        // user has already replaced — check before each channel's heavy work.
+        if (cancelled()) { result.error = "cancelled"; return result; }
         std::vector<float> chan(buf.getReadPointer(static_cast<int>(c)),
                                 buf.getReadPointer(static_cast<int>(c)) + frames);
         if (needsSrc) {
@@ -80,6 +89,8 @@ DeckAudio loadForDeck(const juce::File& file, double engineRate) {
             if (chan.empty()) return result;
         }
         result.data.push_back(std::move(chan));
+        // Ramp 0.30 -> 0.98 across channels so progress moves per channel done.
+        report(0.30f + 0.68f * (static_cast<float>(c + 1) / static_cast<float>(channels)));
     }
     // Equal-length guarantee across channels (resampler output lengths match
     // for identical inputs, but clamp defensively).
@@ -87,6 +98,7 @@ DeckAudio loadForDeck(const juce::File& file, double engineRate) {
     for (const auto& ch : result.data) minLen = std::min(minLen, ch.size());
     for (auto& ch : result.data) ch.resize(minLen);
 
+    report(1.0f);
     result.ok = true;
     return result;
 }

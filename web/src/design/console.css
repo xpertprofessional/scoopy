@@ -551,3 +551,19 @@ canvas.meter {
   border-radius: var(--radius);
   text-align: center;
 }
+
+/* Deck decoding on the shell's worker thread (P1-11). A quiet, non-alarming
+   pulse — this is progress, not an error like .deck-unresolved. */
+.deck-loading {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  text-align: center;
+  animation: deck-loading-pulse 1s ease-in-out infinite;
+}
+
+@keyframes deck-loading-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}

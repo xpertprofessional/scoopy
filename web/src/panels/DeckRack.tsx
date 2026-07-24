@@ -19,6 +19,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
   const deckStates = useAppStore((s) => s.deckStates)
   const deckCapReached = useAppStore((s) => s.deckCapReached)
   const deckUnresolved = useAppStore((s) => s.deckUnresolved)
+  const deckLoading = useAppStore((s) => s.deckLoading)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const deckRevisions = useAppStore((s) => s.deckRevisions)
   const takes = useAppStore((s) => s.takes)
@@ -33,6 +34,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
         const recording = state === RECORDING
         const capped = deckCapReached[deck.id] ?? false
         const unresolved = deckUnresolved[deck.id] ?? false
+        const loading = deckLoading[deck.id] ?? false
         const fileName = deck.sourcePath.split('/').pop() ?? ''
         // Record the first input channel by default; the source picker gets a
         // per-deck input choice when the unified-cell UI lands (PD-CANVAS).
@@ -58,7 +60,18 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
               loopEnd={deck.loopEndSample}
               onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
             />
-            <div className="deck-file dim">{fileName || 'empty'}</div>
+            <div className="deck-file dim">
+              {loading ? 'loading…' : fileName || 'empty'}
+            </div>
+            {loading && (
+              <div
+                className="deck-loading"
+                role="status"
+                title="decoding on a background thread — the rest of the app stays live (P1-11)"
+              >
+                decoding…
+              </div>
+            )}
             {unresolved && (
               <div
                 className="deck-unresolved"
@@ -93,7 +106,11 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
               >
                 {recording ? '■ Stop' : '● Rec'}
               </button>
-              <button type="button" onClick={() => void actions.deckLoadFile(deck.id)}>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void actions.deckLoadFile(deck.id)}
+              >
                 Load…
               </button>
               <button type="button" onClick={() => actions.deckTrigger(deck.id, 'loop')}>

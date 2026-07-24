@@ -74,9 +74,19 @@ public:
                             return;
                         }
                         if (method == "deckRecordStart" || method == "deckRecordStop" ||
-                            method == "listTakes" || method == "deckLoadTake" ||
-                            method == "deleteTake" || method == "revealTake") {
+                            method == "listTakes" || method == "deleteTake" ||
+                            method == "revealTake") {
                             complete(recordCommand(method, params));
+                            return;
+                        }
+                        // deckLoadTake decodes a take file, so it takes the same
+                        // off-thread path as deckLoadFile (P1-11) — never the
+                        // synchronous recordCommand path that would block here.
+                        if (method == "deckLoadTake") {
+                            const auto deck = static_cast<uint32_t>(
+                                static_cast<int>(params.getProperty("deck", 0)));
+                            const juce::File file(params.getProperty("path", "").toString());
+                            startDeckLoad(deck, file, /*fromDialog*/ false, std::move(complete));
                             return;
                         }
                         if (method == "saveAutosave" || method == "loadAutosave") {
@@ -143,8 +153,7 @@ public:
     }
 
 private:
-    // Async native file-open → decode + SINC_BEST resample (off the render
-    // path) → wz_deck_load with the render callback detached. Cancel = ok:false.
+    // Async native file-open → hand the chosen file to the off-thread loader.
     void deckLoadFile(uint32_t deck,
                       juce::WebBrowserComponent::NativeFunctionCompletion complete) {
         fileChooser = std::make_unique<juce::FileChooser>(
@@ -154,40 +163,85 @@ private:
                                   juce::FileBrowserComponent::canSelectFiles;
         fileChooser->launchAsync(chooserFlags, [this, deck, complete](const juce::FileChooser& fc) {
             const auto file = fc.getResult();
-            auto* result = new juce::DynamicObject();
-            if (file == juce::File{}) { // cancelled
+            if (file == juce::File{}) { // dialog cancelled — not a load at all
+                auto* result = new juce::DynamicObject();
                 result->setProperty("ok", false);
                 result->setProperty("path", "");
                 result->setProperty("channels", 0);
                 result->setProperty("sampleRate", 0.0);
                 result->setProperty("engineFrames", static_cast<juce::int64>(0));
+                complete(wrapResult(result));
+                return;
+            }
+            startDeckLoad(deck, file, /*fromDialog*/ true, complete);
+        });
+    }
+
+    // Decode + SINC_BEST resample run on a worker thread, NOT the message thread
+    // (P1-11): a multi-minute file at an off-engine rate used to freeze the UI
+    // and stall the HotFrame meters for the whole conversion. Only the cheap
+    // wz_deck_load buffer swap needs the render callback detached, and that hops
+    // back to the message thread. A newer load for the same deck SUPERSEDES an
+    // in-flight one (generation check) so a rapid reload never swaps stale audio
+    // in after the fresh one.
+    void startDeckLoad(uint32_t deck, const juce::File& file, bool fromDialog,
+                       juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+        if (deck >= deckLoadGen.size()) { // out of range: fail honestly, don't crash
+            auto* result = new juce::DynamicObject();
+            result->setProperty("ok", false);
+            if (fromDialog) {
+                result->setProperty("path", "");
+                result->setProperty("channels", 0);
+                result->setProperty("sampleRate", 0.0);
+                result->setProperty("engineFrames", static_cast<juce::int64>(0));
             } else {
-                // Decode + resample BEFORE suspending: only the cheap buffer
-                // copy needs the engine detached (D-WZ-DECKSRC-01).
-                const auto engineRate = wz_engine_sample_rate(engine);
-                const auto audio = wizard::decode::loadForDeck(file, engineRate);
+                result->setProperty("channels", 0);
+                result->setProperty("engineFrames", static_cast<juce::int64>(0));
+                result->setProperty("error", "deck index out of range");
+            }
+            complete(wrapResult(result));
+            return;
+        }
+        const uint32_t myGen = ++deckLoadGen[deck];
+        const double engineRate = wz_engine_sample_rate(engine);
+        loadPool.addJob([this, deck, file, fromDialog, myGen, engineRate, complete] {
+            wizard::decode::LoadControl ctl;
+            ctl.isCancelled = [this, deck, myGen] {
+                return deckLoadGen[deck].load() != myGen; // a newer load arrived
+            };
+            auto audio = std::make_shared<wizard::decode::DeckAudio>(
+                wizard::decode::loadForDeck(file, engineRate, ctl));
+            juce::MessageManager::callAsync([this, deck, fromDialog, myGen, engineRate, file,
+                                             audio, complete]() mutable {
+                const bool stale = deckLoadGen[deck].load() != myGen;
                 bool loaded = false;
-                if (audio.ok) {
+                if (audio->ok && !stale) {
                     std::vector<const float*> planar;
-                    planar.reserve(audio.data.size());
-                    for (const auto& ch : audio.data) planar.push_back(ch.data());
+                    planar.reserve(audio->data.size());
+                    for (const auto& ch : audio->data) planar.push_back(ch.data());
                     audioIO.whileSuspended([&] {
-                        loaded = wz_deck_load(engine, deck, audio.channels,
-                                              audio.engineFrames(), planar.data(),
+                        loaded = wz_deck_load(engine, deck, audio->channels,
+                                              audio->engineFrames(), planar.data(),
                                               engineRate) == 1;
                     });
                 }
+                auto* result = new juce::DynamicObject();
                 result->setProperty("ok", loaded);
-                result->setProperty("path", file.getFullPathName());
-                result->setProperty("channels", static_cast<int>(audio.channels));
-                result->setProperty("sampleRate", audio.sourceRate);
-                result->setProperty("engineFrames",
-                                    static_cast<juce::int64>(audio.engineFrames()));
-            }
-            auto* envelope = new juce::DynamicObject();
-            envelope->setProperty("ok", true); // the command itself succeeded
-            envelope->setProperty("result", juce::var(result));
-            complete(juce::var(envelope));
+                if (fromDialog) {
+                    result->setProperty("path", loaded ? file.getFullPathName() : juce::String());
+                    result->setProperty("channels", static_cast<int>(audio->channels));
+                    result->setProperty("sampleRate", audio->sourceRate);
+                    result->setProperty("engineFrames",
+                                        static_cast<juce::int64>(audio->engineFrames()));
+                } else {
+                    result->setProperty("channels", static_cast<int>(audio->channels));
+                    result->setProperty("engineFrames",
+                                        static_cast<juce::int64>(audio->engineFrames()));
+                    result->setProperty("error",
+                                        loaded ? "" : (stale ? "superseded" : audio->error));
+                }
+                complete(wrapResult(result));
+            });
         });
     }
 
@@ -250,26 +304,9 @@ private:
             const bool ok = f.existsAsFile();
             if (ok) f.revealToUser();
             result->setProperty("ok", ok);
-        } else if (method == "deckLoadTake") {
-            const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
-            const auto path = params.getProperty("path", "").toString();
-            const auto audio = wizard::decode::loadForDeck(juce::File(path),
-                                                          wz_engine_sample_rate(engine));
-            bool loaded = false;
-            if (audio.ok) {
-                std::vector<const float*> planar;
-                planar.reserve(audio.data.size());
-                for (const auto& ch : audio.data) planar.push_back(ch.data());
-                audioIO.whileSuspended([&] {
-                    loaded = wz_deck_load(engine, deck, audio.channels, audio.engineFrames(),
-                                          planar.data(), wz_engine_sample_rate(engine)) == 1;
-                });
-            }
-            result->setProperty("ok", loaded);
-            result->setProperty("channels", static_cast<int>(audio.channels));
-            result->setProperty("engineFrames", static_cast<juce::int64>(audio.engineFrames()));
-            result->setProperty("error", loaded ? "" : audio.error);
         }
+        // NOTE: deckLoadTake is intentionally NOT handled here — it decodes a
+        // file and so is routed to the off-thread startDeckLoad path (P1-11).
         auto* env = new juce::DynamicObject();
         env->setProperty("ok", true);
         env->setProperty("result", juce::var(result));
@@ -490,7 +527,14 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
     wizard::host::AudioIO audioIO;
     juce::File takesRoot;             // P7: only OUR recordings travel in a package
-    wizard::record::Service recorder; // P3: drain thread -> take files // host device layer (host/), drives render
+    wizard::record::Service recorder;
+    // P1-11: deck decode/resample runs here, off the message thread. One worker
+    // so loads serialise (a second load waits rather than fighting for cores);
+    // deckLoadGen supersedes an in-flight load when a newer one for the same
+    // deck arrives. Declared before nothing that outlives it — the pool joins on
+    // destruction so a job never touches a half-torn-down window.
+    std::array<std::atomic<uint32_t>, 8> deckLoadGen{};
+    juce::ThreadPool loadPool{1}; // P3: drain thread -> take files // host device layer (host/), drives render
     juce::String deviceError;      // non-empty if the device wouldn't open at rate
     std::unique_ptr<juce::WebBrowserComponent> webView;
 };

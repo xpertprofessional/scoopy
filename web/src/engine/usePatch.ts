@@ -158,19 +158,34 @@ export function usePatchActions(link: EngineLink | null) {
     /** Load a recorded take into any deck (CONCEPT: one click → any deck). */
     async deckLoadTake(deck: number, path: string) {
       if (!link) return
-      const r = await link.command('deckLoadTake', { deck, path })
-      useAppStore.getState().setDeckUnresolved(deck, !r.ok)
-      if (r.ok) {
-        setDeckSourcePath(deck, path)
-        bumpDeckRevision(deck)
+      // The decode runs on the shell's worker thread now (P1-11); mark the deck
+      // busy so the UI shows it working instead of looking frozen.
+      useAppStore.getState().setDeckLoading(deck, true)
+      try {
+        const r = await link.command('deckLoadTake', { deck, path })
+        useAppStore.getState().setDeckUnresolved(deck, !r.ok)
+        if (r.ok) {
+          setDeckSourcePath(deck, path)
+          bumpDeckRevision(deck)
+        }
+      } finally {
+        useAppStore.getState().setDeckLoading(deck, false)
       }
     },
     async deckLoadFile(deck: number) {
       if (!link) return
-      const r = await link.command('deckLoadFile', { deck })
-      if (r.ok) {
-        setDeckSourcePath(deck, r.path)
-        bumpDeckRevision(deck) // the buffer changed → the waveform refetches
+      // The dialog itself is quick; the decode after it is the slow part, and
+      // only starts once a file is chosen. Marking busy around the whole call is
+      // harmless (the dialog is brief) and covers the decode.
+      useAppStore.getState().setDeckLoading(deck, true)
+      try {
+        const r = await link.command('deckLoadFile', { deck })
+        if (r.ok) {
+          setDeckSourcePath(deck, r.path)
+          bumpDeckRevision(deck) // the buffer changed → the waveform refetches
+        }
+      } finally {
+        useAppStore.getState().setDeckLoading(deck, false)
       }
     },
   }
