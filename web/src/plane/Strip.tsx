@@ -2,13 +2,17 @@
  * Strip — the ONE unified item on the plane (PD-CANVAS-02, D-WZ-PDCANVAS-01).
  *
  * Every current species is this same component in a different state: an input,
- * a tap, a loopback, or a deck that has recorded material. It is positioned on
- * the plane by its `cell` geometry; the Plane applies pan/zoom, so this only
- * lays out its own contents. "Essential first" (the signed first cut): name,
- * meter, level, pan, mute/solo, cue, record — plus, when the strip's source is a
- * deck with material, a waveform + transport + the signed varispeed thumb.
+ * a tap, a loopback, or a deck that has recorded material. It is positioned by
+ * its `cell` geometry; the Plane applies pan/zoom, so this only lays out its own
+ * contents.
+ *
+ * SHAPE: horizontal and player-like (the Parlante reference) — a header line, a
+ * wide waveform, a transport row, then Layout-B parameter rows (label · bar ·
+ * value) from the shared control idiom. The waveform is the centre of gravity,
+ * as it is in a player, and it draws LIVE while recording.
+ *
  * Precise settings (exact loop points, output bus, cue routing) move to the
- * Inspector in PD-CANVAS-03.
+ * Inspector in PD-CANVAS-03 — this stays what you touch while playing.
  */
 import type { Channel } from '../../protocol/schema'
 import { channelFieldIndex } from '../../protocol/schema'
@@ -17,8 +21,9 @@ import { FADER_UNITY_POSITION, faderPositionToDb } from '../engine/faderCurve'
 import { usePatchActions } from '../engine/usePatch'
 import { MeterCanvas } from '../hotsurface/MeterCanvas'
 import { useAppStore } from '../store/appStore'
-import { VarispeedSlider } from '../panels/VarispeedSlider'
 import { DeckWaveform } from '../panels/DeckWaveform'
+import { ParamRow } from '../design/controls'
+import { rateToPosition, positionToRate, formatRate, snapUnity } from '../panels/VarispeedSlider'
 
 const KIND_VAR: Record<string, string> = {
   deviceInput: 'var(--chan-device)',
@@ -35,7 +40,13 @@ const RECORDING = 3
 function faderLabel(position: number): string {
   if (position <= 0) return '−∞'
   const db = faderPositionToDb(position)
-  return `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`
+  return `${db > 0 ? '+' : ''}${db.toFixed(1)}`
+}
+
+function panLabel(pan: number): string {
+  if (Math.abs(pan) < 0.005) return 'C'
+  const side = pan < 0 ? 'L' : 'R'
+  return `${side}${Math.round(Math.abs(pan) * 100)}`
 }
 
 export function Strip({
@@ -48,7 +59,6 @@ export function Strip({
   link: EngineLink | null
 }) {
   const actions = usePatchActions(link)
-  // Deck-backed strips carry material; look it up by the source's deck index.
   const deckId = channel.source.kind === 'deck' ? Number(channel.source.id) : -1
   const deck = useAppStore((s) => s.patch.decks.find((d) => d.id === deckId))
   const deckState = useAppStore((s) => (deckId >= 0 ? (s.deckStates[deckId] ?? 0) : 0))
@@ -63,6 +73,10 @@ export function Strip({
   const recording = deckState === RECORDING
   const hasMaterial = deck !== undefined && deck.sourcePath !== ''
   const inputName = deviceInfo?.inputs[0]?.name ?? 'input 1'
+  // The wave is shown for anything that HAS material or is capturing it now —
+  // that is what makes recording feel like a player rather than a form.
+  const showWave = deck !== undefined && (hasMaterial || recording)
+  const waveWidth = Math.max(80, cell.w - 16)
 
   return (
     <div
@@ -70,16 +84,27 @@ export function Strip({
       style={{ left: cell.x, top: cell.y, width: cell.w }}
       data-testid={`strip-${channel.key}`}
     >
-      <div className="plane-strip-name" style={{ color: KIND_VAR[channel.source.kind] }}>
-        {channel.name}
+      <div className="plane-strip-head">
+        <span className="plane-strip-name" style={{ color: KIND_VAR[channel.source.kind] }}>
+          {channel.name}
+        </span>
         {deck && (
           <span className={`plane-strip-state deck-state-${deckState}`}>
             {DECK_STATE_LABEL[deckState] ?? '?'}
           </span>
         )}
+        <span className="plane-strip-meter">
+          <MeterCanvas
+            levels={(frame) => {
+              const li = channelFieldIndex(index, 'peakL')
+              const ri = channelFieldIndex(index, 'peakR')
+              return frame.length > ri ? [frame[li]!, frame[ri]!] : null
+            }}
+          />
+        </span>
       </div>
 
-      {hasMaterial && deck && (
+      {showWave && deck && (
         <DeckWaveform
           link={link}
           deck={deck.id}
@@ -92,105 +117,117 @@ export function Strip({
           loopStart={deck.loopStartSample}
           loopEnd={deck.loopEndSample}
           onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
+          width={waveWidth}
+          height={44}
+          recording={recording}
         />
       )}
       {unresolved && (
-        <div className="deck-unresolved" title="this strip's audio could not be found — kept and marked; restore the file to bring it back">
+        <div
+          className="deck-unresolved"
+          title="this strip's audio could not be found — kept and marked; restore the file to bring it back"
+        >
           audio missing
         </div>
       )}
       {deckLoading && <div className="plane-strip-loading">loading…</div>}
 
-      <div className="plane-strip-meter">
-        <MeterCanvas
-          levels={(frame) => {
-            const li = channelFieldIndex(index, 'peakL')
-            const ri = channelFieldIndex(index, 'peakR')
-            return frame.length > ri ? [frame[li]!, frame[ri]!] : null
-          }}
-        />
+      <div className="plane-strip-transport">
+        {deck && (
+          <>
+            <button
+              type="button"
+              className={recording ? 'latched-rec' : ''}
+              title={recording ? 'stop — loops instantly (Law C-3)' : `record ${inputName}`}
+              onClick={() =>
+                recording
+                  ? void actions.deckRecordStop(deck.id)
+                  : void actions.deckRecordStart(deck.id, 0, -1, inputName)
+              }
+            >
+              {recording ? '■' : '●'}
+            </button>
+            <button type="button" onClick={() => actions.deckTrigger(deck.id, 'loop')} title="loop">
+              ⟳
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.deckTrigger(deck.id, 'oneShot')}
+              title="one-shot"
+            >
+              ▸
+            </button>
+            <button type="button" onClick={() => actions.deckTrigger(deck.id, 'stop')} title="stop">
+              ◼
+            </button>
+          </>
+        )}
+        <span className="plane-strip-switches">
+          <button
+            type="button"
+            className={channel.mute ? 'latched-hot' : ''}
+            title="mute"
+            onClick={() => actions.setMute(index, !channel.mute)}
+          >
+            M
+          </button>
+          <button
+            type="button"
+            className={channel.solo ? 'latched-accent' : ''}
+            title="solo"
+            onClick={() => actions.setSolo(index, !channel.solo)}
+          >
+            S
+          </button>
+          <button
+            type="button"
+            className={channel.toMonitor ? 'latched-signal' : ''}
+            title="cue (monitor bus)"
+            onClick={() => actions.setToMonitor(index, !channel.toMonitor)}
+          >
+            C
+          </button>
+        </span>
       </div>
 
-      <label className="plane-strip-level">
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.001}
-          value={channel.gain}
-          onChange={(ev) => actions.setFader(index, Number(ev.target.value))}
-          onDoubleClick={() => actions.setFader(index, FADER_UNITY_POSITION)}
-        />
-        <span className="value">{faderLabel(channel.gain)}</span>
-      </label>
-
-      <input
-        className="plane-strip-pan"
-        type="range"
+      <ParamRow
+        label="level"
+        value={channel.gain}
+        display={faderLabel(channel.gain)}
+        min={0}
+        max={1}
+        step={0.001}
+        onChange={(v) => actions.setFader(index, v)}
+        onDoubleClick={() => actions.setFader(index, FADER_UNITY_POSITION)}
+        title="double-click for unity"
+      />
+      <ParamRow
+        label="pan"
+        value={channel.pan}
+        display={panLabel(channel.pan)}
         min={-1}
         max={1}
         step={0.01}
-        value={channel.pan}
-        onChange={(ev) => actions.setPan(index, Number(ev.target.value))}
+        origin="center"
+        onChange={(v) => actions.setPan(index, v)}
         onDoubleClick={() => actions.setPan(index, 0)}
-        title={`pan ${channel.pan.toFixed(2)}`}
+        title="double-click to centre"
       />
-
       {hasMaterial && deck && (
-        <VarispeedSlider rate={deck.rate} onChange={(rate) => actions.setDeckRate(deck.id, rate)} />
-      )}
-
-      <div className="plane-strip-switches">
-        <button
-          type="button"
-          className={channel.mute ? 'latched-hot' : ''}
-          onClick={() => actions.setMute(index, !channel.mute)}
-        >
-          M
-        </button>
-        <button
-          type="button"
-          className={channel.solo ? 'latched-accent' : ''}
-          onClick={() => actions.setSolo(index, !channel.solo)}
-        >
-          S
-        </button>
-        <button
-          type="button"
-          className={channel.toMonitor ? 'latched-signal' : ''}
-          title="cue (monitor bus)"
-          onClick={() => actions.setToMonitor(index, !channel.toMonitor)}
-        >
-          C
-        </button>
-        {deck && (
-          <button
-            type="button"
-            className={recording ? 'latched-rec' : ''}
-            title={recording ? 'stop — loops instantly (Law C-3)' : `record ${inputName}`}
-            onClick={() =>
-              recording
-                ? void actions.deckRecordStop(deck.id)
-                : void actions.deckRecordStart(deck.id, 0, -1, inputName)
-            }
-          >
-            {recording ? '■' : '●'}
-          </button>
-        )}
-      </div>
-
-      {deck && (
-        <div className="plane-strip-transport">
-          <button type="button" onClick={() => actions.deckTrigger(deck.id, 'loop')} title="loop">
-            ⟳
-          </button>
-          <button type="button" onClick={() => actions.deckTrigger(deck.id, 'oneShot')} title="one-shot">
-            ▸
-          </button>
-          <button type="button" onClick={() => actions.deckTrigger(deck.id, 'stop')} title="stop">
-            ■
-          </button>
-        </div>
+        <ParamRow
+          label="speed"
+          value={rateToPosition(deck.rate)}
+          display={formatRate(deck.rate)}
+          min={-1}
+          max={1}
+          step={0.001}
+          origin="center"
+          // snapUnity keeps the engine's bit-exact identity path reachable by
+          // DRAGGING — without it you can never quite land on exactly 1.0.
+          onChange={(p) => actions.setDeckRate(deck.id, snapUnity(positionToRate(p)))}
+          onDoubleClick={() => actions.setDeckRate(deck.id, 1)}
+          title="signed varispeed — left of centre is reverse; double-click for 1.00×"
+        />
       )}
     </div>
   )

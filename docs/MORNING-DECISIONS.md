@@ -190,3 +190,102 @@ bar `asrc_drift_test` set. D is elegant but only as good as its upset detector.
 Why this is yours: A vs B vs C/D is a judgment about how hard Wizard should work to claw
 back latency versus how much control-law risk that is worth — a taste call about the audio
 path, which you asked to sign.
+
+---
+
+# New queue — seeded 2026-07-24 evening (virtual-interface routing + looper + global recording)
+
+> ## ✅ ALL DECIDED — 2026-07-24 (same evening)
+> All four answered and **signed into `docs/DECISIONS.md`**: D-WZ-VDEV-01 (#9: 16ch, 8
+> stereo pairs — the recommendation) · D-WZ-MON-02 (#10: auto-close on loop handoff,
+> overdub stays live — the recommendation; amends D-WZ-MON-01) · D-WZ-OVERDUB-01 (#11:
+> **mix-into-buffer** — the user chose destructive sound-on-sound over the auto-new-deck
+> recommendation; the drain side still files every pass as a crash-safe take) ·
+> D-WZ-GREC-01 (#12: **record-time mode** — sum-only or multitrack, the user's own
+> variant of option (c): the choice moves from per-strip arming to one mode picked at
+> record start). Rows P5-00/P3-12/P7-GREC closed; build rows P3-13, P5-01, P7-GREC-01
+> seeded. **The queue below is kept for the record.**
+
+> Seeded from your evening concept session. Framing you set:
+> *"all strips within wizard are equal and just receive audio input from a selected
+> source (live input, recorded / loop, loaded file)"* — the virtual interface routes
+> audio from **any** app, Loopback-style; there is no app-specific bridge (ScoopyLoops is
+> just one app that routes in, and stays the P5 gate example). Ledger rows: P5-00,
+> P3-12, P7-GREC.
+
+## 9. Virtual-interface channel count (P5-00 — the already-anticipated decision row)
+
+The P5 roadmap has always carried "channel-count decision row (2ch vs 2×2ch vs 16ch)".
+Your concept now gives it real context: apps route **one or many stereo pairs** into
+Wizard (a DAW's stems, ScoopyLoops' individual decks and FX outs), and each pair lands as
+its own equal strip (`source.kind = virtualDeviceInput` — already in the schema).
+
+- (a) **One 16ch device (8 stereo pairs)** — one "Wizard Out" in every app's device
+  list; an app that can address output channels routes each feed to a pair; Wizard maps
+  pair *n* → strip. Simplest install, richest routing. Cost: apps that only ever write
+  channels 1–2 use one pair and the rest sit idle; per-pair *source app* attribution is
+  not knowable from the device alone.
+- (b) **N × 2ch devices ("Wizard Out 1..4")** — each app (or each feed) picks its own
+  device, so attribution is per-device and dumb stereo-only apps can still occupy
+  separate strips. Cost: N drivers to install/sign, device-list clutter, N is a hard
+  ship-time constant.
+- (c) **2ch only** — the minimum that passes the P5 gate; multi-pair routing deferred.
+  Cheapest driver work now, but the concept above is then blocked on a *second* driver
+  release, and driver releases are the most expensive kind (signing/notarization/install).
+
+**My recommendation: (a) 16ch**, because it makes multi-pair routing a v1 property for
+the cost of a channel-count constant in the same driver, and (c)'s deferral lands on the
+most expensive release path we have. (b) only if per-app attribution proves essential.
+
+## 10. Monitor handoff on loop close (amends D-WZ-MON-01; feeds P3-10)
+
+**Your words (2026-07-24):** *"recordings with live looping can stop the monitoring
+playback but we should also be able to stack / overdub loop recordings keep the input
+live."*
+
+D-WZ-MON-01 (signed this morning) says: monitor defaults ON, recording never auto-mutes.
+The refinement: at the C-3 record→loop handoff, auto-close the deck's `monitorSwitch` so
+the loop replaces the live input in the same block — except in overdub mode, where the
+input stays live against the loop. Full option analysis in `recorder.md` §9.
+
+- (a) Keep the signed behavior (no automatic state change, user flips the switch).
+- (b) **Auto-close on loop handoff, stay open in overdub mode** — matches your words.
+- (c) Per-deck preference (default = b).
+
+**My recommendation: (b)**, revisiting as (c) only if a real session shows both habits.
+This is a *performance-feel* call — exactly the class D-WZ-MON-01 said you sign.
+
+## 11. Same-deck overdub model (new engine design; recorder.md §9)
+
+There is no way today to layer into a looping deck — "stacking" means other decks.
+Options with full trade-offs in `recorder.md` §9: (a) **mix-into-buffer** (destructive
+sound-on-sound, cheapest, no undo) · (b) **layer list** (non-destructive, undo = drop a
+layer, but multiplies RAM against the 256 MB cap → D-WZ-DECK-01 amendment needed) ·
+(c) **auto-new-deck** (zero engine change, full undo, burns decks).
+
+**My recommendation: (c) now, (b) later.** (c) is one UI verb over machinery that is
+already fixture-proven, so overdub works the day it's signed; (b) is the real instrument
+feature and deserves its own increment once the cap amendment is thought through. (a) is
+the only irreversible option in an app whose take-management already refuses to destroy
+anything (P3-11 moves to Trash, never unlinks) — destructive-by-default fits Wizard badly.
+
+## 12. Global recording policy (→ D-WZ-GREC-01; spec draft at docs/specs/global-recording.md)
+
+**Your words (2026-07-24):** *"global recording in wizard records full stereo sum of
+entire app but also a session like multi-track with added timestamps so all channels can
+be easily rearranged in a DAW with correct timings when they were activated."*
+
+D-WZ-DECK-01 explicitly reserved this: long-form capture "is a new, separately-signed
+policy". The draft spec proposes: master sum = crash-safe BWF of bus 0 post-fader;
+multitrack = Law C-2 stamps written as BWF TimeReference against a common record-start
+origin (P3-04 already writes the stamp into the file — a DAW's "import at original
+position" then reconstructs the session by itself). The fork is what captures per strip:
+
+- (a) Continuous per-channel capture for every active strip (true multitrack, ~1 GB/h
+  per stereo file).
+- (b) Sum + manifest of existing deck takes (near-free, but streamed-through material
+  exists only inside the sum).
+- (c) **Sum always + per-strip "session-arm" toggle (default off)** for continuous
+  capture — degrades to (b) unarmed, reaches (a) fully armed, honest about disk.
+
+**My recommendation: (c).** Full costs and fixtures in the spec draft.

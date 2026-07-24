@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { SCHEMA_VERSION, emptyPatch, makeChannel } from '../../protocol/schema'
+import { DEFAULT_CELL, SCHEMA_VERSION, emptyPatch, makeChannel } from '../../protocol/schema'
 import { loadSession, makeSession, serializeSession } from './session'
 
 const NOW = '2026-07-24T03:00:00Z'
@@ -161,4 +161,35 @@ test('a migrated session then re-saves as clean v16 (no second migration)', () =
   if (!second.ok) return
   expect(second.migratedFrom).toBeUndefined() // already current
   expect(second.patch).toEqual(first.patch) // idempotent
+})
+
+test('a v16 session is RE-LAID-OUT for the horizontal strip size', () => {
+  // A v16 session carries cells at the old narrow rack width. v17 made the
+  // Strip horizontal, so every cell must be re-placed at the new default size —
+  // otherwise player-shaped contents render inside rack-shaped boxes.
+  const patch = emptyPatch() as unknown as Record<string, unknown>
+  const mk = (key: string) => ({
+    ...(makeChannel(key, key, { kind: 'deviceInput', id: '0', name: 'in' }) as unknown as Record<
+      string,
+      unknown
+    >),
+    cell: { x: 0, y: 0, w: 150, h: 132 }, // the OLD narrow geometry
+  })
+  const text = JSON.stringify({
+    schemaVersion: 16,
+    savedAt: NOW,
+    app: 'Wizard 0.0.1',
+    patch: { ...patch, channels: [mk('a'), mk('b')] },
+  })
+
+  const r = loadSession(text)
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.migratedFrom).toBe(16)
+  // Re-placed at the CURRENT default width, not left at 150.
+  expect(r.patch.channels[0]!.cell.w).toBe(DEFAULT_CELL.w)
+  expect(r.patch.channels[1]!.cell.w).toBe(DEFAULT_CELL.w)
+  // Still a left-to-right row, and identities survive.
+  expect(r.patch.channels[1]!.cell.x).toBeGreaterThan(r.patch.channels[0]!.cell.x)
+  expect(r.patch.channels[0]!.key).toBe('a')
 })

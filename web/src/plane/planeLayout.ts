@@ -16,7 +16,7 @@ export const LAYOUT = {
   w: DEFAULT_CELL.w,
   h: DEFAULT_CELL.h,
   gap: 12,
-  perRow: 6, // a comfortable row; the user rearranges freely afterward
+  perRow: 4, // wide player-shaped strips: fewer per row than a narrow rack
 } as const
 
 /**

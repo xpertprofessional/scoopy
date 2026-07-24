@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 16
+export const SCHEMA_VERSION = 17
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -183,9 +183,11 @@ export const CellSchema = z
   .strict()
 export type Cell = z.infer<typeof CellSchema>
 
-/** Default Cell size for a freshly-created strip. Real placement (cascade,
-    drag, auto-layout) is PD-CANVAS-02's job; this just keeps the field valid. */
-export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 150, h: 132 }
+/** Default Cell size for a freshly-created strip. HORIZONTAL and player-shaped
+    (the Parlante reference): wide enough for a readable waveform and Layout-B
+    parameter rows. Real placement (drag, auto-layout) is the Plane's job; this
+    just keeps the field valid and sets the auto-layout grid's cell size. */
+export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 196 }
 
 export const ChannelSchema = z
   .object({

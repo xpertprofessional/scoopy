@@ -55,7 +55,36 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       name: 'add-cell-plane (PD-CANVAS)',
       run: (s) => addCellAndPlane(s),
     },
+
+    // v16 -> v17: the Strip became HORIZONTAL and player-shaped, so the default
+    // cell size changed. Re-run autoLayout to re-place every strip at the new
+    // size — otherwise a v16 session renders player-shaped contents inside
+    // narrow rack-shaped boxes.
+    //
+    // Re-laying-out is safe HERE and would not be later: drag-to-move does not
+    // exist yet (PD-CANVAS-02b), so no hand-made arrangement can exist to
+    // destroy — every cell in the wild was auto-placed by this same function.
+    // Once strips can be dragged, a size change must preserve positions instead.
+    16: {
+      to: 17,
+      name: 'relayout-horizontal-strips (PD-CANVAS)',
+      run: (s) => relayout(s),
+    },
   }
+
+/** Re-place every channel with the CURRENT default cell size. */
+function relayout(s: RawSession): RawSession {
+  const patch = (s.patch ?? {}) as RawSession
+  const channels = Array.isArray(patch.channels) ? patch.channels : []
+  const cells = autoLayout(channels.length)
+  return {
+    ...s,
+    patch: {
+      ...patch,
+      channels: channels.map((ch, i) => ({ ...(ch as RawSession), cell: cells[i] })),
+    },
+  }
+}
 
 /** The v15->v16 migration body. Kept as a named function so it is unit-testable
     in isolation and reads as documentation of the layout it produces. The grid

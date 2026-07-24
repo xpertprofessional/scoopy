@@ -1,9 +1,10 @@
 # Deck recorder spec (P3 domain)
 
-*Governs P3-02..P3-09. Signed: D-WZ-DECK-01 (cap+stop, 256 MB/deck) · D-WZ-CORE-02 (WAV
-writer in host, dependency-free) · D-WZ-RATE-01 (takes at engine rate) · D-WZ-CLOCK-01
-(engine-sample stamps). Laws: CONCEPT §2 — C-1 no timeline · C-2 timestamps make
-multitrack · C-3 instant turnaround.*
+*Governs P3-02..P3-09, P3-10/13 (§9). Signed: D-WZ-DECK-01 (cap+stop, 256 MB/deck) ·
+D-WZ-CORE-02 (WAV writer in host, dependency-free) · D-WZ-RATE-01 (takes at engine rate) ·
+D-WZ-CLOCK-01 (engine-sample stamps) · D-WZ-MON-02 (loop-handoff monitor auto-close) ·
+D-WZ-OVERDUB-01 (mix-into-buffer). Laws: CONCEPT §2 — C-1 no timeline · C-2 timestamps
+make multitrack · C-3 instant turnaround.*
 
 ## 1. The two artifacts of one recording
 
@@ -100,3 +101,32 @@ spec (this) → engine record buffer + drain rings + stamps → the Law C-3 hand
 `deck_handoff_test` → host WavWriter + `wav_killtest` → RecordService wiring → schema +
 dispatch (recordStart/recordStop, take list) → stamps/align + `deck_stamp_test` →
 `record_cap_test` → UI (arm/rec/take list/align/cap lamp) → P3-AUDIT → gate.
+
+## 9. Overdub & monitor handoff (SIGNED: D-WZ-MON-02 · D-WZ-OVERDUB-01)
+
+*Added 2026-07-24 (row P3-12), signed the same evening. User's words: "recordings with
+live looping can stop the monitoring playback but we should also be able to stack /
+overdub loop recordings keep the input live." Builds: P3-10 (handoff behavior) · P3-13
+(overdub state).*
+
+**Monitor handoff (D-WZ-MON-02, amends D-WZ-MON-01).** At the Law C-3 record→loop
+handoff the deck's `monitorSwitch` **auto-closes in the same render block** — the loop
+replaces the live input, no doubled beat. **In overdub mode the switch stays open**,
+because hearing the input against the loop is the point. This is D-WZ-MON-01's one
+signed exception, scoped to the deck's *own* switch: armed → monitoring ON,
+stop-with-loop → switch closes at the handoff block, stop-without-loop → unchanged,
+overdub → open. The switch stays user-flippable at any time; the automation sets it only
+at the handoff instant and never fights the user afterwards. (Rejected: keeping the
+no-auto-change rule here — doubling at loop close is noise, not information; a per-deck
+preference remains a possible later refinement.)
+
+**Same-deck overdub (D-WZ-OVERDUB-01: mix-into-buffer).** While a deck loops in overdub,
+captured input **sums into the loop buffer at the playhead** — destructive, classic
+sound-on-sound; one deck, one buffer, one fattening loop. Mixing in place never grows
+the buffer, so the 256 MB cap and the RT no-allocation rule hold by construction. The
+drain/file side is untouched: **every overdub pass still drains to its own crash-safe,
+stamped take** (§4–§5), so the material of each pass survives on disk even though the
+pre-mix buffer state does not — the multitrack-from-stamps law covers overdubs for free.
+(Rejected for this cut: a non-destructive layer list — RAM multiplies against the cap
+and adds per-layer RT read cost; auto-new-deck — layers land on separate strips and burn
+decks. Either could return as a future decision.)

@@ -319,6 +319,10 @@ naming. The package (P7-04) already carries and de-duplicates these by basename.
 
 ## D-WZ-MON-01 · 2026-07-24 · Monitor-while-recording default ON; no auto-mute of the source
 
+*Amended by D-WZ-MON-02 (2026-07-24, evening): the no-auto-change rule now has one signed
+exception — the record→loop handoff auto-closes the deck's own monitor switch (overdub
+excepted). Everything else here stands.*
+
 **Decision:** When a deck is armed to record, **per-deck monitoring defaults ON** — you hear
 what you are capturing. Separately: when a deck records a strip that is already audible in
 the mix, Wizard does **NOT** auto-mute the source strip; the (possible) doubling is
@@ -402,6 +406,95 @@ fixture at the `asrc_drift_test` bar, not by feel.
 present per D-WZ-CLOCK-01) + logging; the average-fill servo becomes a separate future row
 gated on its soak fixture. No servo lands unattended. Latency after a non-underrun upset may
 stay a few ms off until the source is re-armed — an accepted, logged condition.
+
+## D-WZ-VDEV-01 · 2026-07-24 · Virtual device: 16 channels (8 stereo pairs)
+
+**Decision:** "Wizard Out" is **one 16-channel device — 8 stereo pairs**. An app routes
+each feed (a DAW's stems, ScoopyLoops' decks and FX outs, or just its stereo output on
+pair 1) to a pair of its choosing; Wizard maps **pair *n* → its own equal strip**
+(`source.kind = virtualDeviceInput`, already reserved).
+
+**Rationale:** The interface is app-agnostic, Loopback-style — there is no app-specific
+bridge, and all strips are equal (user framing, 2026-07-24). Multi-pair routing becomes a
+v1 property for the cost of a channel-count constant in the same driver; deferring it
+(2ch now) would land the upgrade on the most expensive release path we have
+(sign/notarize/install a second driver). N×2ch devices would buy per-app attribution at
+the cost of N drivers and device-list clutter — not worth it unless attribution proves
+essential.
+
+**Consequences:** P5 builds the AudioServerPlugIn (and the Linux null-sink) with 16
+channels. Apps that only write channels 1–2 use one pair; idle pairs cost nothing.
+Per-pair source-app attribution is not knowable from the device alone — strips are named
+by the user, not auto-named after apps. The P5 gate is unchanged: ScoopyLoops selects
+"Wizard Out" and appears as a strip.
+
+## D-WZ-MON-02 · 2026-07-24 · Loop handoff auto-closes monitoring; overdub keeps it live
+
+**Decision:** At the Law C-3 record→loop handoff, the deck's `monitorSwitch`
+**auto-closes in the same render block** — the loop replaces the live input, no doubled
+beat. **In overdub mode the switch stays open** (hearing the input against the loop is
+the point). This **amends D-WZ-MON-01**: its no-auto-change rule gains exactly this one
+exception, scoped to the deck's *own* monitor switch; other strips are still never
+touched.
+
+**Rationale:** The performer's ear is the argument: the instant a loop closes, input +
+loop together is doubling, not information. Closing the deck's own switch at the handoff
+is not a hidden state change in the D-WZ-MON-01 sense — it is the visible, expected
+completion of the gesture the user just performed, on the object they performed it on.
+A per-deck preference can be added later if real sessions show both habits.
+
+**Consequences:** P3-10 builds the switch with this handoff behavior: armed → monitoring
+ON (D-WZ-MON-01), stop-with-loop → switch closes at the same block boundary as the C-3
+handoff, stop-without-loop → switch state unchanged, overdub (D-WZ-OVERDUB-01) → switch
+stays open while layering. The switch remains user-flippable at any time; the automation
+only sets it at the handoff instant, never fights the user afterwards.
+
+## D-WZ-OVERDUB-01 · 2026-07-24 · Same-deck overdub: mix-into-buffer (sound-on-sound)
+
+**Decision:** Overdubbing into a looping deck **sums the captured input into the loop
+buffer at the playhead** — classic destructive sound-on-sound. One deck, one buffer, one
+fattening loop.
+
+**Rationale:** User's pick (over the auto-new-deck and layer-list alternatives): the
+looper feel wants the layer to land *in* the loop, not on another strip, and the
+destructive model is the cheapest and the truest to hardware loopers. It respects
+D-WZ-DECK-01 trivially — mixing in place does not grow the buffer, so the 256 MB cap and
+the RT no-allocation rule are untouched.
+
+**Consequences:** New engine work (a P3 follow-up row): an overdub state where the deck
+plays its loop AND sums input into the same chunked buffer at the playhead. The RAM
+buffer is destructive — **but the drain side still runs: each overdub pass drains to its
+own crash-safe, stamped take file**, so the material of every pass survives on disk even
+though the pre-mix buffer state does not (recorder.md §9's invariant). Monitoring stays
+live during overdub per D-WZ-MON-02. A layer-list (non-destructive) model remains a
+possible future decision, not this one.
+
+## D-WZ-GREC-01 · 2026-07-24 · Global recording: record-time mode — sum only, or multitrack
+
+**Decision:** Global recording is **modal at record time**: the user chooses **stereo
+sum only** (bus 0 post-master-fader, one crash-safe BWF — the disk-saving mode) or
+**multitrack** (the sum PLUS a continuous per-strip capture of every active strip, each
+file stamped to the common origin `TimeReference = startEngineSample −
+globalRecordStartSample`). Global capture is **file-only**: no RAM buffer, no 256 MB
+cap, not live-loopable — the archivist, not the instrument (that stays D-WZ-DECK-01's
+domain).
+
+**Rationale:** User's pick: make the cost optional at the moment it is incurred — sum
+only "if you want to save memory", full multitrack when the session matters. A mode
+beats per-strip arming for the first cut (one decision at record start, nothing to
+forget mid-take); per-strip session-arm inside multitrack mode remains a later
+refinement. The stamps make the multitrack DAW-ready by themselves: P3-04 already writes
+the engine-sample stamp into BWF bext TimeReference, so "import at original position"
+reconstructs the session — Law C-2 extended to files, no shared timeline introduced
+(Law C-1 holds).
+
+**Consequences:** Builds per `docs/specs/global-recording.md` (now signed policy): engine
+bus/strip drain taps → GlobalRecordService (N writers, one thread, the RecordService
+pattern) → schema (globalRecordStart/stop + the mode) → UI (global ● with a sum/multitrack
+choice + running size readout) → fixtures (`global_sum_test`, `global_stamp_test`,
+`global_kill_test`). Multitrack disk cost is real (~1 GB/h per stereo file; sum + 8
+strips ≈ 9 GB/h) and is stated in the UI, not hidden. Per-strip capture is that strip's
+post-fader contribution, not a dry archive (a pre-fader tap would be a new decision).
 
 
 ## Parked — awaiting decision (do not block earlier phases)
