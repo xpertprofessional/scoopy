@@ -75,6 +75,25 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // v17 -> v18 (P7-08, D-WZ-DEVGONE-01): the session remembers its device.
     // Purely additive with a safe default — an older session simply had no
     // preference, which is exactly what the empty strings mean.
+    // v20 -> v21: `uiMode` is DELETED. It named 'console' | 'strip' as document
+    // state, but the console no longer exists and "strip mode" is just a
+    // zoomed-out plane, which `plane.scale` already carries. Leaving the field
+    // would have been a lie in the schema and a second source of truth for the
+    // same idea.
+    //
+    // The key must be REMOVED, not ignored: the parse is strict, so a leftover
+    // `uiMode` would be an unknown key and the session would fail to load —
+    // the preserve-don't-drop law firing on our own retired field.
+    20: {
+      to: 21,
+      name: 'drop-uiMode (the console is gone)',
+      run: (s) => {
+        const patch = { ...((s.patch ?? {}) as RawSession) }
+        delete patch.uiMode
+        return { ...s, patch }
+      },
+    },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.

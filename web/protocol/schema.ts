@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 20
+export const SCHEMA_VERSION = 21
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -268,8 +268,12 @@ export const OutputMapSchema = z
 export type OutputMap = z.infer<typeof OutputMapSchema>
 
 /** PD-CANVAS: the plane viewport — document state so a saved arrangement reopens
-    framed the way the user left it (pd-canvas.md §4). `uiMode` 'strip' becomes a
-    zoom-out VIEW rather than a separate layout. */
+    framed the way the user left it (pd-canvas.md §4).
+
+    This ALSO replaced `uiMode`: 'strip' used to name a second layout, but the
+    console is gone and "strip mode" is simply a zoomed-out plane, which `scale`
+    already expresses. Keeping the enum would have been a second source of truth
+    for the same idea. */
 export const PlaneSchema = z
   .object({
     scale: z.number().positive(), // zoom; the "Default" control resets to 1
@@ -299,7 +303,6 @@ export const PatchSchema = z
     channels: z.array(ChannelSchema),
     decks: z.array(DeckSchema).max(8),
     outputMap: OutputMapSchema,
-    uiMode: z.enum(['console', 'strip']), // display mode is document state (CONCEPT §6)
     plane: PlaneSchema, // PD-CANVAS: viewport (UI-only, never crosses the ABI)
     device: SessionDeviceSchema, // P7-08: remembered device, '' = machine default
   })
@@ -312,7 +315,6 @@ export function emptyPatch(): Patch {
     channels: [],
     decks: [],
     outputMap: { main: [0, 1], monitor: null },
-    uiMode: 'console',
     plane: { ...DEFAULT_PLANE },
     device: { input: '', output: '' },
   }

@@ -271,3 +271,20 @@ test('v19 → v20 grows strip height but PRESERVES dragged positions', () => {
   expect(cell.x).toBe(917) // where the user put it
   expect(cell.y).toBe(431)
 })
+
+test('v20 → v21 REMOVES uiMode rather than ignoring it', () => {
+  // The parse is strict, so a retired field left in place would come back as an
+  // unknown key and fail the load — preserve-don't-drop firing on our own
+  // dead field. The migration must delete it.
+  const patch = emptyPatch() as unknown as Record<string, unknown>
+  const text = JSON.stringify({
+    schemaVersion: 20,
+    savedAt: NOW,
+    app: 'Wizard 0.0.1',
+    patch: { ...patch, uiMode: 'console' },
+  })
+  const r = loadSession(text)
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect('uiMode' in (r.patch as unknown as Record<string, unknown>)).toBe(false)
+})
