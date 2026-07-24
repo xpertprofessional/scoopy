@@ -80,7 +80,6 @@ export function App() {
         </>
       ) : (
         <div className="console-body">
-          <SourcesBrowser link={link} />
           <Plane link={link} />
           <MasterSection link={link} />
         </div>

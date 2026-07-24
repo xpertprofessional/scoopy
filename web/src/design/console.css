@@ -842,3 +842,46 @@ canvas.meter {
   display: flex;
   gap: 6px;
 }
+
+/* Add-strip: the one creation gesture on the map (PD-MERGE-02). The menu opens
+   UPWARD from the bottom-right controls, so it never covers the strips you are
+   about to place next to. */
+.add-strip {
+  position: relative;
+}
+
+.add-strip-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.add-strip-menu h3 {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  margin: 6px 0 2px;
+}
+
+.add-strip-menu p {
+  margin: 0;
+}
+
+.add-strip-row {
+  display: flex;
+  gap: 4px;
+}
+
+.add-strip-row button:first-child {
+  flex: 1;
+  text-align: left;
+}

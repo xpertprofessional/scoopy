@@ -76,12 +76,13 @@ interface AppState {
   removeTake: (path: string) => void
   setAlignReference: (path: string | null) => void
   /** Topology edits — return the new Patch so the caller can publish it. */
-  addChannel: (name: string, source: SourceRef) => Patch
-  addDeck: () => Patch
+  /** `at` places the new Strip on the map; omitted = the default cell origin. */
+  addChannel: (name: string, source: SourceRef, at?: { x: number; y: number }) => Patch
+  addDeck: (at?: { x: number; y: number }) => Patch
   /** Create a LoopbackBus strip (busTap): the one legal cycle — it reads the
       named bus's PREVIOUS block, which is what makes record-own-output and
       resample-the-mix possible without an illegal zero-delay cycle. */
-  addLoopback: (bus: number) => Patch
+  addLoopback: (bus: number, at?: { x: number; y: number }) => Patch
   /** Remove a strip. A deck strip also removes its deck — only the HIGHEST
       deck id is removable (no id renumbering; matches add/remove-at-the-end).
       Returns the unchanged patch when the removal is not legal. */
@@ -176,15 +177,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setAlignReference: (alignReferencePath) => set({ alignReferencePath }),
 
-  addChannel: (name, source) => {
+  addChannel: (name, source, at) => {
     const patch = get().patch
-    const ch = makeChannel(`ch-${nextKey++}`, name, source)
+    const base = makeChannel(`ch-${nextKey++}`, name, source)
+    const ch = at ? { ...base, cell: { ...base.cell, x: at.x, y: at.y } } : base
     const next = { ...patch, channels: [...patch.channels, ch] }
     set({ patch: next })
     return next
   },
 
-  addDeck: () => {
+  addDeck: (at) => {
     const patch = get().patch
     if (patch.decks.length >= 8) return patch
     const id = patch.decks.length
@@ -208,6 +210,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }),
       material: { deckId: id },
     }
+    if (at) strip.cell = { ...strip.cell, x: at.x, y: at.y }
     const next = {
       ...patch,
       decks: [...patch.decks, deck],
@@ -234,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return next
   },
 
-  addLoopback: (bus) => {
+  addLoopback: (bus, at) => {
     const patch = get().patch
     const label = bus === 0 ? 'main' : 'monitor'
     const strip = makeChannel(`loopback-${nextKey++}`, `↺ ${label}`, {
@@ -245,7 +248,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // A loopback defaults MUTED: an unmuted unity loopback of main is an
     // instant sustained feedback path. The user unmutes deliberately, with the
     // watchdog behind them.
-    const next = { ...patch, channels: [...patch.channels, { ...strip, mute: true }] }
+    const placed = at ? { ...strip, cell: { ...strip.cell, x: at.x, y: at.y } } : strip
+    const next = { ...patch, channels: [...patch.channels, { ...placed, mute: true }] }
     set({ patch: next })
     return next
   },

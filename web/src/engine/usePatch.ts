@@ -50,16 +50,16 @@ export function usePatchActions(link: EngineLink | null) {
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
-    addSourceChannel(name: string, source: SourceRef) {
-      publishPatch(link, addChannel(name, source))
+    addSourceChannel(name: string, source: SourceRef, at?: { x: number; y: number }) {
+      publishPatch(link, addChannel(name, source, at))
     },
     /** Add a deck + its strip and publish. */
-    addDeckWithStrip() {
-      publishPatch(link, addDeck())
+    addDeckWithStrip(at?: { x: number; y: number }) {
+      publishPatch(link, addDeck(at))
     },
     /** Add a LoopbackBus strip and publish. Arrives muted — see addLoopback. */
-    addLoopbackStrip(bus: number) {
-      publishPatch(link, addLoopback(bus))
+    addLoopbackStrip(bus: number, at?: { x: number; y: number }) {
+      publishPatch(link, addLoopback(bus, at))
     },
     /** Remove a strip (and its deck when it is the last deck) and publish. */
     removeStrip(index: number) {

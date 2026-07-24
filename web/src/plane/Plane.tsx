@@ -17,6 +17,7 @@ import type { EngineLink } from '../engine/engineLink'
 import { useAppStore } from '../store/appStore'
 import { fitToContent, zoomAbout, type Viewport } from './planeLayout'
 import { Strip } from './Strip'
+import { AddStrip } from './AddStrip'
 
 const MIN_SCALE = 0.2
 const MAX_SCALE = 2.5
@@ -33,6 +34,21 @@ export function Plane({ link }: { link: EngineLink | null }) {
   const viewport = (): Viewport => {
     const el = surfaceRef.current
     return { width: el?.clientWidth ?? 0, height: el?.clientHeight ?? 0 }
+  }
+
+  /**
+   * Where a newly-created Strip should land: the centre of what you are looking
+   * at, converted from screen to plane coordinates (plane = screen/scale − pan),
+   * nudged by a small cascade so successive additions do not stack exactly.
+   */
+  const spawnAt = () => {
+    const v = viewport()
+    const n = channels.length
+    const cascade = (n % 6) * 24
+    return {
+      x: Math.round(v.width / 2 / scale - pan.x - 170 + cascade),
+      y: Math.round(v.height / 2 / scale - pan.y - 98 + cascade),
+    }
   }
 
   const fit = () => {
@@ -110,10 +126,11 @@ export function Plane({ link }: { link: EngineLink | null }) {
       </div>
 
       {channels.length === 0 && (
-        <p className="plane-empty dim">No strips yet — bind a source in the console view.</p>
+        <p className="plane-empty dim">No strips yet — add one with “+ strip”, bottom right.</p>
       )}
 
       <div className="plane-controls">
+        <AddStrip link={link} spawnAt={spawnAt} />
         <button type="button" title="zoom out" onClick={() => zoomAtCentre(1 / 1.2)}>
           −
         </button>
