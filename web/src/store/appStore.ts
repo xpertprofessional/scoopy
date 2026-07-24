@@ -47,6 +47,12 @@ interface AppState {
   setEngineTimeSamples: (n: number) => void
   setFeedbackAlarm: (a: boolean) => void
   setDeckStates: (s: number[]) => void
+  /** Replace the whole document (session restore). */
+  setPatch: (p: Patch) => void
+  /** A user-visible note about persistence (restored-from-backup, autosave
+      failed, unreadable session). Empty when there is nothing to say. */
+  sessionNotice: string
+  setSessionNotice: (n: string) => void
   setDeckCapReached: (c: boolean[]) => void
   setTakes: (t: Take[]) => void
   addTake: (t: Take) => void
@@ -91,6 +97,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   takes: [],
   deckRevisions: [],
   alignReferencePath: null,
+  sessionNotice: '',
   patch: emptyPatch(),
   setShellStatus: (shellStatus) => set({ shellStatus }),
   setCapabilities: (capabilities) => set({ capabilities }),
@@ -98,6 +105,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEngineTimeSamples: (engineTimeSamples) => set({ engineTimeSamples }),
   setFeedbackAlarm: (feedbackAlarm) => set({ feedbackAlarm }),
   setDeckStates: (deckStates) => set({ deckStates }),
+  setPatch: (patch) => set({ patch }),
+  setSessionNotice: (sessionNotice) => set({ sessionNotice }),
   setDeckCapReached: (deckCapReached) => set({ deckCapReached }),
   setTakes: (takes) => set({ takes }),
   addTake: (t) => set({ takes: [...get().takes, t] }),

@@ -521,3 +521,13 @@ canvas.meter {
   border-radius: var(--radius);
   text-align: center;
 }
+
+/* A persistence problem is announced, never swallowed. */
+.session-notice {
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  color: var(--bg);
+  background: var(--warn);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+}

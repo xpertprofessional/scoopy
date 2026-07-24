@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 12
+export const SCHEMA_VERSION = 13
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -339,6 +339,26 @@ export const COMMANDS = {
   setDevice: {
     params: z.object({ input: z.string(), output: z.string() }).strict(),
     result: z.object({ ok: z.boolean(), error: z.string() }).strict(),
+  },
+  // --- session persistence (P7-03) -----------------------------------------
+  // The shell owns the filesystem; the UI hands it already-serialized text so
+  // the document format lives in ONE place (persist/session.ts). The write is
+  // atomic (temp -> fsync -> rename) with a rotated .bak: a half-written
+  // session is the one failure mode that makes autosave worse than nothing.
+  saveAutosave: {
+    params: z.object({ text: z.string() }).strict(),
+    result: z.object({ ok: z.boolean(), error: z.string() }).strict(),
+  },
+  // Returns the autosave, or the .bak if the primary is unreadable, or empty.
+  // `source` tells the UI which it got so it can say so rather than pretending.
+  loadAutosave: {
+    params: z.object({}).strict(),
+    result: z
+      .object({
+        text: z.string(),
+        source: z.enum(['primary', 'backup', 'none']),
+      })
+      .strict(),
   },
   // WorldPublish: the full Patch document. The engine RCU-installs the world;
   // `revision` echoes a monotonic install counter so the UI can correlate

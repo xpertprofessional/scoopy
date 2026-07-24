@@ -6,6 +6,7 @@
  */
 import { useAppStore } from './store/appStore'
 import { useEngineLink } from './engine/useEngineLink'
+import { useAutosave } from './persist/useAutosave'
 import { SourcesBrowser } from './panels/SourcesBrowser'
 import { ChannelRack } from './panels/ChannelRack'
 import { DeckRack } from './panels/DeckRack'
@@ -20,11 +21,15 @@ const STATUS_LABEL: Record<string, string> = {
   'no-engine': 'no engine (browser/dev)',
 }
 
+const nowIso = () => new Date().toISOString()
+
 export function App() {
   const link = useEngineLink()
+  useAutosave(link, nowIso)
   const shellStatus = useAppStore((s) => s.shellStatus)
   const engineTimeSamples = useAppStore((s) => s.engineTimeSamples)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
+  const sessionNotice = useAppStore((s) => s.sessionNotice)
 
   const seconds = deviceInfo && deviceInfo.sampleRate > 0
     ? (engineTimeSamples / deviceInfo.sampleRate).toFixed(1) + ' s'
@@ -39,6 +44,11 @@ export function App() {
         </span>
         <span className="value" data-testid="engine-time">{seconds}</span>
       </header>
+      {sessionNotice !== '' && (
+        <div className="session-notice" role="status">
+          session: {sessionNotice}
+        </div>
+      )}
       <div className="console-body">
         <SourcesBrowser link={link} />
         <ChannelRack link={link} />

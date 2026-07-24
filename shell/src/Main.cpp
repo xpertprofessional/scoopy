@@ -77,6 +77,10 @@ public:
                             complete(recordCommand(method, params));
                             return;
                         }
+                        if (method == "saveAutosave" || method == "loadAutosave") {
+                            complete(sessionCommand(method, params));
+                            return;
+                        }
                         if (method == "listDevices") {
                             complete(listDevicesReply());
                             return;
@@ -269,6 +273,65 @@ private:
         o->setProperty("channels", static_cast<int>(t.channels));
         o->setProperty("sourceDesc", juce::String(t.sourceDesc));
         return juce::var(o);
+    }
+
+    // Session persistence (P7-03). Shell-owned: the UI never touches paths.
+    juce::File sessionDir() const {
+        return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Wizard");
+    }
+
+    juce::var sessionCommand(const juce::String& method, const juce::var& params) {
+        auto* result = new juce::DynamicObject();
+        const auto dir = sessionDir();
+        const auto primary = dir.getChildFile("session.json");
+        const auto backup = dir.getChildFile("session.json.bak");
+
+        if (method == "saveAutosave") {
+            dir.createDirectory();
+            const auto text = params.getProperty("text", "").toString();
+            // ATOMIC: write a temp file, flush it to disk, rotate the previous
+            // session to .bak, then RENAME into place. A crash at any point
+            // leaves either the old session or the new one — never a truncated
+            // file, which would be worse than having no autosave at all.
+            const auto tmp = dir.getChildFile("session.json.tmp");
+            tmp.deleteFile();
+            bool ok = false;
+            {
+                juce::FileOutputStream out(tmp);
+                if (out.openedOk()) {
+                    ok = out.writeText(text, false, false, nullptr);
+                    out.flush(); // fsync-equivalent before we rename over the good copy
+                }
+            }
+            if (ok) {
+                if (primary.existsAsFile()) {
+                    backup.deleteFile();
+                    primary.copyFileTo(backup); // rotate, so a bad new write still has a fallback
+                }
+                ok = tmp.moveFileTo(primary);
+            }
+            if (!ok) tmp.deleteFile();
+            result->setProperty("ok", ok);
+            result->setProperty("error", ok ? "" : "could not write the session");
+        } else { // loadAutosave
+            juce::String text;
+            juce::String source = "none";
+            if (primary.existsAsFile()) {
+                text = primary.loadFileAsString();
+                if (text.isNotEmpty()) source = "primary";
+            }
+            if (source == "none" && backup.existsAsFile()) {
+                text = backup.loadFileAsString();
+                if (text.isNotEmpty()) source = "backup";
+            }
+            result->setProperty("text", text);
+            result->setProperty("source", source);
+        }
+        auto* env = new juce::DynamicObject();
+        env->setProperty("ok", true);
+        env->setProperty("result", juce::var(result));
+        return juce::var(env);
     }
 
     juce::var listDevicesReply() const {
