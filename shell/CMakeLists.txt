@@ -30,12 +30,13 @@ target_link_libraries(wz_command
 # yet — the PatternFile->v3 play path is a later increment.
 add_library(wz_sl_command STATIC src/SlDispatch.cpp)
 target_include_directories(wz_sl_command PUBLIC src)
+# wz_sl_world (applyWorld) for the worldPublish play path; it pulls the v3 engine.
 target_link_libraries(wz_sl_command
     PUBLIC juce::juce_core
-    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    PRIVATE wz_sl_world juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 add_executable(sl_dispatch_test tools/sl_dispatch_test.cpp)
-target_link_libraries(sl_dispatch_test PRIVATE wz_sl_command)
+target_link_libraries(sl_dispatch_test PRIVATE wz_sl_command wz_sl_world wz_sl_engine)
 add_test(NAME sl_dispatch_test COMMAND sl_dispatch_test)
 
 # The Option-B play path (native half): a name-keyed World -> v3 snapshot. Links

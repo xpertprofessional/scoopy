@@ -22,6 +22,8 @@
 
 #include <juce_core/juce_core.h>
 
+struct sl_engine;
+
 namespace wizard::sl {
 
 /** Persistence behind getSetting/setSetting/getSettings. Injected so the
@@ -38,8 +40,14 @@ public:
 };
 
 /** Reply shape: { ok, result?, error? } — the shared envelope (envelope.ts),
-    the same one scoopy's JuceLink checks `ok !== true` against. */
-juce::var dispatch(const juce::String& method, const juce::var& params, SettingsStore& settings);
+    the same one scoopy's JuceLink checks `ok !== true` against.
+
+    `engine` is nullable: the boot handshake (capabilities/settings/view-state)
+    needs no engine, so headless settings tests pass nullptr and get identical
+    replies. The play path (`worldPublish`) uses it when present, and refuses
+    honestly when it is absent — never a fake success. */
+juce::var dispatch(const juce::String& method, const juce::var& params,
+                   SettingsStore& settings, sl_engine* engine);
 
 /** The merged host's capability model, exposed for the test and for Main.cpp to
     reuse. schemaVersion MUST track scoopy's SCHEMA_VERSION or its UI renders a

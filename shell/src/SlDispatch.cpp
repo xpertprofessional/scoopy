@@ -1,5 +1,7 @@
 #include "SlDispatch.h"
 
+#include "SlWorldApply.h"
+
 namespace wizard::sl {
 
 namespace {
@@ -45,9 +47,25 @@ juce::var capabilities() {
     return juce::var(obj);
 }
 
-juce::var dispatch(const juce::String& method, const juce::var& params, SettingsStore& settings) {
+juce::var dispatch(const juce::String& method, const juce::var& params,
+                   SettingsStore& settings, sl_engine* engine) {
     if (method == "getCapabilities")
         return ok(capabilities());
+
+    // ── Play path (Option B) ─────────────────────────────────────────────────
+    // This host's worldPublish carries a FLAT World object (already keyed by
+    // engine name by the web layer's worldFromSession + field->name table),
+    // under `world` — NOT scoopy's stock `json` PatternFile string, which the
+    // native side deliberately does not parse (that translation lives in TS).
+    if (method == "worldPublish") {
+        if (engine == nullptr) return fail("worldPublish: no engine on this host");
+        const auto world = params.getProperty("world", juce::var());
+        if (world.getDynamicObject() == nullptr)
+            return fail("worldPublish: expected a flat `world` object (Option B), "
+                        "not a PatternFile string");
+        // applyWorld returns {applied, error} — exactly this command's result.
+        return ok(applyWorld(engine, world));
+    }
 
     // ── Settings quartet ────────────────────────────────────────────────────
     if (method == "getSetting") {
