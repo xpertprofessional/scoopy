@@ -8,6 +8,7 @@
  * steps, each independently testable, never a best-effort object spread.
  */
 import { PatchSchema, SCHEMA_VERSION, emptyPatch, type Patch } from '../../protocol/schema'
+import { autoLayout } from '../plane/planeLayout'
 import { z } from 'zod'
 
 /** The on-disk envelope. Deliberately thin: the Patch is the document. */
@@ -57,22 +58,14 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
   }
 
 /** The v15->v16 migration body. Kept as a named function so it is unit-testable
-    in isolation and reads as documentation of the layout it produces. */
+    in isolation and reads as documentation of the layout it produces. The grid
+    itself comes from autoLayout — the SAME function the live plane uses to place
+    cells — so a migrated session and a freshly-arranged one never diverge. */
 function addCellAndPlane(s: RawSession): RawSession {
-  const W = 150
-  const H = 132
-  const GAP = 12
-  const PER_ROW = 6 // a comfortable grid; the user rearranges freely afterward
   const patch = (s.patch ?? {}) as RawSession
   const channels = Array.isArray(patch.channels) ? patch.channels : []
-  const laidOut = channels.map((ch, i) => {
-    const col = i % PER_ROW
-    const row = Math.floor(i / PER_ROW)
-    return {
-      ...(ch as RawSession),
-      cell: { x: col * (W + GAP), y: row * (H + GAP), w: W, h: H },
-    }
-  })
+  const cells = autoLayout(channels.length)
+  const laidOut = channels.map((ch, i) => ({ ...(ch as RawSession), cell: cells[i] }))
   return {
     ...s,
     patch: { ...patch, channels: laidOut, plane: { scale: 1, panX: 0, panY: 0 } },
