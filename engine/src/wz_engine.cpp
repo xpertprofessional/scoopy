@@ -521,6 +521,39 @@ void wz_engine_set_watchdog_enabled(wz_engine* e, uint32_t enabled) {
     }
 }
 
+uint32_t wz_deck_waveform(const wz_engine* e, uint32_t deck, uint32_t channel,
+                          uint64_t start_frame, uint64_t end_frame,
+                          uint32_t columns, float* out_min, float* out_max) {
+    if (e == nullptr || deck >= wz::kMaxDecks || columns == 0 ||
+        out_min == nullptr || out_max == nullptr)
+        return 0;
+    const auto& d = e->decks[deck];
+    const uint64_t len = d.frames.load(std::memory_order_acquire);
+    if (len == 0 || d.channels == 0) return 0;
+    uint64_t s0 = start_frame < len ? start_frame : len;
+    uint64_t s1 = end_frame < len ? end_frame : len;
+    if (s1 <= s0) { s0 = 0; s1 = len; } // degenerate range → the whole buffer
+    const uint32_t ch = channel < d.channels ? channel : 0u;
+
+    const double span = static_cast<double>(s1 - s0);
+    for (uint32_t c = 0; c < columns; ++c) {
+        const uint64_t a = s0 + static_cast<uint64_t>(span * c / columns);
+        uint64_t b = s0 + static_cast<uint64_t>(span * (c + 1) / columns);
+        if (b <= a) b = a + 1;
+        if (b > s1) b = s1;
+        float lo = 0.0f, hi = 0.0f;
+        bool first = true;
+        for (uint64_t f = a; f < b; ++f) {
+            const float v = d.sample(ch, f);
+            if (first) { lo = hi = v; first = false; }
+            else { if (v < lo) lo = v; if (v > hi) hi = v; }
+        }
+        out_min[c] = lo;
+        out_max[c] = hi;
+    }
+    return columns;
+}
+
 void wz_deck_set_rate(wz_engine* e, uint32_t deck, double rate) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     e->decks[deck].rate.store(rate, std::memory_order_relaxed);

@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -438,6 +438,22 @@ export const COMMANDS = {
       .object({ deck: z.number().int().min(0).max(7), rate: z.number() })
       .strict(),
     result: z.object({}).strict(),
+  },
+  // Waveform envelope for a deck's buffer, one min/max pair per column (P4-06).
+  // Pulled on view change, not per frame — the playhead rides HotFrame.
+  deckWaveform: {
+    params: z
+      .object({
+        deck: z.number().int().min(0).max(7),
+        channel: z.number().int().nonnegative(),
+        startFrame: z.number().int().nonnegative(),
+        endFrame: z.number().int().nonnegative(),
+        columns: z.number().int().positive().max(4096),
+      })
+      .strict(),
+    result: z
+      .object({ min: z.array(z.number()), max: z.array(z.number()), frames: z.number().int() })
+      .strict(),
   },
   deckSetLoop: {
     params: z

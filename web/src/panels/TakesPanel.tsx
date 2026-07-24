@@ -90,8 +90,18 @@ export function TakesPanel({ link }: { link: EngineLink | null }) {
                     <button
                       key={d.id}
                       type="button"
-                      title={`load into ${d.name}`}
-                      onClick={() => void actions.deckLoadTake(d.id, t.path)}
+                      title={
+                        reference && !isRef
+                          ? `load into ${d.name} and align to the reference take (Law C-2)`
+                          : `load into ${d.name}`
+                      }
+                      onClick={() => {
+                        void actions.deckLoadTake(d.id, t.path).then(() => {
+                          // With a reference set, loading ALSO aligns — the
+                          // stamp delta becomes the deck's loop origin.
+                          if (reference && !isRef) actions.alignDeckToTake(d.id, t, reference)
+                        })
+                      }}
                     >
                       {d.id + 1}
                     </button>

@@ -470,3 +470,10 @@ canvas.meter {
 .varispeed-unity {
   color: var(--signal);
 }
+
+.deck-waveform {
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: crosshair;
+  touch-action: none;
+}

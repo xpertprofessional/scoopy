@@ -5,7 +5,8 @@
  * update the local document WITHOUT republishing — the next publish carries
  * the same values, so the two paths cannot diverge.
  */
-import type { Patch, SourceRef } from '../../protocol/schema'
+import type { Patch, SourceRef, Take } from '../../protocol/schema'
+import { alignedStartSample } from './takeAlign'
 import { useAppStore } from '../store/appStore'
 import type { EngineLink } from './engineLink'
 import { validatePatch } from './patchValidation'
@@ -43,6 +44,8 @@ export function usePatchActions(link: EngineLink | null) {
   const setTakes = useAppStore((s) => s.setTakes)
   const removeTake = useAppStore((s) => s.removeTake)
   const setDeckRate = useAppStore((s) => s.setDeckRate)
+  const setDeckLoopRegion = useAppStore((s) => s.setDeckLoopRegion)
+  const bumpDeckRevision = useAppStore((s) => s.bumpDeckRevision)
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
@@ -88,6 +91,27 @@ export function usePatchActions(link: EngineLink | null) {
       setDeckRate(deck, rate)
       void link?.command('deckSetRate', { deck, rate })
     },
+    /** Loop region from a waveform drag: document + engine (seqlock-published,
+        so the render thread never sees a torn pair). */
+    setDeckLoop(deck: number, startSample: number, endSample: number) {
+      setDeckLoopRegion(deck, startSample, endSample)
+      void link?.command('deckSetLoop', { deck, enabled: true, startSample, endSample })
+    },
+    /**
+     * ALIGN TO TAKE (Law C-2 as a verb): shift a deck's loop origin by the
+     * stamp DELTA between its take and a reference take. No timeline, no edit —
+     * a subtraction, exactly as CONCEPT promises.
+     */
+    alignDeckToTake(deck: number, take: Take, reference: Take) {
+      const start = alignedStartSample(take, reference)
+      setDeckLoopRegion(deck, start, take.frames)
+      void link?.command('deckSetLoop', {
+        deck,
+        enabled: true,
+        startSample: start,
+        endSample: take.frames,
+      })
+    },
     /** Deck transport intents; state truth returns via HotFrame. */
     deckTrigger(deck: number, mode: 'loop' | 'oneShot' | 'stop' | 'retrigger') {
       void link?.command('deckTrigger', { deck, mode })
@@ -103,6 +127,7 @@ export function usePatchActions(link: EngineLink | null) {
       if (!link) return
       const r = await link.command('deckRecordStop', { deck })
       if (r.ok && r.take) addTake(r.take)
+      bumpDeckRevision(deck) // a take just became this deck's buffer (Law C-3)
     },
     async refreshTakes() {
       if (!link) return
@@ -122,12 +147,19 @@ export function usePatchActions(link: EngineLink | null) {
     /** Load a recorded take into any deck (CONCEPT: one click → any deck). */
     async deckLoadTake(deck: number, path: string) {
       if (!link) return
-      await link.command('deckLoadTake', { deck, path })
+      const r = await link.command('deckLoadTake', { deck, path })
+      if (r.ok) {
+        setDeckSourcePath(deck, path)
+        bumpDeckRevision(deck)
+      }
     },
     async deckLoadFile(deck: number) {
       if (!link) return
       const r = await link.command('deckLoadFile', { deck })
-      if (r.ok) setDeckSourcePath(deck, r.path)
+      if (r.ok) {
+        setDeckSourcePath(deck, r.path)
+        bumpDeckRevision(deck) // the buffer changed → the waveform refetches
+      }
     },
   }
 }

@@ -144,6 +144,15 @@ void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
 void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end);
 
+/* Waveform envelope for display (P4-06). Fills out_min/out_max[0..columns) with
+ * the min/max of `channel` over the half-open range [start, end), one entry per
+ * on-screen column. Reads the chunked buffer directly — cheap enough to call on
+ * the message thread per view change, and never from the render thread. Returns
+ * columns written (0 on bad args / empty deck). */
+uint32_t wz_deck_waveform(const wz_engine* e, uint32_t deck, uint32_t channel,
+                          uint64_t start_frame, uint64_t end_frame,
+                          uint32_t columns, float* out_min, float* out_max);
+
 /* Signed varispeed (P4-02, docs/specs/playback-composer.md §1). Negative =
  * reverse; |rate| is clamped to [1/16, 16]. Exactly +-1.0 takes the IDENTITY
  * path (direct integer read, bit-exact — no resampler in the signal path). The

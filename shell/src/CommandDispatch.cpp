@@ -126,6 +126,27 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         return ok(juce::var(new juce::DynamicObject()));
     }
 
+    if (method == "deckWaveform") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto chan = static_cast<uint32_t>(static_cast<int>(params.getProperty("channel", 0)));
+        const auto s0 = static_cast<uint64_t>(
+            static_cast<juce::int64>(params.getProperty("startFrame", 0)));
+        const auto s1 = static_cast<uint64_t>(
+            static_cast<juce::int64>(params.getProperty("endFrame", 0)));
+        const auto cols = static_cast<uint32_t>(static_cast<int>(params.getProperty("columns", 0)));
+        juce::Array<juce::var> mn, mx;
+        if (cols > 0) {
+            std::vector<float> lo(cols), hi(cols);
+            const auto n = wz_deck_waveform(engine, deck, chan, s0, s1, cols, lo.data(), hi.data());
+            for (uint32_t i = 0; i < n; ++i) { mn.add(lo[i]); mx.add(hi[i]); }
+        }
+        auto* result = new juce::DynamicObject();
+        result->setProperty("min", juce::var(mn));
+        result->setProperty("max", juce::var(mx));
+        result->setProperty("frames", static_cast<juce::int64>(wz_deck_frames(engine, deck)));
+        return ok(juce::var(result));
+    }
+
     if (method == "deckSetRate") {
         const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
         const auto rate = static_cast<double>(params.getProperty("rate", 1.0));

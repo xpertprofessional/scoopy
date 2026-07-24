@@ -67,6 +67,11 @@ interface AppState {
   ) => void
   setDeckSourcePath: (id: number, path: string) => void
   setDeckRate: (id: number, rate: number) => void
+  setDeckLoopRegion: (id: number, startSample: number, endSample: number) => void
+  /** Bumped whenever a deck's BUFFER changes (load/record), so the waveform
+      refetches. Distinct from the Patch: the buffer is engine state. */
+  deckRevisions: number[]
+  bumpDeckRevision: (id: number) => void
 }
 
 let nextKey = 1
@@ -80,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deckStates: [],
   deckCapReached: [],
   takes: [],
+  deckRevisions: [],
   alignReferencePath: null,
   patch: emptyPatch(),
   setShellStatus: (shellStatus) => set({ shellStatus }),
@@ -159,6 +165,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     const channels = patch.channels.slice()
     channels[index] = nextCh
     set({ patch: { ...patch, channels } })
+  },
+
+  setDeckLoopRegion: (id, startSample, endSample) => {
+    const patch = get().patch
+    const decks = patch.decks.map((d) =>
+      d.id === id ? { ...d, loopStartSample: startSample, loopEndSample: endSample } : d,
+    )
+    set({ patch: { ...patch, decks } })
+  },
+
+  bumpDeckRevision: (id) => {
+    const revs = get().deckRevisions.slice()
+    revs[id] = (revs[id] ?? 0) + 1
+    set({ deckRevisions: revs })
   },
 
   setDeckRate: (id, rate) => {
