@@ -943,6 +943,11 @@ void wz_engine_render_io(wz_engine* e,
                 d.playhead = t < static_cast<double>(dFrames)
                                  ? t
                                  : static_cast<double>(dFrames - 1);
+                // Arm the cue here too (D-WZ-SCRUBCUE-01). Scrubbing a STOPPED
+                // deck is the most common way to set one — you park the head
+                // where you want the next ⟳ to fire — so the stopped path must
+                // arm it exactly like the playing path does.
+                d.cueFrame = d.playhead;
             }
             for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
@@ -974,6 +979,7 @@ void wz_engine_render_io(wz_engine* e,
                 dl[i] = static_cast<float>(scrubL * sg);
                 dr[i] = static_cast<float>(scrubR * sg);
             }
+            d.cueFrame = d.playhead; // arm: a trigger starts where you let go
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
             d.pubScrubRate.store(d.scrubRate, std::memory_order_relaxed);
             continue;
@@ -989,7 +995,13 @@ void wz_engine_render_io(wz_engine* e,
         // direction: forward starts at `rs`, reverse starts just inside `re`.
         const bool reversing = d.rate.load(std::memory_order_relaxed) < 0.0;
         const double entry = reversing ? static_cast<double>(re) - 1.0 : static_cast<double>(rs);
-        if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = entry;
+        if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) {
+            // D-WZ-SCRUBCUE-01: a trigger fires from where you last scrubbed, if
+            // you scrubbed. Consumed here, so the NEXT wrap goes back to the
+            // region entry — the cue is a one-shot, not a moved loop start.
+            d.playhead = d.cueFrame >= 0.0 ? d.cueFrame : entry;
+            d.cueFrame = -1.0;
+        }
         // A SCRUB wins over the region clamp below: land exactly where the user
         // dragged, bounded only by the buffer. Note the loop WRAP further down
         // still applies, so scrubbing outside an active loop region folds back
@@ -1000,6 +1012,7 @@ void wz_engine_render_io(wz_engine* e,
             d.playhead = target < static_cast<double>(dFrames)
                              ? target
                              : static_cast<double>(dFrames > 0 ? dFrames - 1 : 0);
+            d.cueFrame = d.playhead; // arm: a trigger now starts here
         } else
         if (d.playhead < static_cast<double>(rs) || d.playhead >= static_cast<double>(re))
             d.playhead = entry;

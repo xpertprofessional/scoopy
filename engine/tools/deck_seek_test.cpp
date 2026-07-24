@@ -92,10 +92,9 @@ int main() {
     CHECK(clamped >= 0.0 && clamped <= static_cast<double>(kFrames));
 
     // --- a STOPPED deck still moves its head, and does not hoard the request --
-    // Both were bugs: the idle branch returned before draining the mailbox, so
-    // scrubbing a stopped player did nothing visible, and the stale request was
-    // then applied on a later block — overriding the next trigger's reset, so a
-    // ⟳ silently started from wherever you last scrubbed.
+    // The idle branch used to return before draining the mailbox, so scrubbing a
+    // stopped player did nothing visible and the stale request was applied on
+    // some later block instead. The mailbox must be consumed when it arrives.
     wz_deck_trigger(e, 0, 2); // stop
     render(e, 64);
     wz_deck_seek(e, 0, 2000);
@@ -103,13 +102,35 @@ int main() {
     const double stoppedHead = playheadOf(e, 1, 0);
     CHECK(std::abs(stoppedHead - 2000.0) < 1.0); // moved, and did not drift: it is not playing
 
-    // Now trigger: the region entry must win, because the scrub was already
-    // consumed rather than left pending.
+    // --- CUE POINT: a trigger fires from where you scrubbed -----------------
+    // D-WZ-SCRUBCUE-01, signed 2026-07-24. This REVERSES what this test used to
+    // assert. The old behaviour (⟳ always starts at the region entry) was not a
+    // decision — it was what remained after the stale-mailbox bug above was
+    // fixed. Scrub to the drop, hit ⟳, it fires from there.
     wz_deck_set_loop(e, 0, 0, 0, 0); // whole buffer
-    wz_deck_trigger(e, 0, 0);        // loop from the entry edge
+    wz_deck_trigger(e, 0, 0);        // play
     render(e, 64);
-    const double afterTrigger = playheadOf(e, 1, 0);
-    CHECK(afterTrigger < 1000.0); // started at the entry, NOT at the scrubbed 2000
+    const double atCue = playheadOf(e, 1, 0);
+    CHECK(atCue >= 2000.0 && atCue < 2000.0 + 256.0); // started AT the scrub, not at 0
+
+    // ...and the cue is a ONE-SHOT, not a moved loop start. A second trigger
+    // with no scrub in between starts at the region entry again — otherwise the
+    // scrub would have silently become a permanent second start point.
+    wz_deck_trigger(e, 0, 0);
+    render(e, 64);
+    const double afterConsumed = playheadOf(e, 1, 0);
+    CHECK(afterConsumed < 1000.0);
+
+    // A cue OUTSIDE an active loop region still folds into it — a loop is a
+    // loop, the same rule the wrap above follows.
+    wz_deck_set_loop(e, 0, 1, 0, 1000);
+    wz_deck_seek(e, 0, 3000);
+    render(e, 64);
+    wz_deck_trigger(e, 0, 0);
+    render(e, 64);
+    const double foldedCue = playheadOf(e, 1, 0);
+    CHECK(foldedCue >= 0.0 && foldedCue < 1000.0 + 256.0);
+    wz_deck_set_loop(e, 0, 0, 0, 0);
 
     // --- and the engine is still producing finite audio afterwards -----------
     std::vector<float> l(256), r(256), cl(256), cr(256);

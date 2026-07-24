@@ -30,6 +30,10 @@ interface Props {
   onScrub?: (frame: number) => void
   /** TAPE scrub (turntable): pitch follows hand speed. Option-drag. */
   onTapeScrub?: (phase: 'begin' | 'to' | 'end', frame: number) => void
+  /** CUE POINT (D-WZ-SCRUBCUE-01): the frame the next ⟳ will fire from, or
+      null when nothing is armed. Drawn as a marker because a start point you
+      cannot see is the kind of state that makes a player feel haunted. */
+  cue?: number | null
   /** The plane's zoom, so the head stays ~1 device px at any scale. */
   scale?: number
   /** Engine rate, so a scrub can say WHERE it is in time rather than samples. */
@@ -54,6 +58,7 @@ export function DeckWaveform({
   onSetLoop,
   onScrub,
   onTapeScrub,
+  cue = null,
   scale = 1,
   sampleRate = 0,
   width = 150,
@@ -207,6 +212,17 @@ export function DeckWaveform({
         }
       }
 
+      // CUE MARKER — where the next ⟳ will fire from. Drawn UNDER the playhead
+      // so a cue you are currently sitting on does not hide the head, and as a
+      // notch rather than a full line so it reads as a mark, not a boundary.
+      if (cue !== null && span > 0 && !recording) {
+        const cx = (cue / span) * w
+        const cw = Math.max(1, dpr / scale)
+        ctx.fillStyle = brace
+        ctx.fillRect(Math.min(cx, w - cw), 0, cw, h * 0.28)
+        ctx.fillRect(Math.min(cx, w - cw), h * 0.72, cw, h * 0.28)
+      }
+
       // Playhead from HotFrame — never through React state. While recording the
       // "playhead" is the write head, which is the right edge of the wave.
       const phIdx = deckFieldIndex(channelCount, deck, DECK_BLOCK_FIELDS[1]!)
@@ -244,7 +260,7 @@ export function DeckWaveform({
         }
       }
     })
-  }, [deck, channelCount, frames, loopStart, loopEnd, width, height, recording, scale, sampleRate])
+  }, [deck, channelCount, frames, loopStart, loopEnd, width, height, recording, scale, sampleRate, cue])
 
   /** Post at most one scrub per animation frame, always the newest position. */
   const postScrub = (frame: number) => {

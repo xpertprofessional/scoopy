@@ -559,6 +559,52 @@ and is not yet re-hosted on the plane. If the chip proves too weak, the trace/ra
 already specified in `docs/specs/pd-plane-playground.md`.
 
 
+## D-WZ-SCRUBCUE-01 · 2026-07-24 · Scrubbing arms a one-shot cue point
+
+**Decision.** After you scrub (or jump-seek) a deck, the next trigger fires **from the
+scrubbed frame**, not from the loop region's entry edge. The cue is a **one-shot**: the
+trigger consumes it, so the loop wrap immediately after returns to the region entry, and a
+second trigger with no scrub in between starts at the entry again. A cue lying outside an
+active loop region folds into it on the wrap, exactly like any other position — a loop is
+a loop. New material (load, insert, record) disarms it.
+
+**Rationale.** Scrub to the drop, hit ⟳, it fires from there: the classic turntable/CDJ
+cue, and the thing a looper is for. The previous behaviour — ⟳ always starts at the region
+entry — was never chosen. It is what remained after PD-SCRUB-01 fixed a *stale mailbox*
+bug, where a pending scrub was applied on some later block and happened to override the
+trigger's reset. Fixing that bug left the opposite behaviour standing by accident, which is
+why this was parked as PD-SCRUB-05 rather than left to whatever the code did.
+
+One-shot rather than "scrub moves the loop in-point" (the third option) keeps auditioning
+non-destructive: you can drag through material to find a spot without editing the region
+you carefully set. The cost is a second start point existing at all, which is paid for by
+making it **visible** — the Strip draws a cue notch — and by keeping its life short enough
+(one trigger) that it cannot be forgotten about.
+
+**Consequences.** `Deck::cueFrame` is render-owned, armed by both the playing and the
+STOPPED scrub paths (parking the head on a stopped deck is the commonest way to set a cue)
+and cleared in `reset()`. `deck_seek_test` REVERSES its old assertion and now pins all
+three properties: fires at the cue · the cue is consumed · an out-of-region cue folds. The
+UI mirrors the cue locally instead of adding a HotFrame field — the UI issued the seek, so
+it already knows, and it clears on the same gesture the engine consumes it.
+
+## D-WZ-ALIGN-01 · 2026-07-24 · The align-to-take verb is dropped, not rehomed
+
+**Decision.** The Law C-2 align-to-take verb (P3-07) does not move to Settings or onto the
+Strip. It is **removed from the current UI**, and P7-GREC's common origin is the supported
+way to line a session up.
+
+**Rationale.** It lost its home when the takes panel went (pd-merge §3 left this open).
+Global record mints `globalRecordStartSample` and stamps every file with
+`TimeReference = startEngineSample − globalRecordStartSample`, so dropping all files at
+0:00 in any DAW already reproduces the session — which is most of what manual alignment was
+for. Keeping a session-wide operation parked on some surface "because it exists" is how a
+simplified UI regrows.
+
+**Consequences.** The stamping machinery stays and is still tested (`recorder_drain_test`
+pins the hand-off) — this removes a *verb*, not a law. If the need reappears, it comes back
+as its own row with a stated use case rather than as an orphan button.
+
 ## Parked — awaiting decision (do not block earlier phases)
 
 | id | needed before | question |

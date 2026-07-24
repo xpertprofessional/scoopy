@@ -99,6 +99,12 @@ struct Deck {
     // --- render-owned ---------------------------------------------------------
     double playhead = 0.0;
     double smRate = 0.0; // D-WZ-RAMP-01-smoothed rate; 0 = seed from target
+    // CUE POINT (D-WZ-SCRUBCUE-01). Where you last scrubbed or seeked to, armed
+    // for exactly ONE trigger: ⟳ fires from here, and the loop wrap after it
+    // returns to the region entry. That is what makes "scrub to the drop, hit
+    // play" work without a second permanent start point to keep track of.
+    // -1 = nothing armed. Render-owned, like the playhead it shadows.
+    double cueFrame = -1.0;
 
 
     // --- render → UI (HotFrame deck block) ------------------------------------
@@ -175,6 +181,7 @@ struct Deck {
         chunkCount.store(0, std::memory_order_release);
         playhead = 0.0;
         smRate = 0.0;
+        cueFrame = -1.0; // new material, no cue
         recCapReached.store(0, std::memory_order_relaxed);
     }
 

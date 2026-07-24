@@ -17,7 +17,17 @@ function seconds(frames: number, rate: number): string {
   return s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)}s`
 }
 
-export function StripLoad({ index, link }: { index: number; link: EngineLink | null }) {
+export function StripLoad({
+  index,
+  link,
+  onMaterialChanged,
+}: {
+  index: number
+  link: EngineLink | null
+  /** Loading or inserting replaces what a cue point pointed at, so the Strip
+      disarms it (D-WZ-SCRUBCUE-01) — the engine's own reset does the same. */
+  onMaterialChanged?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const takes = useAppStore((s) => s.takes)
   const actions = usePatchActions(link)
@@ -59,6 +69,7 @@ export function StripLoad({ index, link }: { index: number; link: EngineLink | n
                   type="button"
                   title={`replace this strip's material with ${t.sourceDesc || t.path}`}
                   onClick={() => {
+                    onMaterialChanged?.()
                     void actions.loadIntoStrip(index, t.path)
                     setOpen(false)
                   }}
@@ -71,6 +82,7 @@ export function StripLoad({ index, link }: { index: number; link: EngineLink | n
                   type="button"
                   title="insert at the playhead — the rest shifts later"
                   onClick={() => {
+                    onMaterialChanged?.()
                     void actions.insertIntoStrip(index, t.path)
                     setOpen(false)
                   }}

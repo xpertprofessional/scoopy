@@ -122,6 +122,10 @@ export function Strip({
   // Punch mode: layer on top, or erase and write. Live engine state, not the
   // document — which mode you last punched in is not a property of the patch.
   const [punchMode, setPunchMode] = useState<'sum' | 'replace'>('sum')
+  /** Armed cue point, in frames — where the next ⟳ fires from, or null.
+      One-shot: the engine consumes it on the trigger, so the UI clears it on
+      the same gesture and the two never disagree (D-WZ-SCRUBCUE-01). */
+  const [cue, setCue] = useState<number | null>(null)
   const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
 
   const cell = channel.cell
@@ -266,8 +270,19 @@ export function Strip({
           loopStart={deck.loopStartSample}
           loopEnd={deck.loopEndSample}
           onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
-          onScrub={(frame) => actions.deckSeek(deck.id, frame)}
-          onTapeScrub={(phase, frame) => actions.deckScrub(deck.id, phase, frame)}
+          // Scrubbing ARMS a cue (D-WZ-SCRUBCUE-01): the next ⟳ fires from
+          // here. Mirrored in the UI rather than published from the engine —
+          // the UI is what issued the seek, so it already knows, and a new
+          // HotFrame field for something the UI can derive would be waste.
+          onScrub={(frame) => {
+            setCue(frame)
+            actions.deckSeek(deck.id, frame)
+          }}
+          onTapeScrub={(phase, frame) => {
+            if (phase !== 'begin') setCue(frame)
+            actions.deckScrub(deck.id, phase, frame)
+          }}
+          cue={cue}
           scale={scale}
           sampleRate={sampleRate}
           width={waveWidth}
@@ -326,6 +341,7 @@ export function Strip({
           }
           onClick={() => {
             if (recording && deck) return void actions.deckRecordStop(deck.id)
+            setCue(null) // new material: whatever you cued no longer exists
             if (rec) void actions.recordIntoStrip(index, rec.chan0, rec.chan1, channel.source.name)
           }}
         >
@@ -338,7 +354,7 @@ export function Strip({
         <button
           type="button"
           disabled={!hasMaterial}
-          onClick={() => deck && actions.deckTrigger(deck.id, 'loop')}
+          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'loop'))}
           title={hasMaterial ? 'loop' : 'loop — nothing recorded or loaded yet'}
         >
           ⟳
@@ -346,7 +362,7 @@ export function Strip({
         <button
           type="button"
           disabled={!hasMaterial}
-          onClick={() => deck && actions.deckTrigger(deck.id, 'oneShot')}
+          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'oneShot'))}
           title={hasMaterial ? 'one-shot' : 'one-shot — nothing recorded or loaded yet'}
         >
           ▸
@@ -354,7 +370,7 @@ export function Strip({
         <button
           type="button"
           disabled={!hasMaterial}
-          onClick={() => deck && actions.deckTrigger(deck.id, 'retrigger')}
+          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'retrigger'))}
           title="retrigger — seek to the region start, keep playing"
         >
           ⟲
@@ -367,7 +383,7 @@ export function Strip({
         >
           ◼
         </button>
-        <StripLoad index={index} link={link} />
+        <StripLoad index={index} link={link} onMaterialChanged={() => setCue(null)} />
         {/* PUNCH — available on ANY strip with material and a capturable source:
             a loaded file layers exactly like a recorded take, because a strip is
             a strip. OVR sums on top, RPL erases and writes; the small button
