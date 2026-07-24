@@ -111,6 +111,14 @@ struct wz_engine {
     double wdHoldRemaining = 0.0;
     double wdLimiterGain = 1.0;
     std::atomic<uint32_t> wdEngaged{0};
+    // PER-BUS watchdog state for buses 1..7. The detector and limiter used to
+    // exist only in the bus-0 loop, so a runaway on any other bus reached the
+    // device unlimited and unflagged — and external feedback enters on whatever
+    // bus its strip targets, which is not necessarily main. D-WZ-WATCHDOG-01
+    // says "a bus's RMS"; this makes the code mean it.
+    double wdBusMeanSquare[wz::kMaxOutBuses] = {};
+    double wdBusHold[wz::kMaxOutBuses] = {};
+    double wdBusGain[wz::kMaxOutBuses] = {};
     std::atomic<uint32_t> wdEnabled{1}; // test seam only; always 1 in the app
 
     // Deck units — stable engine objects (world commits never rebuild them) —
@@ -186,6 +194,11 @@ wz_engine* wz_engine_create(double sample_rate,
     e->wdMeanSquare = 0.0;
     e->wdHoldRemaining = 0.0;
     e->wdLimiterGain = 1.0;
+    for (uint32_t b = 0; b < wz::kMaxOutBuses; ++b) {
+        e->wdBusMeanSquare[b] = 0.0;
+        e->wdBusHold[b] = 0.0;
+        e->wdBusGain[b] = 1.0;
+    }
     e->wdEngaged.store(0, std::memory_order_relaxed);
     e->wdEnabled.store(1, std::memory_order_relaxed);
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
@@ -1252,14 +1265,15 @@ void wz_engine_render_io(wz_engine* e,
         if (wdOn) e->wdMeanSquare += wdAlpha * (power - e->wdMeanSquare);
         if (wdOn && e->wdMeanSquare > wdThresholdSq) {
             e->wdHoldRemaining = kWatchdogHoldSec; // (re)arm the hold
-            e->wdEngaged.store(1u, std::memory_order_relaxed);
         } else if (wdOn && e->wdHoldRemaining > 0.0) {
             e->wdHoldRemaining -= 1.0 / fs; // still holding after the level cleared
-            if (e->wdHoldRemaining <= 0.0) e->wdEngaged.store(0u, std::memory_order_relaxed);
         }
 
         // Hard ceiling, engaged/released through a ramp so it can never click.
-        const double target = e->wdEngaged.load(std::memory_order_relaxed) != 0
+        // Driven by THIS bus's own hold, not by the published alarm: the alarm is
+        // now the OR across all buses, and a runaway on bus 3 must not pull the
+        // main bus down with it.
+        const double target = e->wdHoldRemaining > 0.0
                                   ? kWatchdogCeiling / std::sqrt(std::max(e->wdMeanSquare,
                                                                           wdThresholdSq))
                                   : 1.0;
@@ -1291,11 +1305,41 @@ void wz_engine_render_io(wz_engine* e,
         float* busOutR = bus_out[chR];
         const double* srcBusL = e->accBusL[b].data();
         const double* srcBusR = e->accBusR[b].data();
+        const bool wdBusOn = e->wdEnabled.load(std::memory_order_relaxed) != 0;
         for (uint32_t i = 0; i < frames; ++i) {
-            if (busOutL != nullptr) busOutL[i] = static_cast<float>(srcBusL[i] * e->smMain);
-            if (busOutR != nullptr) busOutR[i] = static_cast<float>(srcBusR[i] * e->smMain);
+            double bl = srcBusL[i] * e->smMain;
+            double br = srcBusR[i] * e->smMain;
+            // Same detector and same ramped ceiling as main, with this bus's own
+            // state — RMS not peak, so a transient cannot trip it.
+            if (wdBusOn) {
+                const double p = 0.5 * (bl * bl + br * br);
+                e->wdBusMeanSquare[b] += wdAlpha * (p - e->wdBusMeanSquare[b]);
+                if (e->wdBusMeanSquare[b] > wdThresholdSq) e->wdBusHold[b] = kWatchdogHoldSec;
+                else if (e->wdBusHold[b] > 0.0) e->wdBusHold[b] -= 1.0 / fs;
+                const double tgt = e->wdBusHold[b] > 0.0
+                                       ? kWatchdogCeiling / std::sqrt(std::max(
+                                             e->wdBusMeanSquare[b], wdThresholdSq))
+                                       : 1.0;
+                if (e->wdBusGain[b] > tgt)
+                    e->wdBusGain[b] = std::max(tgt, e->wdBusGain[b] - wdReleaseStep);
+                else if (e->wdBusGain[b] < tgt)
+                    e->wdBusGain[b] = std::min(tgt, e->wdBusGain[b] + wdReleaseStep);
+                if (e->wdBusGain[b] < 1.0) { bl *= e->wdBusGain[b]; br *= e->wdBusGain[b]; }
+            }
+            if (busOutL != nullptr) busOutL[i] = static_cast<float>(bl);
+            if (busOutR != nullptr) busOutR[i] = static_cast<float>(br);
         }
     }
+    // ONE alarm lamp for the whole engine: the OR of every bus's hold. "Something
+    // is running away" is the fact the user needs, and a runaway limited silently
+    // on bus 3 would be worse than no lamp at all. Computed here, after every
+    // bus, so no bus can clear a lamp another bus is still holding up.
+    {
+        bool anyHold = e->wdHoldRemaining > 0.0;
+        for (uint32_t b = 1; b < wz::kMaxOutBuses; ++b) anyHold |= e->wdBusHold[b] > 0.0;
+        e->wdEngaged.store(anyHold ? 1u : 0u, std::memory_order_relaxed);
+    }
+
     // Any device channel with no bus mapped to it stays silent.
     for (uint32_t c = 4u + 2u * (wz::kMaxOutBuses - 1u); c < bus_count; ++c)
         if (bus_out != nullptr && bus_out[c] != nullptr)
