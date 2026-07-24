@@ -34,6 +34,10 @@
   the one legal cycle), the feedback watchdog, and the 8-bus spatial output map. Two
   provisional values parked as morning decisions #5/#6 — rows build with the proposal and
   re-tune on sign-off. P4-08 strip mode is HELD for decision #1 (PD-CANVAS).
+- **P7 sessions OPENED EARLY (2026-07-24).** Not phase order: the loop reached the end of
+  P2/P3/P4 work that does not need the user, and found that **nothing persists** — closing
+  Wizard destroys the patch, which anyone testing the gates will hit immediately. Spec
+  landed (P7-01); rows P7-02..P7-G1 seeded. Decision-light and additive w.r.t. PD-CANVAS.
 - **Later — phase by phase, each with its centerpiece fixture and its blocking decision:**
   - **P2 capture + ASRC.** Order: `wz_capture.h` + deterministic fake backend (fixtures
     first) → macOS taps (open/close/format-change/process-vanish lifecycle) → source rings
@@ -182,6 +186,23 @@ unified-cell UI is adopted, strip mode becomes "zoom out" and this row is re-sco
 | P4-11 | build | Loopback ↺ cells: a UI affordance that creates a busTap strip (record-own-output / resample the mix), in the routing matrix and/or sources rail | done | "↺ main" / "↺ cue" in the sources rail create a busTap strip — the LAST P4-G1 blocker cleared, resample-the-mix is now performable. **A loopback arrives MUTED by design: an unmuted unity loopback of main is an instant sustained feedback path, so the user unmutes deliberately with the watchdog behind them.** Asserted in the store test |
 | P4-12 | build | State the LoopbackBus one-block latency in the UI (spec §2: the honest price, stated not hidden) | done | a busTap strip wears its cost as "↺ +N.N ms", computed from the REAL device rate rather than quoted as an abstract "one block" |
 | P4-G1 | gate | **Phase gate (human) — the loop-jam demo:** record → instant deck-loop → reverse/varispeed it → overdub live on other decks → resample the mix, with decks spread across a >2-channel output layout | awaiting-signoff | NOW PERFORMABLE (P4-10 + P4-11 cleared the audit's blockers). Every move has a UI path: ●Rec → ■Stop (loops instantly, C-3) → drag the varispeed slider left of centre for reverse → ●Rec another deck while the first loops → "↺ main" in the sources rail, unmute it, record it into a deck (resample the mix) → per-strip "out" picker spreads decks across buses (unmapped ones are labelled on a stereo device). Engine halves all fixture-proven. **Caveat: varispeed interpolation is still LINEAR (P4-09, decision #5) — extreme slow-downs will not yet meet the GRM quality bar.** 21 native + 60 web green |
+
+## Phase P7 — sessions
+
+Spec: docs/specs/sessions.md. **Opened out of phase order (2026-07-24) because nothing
+persists**: closing Wizard destroys the patch. Decision-light and unblocked, so the loop
+took it while P2/P3/P4 sit at human gates. Additive w.r.t. PD-CANVAS (decision #1).
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P7-01 | spec | docs/specs/sessions.md: what a session is (Patch + references, not audio), STORED-zip package vs autosave, preserve-don't-drop restated for versions, atomic write + .bak, restore-is-a-publish, 4 fixtures | done | takes/samples by REFERENCE (never copy a user's library); unresolved refs keep the strip silent+marked, matching the vanished-source posture; decks land idle — an app that makes sound on launch is hostile |
+| P7-02 | schema | Session envelope + migration scaffold: schemaVersion gate (newer = refuse loudly, older = named per-version migrations), strict parse | todo | |
+| P7-03 | build | Autosave + restore: debounced atomic write (temp→fsync→rename) + .bak rotation in app support; load on launch with .bak fallback, corrupt file KEPT | todo | the row that actually stops work evaporating |
+| P7-04 | build | `.wizard` package save/load (STORED zip: session.json + Takes/ + Samples/) via native dialogs | todo | |
+| P7-05 | build | Unresolved-reference posture: missing take/sample → strip kept, marked, silent; re-save carries the reference | todo | |
+| P7-06 | fixture | session_roundtrip (deep-equal + byte-identical re-save), session_preserve (unknown key/newer/older), session_unresolved, session_atomic | todo | golden corpus |
+| P7-AUDIT | spec | Phase audit before the gate | todo | |
+| P7-G1 | gate | **Phase gate (human):** build a patch, quit, relaunch → it is exactly as you left it; kill the app mid-edit → restore works; share a `.wizard` package | todo | |
 
 ## Parked decisions
 
