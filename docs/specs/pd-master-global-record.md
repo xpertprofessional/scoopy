@@ -80,8 +80,57 @@ little silence on disk and buys files that correspond to musical events.
 
 Global capture stays **file-only**: no RAM buffer, no 256 MB cap, not live-loopable. It is
 the archivist, not the instrument. That is what keeps a 3-hour set possible when a deck caps
-at **11:39** stereo (`256 MiB/(ch·4)` — note D-WZ-DECK-01's "≈23 min stereo" is the *mono*
-figure and needs correcting).
+at **11:39** stereo (`256 MiB/(ch·4)`; D-WZ-DECK-01's "≈23 min stereo" was the *mono* figure
+mislabelled — corrected 2026-07-24).
+
+## 4a. One strip type — and where loopback actually lives
+
+*User direction, 2026-07-24: "'+ strip' still differs between decks and inputs, this needs
+to be fixed, there is only one type of strip, remember. also the loopback situation still
+seems unclear in this section. loopback would be an app input source we select, but this
+would happen globally through a routing matrix so we can flip inputs going to strips in
+real time."*
+
+**The bug.** `+ strip` had three creation paths — "an input", "an empty deck", "a loopback".
+That quietly reintroduced the three species PD-CANVAS exists to abolish: you could tell what
+a strip *was* by which button had made it, which is exactly the distinction "1 strip for all"
+removes. It also made §2 above ("every strip is a track, whatever kind it is") read as a
+claim about kinds that the creation UI kept contradicting.
+
+**The rule.** A strip has no kind. What it has is:
+
+| | what it is | how it changes |
+|---|---|---|
+| **source** | what the strip LISTENS TO — nothing, a device input, a stereo pair, or a bus tap | selectable, live, from `+ strip` or the routing matrix |
+| **material** | what the strip PLAYS — a deck buffer | gained by RECORDING or LOADING, never by being created differently |
+
+An "empty deck" is not a thing you create; it is a strip with no source yet, and it becomes
+a player the moment you load or record into it. This is why `deckOverdub` works on loaded
+files as readily as on takes (D-WZ-OVERDUB-01): there was never a second species to exclude.
+
+**Loopback is a source, not a species.** `↺ main` / `↺ cue` sit in the same flat list as the
+mics. Two properties come with it, and both now attach to the SOURCE rather than to a kind
+of strip:
+
+1. **The one legal cycle.** A bus tap reads the named bus's PREVIOUS block, taken after the
+   master fader and after the limiter, so what you tap is what actually left the bus.
+2. **Arrives muted.** An unmuted unity tap of main is an instant sustained feedback path.
+   Because the danger is in the source, the guard fires at BIRTH *and* when an existing
+   strip is re-pointed at a bus — the old code only guarded the creation path, so flipping
+   a live strip to loopback would have been unguarded.
+
+**The routing matrix is where inputs are flipped in real time.** It now carries an `in`
+column: every strip in one place, each with the whole source list. Re-pointing does not
+disturb material — a strip looping a take keeps looping while you change what it listens
+to, because `publishPatch` keeps a strip with material on its deck unless its monitor switch
+is open. A source that has vanished (device unplugged) stays listed as `(gone)` rather than
+the select silently displaying something the strip is not on.
+
+**Consequence for global record.** §2's "each strip reports like a single (stereo) track"
+needs no per-kind branching in the capture path, because after this there are no kinds: the
+post-fader tap is the same tap for a mic, a loopback and a deck. A loopback strip's file is
+a legitimate track — it is a recording of what a bus carried, which is often exactly the
+resample-the-mix gesture the user wanted taped.
 
 ## 5. What must NOT be reused
 

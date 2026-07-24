@@ -72,15 +72,12 @@ interface AppState {
   /** Topology edits — return the new Patch so the caller can publish it. */
   /** `at` places the new Strip on the map; omitted = the default cell origin. */
   addChannel: (name: string, source: SourceRef, at?: { x: number; y: number }) => Patch
-  addDeck: (at?: { x: number; y: number }) => Patch
   /** Give an existing Strip material: allocate a deck and point the Strip at it.
       This is what makes "recording is the verb that gives a Strip material" true
       without spawning a second object. Returns the deck id, or -1 if none free. */
   attachDeck: (index: number) => { patch: Patch; deckId: number }
-  /** Create a LoopbackBus strip (busTap): the one legal cycle — it reads the
-      named bus's PREVIOUS block, which is what makes record-own-output and
-      resample-the-mix possible without an illegal zero-delay cycle. */
-  addLoopback: (bus: number, at?: { x: number; y: number }) => Patch
+  /** Flip which source a live strip listens to (routing matrix, inspector). */
+  setChannelSource: (index: number, source: SourceRef) => Patch
   /** Remove a strip. A deck strip also removes its deck — only the HIGHEST
       deck id is removable (no id renumbering; matches add/remove-at-the-end).
       Returns the unchanged patch when the removal is not legal. */
@@ -203,42 +200,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   addChannel: (name, source, at) => {
     const patch = get().patch
     const base = makeChannel(`ch-${nextKey++}`, name, source)
-    const ch = at ? { ...base, cell: { ...base.cell, x: at.x, y: at.y } } : base
+    const placed = at ? { ...base, cell: { ...base.cell, x: at.x, y: at.y } } : base
+    // A strip listening to a BUS arrives MUTED. An unmuted unity tap of main is
+    // an instant sustained feedback path, and that danger belongs to the SOURCE,
+    // not to some separate "loopback strip" species — so the guard lives on the
+    // one creation path where every strip is born. Unmuting stays deliberate,
+    // with the watchdog behind it.
+    const ch = placed.source.kind === 'busTap' ? { ...placed, mute: true } : placed
     const next = { ...patch, channels: [...patch.channels, ch] }
-    set({ patch: next })
-    return next
-  },
-
-  addDeck: (at) => {
-    const patch = get().patch
-    if (patch.decks.length >= 8) return patch
-    const id = patch.decks.length
-    const deck: Deck = {
-      id,
-      name: `Deck ${id + 1}`,
-      loopEnabled: true, // Law C-3 posture: stop → instant loop is the default
-      loopStartSample: 0,
-      loopEndSample: 0,
-      rate: 1,
-      sourcePath: '',
-    }
-    const strip = {
-      // A deck strip HAS material by construction (PD-CANVAS-06): source still
-      // carries kind 'deck' because the engine renders from it, and material is
-      // what the UI asks. Both are set here so the two never disagree.
-      ...makeChannel(`deck-${id}`, deck.name, {
-        kind: 'deck',
-        id: String(id),
-        name: deck.name,
-      }),
-      material: { deckId: id },
-    }
-    if (at) strip.cell = { ...strip.cell, x: at.x, y: at.y }
-    const next = {
-      ...patch,
-      decks: [...patch.decks, deck],
-      channels: [...patch.channels, strip],
-    }
     set({ patch: next })
     return next
   },
@@ -248,8 +217,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ch = patch.channels[index]
     if (!ch) return patch
     let decks = patch.decks
-    if (ch.source.kind === 'deck') {
-      const deckId = Number(ch.source.id)
+    // MATERIAL, not source kind, is what owns a deck. A strip that recorded or
+    // loaded keeps listening to its input, so the old `source.kind === 'deck'`
+    // test missed every normal case and leaked the deck — until all 8 were gone
+    // and recording started failing with no explanation.
+    if (ch.material) {
+      const deckId = ch.material.deckId
       const maxId = Math.max(...patch.decks.map((d) => d.id))
       if (deckId !== maxId) return patch // only the last deck is removable
       decks = patch.decks.filter((d) => d.id !== deckId)
@@ -283,19 +256,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { patch: next, deckId: id }
   },
 
-  addLoopback: (bus, at) => {
+  /** Re-point a strip at a different source, live. Sources are a CHOICE, not a
+      species (pd-merge §3), so this is an ordinary edit — the same strip keeps
+      its material, geometry, routing and name. Republished by the caller because
+      the engine DOES have an opinion here, unlike geometry. */
+  setChannelSource: (index, source) => {
     const patch = get().patch
-    const label = bus === 0 ? 'main' : 'monitor'
-    const strip = makeChannel(`loopback-${nextKey++}`, `↺ ${label}`, {
-      kind: 'busTap',
-      id: String(bus),
-      name: `${label} bus`,
-    })
-    // A loopback defaults MUTED: an unmuted unity loopback of main is an
-    // instant sustained feedback path. The user unmutes deliberately, with the
-    // watchdog behind them.
-    const placed = at ? { ...strip, cell: { ...strip.cell, x: at.x, y: at.y } } : strip
-    const next = { ...patch, channels: [...patch.channels, { ...placed, mute: true }] }
+    const ch = patch.channels[index]
+    if (!ch) return patch
+    // Same feedback guard as birth: pointing a live strip at a bus is exactly as
+    // dangerous as creating it there, so it lands muted too.
+    const nextCh = { ...ch, source, mute: source.kind === 'busTap' ? true : ch.mute }
+    const channels = patch.channels.map((c, i) => (i === index ? nextCh : c))
+    const next = { ...patch, channels }
     set({ patch: next })
     return next
   },

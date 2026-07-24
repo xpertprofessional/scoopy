@@ -15,7 +15,7 @@ actually build. The reviews are kept as reference, not as a backlog.
 | **Map** | the boundless plane; every Strip lives here. There is no second place a Strip can be. | `plane/Plane.tsx` |
 | **Strip** | the ONE object. Input, tap, loopback, deck-with-material are states of it, never separate species. | `plane/Strip.tsx` |
 | **Master strip** | main fader, monitor/cue, main+monitor meters, feedback lamp. Fixed, always visible — it is not a Strip on the map because it is the destination, not a source. | `panels/MasterSection.tsx` |
-| **Routing matrix** | the bus ledger. Summoned, not resident. | `panels/RoutingMatrix.tsx` |
+| **Routing matrix** | the bus ledger — and the global place where each strip's INPUT is flipped, live. Summoned, not resident. | `panels/RoutingMatrix.tsx` |
 | **Settings** | device in/out, capabilities, session/package actions. Summoned, not resident. | new, absorbs `panels/DevicePicker.tsx` |
 
 Everything else is **deleted**, not hidden: `SourcesBrowser`, `ChannelRack`, `DeckRack`,
@@ -44,6 +44,22 @@ Nothing is lost; each job moves onto one of the four.
 
 - **Binding a source** (was `SourcesBrowser`) → an **add-strip** action on the map. Pick a
   source, a Strip appears. That is the only creation gesture.
+  - **A strip has no kind — only a source and (maybe) material.** *(Fixed 2026-07-24: the
+    first `+ strip` shipped three creation paths — "an input", "an empty deck", "a
+    loopback" — which reintroduced the very species this phase abolishes. You could tell
+    what a strip *was* by which button had made it.)* One flat list of things a strip can
+    LISTEN TO: nothing, a device input, a stereo pair, `↺ main`, `↺ cue`. An "empty deck"
+    is just a strip whose source is *nothing*; it becomes a player the moment you record or
+    load into it. This is the same reason overdub works on a loaded file as readily as on
+    a take — there was never a second species to exclude.
+  - **Loopback is a source you select, not a kind of strip.** It is Wizard's own bus, read
+    one block behind (the one legal cycle), sampled after the master fader and limiter. Its
+    danger belongs to the source too: a strip listening to a bus **arrives muted**, at
+    creation *and* when a live strip is re-pointed at one.
+  - **The routing matrix is where inputs are flipped in real time** — an `in` column, every
+    strip in one place, the whole source list on each. Re-pointing never disturbs material:
+    a strip looping a take keeps looping while you change what it hears. A vanished source
+    stays listed as `(gone)` instead of the control silently showing something else.
 - **Takes** (was `TakesPanel`) → takes are **material**, and material belongs to a Strip.
   Loading a take is an action *on a Strip*; the take list is reached from the same
   add-strip affordance. No fifth surface.

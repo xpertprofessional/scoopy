@@ -1,5 +1,13 @@
 /**
- * Routing matrix v0 (collapsible, ARCHITECTURE §7.1): channels × buses.
+ * Routing matrix (collapsible, ARCHITECTURE §7.1): channels × sources × buses.
+ *
+ * The IN column is the global place where inputs are flipped in real time: every
+ * strip on one screen, each with the whole source list — device inputs, nothing,
+ * and the loopback taps of Wizard's own buses. Loopback is a SOURCE YOU SELECT,
+ * not a kind of strip, so it appears here beside the mics rather than as a thing
+ * you had to create differently. Re-pointing does not disturb material: a strip
+ * looping a take keeps looping while you change what it listens to.
+ *
  * P1 buses are main (every strip feeds it — a fixed cell, not an option) and
  * monitor (editable — the same document field as the strip's C switch, one
  * truth). Loopback ↺ cells and user output buses appear in P4; cycle-creating
@@ -9,6 +17,7 @@
 import { useState } from 'react'
 import type { EngineLink } from '../engine/engineLink'
 import { usePatchActions } from '../engine/usePatch'
+import { availableSources } from '../plane/AddStrip'
 import { useAppStore } from '../store/appStore'
 
 export function RoutingMatrix({ link }: { link: EngineLink | null }) {
@@ -16,6 +25,7 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
   const channels = useAppStore((s) => s.patch.channels)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const actions = usePatchActions(link)
+  const sources = availableSources(deviceInfo?.inputs ?? [])
 
   return (
     <section className="matrix raised">
@@ -28,6 +38,7 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
             <thead>
               <tr>
                 <th />
+                <th>in</th>
                 <th>out bus</th>
                 <th>monitor</th>
               </tr>
@@ -36,6 +47,34 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
               {channels.map((ch, i) => (
                 <tr key={ch.key}>
                   <td className="matrix-name">{ch.name}</td>
+                  <td>
+                    <select
+                      title="what this strip listens to — changeable live"
+                      value={`${ch.source.kind}:${ch.source.id}`}
+                      onChange={(ev) => {
+                        const picked = sources.find(
+                          (s) => `${s.source.kind}:${s.source.id}` === ev.target.value,
+                        )
+                        if (picked) actions.setStripSource(i, picked.source)
+                      }}
+                    >
+                      {/* The strip's CURRENT source stays listed even if the
+                          device that provided it is gone — otherwise the select
+                          would silently show something the strip is not on. */}
+                      {!sources.some(
+                        (s) => `${s.source.kind}:${s.source.id}` === `${ch.source.kind}:${ch.source.id}`,
+                      ) && (
+                        <option value={`${ch.source.kind}:${ch.source.id}`}>
+                          {ch.source.name || ch.source.kind} (gone)
+                        </option>
+                      )}
+                      {sources.map((s) => (
+                        <option key={`${s.source.kind}:${s.source.id}`} value={`${s.source.kind}:${s.source.id}`}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="matrix-fixed" title="output bus (bus 1 = main)">
                     {ch.outBus === 0 ? 'main' : `bus ${ch.outBus + 1}`}
                   </td>
@@ -52,7 +91,7 @@ export function RoutingMatrix({ link }: { link: EngineLink | null }) {
               ))}
               {channels.length === 0 && (
                 <tr>
-                  <td className="dim" colSpan={3}>
+                  <td className="dim" colSpan={4}>
                     no channels
                   </td>
                 </tr>

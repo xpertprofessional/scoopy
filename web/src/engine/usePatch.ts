@@ -80,10 +80,9 @@ async function loadTakeInto(
 
 export function usePatchActions(link: EngineLink | null) {
   const addChannel = useAppStore((s) => s.addChannel)
-  const addDeck = useAppStore((s) => s.addDeck)
   const attachDeck = useAppStore((s) => s.attachDeck)
-  const addLoopback = useAppStore((s) => s.addLoopback)
   const setChannelParam = useAppStore((s) => s.setChannelParam)
+  const setChannelSource = useAppStore((s) => s.setChannelSource)
   const setDeckSourcePath = useAppStore((s) => s.setDeckSourcePath)
   const removeChannel = useAppStore((s) => s.removeChannel)
   const addTake = useAppStore((s) => s.addTake)
@@ -98,13 +97,16 @@ export function usePatchActions(link: EngineLink | null) {
     addSourceChannel(name: string, source: SourceRef, at?: { x: number; y: number }) {
       publishPatch(link, addChannel(name, source, at))
     },
-    /** Add a deck + its strip and publish. */
-    addDeckWithStrip(at?: { x: number; y: number }) {
-      publishPatch(link, addDeck(at))
-    },
-    /** Add a LoopbackBus strip and publish. Arrives muted — see addLoopback. */
-    addLoopbackStrip(bus: number, at?: { x: number; y: number }) {
-      publishPatch(link, addLoopback(bus, at))
+    /**
+     * FLIP A LIVE STRIP'S SOURCE (routing matrix, real time). One strip type,
+     * so this is not "converting" anything — it is the same edit as changing a
+     * strip's output bus, in the other direction. Material is untouched: a strip
+     * playing a take keeps playing it (publishPatch keeps a strip with material
+     * on its deck unless the monitor switch is open), so re-pointing the input
+     * of something mid-loop does not interrupt it.
+     */
+    setStripSource(index: number, source: SourceRef) {
+      publishPatch(link, setChannelSource(index, source))
     },
     /**
      * RECORD INTO A STRIP (D-WZ-RECMODEL-01 step A) — recording is the verb that
