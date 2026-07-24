@@ -30,6 +30,13 @@ interface AppState {
   deckStates: number[]
   /** Per-deck 'the 256 MB cap stopped this recording' flags (D-WZ-DECK-01). */
   deckCapReached: boolean[]
+  /**
+   * Per-deck 'its referenced audio could not be loaded' flags. RUNTIME truth,
+   * deliberately NOT in the document: the Patch keeps the reference so a
+   * re-save never drops it (preserve-don't-drop) — the deck stays, marked and
+   * silent, exactly as a vanished source leaves its strip in place.
+   */
+  deckUnresolved: boolean[]
   /** The session's takes, newest last (from listTakes / deckRecordStop). */
   takes: Take[]
   /** Which take the deck rack aligns others against (Law C-2 reference). */
@@ -54,6 +61,7 @@ interface AppState {
   sessionNotice: string
   setSessionNotice: (n: string) => void
   setDeckCapReached: (c: boolean[]) => void
+  setDeckUnresolved: (id: number, unresolved: boolean) => void
   setTakes: (t: Take[]) => void
   addTake: (t: Take) => void
   removeTake: (path: string) => void
@@ -94,6 +102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   feedbackAlarm: false,
   deckStates: [],
   deckCapReached: [],
+  deckUnresolved: [],
   takes: [],
   deckRevisions: [],
   alignReferencePath: null,
@@ -108,6 +117,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPatch: (patch) => set({ patch }),
   setSessionNotice: (sessionNotice) => set({ sessionNotice }),
   setDeckCapReached: (deckCapReached) => set({ deckCapReached }),
+  setDeckUnresolved: (id, unresolved) => {
+    const flags = get().deckUnresolved.slice()
+    flags[id] = unresolved
+    set({ deckUnresolved: flags })
+  },
   setTakes: (takes) => set({ takes }),
   addTake: (t) => set({ takes: [...get().takes, t] }),
   removeTake: (path) =>

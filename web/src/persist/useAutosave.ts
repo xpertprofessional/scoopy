@@ -13,6 +13,37 @@ import { publishPatch } from '../engine/usePatch'
 import { useAppStore } from '../store/appStore'
 import { loadSession, makeSession, serializeSession } from './session'
 
+/**
+ * Re-load each deck's referenced audio after a restore (sessions.md §5). A
+ * reference that no longer resolves leaves the deck IN PLACE, marked and
+ * silent — never dropped — matching the vanished-source posture the whole app
+ * takes. Returns the number of decks that could not be resolved.
+ */
+export async function rehydrateDecks(
+  link: EngineLink,
+  patch: Patch,
+  setUnresolved: (deck: number, unresolved: boolean) => void,
+  bumpRevision: (deck: number) => void,
+): Promise<number> {
+  let unresolved = 0
+  for (const deck of patch.decks) {
+    if (deck.sourcePath === '') {
+      setUnresolved(deck.id, false)
+      continue
+    }
+    try {
+      const r = await link.command('deckLoadTake', { deck: deck.id, path: deck.sourcePath })
+      setUnresolved(deck.id, !r.ok)
+      if (r.ok) bumpRevision(deck.id)
+      else unresolved++
+    } catch {
+      setUnresolved(deck.id, true)
+      unresolved++
+    }
+  }
+  return unresolved
+}
+
 /** Wait this long after the last edit before writing. Long enough that a fader
     drag is one write, short enough that a crash loses almost nothing. */
 export const AUTOSAVE_DEBOUNCE_MS = 2000
@@ -70,6 +101,23 @@ export function useAutosave(link: EngineLink | null, nowIso: () => string): void
         if (outcome.patch) {
           store.setPatch(outcome.patch)
           publishPatch(link, outcome.patch) // restore IS a publish
+          // Then rehydrate deck audio from its references. Decks land idle —
+          // an app that starts making sound on launch is hostile.
+          void rehydrateDecks(
+            link,
+            outcome.patch,
+            store.setDeckUnresolved,
+            store.bumpDeckRevision,
+          ).then((missing) => {
+            if (missing > 0)
+              useAppStore
+                .getState()
+                .setSessionNotice(
+                  `${missing} deck${missing === 1 ? '' : 's'} could not find ${
+                    missing === 1 ? 'its' : 'their'
+                  } audio — kept in place, silent`,
+                )
+          })
         }
         if (outcome.problem) store.setSessionNotice(outcome.problem)
         // Only allow autosave AFTER a restore attempt has resolved — otherwise

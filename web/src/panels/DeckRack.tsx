@@ -18,6 +18,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
   const channelCount = useAppStore((s) => s.patch.channels.length)
   const deckStates = useAppStore((s) => s.deckStates)
   const deckCapReached = useAppStore((s) => s.deckCapReached)
+  const deckUnresolved = useAppStore((s) => s.deckUnresolved)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const deckRevisions = useAppStore((s) => s.deckRevisions)
   const takes = useAppStore((s) => s.takes)
@@ -31,6 +32,7 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
         const state = deckStates[deck.id] ?? 0
         const recording = state === RECORDING
         const capped = deckCapReached[deck.id] ?? false
+        const unresolved = deckUnresolved[deck.id] ?? false
         const fileName = deck.sourcePath.split('/').pop() ?? ''
         // Record the first input channel by default; the source picker gets a
         // per-deck input choice when the unified-cell UI lands (PD-CANVAS).
@@ -57,6 +59,14 @@ export function DeckRack({ link }: { link: EngineLink | null }) {
               onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
             />
             <div className="deck-file dim">{fileName || 'empty'}</div>
+            {unresolved && (
+              <div
+                className="deck-unresolved"
+                title={`this deck's audio could not be found (${deck.sourcePath}) — the deck is kept and its reference preserved, so restoring the file brings it back`}
+              >
+                audio missing
+              </div>
+            )}
             {capped && (
               <div className="deck-cap" title="256 MB deck memory cap reached — recording stopped; the take is on disk and still loops">
                 cap

@@ -531,3 +531,15 @@ canvas.meter {
   border-radius: var(--radius);
   padding: 2px 8px;
 }
+
+/* A deck whose audio vanished is MARKED, never removed — the reference is
+   preserved so restoring the file brings it back. */
+.deck-unresolved {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  text-transform: var(--type-label-transform);
+  color: var(--bg);
+  background: var(--hot);
+  border-radius: var(--radius);
+  text-align: center;
+}

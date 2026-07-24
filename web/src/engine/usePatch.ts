@@ -159,6 +159,7 @@ export function usePatchActions(link: EngineLink | null) {
     async deckLoadTake(deck: number, path: string) {
       if (!link) return
       const r = await link.command('deckLoadTake', { deck, path })
+      useAppStore.getState().setDeckUnresolved(deck, !r.ok)
       if (r.ok) {
         setDeckSourcePath(deck, path)
         bumpDeckRevision(deck)
