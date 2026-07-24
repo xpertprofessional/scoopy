@@ -78,6 +78,10 @@ add_executable(deck_handoff_test tools/deck_handoff_test.cpp)
 target_link_libraries(deck_handoff_test PRIVATE wz_engine)
 add_test(NAME deck_handoff_test COMMAND deck_handoff_test)
 
+add_executable(loopback_test tools/loopback_test.cpp)
+target_link_libraries(loopback_test PRIVATE wz_engine)
+add_test(NAME loopback_test COMMAND loopback_test)
+
 add_executable(varispeed_test tools/varispeed_test.cpp)
 target_link_libraries(varispeed_test PRIVATE wz_engine)
 add_test(NAME varispeed_test COMMAND varispeed_test)

@@ -55,3 +55,21 @@ test('degenerate deck loops are refused', () => {
   }
   expect(validatePatch(patch).some((e) => e.includes('loop end before start'))).toBe(true)
 })
+
+test('a busTap is the one legal cycle — valid buses only', () => {
+  const ok = {
+    ...emptyPatch(),
+    channels: [makeChannel('lb', 'Loopback', { kind: 'busTap', id: '0', name: 'main' })],
+  }
+  expect(validatePatch(ok)).toEqual([]) // main loopback is legal (P4-03)
+  const cue = {
+    ...emptyPatch(),
+    channels: [makeChannel('lb', 'Cue loop', { kind: 'busTap', id: '1', name: 'monitor' })],
+  }
+  expect(validatePatch(cue)).toEqual([])
+  const bad = {
+    ...emptyPatch(),
+    channels: [makeChannel('lb', 'Nowhere', { kind: 'busTap', id: '9', name: '' })],
+  }
+  expect(validatePatch(bad).some((e) => e.includes('unknown bus'))).toBe(true)
+})

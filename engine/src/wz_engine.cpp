@@ -87,6 +87,12 @@ struct wz_engine {
     // Preallocated float64 bus accumulators (D-WZ-DSP-01), maxBlockFrames each
     // — sized at create so render never allocates.
     std::vector<double> accMainL, accMainR, accMonL, accMonR;
+    // LoopbackBus (P4-03, spec §2): the PREVIOUS block of each bus, kept so a
+    // patch may route a bus back into a channel. The one-block delay is what
+    // makes the cycle well-defined and keeps the render schedule acyclic BY
+    // CONSTRUCTION — no cycle detection ever runs on the audio thread.
+    std::vector<float> loopbackMainL, loopbackMainR, loopbackMonL, loopbackMonR;
+    uint32_t loopbackFrames = 0; // valid frames in the snapshot
 
     // Deck units — stable engine objects (world commits never rebuild them) —
     // plus per-deck preallocated block scratch the deck strips read from.
@@ -151,6 +157,11 @@ wz_engine* wz_engine_create(double sample_rate,
         e->deckRecArm[d].store(0, std::memory_order_relaxed);
     }
     e->recScratch.assign(static_cast<size_t>(max_block_frames) * 2u, 0.0f);
+    e->loopbackMainL.assign(max_block_frames, 0.0f);
+    e->loopbackMainR.assign(max_block_frames, 0.0f);
+    e->loopbackMonL.assign(max_block_frames, 0.0f);
+    e->loopbackMonR.assign(max_block_frames, 0.0f);
+    e->loopbackFrames = 0;
     e->world.store(new (std::nothrow) wz::World(), std::memory_order_release);
     e->renderWorldRev.store(0, std::memory_order_relaxed);
     e->rings.resize(40); // fixed slot table; grown-never in steady state
@@ -805,6 +816,17 @@ void wz_engine_render_io(wz_engine* e,
                        static_cast<uint32_t>(ch.deckIndex) < wz::kMaxDecks) {
                 srcL = e->deckOutL[ch.deckIndex].data();
                 srcR = e->deckOutR[ch.deckIndex].data();
+            } else if (ch.srcKind == wz::SourceKind::busTap) {
+                // THE ONE LEGAL CYCLE: a busTap strip reads the PREVIOUS block
+                // of a bus (srcChan0: 0 = main, 1 = monitor). One block of
+                // latency — the honest price, stated in the UI, never hidden.
+                if (ch.srcChan0 == 1) {
+                    srcL = e->loopbackMonL.data();
+                    srcR = e->loopbackMonR.data();
+                } else {
+                    srcL = e->loopbackMainL.data();
+                    srcR = e->loopbackMainR.data();
+                }
             } else if ((ch.srcKind == wz::SourceKind::appTap ||
                         ch.srcKind == wz::SourceKind::systemMixExcept ||
                         ch.srcKind == wz::SourceKind::virtualDeviceInput) &&
@@ -898,6 +920,18 @@ void wz_engine_render_io(wz_engine* e,
         for (uint32_t b = 4; b < bus_count; ++b)
             if (bus_out[b] != nullptr)
                 for (uint32_t i = 0; i < frames; ++i) bus_out[b][i] = 0.0f;
+
+    // Snapshot the buses for the next block's LoopbackBus reads. Taken AFTER
+    // the master fader so a loopback strip hears what actually left the bus.
+    // (A block shorter than the last leaves stale tail frames unread: readers
+    // only ever consume `frames`, which is why loopbackFrames is tracked.)
+    for (uint32_t i = 0; i < frames; ++i) {
+        e->loopbackMainL[i] = outL != nullptr ? outL[i] : 0.0f;
+        e->loopbackMainR[i] = outR != nullptr ? outR[i] : 0.0f;
+        e->loopbackMonL[i] = cueL != nullptr ? cueL[i] : 0.0f;
+        e->loopbackMonR[i] = cueR != nullptr ? cueR[i] : 0.0f;
+    }
+    e->loopbackFrames = frames;
 
     e->mainPeakL.store(mainPkL, std::memory_order_relaxed);
     e->mainPeakR.store(mainPkR, std::memory_order_relaxed);
