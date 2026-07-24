@@ -816,3 +816,29 @@ canvas.meter {
   background: var(--warn);
   border-color: var(--warn);
 }
+
+/* Settings — a summoned surface, same idiom as the routing matrix (PD-MERGE). */
+.settings {
+  padding: 6px;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.settings-body h3 {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  margin: 6px 0 2px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 6px;
+}

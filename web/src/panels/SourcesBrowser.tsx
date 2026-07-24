@@ -7,7 +7,6 @@
 import type { EngineLink } from '../engine/engineLink'
 import { usePatchActions } from '../engine/usePatch'
 import { useAppStore } from '../store/appStore'
-import { DevicePicker } from './DevicePicker'
 
 export function SourcesBrowser({ link }: { link: EngineLink | null }) {
   const deviceInfo = useAppStore((s) => s.deviceInfo)
@@ -19,10 +18,6 @@ export function SourcesBrowser({ link }: { link: EngineLink | null }) {
   return (
     <aside className="sources raised">
       <h2>Sources</h2>
-      {deviceInfo && deviceInfo.error !== '' && (
-        <p className="dim">device: {deviceInfo.error}</p>
-      )}
-      <DevicePicker link={link} />
       <h3>{deviceInfo ? deviceInfo.inputDeviceName || 'no input device' : 'no device'}</h3>
       <ul>
         {inputs.map((input, i) => {

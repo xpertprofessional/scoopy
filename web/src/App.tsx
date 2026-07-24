@@ -7,8 +7,6 @@
 import { useAppStore } from './store/appStore'
 import { useEngineLink } from './engine/useEngineLink'
 import { useAutosave } from './persist/useAutosave'
-import { openPackage, savePackage } from './persist/packageIo'
-import { publishPatch } from './engine/usePatch'
 import { SourcesBrowser } from './panels/SourcesBrowser'
 import { ChannelRack } from './panels/ChannelRack'
 import { DeckRack } from './panels/DeckRack'
@@ -16,6 +14,7 @@ import { MasterSection } from './panels/MasterSection'
 import { RoutingMatrix } from './panels/RoutingMatrix'
 import { TakesPanel } from './panels/TakesPanel'
 import { Plane } from './plane/Plane'
+import { Settings } from './panels/Settings'
 
 const STATUS_LABEL: Record<string, string> = {
   disconnected: 'disconnected',
@@ -35,28 +34,6 @@ export function App() {
   const sessionNotice = useAppStore((s) => s.sessionNotice)
   const view = useAppStore((s) => s.view)
   const setView = useAppStore((s) => s.setView)
-
-  // Package save/open. The shell owns the dialog; packageIo owns the decisions.
-  const onSave = async () => {
-    if (!link) return
-    const store = useAppStore.getState()
-    const r = await savePackage(link, store.patch, nowIso())
-    if (r.notice !== '') store.setSessionNotice(r.notice)
-  }
-  const onOpen = async () => {
-    if (!link) return
-    const store = useAppStore.getState()
-    const r = await openPackage(
-      link,
-      (p) => {
-        store.setPatch(p)
-        publishPatch(link, p) // opening IS a publish, same path as any edit
-      },
-      store.setDeckUnresolved,
-      store.bumpDeckRevision,
-    )
-    if (r.notice !== '') useAppStore.getState().setSessionNotice(r.notice)
-  }
 
   const seconds = deviceInfo && deviceInfo.sampleRate > 0
     ? (engineTimeSamples / deviceInfo.sampleRate).toFixed(1) + ' s'
@@ -86,14 +63,6 @@ export function App() {
             Plane
           </button>
         </span>
-        <span className="topbar-actions">
-          <button type="button" onClick={() => void onOpen()} disabled={!link}>
-            Open package…
-          </button>
-          <button type="button" onClick={() => void onSave()} disabled={!link}>
-            Save package…
-          </button>
-        </span>
       </header>
       {sessionNotice !== '' && (
         <div className="session-notice" role="status">
@@ -118,6 +87,7 @@ export function App() {
       )}
       <TakesPanel link={link} />
       <RoutingMatrix link={link} />
+      <Settings link={link} />
     </div>
   )
 }
