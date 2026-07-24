@@ -380,10 +380,15 @@ canvas.meter {
 }
 /* Transport + switches share one row; switches sit right so the play verbs
    stay together on the left where the hand expects them. */
+/* The transport is ten controls. It WRAPS rather than overflowing, because the
+   Strip clips — an un-wrapped row loses whichever controls fall off the end, and
+   silently losing a control is worse than a taller strip. */
 .plane-strip-transport {
   display: flex;
   align-items: center;
   gap: 3px;
+  flex-wrap: wrap;
+  row-gap: 3px;
 }
 .plane-strip-switches {
   display: flex;

@@ -109,6 +109,30 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       },
     },
 
+    // v24 -> v25: the Strip grew again (overdub + input-monitor), so the default
+    // size grew to hold the full control set without clipping. PRESERVES x/y —
+    // strips can be dragged, so an arrangement exists and must survive a size
+    // change. Only w/h are updated.
+    24: {
+      to: 25,
+      name: 'grow-strip-for-full-controls (keeps positions)',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        const channels = Array.isArray(patch.channels) ? patch.channels : []
+        return {
+          ...s,
+          patch: {
+            ...patch,
+            channels: channels.map((raw) => {
+              const ch = raw as RawSession
+              const cell = (ch.cell ?? {}) as RawSession
+              return { ...ch, cell: { ...cell, w: DEFAULT_CELL.w, h: DEFAULT_CELL.h } }
+            }),
+          },
+        }
+      },
+    },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.
