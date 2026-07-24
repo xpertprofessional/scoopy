@@ -22,3 +22,5 @@ add_compile_definitions(JUCE_USE_CURL=0)
 add_subdirectory(engine)
 add_subdirectory(host)
 add_subdirectory(shell)
+# TEMPORARY (P1 spike): removed with spike/ once the WebView verdict is written.
+add_subdirectory(spike)
