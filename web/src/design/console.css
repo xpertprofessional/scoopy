@@ -345,8 +345,10 @@ canvas.meter {
   cursor: default; /* controls, not the pan surface */
   /* Height is honoured (not just width) so a Strip NEVER resizes on a state
      change — a learned constraint here, and fitToContent frames against the
-     persisted cell.h, so a box that grows silently corrupts the fit. */
-  overflow: hidden;
+     persisted cell.h, so a box that grows silently corrupts the fit.
+     overflow stays VISIBLE: the load menu is positioned outside the box, and
+     clipping it made "load" look dead. The height is sized to hold the full
+     anatomy, so there is nothing to clip anyway. */
   box-sizing: border-box;
 }
 .plane-strip-head {
@@ -676,4 +678,23 @@ select.plane-strip-bus.plane-strip-bus-unmapped {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Loud failure banners. A dead engine or a missing input device must never look
+   like a styling problem — that is exactly how this went unnoticed. */
+.banner {
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+}
+
+.banner-bad {
+  background: var(--hot);
+  color: var(--bg);
+}
+
+.banner-warn {
+  background: var(--warn);
+  color: var(--bg);
 }

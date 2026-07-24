@@ -20,15 +20,37 @@ const FEEDBACK_INDEX = HOT_FRAME_SCALARS.indexOf('feedbackAlarm')
 export function useEngineLink(): EngineLink | null {
   const [link, setLink] = useState<EngineLink | null>(null)
 
+  // --- acquire the bridge ---------------------------------------------------
+  // window.__JUCE__ is injected by the shell and is NOT guaranteed to exist by
+  // the time React mounts. Reading it once and latching the result meant a
+  // single lost race left the whole app inert — no device, no meters, no
+  // recording, autosave silently never running — while looking like a UI bug.
   useEffect(() => {
-    const store = useAppStore.getState()
     const created = createEngineLink()
-    setLink(created)
-    if (!created) {
-      store.setShellStatus('no-engine')
+    if (created) {
+      setLink(created)
       return
     }
+    useAppStore.getState().setShellStatus('connecting')
+    let tries = 0
+    const retry = setInterval(() => {
+      const late = createEngineLink()
+      if (late) {
+        clearInterval(retry)
+        setLink(late)
+      } else if (++tries > 50) {
+        clearInterval(retry)
+        useAppStore.getState().setShellStatus('no-engine')
+      }
+    }, 100)
+    return () => clearInterval(retry)
+  }, [])
 
+  // --- boot the transport once we HAVE a link -------------------------------
+  useEffect(() => {
+    if (!link) return
+    const store = useAppStore.getState()
+    const created = link
     let cancelled = false
     store.setShellStatus('connecting')
 
@@ -95,7 +117,7 @@ export function useEngineLink(): EngineLink | null {
       off()
       offDeckLoad()
     }
-  }, [])
+  }, [link])
 
   return link
 }

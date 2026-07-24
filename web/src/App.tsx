@@ -50,6 +50,28 @@ export function App() {
           {seconds}
         </span>
       </header>
+      {/* Loud, unmissable failure states. These were silent before: with no
+          bridge the whole app looked like a styling problem, and with no input
+          device every Strip was inert for no stated reason. Silence with no
+          explanation is the worst outcome this app can produce. */}
+      {shellStatus !== 'connected' && (
+        <div className="banner banner-bad" role="alert">
+          {shellStatus === 'no-engine'
+            ? 'NOT CONNECTED to the audio engine — nothing on this page can make or record sound. (Are you running the built app, not a browser?)'
+            : 'connecting to the audio engine…'}
+        </div>
+      )}
+      {shellStatus === 'connected' && deviceInfo && deviceInfo.error !== '' && (
+        <div className="banner banner-bad" role="alert">
+          audio device: {deviceInfo.error}
+        </div>
+      )}
+      {shellStatus === 'connected' && deviceInfo && deviceInfo.inputs.length === 0 && (
+        <div className="banner banner-warn" role="status">
+          No audio INPUTS available{deviceInfo.inputDeviceName ? ` on “${deviceInfo.inputDeviceName}”` : ''} —
+          strips cannot record or show input level. Pick an input device in Settings.
+        </div>
+      )}
       {sessionNotice !== '' && (
         <div className="session-notice" role="status">
           session: {sessionNotice}
