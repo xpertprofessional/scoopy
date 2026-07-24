@@ -38,6 +38,18 @@ add_executable(sl_dispatch_test tools/sl_dispatch_test.cpp)
 target_link_libraries(sl_dispatch_test PRIVATE wz_sl_command)
 add_test(NAME sl_dispatch_test COMMAND sl_dispatch_test)
 
+# The Option-B play path (native half): a name-keyed World -> v3 snapshot. Links
+# the v3 engine; GUI-free so it is tested headlessly (a World payload -> audio).
+add_library(wz_sl_world STATIC src/SlWorldApply.cpp)
+target_include_directories(wz_sl_world PUBLIC src)
+target_link_libraries(wz_sl_world
+    PUBLIC juce::juce_core
+    PRIVATE wz_sl_engine juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(sl_world_apply_test tools/sl_world_apply_test.cpp)
+target_link_libraries(sl_world_apply_test PRIVATE wz_sl_world wz_sl_engine)
+add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
+
 add_executable(command_dispatch_test tools/command_dispatch_test.cpp)
 target_include_directories(command_dispatch_test PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include)
 target_link_libraries(command_dispatch_test PRIVATE wz_command)
