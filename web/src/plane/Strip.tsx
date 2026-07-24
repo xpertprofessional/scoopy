@@ -255,6 +255,7 @@ export function Strip({
           loopEnd={deck.loopEndSample}
           onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
           onScrub={(frame) => actions.deckSeek(deck.id, frame)}
+          scale={scale}
           width={waveWidth}
           height={44}
           recording={recording}

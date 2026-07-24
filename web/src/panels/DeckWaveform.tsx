@@ -28,6 +28,8 @@ interface Props {
   onSetLoop: (startSample: number, endSample: number) => void
   /** Turntable scrub: drag the wave to move the playhead. */
   onScrub?: (frame: number) => void
+  /** The plane's zoom, so the head stays ~1 device px at any scale. */
+  scale?: number
   width?: number
   height?: number
   /** While true the take is still being captured: the envelope is re-fetched on
@@ -47,13 +49,29 @@ export function DeckWaveform({
   loopEnd,
   onSetLoop,
   onScrub,
+  scale = 1,
   width = 150,
   height = 40,
   recording = false,
 }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null)
   const envelopeRef = useRef<{ min: number[]; max: number[] } | null>(null)
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
+  // The live region drag lives in a REF, not state: it is read by the drawer
+  // every frame anyway, and as state it re-ran the drawer effect — rebuilding
+  // the canvas context and re-reading every CSS token 60x a second mid-gesture.
+  const dragRef = useRef<{ from: number; to: number } | null>(null)
+  // Which gesture this pointer-down committed to. Locked once, so a drag can
+  // never change its mind halfway (shift released mid-region-drag used to turn
+  // it into a scrub).
+  const gestureRef = useRef<'scrub' | 'region' | null>(null)
+  // Optimistic head: where the user has dragged to, drawn immediately instead of
+  // waiting for the engine's next HotFrame — otherwise the head lags the finger
+  // by a round trip. Cleared on release so the head hands back to the engine.
+  const scrubHeadRef = useRef<number | null>(null)
+  // Coalesce scrub posts to one per animation frame: a pointer-move can fire far
+  // faster than the engine consumes, and only the newest position matters.
+  const pendingScrubRef = useRef<number | null>(null)
+  const scrubRafRef = useRef(0)
   /** The deck's live committed length, harvested from the HotFrame by the
       drawer below — never through React state (it changes every frame). */
   const liveFramesRef = useRef(0)
@@ -168,6 +186,7 @@ export function DeckWaveform({
       // Loop brace — the live drag wins over the committed region so the
       // gesture is visible before it is applied. Not drawn while recording:
       // there is no loop region to speak of until the take is committed.
+      const drag = dragRef.current
       if (span > 0 && !recording) {
         const a = drag ? Math.min(drag.from, drag.to) : loopStart
         const b = drag ? Math.max(drag.from, drag.to) : loopEnd
@@ -184,13 +203,50 @@ export function DeckWaveform({
       // "playhead" is the write head, which is the right edge of the wave.
       const phIdx = deckFieldIndex(channelCount, deck, DECK_BLOCK_FIELDS[1]!)
       if (span > 0 && frame.length > phIdx) {
-        const pos = recording ? span : frame[phIdx]!
+        // While scrubbing, the OPTIMISTIC head wins: it is under the finger now,
+        // rather than one command round-trip behind it.
+        const scrubbing = scrubHeadRef.current
+        const pos = scrubbing !== null ? scrubbing : recording ? span : frame[phIdx]!
         const x = (pos / span) * w
+        // Counter-scale so the head stays ~1 device px however far the plane is
+        // zoomed out; doubled and accented while actively scrubbing.
+        const hw = Math.max(1, dpr / scale)
         ctx.fillStyle = recording ? rec : brace
-        ctx.fillRect(Math.min(x, w - Math.max(1, dpr)), 0, Math.max(1, dpr), h)
+        ctx.fillRect(Math.min(x, w - hw), 0, scrubbing !== null ? hw * 2 : hw, h)
       }
     })
-  }, [deck, channelCount, frames, loopStart, loopEnd, drag, width, height, recording])
+  }, [deck, channelCount, frames, loopStart, loopEnd, width, height, recording, scale])
+
+  /** Post at most one scrub per animation frame, always the newest position. */
+  const postScrub = (frame: number) => {
+    pendingScrubRef.current = frame
+    if (scrubRafRef.current !== 0) return
+    scrubRafRef.current = requestAnimationFrame(() => {
+      scrubRafRef.current = 0
+      const f = pendingScrubRef.current
+      if (f !== null) onScrub?.(f)
+    })
+  }
+
+  const endGesture = (ev: React.PointerEvent<HTMLCanvasElement>) => {
+    const gesture = gestureRef.current
+    gestureRef.current = null
+    // Release the capture in BOTH paths — neither did before, so a strip could
+    // keep swallowing pointer events after the drag ended.
+    ev.currentTarget.releasePointerCapture?.(ev.pointerId)
+    if (gesture === 'region') {
+      const d = dragRef.current
+      dragRef.current = null
+      if (!d) return
+      const a = Math.min(d.from, d.to)
+      const b = Math.max(d.from, d.to)
+      // A click (no span) is not a loop edit — it would silently zero the region.
+      if (b - a > 1) onSetLoop(a, b)
+      return
+    }
+    // Hand the head back to the engine: from here the HotFrame is the truth.
+    scrubHeadRef.current = null
+  }
 
   const posToSample = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = ev.currentTarget.getBoundingClientRect()
@@ -203,30 +259,36 @@ export function DeckWaveform({
       ref={ref}
       className="deck-waveform"
       style={{ width, height }}
-      title="drag to scrub the playhead · shift-drag to set the loop region · double-click for the whole take"
+      title="drag to scrub · shift-drag to set the loop region · double-click for the whole take — scrubbing sounds while the deck is playing"
       onPointerDown={(ev) => {
-        if (frames === 0) return
+        // Nothing to aim at, or the buffer is being written: refuse outright
+        // rather than scrub a moving target.
+        if (frames === 0 || recording) return
         ev.currentTarget.setPointerCapture(ev.pointerId)
-        const s = posToSample(ev)
-        // PLAIN DRAG = SCRUB (the player gesture — you grab the record and move
-        // it). SHIFT-drag sets the loop region, which used to be the plain drag;
-        // scrubbing is the far more frequent act on a player, so it gets the
-        // unmodified gesture.
-        if (ev.shiftKey) setDrag({ from: s, to: s })
-        else onScrub?.(s)
+        const at = posToSample(ev)
+        // LOCK the gesture now. Deciding per-move let a released shift key turn
+        // a region drag into a scrub mid-gesture.
+        gestureRef.current = ev.shiftKey ? 'region' : 'scrub'
+        if (gestureRef.current === 'region') {
+          dragRef.current = { from: at, to: at }
+        } else {
+          scrubHeadRef.current = at
+          postScrub(at)
+        }
       }}
       onPointerMove={(ev) => {
-        if (drag) setDrag({ ...drag, to: posToSample(ev) })
-        else if (ev.buttons === 1) onScrub?.(posToSample(ev))
+        // Driven by the captured gesture, not by ev.buttons: a capture can
+        // outlive a button report, and buttons lies during some trackpad drags.
+        if (gestureRef.current === null) return
+        const at = posToSample(ev)
+        if (gestureRef.current === 'region') dragRef.current = { from: dragRef.current?.from ?? at, to: at }
+        else {
+          scrubHeadRef.current = at
+          postScrub(at)
+        }
       }}
-      onPointerUp={() => {
-        if (!drag) return
-        const a = Math.min(drag.from, drag.to)
-        const b = Math.max(drag.from, drag.to)
-        setDrag(null)
-        // A click (no span) is not a loop edit — it would silently zero the region.
-        if (b - a > 1) onSetLoop(a, b)
-      }}
+      onPointerUp={(ev) => endGesture(ev)}
+      onPointerCancel={(ev) => endGesture(ev)}
       onDoubleClick={() => onSetLoop(0, frames)}
     />
   )

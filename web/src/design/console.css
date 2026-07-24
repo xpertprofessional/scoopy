@@ -577,6 +577,10 @@ canvas.meter {
   cursor: ew-resize;
 }
 
+.plane-strip canvas.deck-waveform:active {
+  cursor: grabbing;
+}
+
 /* A Strip is grabbable to move it; its controls keep their own cursors. */
 .plane-strip {
   cursor: grab;
