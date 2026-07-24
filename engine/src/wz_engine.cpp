@@ -472,6 +472,68 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame) {
     e->decks[deck].pendingSeek.store(static_cast<int64_t>(frame), std::memory_order_release);
 }
 
+double wz_deck_playhead(const wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return 0.0;
+    return e->decks[deck].pubPlayhead.load(std::memory_order_relaxed);
+}
+
+int32_t wz_deck_insert(wz_engine* e, uint32_t deck, uint64_t at, uint32_t channels,
+                       uint64_t frames, const float* const* planar) {
+    if (e == nullptr || deck >= wz::kMaxDecks || planar == nullptr || frames == 0) return 0;
+    auto& d = e->decks[deck];
+    const uint64_t oldLen = d.frames.load(std::memory_order_acquire);
+    if (oldLen == 0) return 0;              // nothing to insert INTO — that is a load
+    const uint32_t ch = d.channels;         // the deck's own channel count wins
+    const uint64_t newLen = oldLen + frames;
+    // The ONE operation that lengthens a deck, so the cap is checked HERE rather
+    // than assumed (D-WZ-DECK-01).
+    if (d.recCapFrames != 0 && newLen > d.recCapFrames) return 0;
+    const uint64_t clampedAt = at < oldLen ? at : oldLen;
+
+    // Read the deck out, splice, and rebuild. Allocation is legal here: this is
+    // the control thread, and the caller has detached the render (as for
+    // wz_deck_load) — the chunk storage is being replaced underneath.
+    std::vector<std::vector<float>> merged(ch, std::vector<float>(static_cast<size_t>(newLen), 0.0f));
+    for (uint32_t c = 0; c < ch; ++c) {
+        for (uint64_t i = 0; i < clampedAt; ++i)
+            merged[c][static_cast<size_t>(i)] = d.sample(c, i);
+        for (uint64_t i = 0; i < frames; ++i) {
+            // A mono source fans out; extra source channels are ignored.
+            const float* src = planar[c < channels ? c : 0];
+            merged[c][static_cast<size_t>(clampedAt + i)] = src != nullptr ? src[i] : 0.0f;
+        }
+        for (uint64_t i = clampedAt; i < oldLen; ++i)
+            merged[c][static_cast<size_t>(frames + i)] = d.sample(c, i);
+    }
+
+    // wz_deck_load REBUILDS the deck, which resets its transport — so a splice
+    // would silently stop the loop you were listening to. Carry the playing
+    // state, the playhead and the loop region across it instead.
+    const uint32_t keepState = d.state.load(std::memory_order_acquire);
+    const double keepPlayhead = d.playhead;
+    uint32_t le = 0; uint64_t ls = 0, lend = 0;
+    d.readLoop(le, ls, lend);
+
+    std::vector<const float*> ptrs(ch);
+    for (uint32_t c = 0; c < ch; ++c) ptrs[c] = merged[c].data();
+    if (wz_deck_load(e, deck, ch, newLen, ptrs.data(), wz_engine_sample_rate(e)) != 1) return 0;
+
+    // Audio AFTER the splice point moved later by exactly `frames`, so anything
+    // pointing into it must move with it or it now points at different sound.
+    const auto shift = [&](uint64_t v) { return v >= clampedAt ? v + frames : v; };
+    if (le != 0) wz_deck_set_loop(e, deck, 1u, shift(ls),
+                                  // A region that CONTAINED the splice point grows to
+                                  // include the new material — the loop you were
+                                  // playing now has the inserted part in it, which is
+                                  // the point of inserting into a loop.
+                                  lend >= clampedAt ? lend + frames : lend);
+    d.playhead = keepPlayhead >= static_cast<double>(clampedAt)
+                     ? keepPlayhead + static_cast<double>(frames)
+                     : keepPlayhead;
+    d.state.store(keepState, std::memory_order_release);
+    return 1;
+}
+
 void wz_deck_overdub_start(wz_engine* e, uint32_t deck, uint32_t mode) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     auto& d = e->decks[deck];

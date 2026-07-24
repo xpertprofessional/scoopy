@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 26
+export const SCHEMA_VERSION = 27
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -552,6 +552,17 @@ export const COMMANDS = {
       })
       .strict(),
     result: z.object({ ok: z.boolean() }).strict(),
+  },
+  // INSERT (P3-14): splice a take INTO the deck at the playhead, shifting the
+  // rest later. The buffer GROWS, so the shell performs it with the render
+  // detached (like deckLoadFile) — it can never be a live punch mode.
+  deckInsertTake: {
+    params: z
+      .object({ deck: z.number().int().min(0).max(7), path: z.string().min(1) })
+      .strict(),
+    result: z
+      .object({ ok: z.boolean(), engineFrames: z.number().int().nonnegative(), error: z.string() })
+      .strict(),
   },
   // Deck transport intent; state truth streams back via the HotFrame deck
   // block, never from this reply. Dispatch lands P1-07.

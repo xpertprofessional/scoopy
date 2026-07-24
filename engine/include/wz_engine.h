@@ -181,6 +181,25 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame);
  * allocation and moving audio, neither of which is allowed on the render
  * thread. It must be a control-thread splice at stop. */
 void wz_deck_overdub_start(wz_engine* e, uint32_t deck, uint32_t mode);
+
+/* INSERT (P3-14): splice `frames` of audio INTO the deck at `at`, shifting the
+ * existing material from `at` onwards later. The buffer GROWS, so unlike SUM and
+ * REPLACE this can never be a live punch mode: it allocates and moves audio, and
+ * the render thread may do neither.
+ *
+ * Call it exactly as you call wz_deck_load — from the control thread WITH THE
+ * RENDER CALLBACK DETACHED. It rebuilds the deck's chunk storage.
+ *
+ * Returns 1 on success, 0 if the deck/args are invalid or the result would
+ * exceed the D-WZ-DECK-01 per-deck cap — checked AT the splice, because this is
+ * the one operation that makes a deck longer. */
+int32_t wz_deck_insert(wz_engine* e, uint32_t deck, uint64_t at, uint32_t channels,
+                       uint64_t frames, const float* const* planar);
+
+/* The deck's current read position, as published to the UI each block. Read-only
+ * accessor for callers that need to act AT the playhead (splice, cue) without
+ * decoding a HotFrame. Any thread. */
+double wz_deck_playhead(const wz_engine* e, uint32_t deck);
 void wz_deck_overdub_stop(wz_engine* e, uint32_t deck);
 
 void wz_deck_scrub_begin(wz_engine* e, uint32_t deck);

@@ -154,6 +154,25 @@ export function usePatchActions(link: EngineLink | null) {
         })
       }
     },
+    /**
+     * INSERT a take INTO a strip's material at the playhead, shifting the rest
+     * later (P3-14). Distinct from loading, which REPLACES the material, and
+     * from overdub, which writes in place: this is the only operation that makes
+     * a deck longer, so the shell does it with the render detached.
+     */
+    async insertIntoStrip(index: number, path: string) {
+      if (!link) return
+      const { patch, deckId } = attachDeck(index)
+      if (deckId < 0) return
+      publishPatch(link, patch)
+      const r = await link.command('deckInsertTake', { deck: deckId, path })
+      if (!r.ok) {
+        useAppStore.getState().setSessionNotice(r.error || 'could not insert')
+        return
+      }
+      useAppStore.getState().setDeckFrames(deckId, r.engineFrames)
+      bumpDeckRevision(deckId) // the buffer changed → the waveform refetches
+    },
     /** Same, from a file the user picks in a native dialog. */
     async loadFileIntoStrip(index: number) {
       if (!link) return

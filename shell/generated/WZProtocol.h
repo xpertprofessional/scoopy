@@ -5,7 +5,7 @@
 
 namespace wz::protocol {
 
-inline constexpr std::int32_t kSchemaVersion = 26;
+inline constexpr std::int32_t kSchemaVersion = 27;
 
 // ParamWrite atomics. JS resolves ids BY NAME at boot (never hardcodes
 // integers); this enum is for the C++ side only.
@@ -80,6 +80,7 @@ inline constexpr const char* kMethodNames[] = {
     "deckSeek",
     "deckScrub",
     "deckOverdub",
+    "deckInsertTake",
     "deckTrigger",
     "deckRecordStart",
     "deckRecordStop",
@@ -91,6 +92,6 @@ inline constexpr const char* kMethodNames[] = {
     "deckWaveform",
     "deckSetLoop",
 };
-inline constexpr std::uint32_t kMethodCount = 24;
+inline constexpr std::uint32_t kMethodCount = 25;
 
 } // namespace wz::protocol

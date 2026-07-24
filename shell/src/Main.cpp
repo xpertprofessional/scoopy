@@ -82,6 +82,13 @@ public:
                         // deckLoadTake decodes a take file, so it takes the same
                         // off-thread path as deckLoadFile (P1-11) — never the
                         // synchronous recordCommand path that would block here.
+                        // INSERT decodes a file then splices with the render
+                        // detached — the same off-thread decode as a load, but
+                        // the buffer surgery must not race the reader.
+                        if (method == "deckInsertTake") {
+                            complete(insertTake(params));
+                            return;
+                        }
                         if (method == "deckLoadTake") {
                             const auto deck = static_cast<uint32_t>(
                                 static_cast<int>(params.getProperty("deck", 0)));
@@ -453,6 +460,34 @@ private:
         env->setProperty("ok", true);
         env->setProperty("result", juce::var(result));
         return juce::var(env);
+    }
+
+    /** Splice a take into a deck at its playhead (P3-14). Decode on this thread
+        (a take is short and this is a deliberate edit, not a live gesture), then
+        do the buffer surgery with the render callback DETACHED — wz_deck_insert
+        rebuilds the deck's storage and must never race the reader. */
+    juce::var insertTake(const juce::var& params) {
+        auto* result = new juce::DynamicObject();
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const juce::File file(params.getProperty("path", "").toString());
+        const auto engineRate = wz_engine_sample_rate(engine);
+        const auto audio = wizard::decode::loadForDeck(file, engineRate);
+        bool ok = false;
+        if (audio.ok) {
+            std::vector<const float*> planar;
+            planar.reserve(audio.data.size());
+            for (const auto& ch : audio.data) planar.push_back(ch.data());
+            const auto at = static_cast<uint64_t>(wz_deck_playhead(engine, deck));
+            audioIO.whileSuspended([&] {
+                ok = wz_deck_insert(engine, deck, at, audio.channels, audio.engineFrames(),
+                                    planar.data()) == 1;
+            });
+        }
+        result->setProperty("ok", ok);
+        result->setProperty("engineFrames",
+                            static_cast<juce::int64>(ok ? wz_deck_frames(engine, deck) : 0));
+        result->setProperty("error", ok ? "" : (audio.ok ? "could not splice (deck empty or cap reached)" : audio.error));
+        return wrapResult(result);
     }
 
     juce::var sessionCommand(const juce::String& method, const juce::var& params) {

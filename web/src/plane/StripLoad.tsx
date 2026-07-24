@@ -54,17 +54,30 @@ export function StripLoad({ index, link }: { index: number; link: EngineLink | n
             .slice()
             .reverse()
             .map((t) => (
-              <button
-                key={t.path}
-                type="button"
-                title={t.sourceDesc || t.path}
-                onClick={() => {
-                  void actions.loadIntoStrip(index, t.path)
-                  setOpen(false)
-                }}
-              >
-                {t.path.split('/').pop()} · {seconds(t.frames, t.sampleRate)}
-              </button>
+              <div className="add-strip-row" key={t.path}>
+                <button
+                  type="button"
+                  title={`replace this strip's material with ${t.sourceDesc || t.path}`}
+                  onClick={() => {
+                    void actions.loadIntoStrip(index, t.path)
+                    setOpen(false)
+                  }}
+                >
+                  {t.path.split('/').pop()} · {seconds(t.frames, t.sampleRate)}
+                </button>
+                {/* Squeeze it IN at the playhead instead of replacing — the rest
+                    of the material shifts later rather than being overwritten. */}
+                <button
+                  type="button"
+                  title="insert at the playhead — the rest shifts later"
+                  onClick={() => {
+                    void actions.insertIntoStrip(index, t.path)
+                    setOpen(false)
+                  }}
+                >
+                  ⤵
+                </button>
+              </div>
             ))}
         </div>
       )}

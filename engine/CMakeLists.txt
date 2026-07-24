@@ -85,6 +85,11 @@ add_executable(deck_overdub_test tools/deck_overdub_test.cpp)
 target_link_libraries(deck_overdub_test PRIVATE wz_engine)
 add_test(NAME deck_overdub_test COMMAND deck_overdub_test)
 
+# INSERT: splice material in, shifting the rest later (control thread).
+add_executable(deck_insert_test tools/deck_insert_test.cpp)
+target_link_libraries(deck_insert_test PRIVATE wz_engine)
+add_test(NAME deck_insert_test COMMAND deck_insert_test)
+
 # D-WZ-RAMP-01 anti-click guarantee: gain/mute/solo TRANSITIONS glide, not step.
 add_executable(ramp_test tools/ramp_test.cpp)
 target_link_libraries(ramp_test PRIVATE wz_engine)
