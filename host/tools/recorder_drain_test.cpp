@@ -58,12 +58,24 @@ int main() {
     wizard::record::Service svc;
     CHECK(svc.start(e, dir));
 
+    // Let the engine clock ADVANCE before arming. Recording from sample 0 is
+    // the one case where a severed stamp is indistinguishable from a correct
+    // one — which is exactly how every take shipped stamped 0 without a test
+    // noticing. A real session always arms well after boot.
+    {
+        std::vector<float> pin(kQ, 0.0f), pl(kQ), pr(kQ), pcl(kQ), pcr(kQ);
+        const float* pins[1] = {pin.data()};
+        float* pouts[4] = {pl.data(), pr.data(), pcl.data(), pcr.data()};
+        for (int b = 0; b < 10; ++b) wz_engine_render_io(e, pins, 1, pouts, 4, kQ);
+    }
+
     // Deck 0 records engine input 0 (mono).
     wz_deck_set_record_source(e, 0, 0, -1);
     wz_deck_record_service(e);
     wz_deck_record_start(e, 0);
-    const uint64_t stamp = 0;
-    CHECK(svc.beginTake(0, 1, kRate, stamp, "Test Ramp"));
+    // open() can only write a PROVISIONAL zero: the engine does not know the
+    // true start until its first render block after arming.
+    CHECK(svc.beginTake(0, 1, kRate, 0, "Test Ramp"));
 
     // "Render" 200 blocks of a ramp with NO synchronisation with the drain
     // thread — if the drain could block the render, this loop would stall.
@@ -85,10 +97,10 @@ int main() {
 
     const uint64_t captured = wz_deck_frames(e, 0);
     CHECK(captured == static_cast<uint64_t>(kBlocks) * kQ);
-    wz_deck_record_stop(e, 0);
+    const uint64_t realStamp = wz_deck_record_stop(e, 0);
     // Give the render a block to observe the stop, then finalize.
     wz_engine_render_io(e, ins, 1, outs, 4, kQ);
-    CHECK(svc.endTake(0));
+    CHECK(svc.endTake(0, realStamp));
 
     // --- the take list ------------------------------------------------------
     const auto takes = svc.takes();
@@ -97,6 +109,14 @@ int main() {
     CHECK(takes[0].channels == 1);
     CHECK(takes[0].sourceDesc == "Test Ramp");
     CHECK(takes[0].frames > 0);
+    // LAW C-2: the take must carry the engine's REAL start, not the provisional
+    // zero written when the file was opened. Nothing covered this hop before,
+    // which is exactly why every take shipped stamped 0 — making align a
+    // no-op and importing every take at 0:00 in a DAW. The engine's stamp is
+    // proven by deck_stamp_test and the writer by wav_killtest; this pins the
+    // HAND-OFF between them, which is where the value was being dropped.
+    CHECK(realStamp > 0);
+    CHECK(takes[0].startEngineSample == realStamp);
     CHECK(svc.droppedFrames(0) == 0); // the drain kept up
 
     // --- the file holds the captured ramp, in order -------------------------

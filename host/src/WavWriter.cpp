@@ -131,6 +131,16 @@ bool Writer::patchSizes() {
            patchAt(file_, dataChunkPos_, &data32, 4);
 }
 
+void Writer::setStartEngineSample(uint64_t startEngineSample) {
+    if (file_ == nullptr) return;
+    // bext data begins at byte 80; TimeReference is 8 bytes at bext+338.
+    constexpr long kTimeReferenceOffset = 80 + 338;
+    const long cur = std::ftell(file_);
+    if (std::fseek(file_, kTimeReferenceOffset, SEEK_SET) == 0)
+        std::fwrite(&startEngineSample, 1, 8, file_);
+    if (cur >= 0) std::fseek(file_, cur, SEEK_SET);
+}
+
 bool Writer::close() {
     if (file_ == nullptr) return true;
     const bool ok = patchSizes();

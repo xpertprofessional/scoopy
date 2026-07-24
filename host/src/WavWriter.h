@@ -51,6 +51,15 @@ public:
     // `flushIntervalFrames` have accumulated since the last flush.
     bool write(const float* interleaved, uint32_t frames);
 
+    /** Correct the take's Law C-2 stamp before close.
+        The engine only learns the true start at the first render block AFTER
+        arming, so `open` necessarily writes a provisional 0. Left uncorrected,
+        every take carries TimeReference = 0 and align becomes a no-op — the
+        stamp is the whole basis of multitrack (Law C-2). The field sits at a
+        fixed offset, so this patches it in place exactly as the size fields are
+        patched. */
+    void setStartEngineSample(uint64_t startEngineSample);
+
     // Patches exact sizes and closes. Safe to call twice.
     bool close();
 

@@ -49,7 +49,11 @@ public:
                    uint64_t startEngineSample, const std::string& sourceDesc);
     // Called right after wz_deck_record_stop: drains the tail, closes the file,
     // writes the sidecar, and appends to the take list.
-    bool endTake(uint32_t deck);
+    /** `startEngineSample` is the engine's true start for this take, known only
+        once recording has actually begun (wz_deck_record_stop returns it). It is
+        applied here to the file's bext TimeReference, the sidecar and the
+        TakeInfo — all three carried 0 before, so align compared zeros. */
+    bool endTake(uint32_t deck, uint64_t startEngineSample);
 
     std::vector<TakeInfo> takes() const;
     /** Forget a take (by path). Does NOT touch the filesystem — the shell moves

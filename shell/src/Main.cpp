@@ -303,7 +303,9 @@ private:
         } else if (method == "deckRecordStop") {
             const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
             const auto stamp = wz_deck_record_stop(engine, deck);
-            const bool ok = recorder.endTake(deck);
+            // Hand the engine's true start to the writer: the reply already
+            // carried it, but the FILE, the sidecar and the TakeInfo did not.
+            const bool ok = recorder.endTake(deck, stamp);
             result->setProperty("ok", ok);
             result->setProperty("startEngineSample", static_cast<juce::int64>(stamp));
             const auto all = recorder.takes();

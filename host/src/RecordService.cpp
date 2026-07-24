@@ -125,12 +125,20 @@ bool Service::beginTake(uint32_t deck, uint32_t channels, double sampleRate,
     return slot.open;
 }
 
-bool Service::endTake(uint32_t deck) {
+bool Service::endTake(uint32_t deck, uint64_t startEngineSample) {
     if (deck >= slots_.size()) return false;
     drainDeck(deck, true); // pull the tail the render wrote before it stopped
     std::lock_guard<std::mutex> lock(mutex_);
     auto& slot = *slots_[deck];
     if (!slot.open) return false;
+    // Correct the Law C-2 stamp BEFORE closing. open() had to write a
+    // provisional 0 because the engine only learns the true start at its first
+    // render block after arming; leaving it meant every take stamped zero, so
+    // every align delta was zero and DAW import landed everything at 0:00.
+    // Applied unconditionally: 0 is a legitimate stamp (a take armed at engine
+    // sample 0), not a sentinel, and treating it as one is how this went unseen.
+    slot.startEngineSample = startEngineSample;
+    slot.writer.setStartEngineSample(startEngineSample);
     slot.writer.close();
     slot.open = false;
 
