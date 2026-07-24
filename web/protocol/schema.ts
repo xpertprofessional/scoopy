@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 17
+export const SCHEMA_VERSION = 18
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -254,6 +254,18 @@ export type Plane = z.infer<typeof PlaneSchema>
 
 export const DEFAULT_PLANE: Plane = { scale: 1, panX: 0, panY: 0 }
 
+/** The device the session was built on (P7-08, D-WZ-DEVGONE-01). Empty string =
+    "no preference, use the machine default". Kept in the Patch (not the thin
+    envelope) so it travels with a shared package — where it will usually NOT
+    resolve, which is exactly the case the fall-back-and-say-so posture serves.
+    Like `cell`/`plane` it is carried across the ABI and ignored by the engine. */
+export const SessionDeviceSchema = z
+  .object({
+    input: z.string(),
+    output: z.string(),
+  })
+  .strict()
+
 export const PatchSchema = z
   .object({
     schemaVersion: z.number().int(),
@@ -262,6 +274,7 @@ export const PatchSchema = z
     outputMap: OutputMapSchema,
     uiMode: z.enum(['console', 'strip']), // display mode is document state (CONCEPT §6)
     plane: PlaneSchema, // PD-CANVAS: viewport (UI-only, never crosses the ABI)
+    device: SessionDeviceSchema, // P7-08: remembered device, '' = machine default
   })
   .strict()
 export type Patch = z.infer<typeof PatchSchema>
@@ -274,6 +287,7 @@ export function emptyPatch(): Patch {
     outputMap: { main: [0, 1], monitor: null },
     uiMode: 'console',
     plane: { ...DEFAULT_PLANE },
+    device: { input: '', output: '' },
   }
 }
 

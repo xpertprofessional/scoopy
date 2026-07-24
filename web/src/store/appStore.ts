@@ -54,6 +54,9 @@ interface AppState {
       is retired at PD-CANVAS-05 and this goes with it. */
   view: 'console' | 'plane'
   setView: (v: 'console' | 'plane') => void
+  /** Remember the picked device in the SESSION (P7-08). Only a non-empty side
+      is written — setDevice's own idiom is '' = "leave that side alone". */
+  setSessionDevice: (input: string, output: string) => void
   setShellStatus: (s: ShellStatus) => void
   setCapabilities: (c: Capabilities) => void
   setDeviceInfo: (d: DeviceInfo) => void
@@ -127,6 +130,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   patch: emptyPatch(),
   view: 'console',
   setView: (view) => set({ view }),
+  setSessionDevice: (input, output) => {
+    const p = get().patch
+    set({
+      patch: {
+        ...p,
+        device: {
+          input: input !== '' ? input : p.device.input,
+          output: output !== '' ? output : p.device.output,
+        },
+      },
+    })
+  },
   setShellStatus: (shellStatus) => set({ shellStatus }),
   setCapabilities: (capabilities) => set({ capabilities }),
   setDeviceInfo: (deviceInfo) => set({ deviceInfo }),

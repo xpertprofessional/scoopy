@@ -70,6 +70,18 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       name: 'relayout-horizontal-strips (PD-CANVAS)',
       run: (s) => relayout(s),
     },
+
+    // v17 -> v18 (P7-08, D-WZ-DEVGONE-01): the session remembers its device.
+    // Purely additive with a safe default — an older session simply had no
+    // preference, which is exactly what the empty strings mean.
+    17: {
+      to: 18,
+      name: 'add-session-device (P7-08)',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        return { ...s, patch: { ...patch, device: { input: '', output: '' } } }
+      },
+    },
   }
 
 /** Re-place every channel with the CURRENT default cell size. */

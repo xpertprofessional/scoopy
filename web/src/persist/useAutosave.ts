@@ -12,6 +12,26 @@ import type { EngineLink } from '../engine/engineLink'
 import { publishPatch } from '../engine/usePatch'
 import { useAppStore } from '../store/appStore'
 import { loadSession, makeSession, serializeSession } from './session'
+import { resolveSessionDevice } from './sessionDevice'
+
+/**
+ * Re-select the device the session remembers (P7-08, D-WZ-DEVGONE-01). If it is
+ * gone, we do NOT switch — we keep whatever is current and return a notice
+ * naming wanted-vs-got, so you can never be recording the wrong input without
+ * being told. Returns '' when there is nothing to say.
+ */
+export async function restoreDevice(link: EngineLink, patch: Patch): Promise<string> {
+  if (patch.device.input === '' && patch.device.output === '') return '' // no preference
+  try {
+    const list = await link.command('listDevices', {})
+    const r = resolveSessionDevice(patch.device, list)
+    if (r.applyInput !== '' || r.applyOutput !== '')
+      await link.command('setDevice', { input: r.applyInput, output: r.applyOutput })
+    return r.notice
+  } catch {
+    return '' // device enumeration failed; the app still runs on whatever is open
+  }
+}
 
 /** The file's own name, used to match a document reference against a copy
     carried inside a package. */
@@ -139,6 +159,11 @@ export function useAutosave(link: EngineLink | null, nowIso: () => string): void
         if (outcome.patch) {
           store.setPatch(outcome.patch)
           publishPatch(link, outcome.patch) // restore IS a publish
+          // Re-select the remembered device before rehydrating audio, so decks
+          // load against the device the session expects (P7-08).
+          void restoreDevice(link, outcome.patch).then((notice) => {
+            if (notice !== '') useAppStore.getState().setSessionNotice(notice)
+          })
           // Then rehydrate deck audio from its references. Decks land idle —
           // an app that starts making sound on launch is hostile.
           void rehydrateDecks(

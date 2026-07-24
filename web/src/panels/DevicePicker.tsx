@@ -21,6 +21,7 @@ export function DevicePicker({ link }: { link: EngineLink | null }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const setDeviceInfo = useAppStore((s) => s.setDeviceInfo)
+  const rememberDevice = useAppStore((s) => s.setSessionDevice)
   const hasDecks = useAppStore((s) => s.patch.decks.length > 0)
 
   const refresh = () => {
@@ -40,6 +41,10 @@ export function DevicePicker({ link }: { link: EngineLink | null }) {
     // Re-read both the picker's current selection and the sources list.
     const info = await link.command('getDeviceInfo', {})
     setDeviceInfo(info)
+    // Remember the choice IN THE SESSION (P7-08): a device you picked on
+    // purpose should survive a quit. Only on success — recording a device the
+    // switch refused would make the session ask for it again next launch.
+    if (r.ok) rememberDevice(input, output)
     refresh()
     setBusy(false)
   }
