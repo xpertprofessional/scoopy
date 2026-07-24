@@ -37,14 +37,41 @@ unedited as the historical record). This file is the CURRENT state. Updated
 
 ### Remaining path to "scoopy landed here" (in order)
 
-1. **Play path — `worldPublish`/`publishTrackPattern` → v3 snapshot.** The
-   translator from scoopy's `PatternFile`/`GridPatternState` JSON into the
-   `sl_snapshot_begin/track_begin/set/commit` calls (which already make sound,
-   `sl_snapshot_test`). This is the deepest increment: it maps scoopy's document
-   format field-by-field onto the SL_T_* names, so it needs the same care as the
-   track-param generator — a mis-mapped field is silent corruption. Study
-   scoopy's PatternFile schema first; headless-test that a known payload renders
-   the expected audio. The engine side is proven; this is pure translation.
+1. **Play path — ⚠️ NEEDS A DECISION BEFORE CODE (architecture fork).**
+   Studying the code (2026-07-24) found this is not the mechanical translation it
+   looked like. Scoopy's document → engine is a 505-line, load-bearing
+   translation (`web/src/audio/worldFromSession.ts`): the doc has no `tracks`
+   field (it is `sectionA…sectionH` scene projection), sample identity lives in
+   the KIT not the pattern, ~90 fields/track, and string→enum orderings where a
+   wrong order renders a low-pass as a notch. That translation ALREADY EXISTS
+   twice — Swift (desktop) and TS (browser companion). The two ways the merged
+   native shell can reach the same `sl_snapshot_*` ABI:
+
+   - **Option A — C++ decodes the document** (matches today's wire contract:
+     `worldPublish{PatternFile}` / `publishTrackPattern{GridPatternState}`).
+     Cost: port Swift's decode into C++ — a THIRD copy of the 505-line
+     load-bearing mapping, hand-written, exactly the silent-corruption
+     anti-pattern the track-param generator exists to avoid, at 5× the size and
+     with scene/kit logic a generator can't derive.
+   - **Option B — reuse the TS translation, send the flat `World`** (recommended).
+     The merged host's web layer runs the existing, tested `worldFromSession`
+     (the browser-companion path) and sends the flattened `World` over the
+     bridge; C++ does only the THIN `World → sl_snapshot_*` mapping, which is
+     ~1:1 by name (`WorldTrack.volume → SL_T_VOLUME`, `toneMode → SL_T_TONE_MODE`,
+     `mixMuted → SL_T_MIX_MUTED` — the WorldTrack comments cite the
+     correspondence). One authority for document translation (TS), already
+     tested. Cost: a small scoopy-web addition (a host path that publishes
+     `World` to native) + a new/rerouted bridge command. Touches `apps/scoopy`,
+     the writable home.
+
+   **Recommendation: Option B.** It keeps the load-bearing translation in its
+   single tested home instead of forking a third copy, and reduces the native
+   side to a mechanical, testable mapping. The tradeoff is a wire-contract change
+   (send `World`, not raw `PatternFile`) and a small edit in `apps/scoopy`.
+   This is a merge-shaping call with cross-repo consequences, so it is the
+   user's to make — not taken autonomously. Once chosen, the native mapping is
+   headless-testable: a known `World`/payload renders the expected audio (the
+   engine side is already proven by `sl_snapshot_test`).
 2. **HotFrame emitter.** Produce scoopy's 284-slot frame at 30 Hz from v3 engine
    state, so meters/playheads/carve go live. Indices from scoopy's schema
    (`HOT_FRAME_SCALARS`), never hand-counted.
