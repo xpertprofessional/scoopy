@@ -37,41 +37,26 @@ unedited as the historical record). This file is the CURRENT state. Updated
 
 ### Remaining path to "scoopy landed here" (in order)
 
-1. **Play path — ⚠️ NEEDS A DECISION BEFORE CODE (architecture fork).**
-   Studying the code (2026-07-24) found this is not the mechanical translation it
-   looked like. Scoopy's document → engine is a 505-line, load-bearing
-   translation (`web/src/audio/worldFromSession.ts`): the doc has no `tracks`
-   field (it is `sectionA…sectionH` scene projection), sample identity lives in
-   the KIT not the pattern, ~90 fields/track, and string→enum orderings where a
-   wrong order renders a low-pass as a notch. That translation ALREADY EXISTS
-   twice — Swift (desktop) and TS (browser companion). The two ways the merged
-   native shell can reach the same `sl_snapshot_*` ABI:
-
-   - **Option A — C++ decodes the document** (matches today's wire contract:
-     `worldPublish{PatternFile}` / `publishTrackPattern{GridPatternState}`).
-     Cost: port Swift's decode into C++ — a THIRD copy of the 505-line
-     load-bearing mapping, hand-written, exactly the silent-corruption
-     anti-pattern the track-param generator exists to avoid, at 5× the size and
-     with scene/kit logic a generator can't derive.
-   - **Option B — reuse the TS translation, send the flat `World`** (recommended).
-     The merged host's web layer runs the existing, tested `worldFromSession`
-     (the browser-companion path) and sends the flattened `World` over the
-     bridge; C++ does only the THIN `World → sl_snapshot_*` mapping, which is
-     ~1:1 by name (`WorldTrack.volume → SL_T_VOLUME`, `toneMode → SL_T_TONE_MODE`,
-     `mixMuted → SL_T_MIX_MUTED` — the WorldTrack comments cite the
-     correspondence). One authority for document translation (TS), already
-     tested. Cost: a small scoopy-web addition (a host path that publishes
-     `World` to native) + a new/rerouted bridge command. Touches `apps/scoopy`,
-     the writable home.
-
-   **Recommendation: Option B.** It keeps the load-bearing translation in its
-   single tested home instead of forking a third copy, and reduces the native
-   side to a mechanical, testable mapping. The tradeoff is a wire-contract change
-   (send `World`, not raw `PatternFile`) and a small edit in `apps/scoopy`.
-   This is a merge-shaping call with cross-repo consequences, so it is the
-   user's to make — not taken autonomously. Once chosen, the native mapping is
-   headless-testable: a known `World`/payload renders the expected audio (the
-   engine side is already proven by `sl_snapshot_test`).
+1. **Play path — ✅ NATIVE HALF DONE (Option B, chosen by the user 2026-07-24).**
+   Why Option B: scoopy's document → engine is a 505-line load-bearing
+   translation (`worldFromSession.ts`: `sectionA…sectionH` scene projection,
+   kit-held sample identity, ~90 fields, enum orders where wrong = low-pass
+   renders as notch) that already exists twice (Swift + TS). Rather than fork a
+   third C++ copy, the heavy translation stays in TS; the merged host's web layer
+   publishes the flat `World` **keyed by engine name** and the native side is a
+   generic applier.
+   - `0016e4e` — `SlWorldApply` (`registerSample` + `applyWorld`): a generic,
+     name-driven applier with NO field mapping in C++ to drift. `sl_world_apply_test`:
+     a name-keyed World renders peak 0.36; unknown param ignored; empty-tracks
+     stops sound; holey worlds / deck>0 / null engine refused with a reason.
+   - `1566034` — wired into `SlDispatch`: `worldPublish` routes to `applyWorld`.
+     Contract: this host's `worldPublish` carries a flat `world` OBJECT (engine-
+     name-keyed), not scoopy's stock `json` PatternFile string, which is refused.
+   **Still needed for the play path to run end-to-end:** the `apps/scoopy` web
+   change — the merged host runs `worldFromSession` and publishes `World` (renamed
+   to `SL_T_*` via its worklet table) to native over `worldPublish`. Touches the
+   writable home; small and additive. Sample sourcing (kit bytes → `registerSample`)
+   is the other half — likely native decode of kit files, not JSON floats.
 2. **HotFrame emitter.** Produce scoopy's 284-slot frame at 30 Hz from v3 engine
    state, so meters/playheads/carve go live. Indices from scoopy's schema
    (`HOT_FRAME_SCALARS`), never hand-counted.
