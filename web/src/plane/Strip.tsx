@@ -70,6 +70,9 @@ export function Strip({
   const capped = useAppStore((s) => (deckId >= 0 ? (s.deckCapReached[deckId] ?? false) : false))
   const unresolved = useAppStore((s) => (deckId >= 0 ? (s.deckUnresolved[deckId] ?? false) : false))
   const channelCount = useAppStore((s) => s.patch.channels.length)
+  // How many buses this device can actually carry — a strip routed past it is
+  // built but NOT heard, which the chip must say rather than hide.
+  const mappable = useAppStore((s) => s.deviceInfo?.mappableBuses ?? 1)
   const takes = useAppStore((s) => s.takes)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
 
@@ -89,14 +92,33 @@ export function Strip({
       data-testid={`strip-${channel.key}`}
     >
       <div className="plane-strip-head">
-        <span className="plane-strip-name" style={{ color: KIND_VAR[channel.source.kind] }}>
-          {channel.name}
-        </span>
+        {/* Kind rides a swatch, NOT the name's text colour: three of the five
+            kind colours are aliases of chrome (deck=signal, virtual=accent,
+            bus=textDim), so tinting the name both weakens its contrast and
+            fights the bus chip for meaning. Kind is what it IS; bus is where it
+            GOES — they must not share a hue. */}
+        <span
+          className="plane-strip-kind"
+          style={{ background: KIND_VAR[channel.source.kind] }}
+          title={`source: ${channel.source.kind} — ${channel.source.name}`}
+        />
+        <span className="plane-strip-name">{channel.name}</span>
         {deck && (
           <span className={`plane-strip-state deck-state-${deckState}`}>
             {DECK_STATE_LABEL[deckState] ?? '?'}
           </span>
         )}
+        <span
+          className={`plane-strip-bus${channel.outBus >= mappable ? ' plane-strip-bus-unmapped' : ''}`}
+          title={
+            channel.outBus >= mappable
+              ? `routed to ${channel.outBus === 0 ? 'main' : `bus ${channel.outBus + 1}`}, which this device cannot carry — this strip is NOT heard`
+              : 'output bus — bus 1 is main; a spatial layout is just strips on different buses'
+          }
+        >
+          {channel.outBus === 0 ? 'main' : `bus ${channel.outBus + 1}`}
+          {channel.outBus >= mappable ? ' ⚠' : ''}
+        </span>
         <span className="plane-strip-meter">
           <MeterCanvas
             width={10}

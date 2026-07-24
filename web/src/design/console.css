@@ -784,3 +784,35 @@ canvas.meter {
   border-radius: 0;
   cursor: ew-resize;
 }
+
+/* Kind swatch: kind is what a Strip IS. Carried as a block of colour rather
+   than as the name's text colour, which kept contrast low and competed with
+   the bus chip for meaning. */
+.plane-strip-kind {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* Bus chip: where a Strip GOES (D-WZ-ROUTINGVIEW-01). Always on, on every
+   Strip — the smallest thing that answers "where does this go?" at a glance,
+   and the surface any richer routing layer would sit on top of. */
+.plane-strip-bus {
+  flex: 0 0 auto;
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+}
+
+/* Routed somewhere this device cannot carry: built, but not heard. Loud, since
+   silence with no explanation is the worst outcome. */
+.plane-strip-bus-unmapped {
+  color: var(--bg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
