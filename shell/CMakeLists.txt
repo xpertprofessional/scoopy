@@ -28,6 +28,18 @@ target_link_libraries(wz_command
 # scoopy's slCommand dispatch (boot handshake: capabilities + settings +
 # view-state), GUI-free so it is tested headlessly like wz_command. No engine
 # yet — the PatternFile->v3 play path is a later increment.
+# File-backed SettingsStore for the live window; GUI-free so its persistence
+# and atomic-write discipline are tested headlessly (SessionStore precedent).
+add_library(wz_sl_settings STATIC src/SlSettingsStore.cpp)
+target_include_directories(wz_sl_settings PUBLIC src)
+target_link_libraries(wz_sl_settings
+    PUBLIC juce::juce_core
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(sl_settings_store_test tools/sl_settings_store_test.cpp)
+target_link_libraries(sl_settings_store_test PRIVATE wz_sl_settings)
+add_test(NAME sl_settings_store_test COMMAND sl_settings_store_test)
+
 add_library(wz_sl_command STATIC src/SlDispatch.cpp)
 target_include_directories(wz_sl_command PUBLIC src)
 # wz_sl_world (applyWorld) for the worldPublish play path; it pulls the v3 engine.
