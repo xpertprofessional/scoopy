@@ -18,7 +18,9 @@
     "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
     "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write",
     "engine:check": "node --experimental-strip-types scripts/sharedSync.ts --check --lock engine.lock.json",
-    "engine:sync": "node --experimental-strip-types scripts/sharedSync.ts --write --lock engine.lock.json"
+    "engine:sync": "node --experimental-strip-types scripts/sharedSync.ts --write --lock engine.lock.json",
+    "trackparams:generate": "node --experimental-strip-types scripts/generateTrackParams.ts",
+    "trackparams:check": "node --experimental-strip-types scripts/generateTrackParams.ts --check"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -25,3 +25,13 @@ target_compile_options(wz_sl_engine PRIVATE -ffp-contract=off)
 add_executable(sl_abi_v3_test tools/sl_abi_v3_test.cpp)
 target_link_libraries(sl_abi_v3_test PRIVATE wz_sl_engine)
 add_test(NAME sl_abi_v3_test COMMAND sl_abi_v3_test)
+
+# The generated track-param mapping: proves it compiles and that values land in
+# the field the NAME resolves to. The generator proves completeness; this proves
+# the transcription is real. Includes the .inc directly (no library) — it is a
+# fragment, not a translation unit.
+add_executable(track_params_test tools/track_params_test.cpp)
+target_include_directories(track_params_test PRIVATE generated)
+target_link_libraries(track_params_test PRIVATE scoopy_engine)
+target_compile_options(track_params_test PRIVATE -ffp-contract=off)
+add_test(NAME track_params_test COMMAND track_params_test)

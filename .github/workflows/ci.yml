@@ -40,6 +40,11 @@ jobs:
       # hash-pinned. apps/scoopy stays the ONLY writable home until the P3 flip;
       # this check makes local edits to the vendored copy loud, not forbidden.
       - run: npm run engine:check
+      # The SL v3 track-param mapping is DERIVED from the pinned v2 ABI. This
+      # fails if the vendored source moved and the mapping was not regenerated —
+      # the one edit in this merge where a silent stale copy would write a value
+      # into the wrong parameter.
+      - run: npm run trackparams:check
       - run: npm run abi:check
       - run: npm run check:tokens
       - run: npm run webdist:check
