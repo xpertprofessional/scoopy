@@ -243,7 +243,8 @@ juce::String probeUserScript(const juce::String& panel) {
 )JS").replace("__PANEL__", panel);
 }
 
-/** The navigation guard for the Q3 defect.
+/** The navigation guard for the Q3 defect. Policy lives in WebResources (unit
+ * tested, GUI-free) and is shared with the real shell.
  *
  * Dropping a file on the WebView NAVIGATES it — the human pass caught the grid
  * page rebooting with a fresh React root, having silently lost its UI state.
@@ -261,10 +262,10 @@ public:
         : juce::WebBrowserComponent(options), probe(logToUse), panelName(std::move(panel)) {}
 
     bool pageAboutToLoad(const juce::String& newURL) override {
-        const auto root = juce::WebBrowserComponent::getResourceProviderRoot();
-        // about:blank is WebKit's own scratch page during setup, not a navigation
-        // away from the app.
-        const bool allowed = newURL.startsWith(root) || newURL.startsWithIgnoreCase("about:blank");
+        // The SAME policy the shell uses (WebResources), not a second copy —
+        // a guard that drifts from the one shipping is worse than no spike.
+        const bool allowed = wizard::webresources::navigationAllowed(
+            newURL, juce::WebBrowserComponent::getResourceProviderRoot());
         auto* o = new juce::DynamicObject();
         o->setProperty("kind", allowed ? "nav-allowed" : "nav-REFUSED");
         o->setProperty("url", newURL);

@@ -35,4 +35,10 @@ std::optional<Payload> load(const juce::File& root, const juce::String& path) {
     return payload;
 }
 
+bool navigationAllowed(const juce::String& url, const juce::String& resourceRoot) {
+    if (resourceRoot.isEmpty()) return false;
+    if (url.startsWithIgnoreCase("about:blank")) return true;
+    return url.startsWith(resourceRoot);
+}
+
 } // namespace wizard::webresources

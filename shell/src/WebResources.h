@@ -23,4 +23,22 @@ juce::String mimeForExtension(const juce::String& extensionWithoutDot);
     "/" and "" both resolve to index.html (SPA entry point). */
 std::optional<Payload> load(const juce::File& root, const juce::String& path);
 
+/** Navigation policy: may the WebView load `url`?
+
+    An ALLOWLIST — the app itself and nothing else. Without this, dropping a
+    file on the window NAVIGATES the browser to that file, silently replacing
+    the running app and losing every bit of UI state (found by the P1 spike's
+    human pass, docs/merge/P1-SPIKE-JUCE-WEBVIEW.md §Q3). `preventDefault()` in
+    the page does NOT stop it — the decision is made above the DOM, so it has to
+    be made here.
+
+    A denylist of `file://` would be the tempting shape and the wrong one: the
+    shell should ever navigate to exactly one place, and enumerating what to
+    forbid is how guards like this get bypassed.
+
+    `about:blank` is WebKit's own scratch page during setup, not a navigation
+    away from the app. An empty root means nothing is the app yet, so nothing
+    is allowed. */
+bool navigationAllowed(const juce::String& url, const juce::String& resourceRoot);
+
 } // namespace wizard::webresources

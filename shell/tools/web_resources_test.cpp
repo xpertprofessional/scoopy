@@ -57,6 +57,36 @@ int main() {
     CHECK(mimeForExtension("wasm") == "application/wasm");
     CHECK(mimeForExtension("zzz") == "application/octet-stream");
 
+    // Navigation policy (P1 spike §Q3): a dropped file must not be able to
+    // navigate the WebView away from the app, taking the UI state with it.
+    {
+        const juce::String appRoot{"juce://juce.backend/"};
+
+        // The app itself, and the deep links within it, load.
+        CHECK(navigationAllowed(appRoot, appRoot));
+        CHECK(navigationAllowed(appRoot + "index.html", appRoot));
+        CHECK(navigationAllowed(appRoot + "assets/index-abc.js", appRoot));
+        // WebKit's own setup page is not a navigation away from the app.
+        CHECK(navigationAllowed("about:blank", appRoot));
+
+        // The drop case: a file:// URL is exactly what a dropped audio file
+        // navigates to, and it is the whole reason this policy exists.
+        CHECK(!navigationAllowed("file:///Users/someone/Music/HERMAN.wav", appRoot));
+        CHECK(!navigationAllowed("https://example.com/", appRoot));
+        CHECK(!navigationAllowed("http://localhost:3000/", appRoot));
+        CHECK(!navigationAllowed("javascript:alert(1)", appRoot));
+        CHECK(!navigationAllowed("", appRoot));
+
+        // A near-miss host must not pass on a prefix that stops short of the
+        // authority — the check is a prefix of the FULL root, separator included.
+        CHECK(!navigationAllowed("juce://juce.backend.evil.com/", appRoot));
+
+        // No root means nothing is the app yet, so nothing is allowed —
+        // fail closed, never open.
+        CHECK(!navigationAllowed(appRoot, ""));
+        CHECK(!navigationAllowed("about:blank", ""));
+    }
+
     root.deleteRecursively();
     std::printf("web_resources_test OK\n");
     return 0;

@@ -34,6 +34,20 @@ provideResource(const juce::String& path) {
     };
 }
 
+/** The shell's WebView, with a navigation policy. A plain WebBrowserComponent
+    will happily navigate away from the app when a file is dropped on it — the
+    running UI is replaced by a media page and its state is gone. Policy lives
+    in WebResources so it is unit-tested without a GUI. */
+class GuardedWebView final : public juce::WebBrowserComponent {
+public:
+    using juce::WebBrowserComponent::WebBrowserComponent;
+
+    bool pageAboutToLoad(const juce::String& newURL) override {
+        return wizard::webresources::navigationAllowed(
+            newURL, juce::WebBrowserComponent::getResourceProviderRoot());
+    }
+};
+
 } // namespace
 
 // Hosts the WebView and owns the three WZP transport paths:
@@ -58,7 +72,7 @@ public:
         takesRoot = juce::File::getSpecialLocation(juce::File::userMusicDirectory)
                         .getChildFile("Wizard/Takes");
         recorder.start(engine, takesRoot.getFullPathName().toStdString());
-        webView = std::make_unique<juce::WebBrowserComponent>(
+        webView = std::make_unique<GuardedWebView>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
                 .withResourceProvider(provideResource)
