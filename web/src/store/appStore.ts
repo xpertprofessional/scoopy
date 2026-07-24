@@ -95,6 +95,10 @@ interface AppState {
       this deliberately does not republish — the engine has no opinion on where a
       strip is drawn. */
   setChannelCell: (index: number, x: number, y: number) => void
+  /** Persist the map's viewport so a session reopens framed the way you left it.
+      Document-only, like cell geometry: the engine has no opinion on where you
+      are looking, so this never republishes. */
+  setPlaneView: (scale: number, panX: number, panY: number) => void
   setDeckSourcePath: (id: number, path: string) => void
   setDeckRate: (id: number, rate: number) => void
   setDeckLoopRegion: (id: number, startSample: number, endSample: number) => void
@@ -296,6 +300,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const channels = patch.channels.slice()
     channels[index] = { ...ch, cell: { ...ch.cell, x, y } }
     set({ patch: { ...patch, channels } })
+  },
+
+  setPlaneView: (scale, panX, panY) => {
+    const p = get().patch
+    const cur = p.plane
+    // Only write on a real change: the autosave is debounced off the patch, and
+    // rewriting an identical viewport would keep re-arming it for nothing.
+    if (cur.scale === scale && cur.panX === panX && cur.panY === panY) return
+    set({ patch: { ...p, plane: { scale, panX, panY } } })
   },
 
   setChannelParam: (index, key, value) => {

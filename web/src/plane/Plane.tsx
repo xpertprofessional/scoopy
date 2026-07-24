@@ -25,6 +25,7 @@ const MAX_SCALE = 2.5
 export function Plane({ link }: { link: EngineLink | null }) {
   const channels = useAppStore((s) => s.patch.channels)
   const savedPlane = useAppStore((s) => s.patch.plane)
+  const setPlaneView = useAppStore((s) => s.setPlaneView)
 
   const surfaceRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(savedPlane.scale)
@@ -58,14 +59,18 @@ export function Plane({ link }: { link: EngineLink | null }) {
     )
     setScale(p.scale)
     setPan({ x: p.panX, y: p.panY })
+    setPlaneView(p.scale, p.panX, p.panY)
   }
 
-  // Frame the patch once on first mount so an opened session lands looking at
-  // its strips rather than at an arbitrary corner.
+  // Frame the patch on first mount ONLY when the session carries no viewport of
+  // its own. Auto-fitting unconditionally would throw away the framing the user
+  // deliberately left — the whole point of persisting it.
   const framed = useRef(false)
   useLayoutEffect(() => {
     if (framed.current || channels.length === 0) return
     framed.current = true
+    const untouched = savedPlane.scale === 1 && savedPlane.panX === 0 && savedPlane.panY === 0
+    if (!untouched) return
     fit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels.length])
@@ -83,6 +88,7 @@ export function Plane({ link }: { link: EngineLink | null }) {
     setPan({ x: d.panX + (e.clientX - d.px) / scale, y: d.panY + (e.clientY - d.py) / scale })
   }
   const endDrag = (e: React.PointerEvent) => {
+    if (drag.current) setPlaneView(scale, pan.x, pan.y) // commit once, on release
     drag.current = null
     ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
   }
@@ -91,6 +97,7 @@ export function Plane({ link }: { link: EngineLink | null }) {
     const z = zoomAbout({ scale, panX: pan.x, panY: pan.y }, factor, screenX, screenY, MIN_SCALE, MAX_SCALE)
     setScale(z.scale)
     setPan({ x: z.panX, y: z.panY })
+    setPlaneView(z.scale, z.panX, z.panY)
   }
 
   // --- zoom: wheel keeps the point under the cursor fixed ------------------
@@ -146,6 +153,7 @@ export function Plane({ link }: { link: EngineLink | null }) {
           onClick={() => {
             setScale(1)
             setPan({ x: 0, y: 0 })
+            setPlaneView(1, 0, 0)
           }}
         >
           1×

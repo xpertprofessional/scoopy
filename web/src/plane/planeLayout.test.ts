@@ -103,3 +103,26 @@ test('zoomAbout out then in about the same point round-trips the transform', () 
   expect(back.panX).toBeCloseTo(start.panX, 4)
   expect(back.panY).toBeCloseTo(start.panY, 4)
 })
+
+// --- the viewport round-trips through the document -------------------------
+
+test('a fitted viewport survives a round-trip through the patch', () => {
+  // The plane persists {scale,panX,panY} so a session reopens framed the way it
+  // was left. fitToContent's output must therefore be expressible in the schema
+  // exactly — no NaN, no Infinity, nothing a strict parse would reject.
+  const p = fitToContent(autoLayout(7), { width: 1200, height: 800 })
+  expect(Number.isFinite(p.scale)).toBe(true)
+  expect(Number.isFinite(p.panX)).toBe(true)
+  expect(Number.isFinite(p.panY)).toBe(true)
+  expect(p.scale).toBeGreaterThan(0) // PlaneSchema requires positive
+})
+
+test('the identity viewport is distinguishable from a fitted one', () => {
+  // The plane only auto-fits when the session carries no viewport of its own,
+  // and it recognises "untouched" as exactly the identity. A fit over real
+  // content must therefore never coincidentally equal it, or a saved framing
+  // would be silently discarded on open.
+  const fitted = fitToContent(autoLayout(7), { width: 1200, height: 800 })
+  const identity = fitted.scale === 1 && fitted.panX === 0 && fitted.panY === 0
+  expect(identity).toBe(false)
+})
