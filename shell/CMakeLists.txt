@@ -63,6 +63,7 @@ target_link_libraries(Wizard PRIVATE
     wz_audio_io # host/ duplex device layer: drives wz_engine_render
     wz_decode   # deckLoadFile: decode + SINC_BEST resample (D-WZ-DECKSRC-01)
     wz_record   # P3: drain thread -> crash-safe take files
+    wz_session  # P7: atomic session file read/write
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

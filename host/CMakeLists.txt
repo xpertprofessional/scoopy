@@ -51,3 +51,16 @@ target_link_libraries(wz_record PUBLIC wz_wav PRIVATE wz_engine)
 add_executable(recorder_drain_test tools/recorder_drain_test.cpp)
 target_link_libraries(recorder_drain_test PRIVATE wz_record wz_engine)
 add_test(NAME recorder_drain_test COMMAND recorder_drain_test)
+
+# Session file persistence (P7-06). Extracted from the shell so the ATOMICITY of
+# the write is testable headlessly — a half-written session is the one failure
+# that would make autosave worse than not having it.
+add_library(wz_session STATIC src/SessionStore.cpp)
+target_include_directories(wz_session PUBLIC src)
+target_link_libraries(wz_session
+    PUBLIC juce::juce_core
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(session_store_test tools/session_store_test.cpp)
+target_link_libraries(session_store_test PRIVATE wz_session)
+add_test(NAME session_store_test COMMAND session_store_test)
