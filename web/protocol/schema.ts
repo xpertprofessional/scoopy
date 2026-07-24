@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 19
+export const SCHEMA_VERSION = 20
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -191,7 +191,7 @@ export type Cell = z.infer<typeof CellSchema>
     (the Parlante reference): wide enough for a readable waveform and Layout-B
     parameter rows. Real placement (drag, auto-layout) is the Plane's job; this
     just keeps the field valid and sets the auto-layout grid's cell size. */
-export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 196 }
+export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 220 }
 
 /**
  * What a Strip PLAYS, as opposed to `source` — what it captures FROM

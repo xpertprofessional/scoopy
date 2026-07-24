@@ -638,3 +638,42 @@ canvas.meter {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Restored from the retired console strip: the editable bus, remove, the
+   loopback's stated price, and the material's name. */
+select.plane-strip-bus {
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 2px;
+  max-width: 84px;
+}
+
+select.plane-strip-bus.plane-strip-bus-unmapped {
+  color: var(--bg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.plane-strip-remove {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: var(--text-dim);
+}
+
+.plane-strip-loopback {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--chan-bus);
+}
+
+.plane-strip-file {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

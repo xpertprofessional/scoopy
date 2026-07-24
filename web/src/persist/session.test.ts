@@ -248,3 +248,26 @@ test('a malformed deck id migrates to NO material rather than deck 0', () => {
   if (!r.ok) return
   expect(r.patch.channels[0]!.material).toBeNull()
 })
+
+test('v19 → v20 grows strip height but PRESERVES dragged positions', () => {
+  // The v16→v17 relayout was safe only because strips could not be dragged yet.
+  // They can now, so a hand-made arrangement exists and must survive a size
+  // change — this is the caveat v16→v17 recorded, honoured.
+  const patch = emptyPatch() as unknown as Record<string, unknown>
+  const c = makeChannel('a', 'a', { kind: 'deviceInput', id: '0', name: 'in' }) as unknown as
+    Record<string, unknown>
+  const moved = { ...c, cell: { x: 917, y: 431, w: 340, h: 196 } }
+  const text = JSON.stringify({
+    schemaVersion: 19,
+    savedAt: NOW,
+    app: 'Wizard 0.0.1',
+    patch: { ...patch, channels: [moved] },
+  })
+  const r = loadSession(text)
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  const cell = r.patch.channels[0]!.cell
+  expect(cell.h).toBe(DEFAULT_CELL.h) // grown
+  expect(cell.x).toBe(917) // where the user put it
+  expect(cell.y).toBe(431)
+})

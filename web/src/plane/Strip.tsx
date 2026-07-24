@@ -156,6 +156,13 @@ export function Strip({
   const rec = recordChannels(channel.source, firstInput)
   const canRecord = rec !== null
   const waveWidth = Math.max(80, cell.w - 16)
+  const sampleRate = deviceInfo?.sampleRate ?? 0
+  const blockMs = sampleRate > 0 ? ((512 / sampleRate) * 1000).toFixed(1) : null
+  const materialName = hasMaterial
+    ? (deck?.sourcePath.split('/').pop() ?? '')
+    : recording
+      ? 'recording…'
+      : 'empty'
 
   return (
     <div
@@ -184,29 +191,49 @@ export function Strip({
             {DECK_STATE_LABEL[deckState] ?? '?'}
           </span>
         )}
-        <span
+        {/* The bus chip is EDITABLE, not just a badge: routing is a live
+            decision, and the chip is where the plan says it opens (pd-merge §3).
+            A bus the device cannot carry is still offered — you should be able
+            to BUILD a spatial patch on a stereo laptop and see honestly what
+            will not be heard, rather than find the option missing. */}
+        <select
           className={`plane-strip-bus${channel.outBus >= mappable ? ' plane-strip-bus-unmapped' : ''}`}
+          value={channel.outBus}
           title={
             channel.outBus >= mappable
-              ? `routed to ${channel.outBus === 0 ? 'main' : `bus ${channel.outBus + 1}`}, which this device cannot carry — this strip is NOT heard`
+              ? 'routed to a bus this device cannot carry — this strip is NOT heard'
               : 'output bus — bus 1 is main; a spatial layout is just strips on different buses'
           }
+          onChange={(ev) => actions.setOutBus(index, Number(ev.target.value))}
         >
-          {channel.outBus === 0 ? 'main' : `bus ${channel.outBus + 1}`}
-          {channel.outBus >= mappable ? ' ⚠' : ''}
-        </span>
-        <span className="plane-strip-meter">
-          <MeterCanvas
-            width={10}
-            height={28}
-            levels={(frame) => {
-              const li = channelFieldIndex(index, 'peakL')
-              const ri = channelFieldIndex(index, 'peakR')
-              return frame.length > ri ? [frame[li]!, frame[ri]!] : null
-            }}
-          />
-        </span>
+          {Array.from({ length: 8 }, (_, b) => (
+            <option key={b} value={b}>
+              {b === 0 ? 'main' : `bus ${b + 1}`}
+              {b >= mappable ? ' ⚠' : ''}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="plane-strip-remove"
+          title="remove this strip"
+          onClick={() => actions.removeStrip(index)}
+        >
+          ×
+        </button>
       </div>
+
+      {/* The LoopbackBus costs exactly one engine block. playback-composer.md §2
+          calls that "the honest price, stated in the UI, not hidden" — so it is
+          stated here, in ms at the real device rate. */}
+      {channel.source.kind === 'busTap' && (
+        <div
+          className="plane-strip-loopback"
+          title="a loopback reads the bus one block behind — that delay is what makes the cycle legal and the schedule acyclic"
+        >
+          ↺ {blockMs ? `+${blockMs} ms` : 'one block'}
+        </div>
+      )}
 
       {showWave && deck && (
         <DeckWaveform
@@ -226,6 +253,9 @@ export function Strip({
           recording={recording}
         />
       )}
+      <div className="plane-strip-file dim" title={deck?.sourcePath || 'no material yet'}>
+        {materialName}
+      </div>
       {unresolved && (
         <div
           className="deck-unresolved"
@@ -279,30 +309,42 @@ export function Strip({
         >
           {recording ? '■' : '●'}
         </button>
-        {deck && (
-          <>
-            <button type="button" onClick={() => actions.deckTrigger(deck.id, 'loop')} title="loop">
-              ⟳
-            </button>
-            <button
-              type="button"
-              onClick={() => actions.deckTrigger(deck.id, 'oneShot')}
-              title="one-shot"
-            >
-              ▸
-            </button>
-            <button
-              type="button"
-              onClick={() => actions.deckTrigger(deck.id, 'retrigger')}
-              title="retrigger — seek to the region start, keep playing"
-            >
-              ⟲
-            </button>
-            <button type="button" onClick={() => actions.deckTrigger(deck.id, 'stop')} title="stop">
-              ◼
-            </button>
-          </>
-        )}
+        {/* Transport is ALWAYS present, disabled until there is material to
+            play. A Strip is a player whose material may not exist yet — growing
+            the controls in later would make it two different objects, which is
+            exactly what this phase exists to abolish. */}
+        <button
+          type="button"
+          disabled={!hasMaterial}
+          onClick={() => deck && actions.deckTrigger(deck.id, 'loop')}
+          title={hasMaterial ? 'loop' : 'loop — nothing recorded or loaded yet'}
+        >
+          ⟳
+        </button>
+        <button
+          type="button"
+          disabled={!hasMaterial}
+          onClick={() => deck && actions.deckTrigger(deck.id, 'oneShot')}
+          title={hasMaterial ? 'one-shot' : 'one-shot — nothing recorded or loaded yet'}
+        >
+          ▸
+        </button>
+        <button
+          type="button"
+          disabled={!hasMaterial}
+          onClick={() => deck && actions.deckTrigger(deck.id, 'retrigger')}
+          title="retrigger — seek to the region start, keep playing"
+        >
+          ⟲
+        </button>
+        <button
+          type="button"
+          disabled={!hasMaterial}
+          onClick={() => deck && actions.deckTrigger(deck.id, 'stop')}
+          title="stop"
+        >
+          ◼
+        </button>
         <StripLoad index={index} link={link} />
         <span className="plane-strip-switches">
           <button
@@ -355,7 +397,7 @@ export function Strip({
         onDoubleClick={() => actions.setPan(index, 0)}
         title="double-click to centre"
       />
-      {hasMaterial && deck && (
+      {deck && hasMaterial && (
         <ParamRow
           label="speed"
           value={rateToPosition(deck.rate)}

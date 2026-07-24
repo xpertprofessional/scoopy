@@ -8,6 +8,7 @@
  * steps, each independently testable, never a best-effort object spread.
  */
 import { PatchSchema, SCHEMA_VERSION, emptyPatch, type Patch } from '../../protocol/schema'
+import { DEFAULT_CELL } from '../../protocol/schema'
 import { autoLayout } from '../plane/planeLayout'
 import { z } from 'zod'
 
@@ -74,6 +75,34 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // v17 -> v18 (P7-08, D-WZ-DEVGONE-01): the session remembers its device.
     // Purely additive with a safe default — an older session simply had no
     // preference, which is exactly what the empty strings mean.
+    // v19 -> v20: the Strip regained the controls the retired console carried
+    // (editable bus, remove, the loopback's stated price, the material name) and
+    // its transport is now always present, so the default height grew.
+    //
+    // Unlike the v16->v17 relayout, this migration PRESERVES x/y. Strips can be
+    // dragged now, so a hand-made arrangement exists and re-laying it out would
+    // destroy the user's work — exactly the caveat v16->v17 recorded for
+    // whoever changed a default size next. Only the height is updated.
+    19: {
+      to: 20,
+      name: 'grow-strip-height (keeps positions)',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        const channels = Array.isArray(patch.channels) ? patch.channels : []
+        return {
+          ...s,
+          patch: {
+            ...patch,
+            channels: channels.map((raw) => {
+              const ch = raw as RawSession
+              const cell = (ch.cell ?? {}) as RawSession
+              return { ...ch, cell: { ...cell, h: DEFAULT_CELL.h } }
+            }),
+          },
+        }
+      },
+    },
+
     // v18 -> v19 (PD-CANVAS-06): a Strip's MATERIAL splits from its SOURCE.
     // A pre-split deck strip encoded both in `source` (kind 'deck', id = the
     // deck index), so material is derived from exactly that and `source` is
