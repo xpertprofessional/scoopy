@@ -28,9 +28,32 @@ unedited as the historical record). This file is the CURRENT state. Updated
   not hand-ported, with a CI gate proven to bite. `sl_snapshot_test` shows a
   committed world with a registered sample rendering non-silence — the engine
   half of `.scoopySession` playback works.
-- **GridPanel + transport live** — **NOT STARTED.** No longer blocked on the
-  engine: what remains is UI-side wiring (the shell's CommandDispatch answering
-  scoopy's commands against a real engine instead of the spike's stub).
+- **slCommand boot handshake** — done (`13c24ff`). `SlDispatch` answers
+  `getCapabilities` (the merged host's REAL caps, schema v86) + the settings
+  quartet + `getUiState`, GUI-free and headless-tested (`sl_dispatch_test`).
+  Replaces the spike's fake dispatcher. Not yet wired into the live window.
+- **GridPanel + transport live / `.scoopySession` plays** — **in progress.**
+  The remaining path to "scoopy landed" is three increments (below).
+
+### Remaining path to "scoopy landed here" (in order)
+
+1. **Play path — `worldPublish`/`publishTrackPattern` → v3 snapshot.** The
+   translator from scoopy's `PatternFile`/`GridPatternState` JSON into the
+   `sl_snapshot_begin/track_begin/set/commit` calls (which already make sound,
+   `sl_snapshot_test`). This is the deepest increment: it maps scoopy's document
+   format field-by-field onto the SL_T_* names, so it needs the same care as the
+   track-param generator — a mis-mapped field is silent corruption. Study
+   scoopy's PatternFile schema first; headless-test that a known payload renders
+   the expected audio. The engine side is proven; this is pure translation.
+2. **HotFrame emitter.** Produce scoopy's 284-slot frame at 30 Hz from v3 engine
+   state, so meters/playheads/carve go live. Indices from scoopy's schema
+   (`HOT_FRAME_SCALARS`), never hand-counted.
+3. **Live window + self-contained hosting.** Wire `SlDispatch` + the play path +
+   HotFrame into a real `WebBrowserComponent` window serving scoopy's UI, and
+   vendor scoopy's `webdist` hash-pinned (runtime bytes ~2.3 MB; the 3.5 MB of
+   sourcemaps can be excluded) so the merged repo hosts scoopy without the
+   sibling checkout. This is the increment that makes "scoopy lands here"
+   literally true.
 
 ## Decisions taken during P1 (and why)
 
