@@ -173,7 +173,14 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame);
  * Works on ANY material, whatever its origin: a strip is a strip, so a LOADED
  * FILE overdubs exactly like a recorded take. Uses the deck's existing record
  * source (wz_deck_set_record_source). Control thread. */
-void wz_deck_overdub_start(wz_engine* e, uint32_t deck);
+/* mode: 0 = SUM (sound-on-sound) · 1 = REPLACE (erase and write).
+ * While punching, the deck's OWN OUTPUT carries the live input on top of the
+ * material, so you hear yourself against the loop — the engine renders one
+ * source per channel, so this is the only place both can exist at once.
+ * INSERT is not a mode here: splicing changes the buffer LENGTH, which needs
+ * allocation and moving audio, neither of which is allowed on the render
+ * thread. It must be a control-thread splice at stop. */
+void wz_deck_overdub_start(wz_engine* e, uint32_t deck, uint32_t mode);
 void wz_deck_overdub_stop(wz_engine* e, uint32_t deck);
 
 void wz_deck_scrub_begin(wz_engine* e, uint32_t deck);

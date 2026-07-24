@@ -133,6 +133,10 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
       },
     },
 
+    // v25 -> v26: deckOverdub gained a punch MODE — command-only, patch
+    // unchanged, but the step must exist or migrate() hits a gap.
+    25: { to: 26, name: 'overdub punch mode (command-only, patch unchanged)', run: (s) => s },
+
     // v19 -> v20: the Strip regained the controls the retired console carried
     // (editable bus, remove, the loopback's stated price, the material name) and
     // its transport is now always present, so the default height grew.

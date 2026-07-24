@@ -68,6 +68,13 @@ struct Deck {
     // summed into the same buffer at the playhead. Not a DeckState, deliberately
     // — the deck really is still `looping`, and playback must not stop.
     std::atomic<uint32_t> overdub{0};
+    /** How a punch writes into existing material:
+        0 = SUM   (sound-on-sound, D-WZ-OVERDUB-01)
+        1 = REPLACE (erase and write — the material under the playhead is gone)
+        INSERT is deliberately absent: splicing changes the buffer LENGTH, which
+        means allocating and moving audio, and neither is allowed on the render
+        thread. It has to be a control-thread splice at stop, not a live mode. */
+    std::atomic<uint32_t> overdubMode{0};
 
     std::atomic<uint32_t> scrubActive{0};
     std::atomic<double> scrubTarget{0.0};  // where the finger is, in frames

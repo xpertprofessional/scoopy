@@ -472,7 +472,7 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame) {
     e->decks[deck].pendingSeek.store(static_cast<int64_t>(frame), std::memory_order_release);
 }
 
-void wz_deck_overdub_start(wz_engine* e, uint32_t deck) {
+void wz_deck_overdub_start(wz_engine* e, uint32_t deck, uint32_t mode) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     auto& d = e->decks[deck];
     // Overdub layers INTO existing material; with nothing there it would just be
@@ -482,6 +482,7 @@ void wz_deck_overdub_start(wz_engine* e, uint32_t deck) {
     if (d.state.load(std::memory_order_acquire) ==
         static_cast<uint32_t>(wz::DeckState::recording))
         return;
+    d.overdubMode.store(mode, std::memory_order_relaxed);
     d.overdub.store(1, std::memory_order_release);
 }
 
@@ -946,6 +947,7 @@ void wz_engine_render_io(wz_engine* e,
         // at the playhead. Works on ANY material — a loaded file overdubs
         // exactly like a recorded take, because a strip is a strip.
         const bool overdubbing = d.overdub.load(std::memory_order_acquire) != 0;
+        const uint32_t odMode = d.overdubMode.load(std::memory_order_relaxed);
         const float* od0 = (overdubbing && in_bus != nullptr && d.recSrcChan0 >= 0 &&
                             static_cast<uint32_t>(d.recSrcChan0) < in_count)
                                ? in_bus[d.recSrcChan0] : nullptr;
@@ -987,7 +989,20 @@ void wz_engine_render_io(wz_engine* e,
                 if (d.channels > 1)
                     vals[1] = od1 != nullptr ? static_cast<float>(sanitize(od1[i])) : vals[0];
                 const auto wpos = static_cast<uint64_t>(d.playhead);
-                if (wpos < dFrames) d.mixFrame(wpos, vals, d.channels);
+                if (wpos < dFrames) {
+                    // SUM layers on top; REPLACE erases what was there. Both write
+                    // in place, so neither grows the buffer or allocates.
+                    if (odMode == 1u) d.appendFrame(wpos, vals, d.channels);
+                    else d.mixFrame(wpos, vals, d.channels);
+                }
+                // HEAR YOURSELF. The deck's own output carries the live input on
+                // top of the material, because the engine renders ONE source per
+                // channel: routing the strip to the input instead would have
+                // un-routed the loop, and you would be layering against silence.
+                // D-WZ-MON-02 asks for "the input AGAINST the loop" — this is the
+                // only place both can exist at once.
+                dl[i] += vals[0];
+                dr[i] += d.channels > 1 ? vals[1] : vals[0];
                 // The RAM mix is destructive, so the drain is what preserves
                 // this pass: every overdub lands as its own stamped take file
                 // (recorder.md §9), even though the pre-mix buffer does not.

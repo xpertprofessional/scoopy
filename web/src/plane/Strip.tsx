@@ -119,6 +119,9 @@ export function Strip({
   // Overdub is a live engine mode, not document state: it is armed and dropped
   // in the moment, and nothing about it should survive a save.
   const [overdubbing, setOverdubbing] = useState(false)
+  // Punch mode: layer on top, or erase and write. Live engine state, not the
+  // document — which mode you last punched in is not a property of the patch.
+  const [punchMode, setPunchMode] = useState<'sum' | 'replace'>('sum')
   const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
 
   const cell = channel.cell
@@ -364,12 +367,15 @@ export function Strip({
           ◼
         </button>
         <StripLoad index={index} link={link} />
-        {/* OVR — sound-on-sound. Available on ANY strip that HAS material and a
-            capturable source: a loaded file layers exactly like a recorded take,
-            because a strip is a strip. Monitoring stays open while layering
-            (D-WZ-MON-02's one exception), since hearing yourself against the
-            loop is the entire point. */}
+        {/* PUNCH — available on ANY strip with material and a capturable source:
+            a loaded file layers exactly like a recorded take, because a strip is
+            a strip. OVR sums on top, RPL erases and writes; the small button
+            switches between them. You hear yourself against the loop because the
+            DECK's output carries material + live input while punching — routing
+            the strip to the input instead would un-route the loop you are
+            playing along to. */}
         {hasMaterial && canRecord && deck && (
+          <>
           <button
             type="button"
             className={overdubbing ? 'latched-rec' : ''}
@@ -381,11 +387,24 @@ export function Strip({
             onClick={() => {
               const next = !overdubbing
               setOverdubbing(next)
-              actions.setOverdub(index, deck.id, next)
+              actions.setOverdub(deck.id, next, punchMode)
             }}
           >
-            OVR
+            {punchMode === 'replace' ? 'RPL' : 'OVR'}
           </button>
+          <button
+            type="button"
+            disabled={overdubbing}
+            title={
+              punchMode === 'sum'
+                ? 'punch mode: SUM — layer on top of what is there. Click for REPLACE.'
+                : 'punch mode: REPLACE — erase what is there and write. Click for SUM.'
+            }
+            onClick={() => setPunchMode(punchMode === 'sum' ? 'replace' : 'sum')}
+          >
+            {punchMode === 'sum' ? '+' : '↹'}
+          </button>
+          </>
         )}
         {/* IN — listen to the source instead of the material. Only meaningful
             when the Strip has BOTH: without material there is nothing else to

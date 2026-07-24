@@ -64,7 +64,7 @@ int main() {
     CHECK(before > 0.01); // it is playing the file
 
     // --- overdub a LOADED FILE: allowed, and it SUMS ------------------------
-    wz_deck_overdub_start(e, 0);
+    wz_deck_overdub_start(e, 0, 0); // SUM
     for (int b = 0; b < 24; ++b) (void)renderWithInput(e, 256, 0.5f); // lay a layer down
     wz_deck_overdub_stop(e, 0);
 
@@ -87,12 +87,46 @@ int main() {
     // the record verb is for.
     wz_engine* e2 = wz_engine_create(kRate, 256, 5);
     CHECK(e2 != nullptr);
-    wz_deck_overdub_start(e2, 0);
+    wz_deck_overdub_start(e2, 0, 0);
     std::vector<float> l2(256), r2(256), c2(256), c3(256);
     float* o2[4] = {l2.data(), r2.data(), c2.data(), c3.data()};
     wz_engine_render(e2, o2, 4, 256);
     for (size_t i = 0; i < 256; ++i) CHECK(std::isfinite(l2[i]));
     wz_engine_destroy(e2);
+
+    // --- REPLACE erases what was there, where SUM layered on top ------------
+    wz_engine* e3 = wz_engine_create(kRate, 256, 5);
+    CHECK(e3 != nullptr);
+    wz_engine_set_watchdog_enabled(e3, 0);
+    std::vector<float> loud(kFrames, 0.8f);
+    const float* p3[1] = {loud.data()};
+    CHECK(wz_deck_load(e3, 0, 1, kFrames, p3, kRate) == 1);
+    wz_world_begin(e3);
+    wz_world_channel_begin(e3, "s");
+    wz_world_channel_set(e3, wz_world_key_for_name("srcKind"), 2);
+    wz_world_channel_set(e3, wz_world_key_for_name("deckIndex"), 0);
+    wz_world_channel_set(e3, wz_world_key_for_name("gain"), 0.75);
+    wz_world_channel_set(e3, wz_world_key_for_name("pan"), 0.0);
+    wz_world_channel_end(e3);
+    wz_world_set_deck_count(e3, 1);
+    wz_world_commit(e3);
+    wz_deck_set_record_source(e3, 0, 0, -1);
+    wz_deck_trigger(e3, 0, 0);
+
+    const double loudBefore = renderWithInput(e3, 256, 0.0f);
+    CHECK(loudBefore > 0.3);
+
+    // Punch SILENCE over it in REPLACE mode: erasing works only if the material
+    // afterwards is QUIETER. Under SUM, adding 0.0 would change nothing at all —
+    // which is exactly what distinguishes the two modes.
+    wz_deck_overdub_start(e3, 0, 1); // REPLACE
+    for (int b = 0; b < 40; ++b) (void)renderWithInput(e3, 256, 0.0f);
+    wz_deck_overdub_stop(e3, 0);
+    CHECK(wz_deck_frames(e3, 0) == kFrames); // replace never grows the buffer
+
+    const double loudAfter = renderWithInput(e3, 256, 0.0f);
+    CHECK(loudAfter < loudBefore * 0.5); // the material was ERASED, not layered
+    wz_engine_destroy(e3);
 
     wz_engine_destroy(e);
     std::printf("deck_overdub_test OK\n");

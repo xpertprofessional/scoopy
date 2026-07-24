@@ -270,10 +270,13 @@ export function usePatchActions(link: EngineLink | null) {
      * Monitoring stays OPEN while layering: hearing the input against the loop
      * is the point, and it is D-WZ-MON-02's one exception to the auto-close.
      */
-    setOverdub(index: number, deck: number, on: boolean) {
-      useAppStore.getState().setChannelParam(index, 'monitorSwitch', on)
-      publishPatch(link, useAppStore.getState().patch)
-      void link?.command('deckOverdub', { deck, on })
+    setOverdub(deck: number, on: boolean, mode: 'sum' | 'replace' = 'sum') {
+      // Deliberately does NOT open the monitor any more. Doing so published the
+      // INPUT in place of the material, which un-routed the very loop you are
+      // layering against — you overdubbed blind. The deck's own output now
+      // carries material + live input, which is what D-WZ-MON-02 actually meant
+      // by "the input against the loop".
+      void link?.command('deckOverdub', { deck, on, mode })
     },
     /** TAPE SCRUB (turntable): pitch follows hand speed, because the engine
         derives the rate from the gap. Distinct from deckSeek, which jumps at

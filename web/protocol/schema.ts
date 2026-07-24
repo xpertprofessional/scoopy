@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 25
+export const SCHEMA_VERSION = 26
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -541,7 +541,16 @@ export const COMMANDS = {
   // loaded file layers exactly like a recorded take, because a strip is a strip.
   // Refused on an empty deck: with nothing to layer into, that is just recording.
   deckOverdub: {
-    params: z.object({ deck: z.number().int().min(0).max(7), on: z.boolean() }).strict(),
+    params: z
+      .object({
+        deck: z.number().int().min(0).max(7),
+        on: z.boolean(),
+        /** sum = sound-on-sound · replace = erase and write. INSERT is not here:
+            splicing changes buffer LENGTH, so it cannot be a live render-thread
+            mode (see P3-14). */
+        mode: z.enum(['sum', 'replace']),
+      })
+      .strict(),
     result: z.object({ ok: z.boolean() }).strict(),
   },
   // Deck transport intent; state truth streams back via the HotFrame deck
