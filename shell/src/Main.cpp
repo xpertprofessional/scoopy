@@ -72,7 +72,8 @@ public:
                             return;
                         }
                         if (method == "deckRecordStart" || method == "deckRecordStop" ||
-                            method == "listTakes" || method == "deckLoadTake") {
+                            method == "listTakes" || method == "deckLoadTake" ||
+                            method == "deleteTake" || method == "revealTake") {
                             complete(recordCommand(method, params));
                             return;
                         }
@@ -210,6 +211,28 @@ private:
             juce::Array<juce::var> arr;
             for (const auto& t : recorder.takes()) arr.add(takeToVar(t));
             result->setProperty("takes", juce::var(arr));
+        } else if (method == "deleteTake") {
+            const auto path = params.getProperty("path", "").toString();
+            // Forget it first: a take still being recorded is refused, and we
+            // never want the list pointing at files we just moved away.
+            const bool forgotten = recorder.forgetTake(path.toStdString());
+            bool trashed = false;
+            if (forgotten) {
+                const juce::File wav(path);
+                const juce::File sidecar(path + ".json");
+                // moveToTrash, NOT delete: a mis-click stays recoverable.
+                trashed = wav.moveToTrash();
+                if (sidecar.existsAsFile()) sidecar.moveToTrash();
+            }
+            result->setProperty("ok", forgotten && trashed);
+            result->setProperty("error",
+                                !forgotten ? "take is still recording or unknown"
+                                           : (trashed ? "" : "could not move the file to the Trash"));
+        } else if (method == "revealTake") {
+            const juce::File f(params.getProperty("path", "").toString());
+            const bool ok = f.existsAsFile();
+            if (ok) f.revealToUser();
+            result->setProperty("ok", ok);
         } else if (method == "deckLoadTake") {
             const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
             const auto path = params.getProperty("path", "").toString();

@@ -440,3 +440,9 @@ canvas.meter {
   display: flex;
   gap: 3px;
 }
+
+.take-manage {
+  display: flex;
+  gap: 3px;
+  justify-content: flex-end;
+}

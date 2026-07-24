@@ -52,6 +52,10 @@ public:
     bool endTake(uint32_t deck);
 
     std::vector<TakeInfo> takes() const;
+    /** Forget a take (by path). Does NOT touch the filesystem — the shell moves
+        the files to the Trash, so a mis-click is recoverable. Returns false if
+        the path isn't in the list or its deck is still recording into it. */
+    bool forgetTake(const std::string& path);
     /** Frames the file writer lost because the drain fell behind (per deck). */
     uint64_t droppedFrames(uint32_t deck) const;
 

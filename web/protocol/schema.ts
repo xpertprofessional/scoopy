@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 9
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -414,6 +414,18 @@ export const COMMANDS = {
         error: z.string(),
       })
       .strict(),
+  },
+  // Discard a take: the WAV + sidecar are moved to the system Trash (NOT
+  // unlinked) so a mis-click is recoverable, and the take leaves the list.
+  // Refused while a deck is still recording into that file.
+  deleteTake: {
+    params: z.object({ path: z.string().min(1) }).strict(),
+    result: z.object({ ok: z.boolean(), error: z.string() }).strict(),
+  },
+  // Show the take in the system file browser (shell-owned).
+  revealTake: {
+    params: z.object({ path: z.string().min(1) }).strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
   },
   // Half-open [startSample, endSample); published atomically (seqlock — the
   // render thread never observes a torn pair). Dispatch lands P1-07.

@@ -50,6 +50,7 @@ interface AppState {
   setDeckCapReached: (c: boolean[]) => void
   setTakes: (t: Take[]) => void
   addTake: (t: Take) => void
+  removeTake: (path: string) => void
   setAlignReference: (path: string | null) => void
   /** Topology edits — return the new Patch so the caller can publish it. */
   addChannel: (name: string, source: SourceRef) => Patch
@@ -89,6 +90,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDeckCapReached: (deckCapReached) => set({ deckCapReached }),
   setTakes: (takes) => set({ takes }),
   addTake: (t) => set({ takes: [...get().takes, t] }),
+  removeTake: (path) =>
+    set({
+      takes: get().takes.filter((t) => t.path !== path),
+      // A deleted take can't stay the align reference.
+      alignReferencePath: get().alignReferencePath === path ? null : get().alignReferencePath,
+    }),
   setAlignReference: (alignReferencePath) => set({ alignReferencePath }),
 
   addChannel: (name, source) => {

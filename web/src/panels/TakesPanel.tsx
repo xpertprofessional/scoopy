@@ -8,7 +8,7 @@
  * relationship. Takes captured simultaneously are marked, since that is the
  * case C-2 exists to make reconstructible.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { EngineLink } from '../engine/engineLink'
 import { alignOffsetSamples, formatOffset, takesOverlap } from '../engine/takeAlign'
 import { usePatchActions } from '../engine/usePatch'
@@ -24,6 +24,10 @@ export function TakesPanel({ link }: { link: EngineLink | null }) {
   const referencePath = useAppStore((s) => s.alignReferencePath)
   const setAlignReference = useAppStore((s) => s.setAlignReference)
   const actions = usePatchActions(link)
+  // Two-click discard: the first click arms, the second commits. Cheaper than a
+  // modal and impossible to hit by accident. (The files go to the Trash anyway,
+  // so even a committed mistake is recoverable.)
+  const [armedDelete, setArmedDelete] = useState<string | null>(null)
 
   // Pull the existing take list once the engine is up (takes survive a UI
   // reload; the service owns them).
@@ -45,6 +49,7 @@ export function TakesPanel({ link }: { link: EngineLink | null }) {
             <th>len</th>
             <th>align</th>
             <th>load into</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -91,6 +96,35 @@ export function TakesPanel({ link }: { link: EngineLink | null }) {
                       {d.id + 1}
                     </button>
                   ))}
+                </td>
+                <td className="take-manage">
+                  <button
+                    type="button"
+                    title="show the file"
+                    onClick={() => void actions.revealTake(t.path)}
+                  >
+                    ⤴
+                  </button>
+                  <button
+                    type="button"
+                    className={armedDelete === t.path ? 'latched-hot' : ''}
+                    title={
+                      armedDelete === t.path
+                        ? 'click again to move this take to the Trash'
+                        : 'discard take (moves to Trash — recoverable)'
+                    }
+                    onClick={() => {
+                      if (armedDelete === t.path) {
+                        void actions.deleteTake(t.path)
+                        setArmedDelete(null)
+                      } else {
+                        setArmedDelete(t.path)
+                      }
+                    }}
+                    onBlur={() => setArmedDelete((p) => (p === t.path ? null : p))}
+                  >
+                    {armedDelete === t.path ? 'sure?' : '×'}
+                  </button>
                 </td>
               </tr>
             )

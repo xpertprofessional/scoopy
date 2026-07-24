@@ -162,6 +162,20 @@ bool Service::endTake(uint32_t deck) {
     return true;
 }
 
+bool Service::forgetTake(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Refuse while a deck is still writing this file — a take being recorded is
+    // not a take you can discard.
+    for (const auto& slot : slots_)
+        if (slot->open && slot->path == path) return false;
+    for (size_t i = 0; i < takes_.size(); ++i)
+        if (takes_[i].path == path) {
+            takes_.erase(takes_.begin() + static_cast<long>(i));
+            return true;
+        }
+    return false;
+}
+
 std::vector<TakeInfo> Service::takes() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return takes_;

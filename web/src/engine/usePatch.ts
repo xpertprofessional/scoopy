@@ -41,6 +41,7 @@ export function usePatchActions(link: EngineLink | null) {
   const removeChannel = useAppStore((s) => s.removeChannel)
   const addTake = useAppStore((s) => s.addTake)
   const setTakes = useAppStore((s) => s.setTakes)
+  const removeTake = useAppStore((s) => s.removeTake)
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
@@ -100,6 +101,16 @@ export function usePatchActions(link: EngineLink | null) {
       if (!link) return
       const r = await link.command('listTakes', {})
       setTakes(r.takes)
+    },
+    /** Discard a take — the files go to the Trash, so this is recoverable. */
+    async deleteTake(path: string) {
+      if (!link) return
+      const r = await link.command('deleteTake', { path })
+      if (r.ok) removeTake(path)
+    },
+    async revealTake(path: string) {
+      if (!link) return
+      await link.command('revealTake', { path })
     },
     /** Load a recorded take into any deck (CONCEPT: one click → any deck). */
     async deckLoadTake(deck: number, path: string) {
