@@ -7,6 +7,7 @@
 #include "NativeToneFilter.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <array>
 #include <cstddef>
@@ -78,6 +79,12 @@ struct sl_engine {
     double sampleRate = 0.0;
     std::int32_t schemaVersion = 0;
 
+    // HotFrame telemetry. The counter is monotonic per emitted frame (the UI
+    // detects dropped frames from its gaps); `created` anchors hostTimeMs, which
+    // the UI uses only for relative dead-reckoning between frames.
+    std::uint64_t hotFrameCounter = 0;
+    std::chrono::steady_clock::time_point created = std::chrono::steady_clock::now();
+
     /** Size the scratch to (rate, block) and prime the mixer. Shared by create
         and set_sample_rate so a rate change cannot drift from the initial
         configuration — the two used to be one function for a reason. */
@@ -110,6 +117,10 @@ namespace {
 // it here: `npm run trackparams:generate`, and CI's trackparams:check fails if
 // this copy drifts from the vendored source it was derived from.
 #include "sl_track_params.inc"
+
+// The HotFrame layout (SL_HF_* indices + SL_HOTFRAME_LENGTH), generated from
+// scoopy's HOT_FRAME_SCALARS. Same rule: never hand-count these.
+#include "sl_hotframe.inc"
 
 int lookupName(const char* const* table, uint32_t count, const char* name) {
     if (name == nullptr) return SL_PARAM_UNKNOWN;
@@ -297,6 +308,42 @@ const char* sl_track_array_name(uint32_t id) {
 uint64_t sl_snapshot_commit(sl_engine* e) {
     if (e == nullptr) return 0;
     return e->core.publishSequencerState(e->pending);
+}
+
+uint32_t sl_hotframe_length(void) { return SL_HOTFRAME_LENGTH; }
+
+uint32_t sl_hotframe(sl_engine* e, double* out, uint32_t capacity) {
+    if (e == nullptr || out == nullptr) return 0;
+    if (capacity < SL_HOTFRAME_LENGTH) return 0; // refuse-short, never truncate
+
+    std::fill_n(out, SL_HOTFRAME_LENGTH, 0.0);
+
+    out[SL_HF_frameCounter] = static_cast<double>(++e->hotFrameCounter);
+    const auto now = std::chrono::steady_clock::now();
+    out[SL_HF_hostTimeMs] =
+        std::chrono::duration<double, std::milli>(now - e->created).count();
+
+    // consumeOutputPeak/consumeInputPeak read-AND-RESET, so the frame reports
+    // the peak since the previous frame — the meter behaviour the UI expects.
+    const double outPeak = e->core.consumeOutputPeak();
+    // The core exposes ONE main-bus peak; scoopy's frame carries L and R. Mirror
+    // it to both rather than invent a stereo split the core does not provide.
+    out[SL_HF_outputPeakL] = outPeak;
+    out[SL_HF_outputPeakR] = outPeak;
+    out[SL_HF_outputClip] = outPeak >= 0.999 ? 1.0 : 0.0; // scoopy clip threshold
+    out[SL_HF_inputPeak] = e->core.consumeInputPeak();
+
+    const auto d = e->core.diagnostics();
+    out[SL_HF_callbackLoad] = d.callbackLoad;
+    out[SL_HF_deadlineMissCount] = static_cast<double>(d.deadlineMissCount);
+
+    out[SL_HF_playheadStepDeck0] = static_cast<double>(e->core.deckPlayheadStep(0));
+    out[SL_HF_playheadStepDeck1] = static_cast<double>(e->core.deckPlayheadStep(1));
+    out[SL_HF_playheadStepDeck2] = static_cast<double>(e->core.deckPlayheadStep(2));
+
+    // Per-track step/pos/level and the carve blocks stay 0 (idle meters) until
+    // v3 exposes the sequencer detail behind them — zero-filled, never faked.
+    return SL_HOTFRAME_LENGTH;
 }
 
 } // extern "C"

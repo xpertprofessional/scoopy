@@ -159,6 +159,21 @@ const char* sl_track_array_name(uint32_t id);
     or 0 if nothing was published. */
 uint64_t sl_snapshot_commit(sl_engine* e);
 
+/* ── HotFrame (§8) — 30 Hz engine→UI telemetry ──────────────────────────────
+ *
+ * One flat Float64 frame the caller emits at ~30 Hz. The layout is scoopy's
+ * (schema.ts `HOT_FRAME_SCALARS`, generated into the native index header), so
+ * the UI reads each slot by the position it expects — hand-counting an index
+ * would make a meter read a neighbour's value.
+ *
+ * Refuse-short-buffer, never truncate (wz law): if `capacity` is less than
+ * `sl_hotframe_length()`, nothing is written and 0 is returned. Otherwise the
+ * frame is fully written (0-filled where v3 has no source yet) and the length
+ * returned. Lock-free reads of state the render loop already maintains; safe
+ * off the audio thread. */
+uint32_t sl_hotframe_length(void);
+uint32_t sl_hotframe(sl_engine* e, double* out, uint32_t capacity);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
