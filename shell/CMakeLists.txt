@@ -25,6 +25,19 @@ target_link_libraries(wz_command
 # The test creates engines directly, but wz_command already propagates the
 # static wz_engine onto the link line (PRIVATE deps of a static lib can't be
 # hidden), so linking it again would just warn about a duplicate library.
+# scoopy's slCommand dispatch (boot handshake: capabilities + settings +
+# view-state), GUI-free so it is tested headlessly like wz_command. No engine
+# yet — the PatternFile->v3 play path is a later increment.
+add_library(wz_sl_command STATIC src/SlDispatch.cpp)
+target_include_directories(wz_sl_command PUBLIC src)
+target_link_libraries(wz_sl_command
+    PUBLIC juce::juce_core
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(sl_dispatch_test tools/sl_dispatch_test.cpp)
+target_link_libraries(sl_dispatch_test PRIVATE wz_sl_command)
+add_test(NAME sl_dispatch_test COMMAND sl_dispatch_test)
+
 add_executable(command_dispatch_test tools/command_dispatch_test.cpp)
 target_include_directories(command_dispatch_test PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include)
 target_link_libraries(command_dispatch_test PRIVATE wz_command)
