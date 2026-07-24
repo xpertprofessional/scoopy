@@ -70,6 +70,11 @@ add_executable(render_chunk_invariance_test tools/render_chunk_invariance_test.c
 target_link_libraries(render_chunk_invariance_test PRIVATE wz_engine)
 add_test(NAME render_chunk_invariance_test COMMAND render_chunk_invariance_test)
 
+# Scrub: the playhead goes where the user drags it (turntable-style).
+add_executable(deck_seek_test tools/deck_seek_test.cpp)
+target_link_libraries(deck_seek_test PRIVATE wz_engine)
+add_test(NAME deck_seek_test COMMAND deck_seek_test)
+
 # D-WZ-RAMP-01 anti-click guarantee: gain/mute/solo TRANSITIONS glide, not step.
 add_executable(ramp_test tools/ramp_test.cpp)
 target_link_libraries(ramp_test PRIVATE wz_engine)

@@ -465,6 +465,13 @@ uint64_t wz_deck_frames(const wz_engine* e, uint32_t deck) {
     return e->decks[deck].frames.load(std::memory_order_acquire);
 }
 
+void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    // Control thread: post the target and return. The render thread applies it
+    // at the top of its next block, so a scrub drag never races the reader.
+    e->decks[deck].pendingSeek.store(static_cast<int64_t>(frame), std::memory_order_release);
+}
+
 void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     auto& d = e->decks[deck];
@@ -806,6 +813,17 @@ void wz_engine_render_io(wz_engine* e,
         const bool reversing = d.rate.load(std::memory_order_relaxed) < 0.0;
         const double entry = reversing ? static_cast<double>(re) - 1.0 : static_cast<double>(rs);
         if (d.pendingReset.exchange(0, std::memory_order_acq_rel) != 0) d.playhead = entry;
+        // A SCRUB wins over the region clamp below: land exactly where the user
+        // dragged, bounded only by the buffer. Note the loop WRAP further down
+        // still applies, so scrubbing outside an active loop region folds back
+        // into it — a loop is a loop.
+        const int64_t seek = d.pendingSeek.exchange(-1, std::memory_order_acq_rel);
+        if (seek >= 0) {
+            const double target = static_cast<double>(seek);
+            d.playhead = target < static_cast<double>(dFrames)
+                             ? target
+                             : static_cast<double>(dFrames > 0 ? dFrames - 1 : 0);
+        } else
         if (d.playhead < static_cast<double>(rs) || d.playhead >= static_cast<double>(re))
             d.playhead = entry;
 

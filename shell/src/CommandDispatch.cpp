@@ -117,6 +117,15 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         return ok(juce::var(result));
     }
 
+    if (method == "deckSeek") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto frame = static_cast<int64_t>(static_cast<juce::int64>(params.getProperty("frame", 0)));
+        wz_deck_seek(engine, deck, static_cast<uint64_t>(frame < 0 ? 0 : frame));
+        auto* r = new juce::DynamicObject();
+        r->setProperty("ok", true);
+        return ok(juce::var(r));
+    }
+
     if (method == "deckTrigger") {
         const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
         const auto mode = params.getProperty("mode", "stop").toString();

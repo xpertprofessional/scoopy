@@ -11,7 +11,15 @@ import { useAppStore } from '../store/appStore'
 import type { EngineLink } from './engineLink'
 import { validatePatch } from './patchValidation'
 
-export function publishPatch(link: EngineLink | null, patch: Patch): void {
+export function publishPatch(
+  link: EngineLink | null,
+  patch: Patch,
+  /** Channel index that must publish its INPUT even though it holds material —
+      used while recording, so you hear and meter what you are capturing rather
+      than the deck you are capturing INTO. Without this, arming a take silently
+      swapped the strip over to an empty deck and recording looked dead. */
+  monitorIndex?: number,
+): void {
   if (!link) return
   // Edit-time DAG/integrity guard (routing.md §5): the engine never sees an
   // illegal world. Store paths only build legal edits, so a hit here is a bug
@@ -32,8 +40,8 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
     // own `source` is left untouched, so the Strip never forgets what it records
     // FROM. This is why recording can become a verb on any Strip without an
     // engine change and without the rebind that would have erased provenance.
-    channels: patch.channels.map((ch) =>
-      ch.material
+    channels: patch.channels.map((ch, i) =>
+      ch.material && i !== monitorIndex
         ? { ...ch, source: { kind: 'deck' as const, id: String(ch.material.deckId), name: ch.name } }
         : ch,
     ),
@@ -109,7 +117,10 @@ export function usePatchActions(link: EngineLink | null) {
       if (!link) return -1
       const { patch, deckId } = attachDeck(index)
       if (deckId < 0) return -1
-      publishPatch(link, patch) // the deck must exist in the world before capture
+      // Publish with THIS strip monitoring its input: the deck must exist in
+      // the world before capture, but the strip must still pass the signal it is
+      // recording (D-WZ-MON-01, monitor default ON).
+      publishPatch(link, patch, index)
       await link.command('deckRecordStart', { deck: deckId, chan0, chan1, sourceDesc })
       return deckId
     },
@@ -222,6 +233,11 @@ export function usePatchActions(link: EngineLink | null) {
         endSample: take.frames,
       })
     },
+    /** SCRUB: drag the playhead (turntable-style). Fire-and-forget — the engine
+        applies it at the top of its next block. */
+    deckSeek(deck: number, frame: number) {
+      void link?.command('deckSeek', { deck, frame: Math.max(0, Math.round(frame)) })
+    },
     /** Deck transport intents; state truth returns via HotFrame. */
     deckTrigger(deck: number, mode: 'loop' | 'oneShot' | 'stop' | 'retrigger') {
       void link?.command('deckTrigger', { deck, mode })
@@ -238,6 +254,9 @@ export function usePatchActions(link: EngineLink | null) {
       const r = await link.command('deckRecordStop', { deck })
       if (r.ok && r.take) addTake(r.take)
       bumpDeckRevision(deck) // a take just became this deck's buffer (Law C-3)
+      // Hand the strip back to its material: it was monitoring its input during
+      // the take, and Law C-3 means the capture is ALREADY looping in the engine.
+      publishPatch(link, useAppStore.getState().patch)
     },
     async refreshTakes() {
       if (!link) return

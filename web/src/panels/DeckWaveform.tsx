@@ -26,6 +26,8 @@ interface Props {
   loopStart: number
   loopEnd: number
   onSetLoop: (startSample: number, endSample: number) => void
+  /** Turntable scrub: drag the wave to move the playhead. */
+  onScrub?: (frame: number) => void
   width?: number
   height?: number
   /** While true the take is still being captured: the envelope is re-fetched on
@@ -44,6 +46,7 @@ export function DeckWaveform({
   loopStart,
   loopEnd,
   onSetLoop,
+  onScrub,
   width = 150,
   height = 40,
   recording = false,
@@ -200,15 +203,21 @@ export function DeckWaveform({
       ref={ref}
       className="deck-waveform"
       style={{ width, height }}
-      title="drag to set the loop region · double-click for the whole take"
+      title="drag to scrub the playhead · shift-drag to set the loop region · double-click for the whole take"
       onPointerDown={(ev) => {
         if (frames === 0) return
         ev.currentTarget.setPointerCapture(ev.pointerId)
         const s = posToSample(ev)
-        setDrag({ from: s, to: s })
+        // PLAIN DRAG = SCRUB (the player gesture — you grab the record and move
+        // it). SHIFT-drag sets the loop region, which used to be the plain drag;
+        // scrubbing is the far more frequent act on a player, so it gets the
+        // unmodified gesture.
+        if (ev.shiftKey) setDrag({ from: s, to: s })
+        else onScrub?.(s)
       }}
       onPointerMove={(ev) => {
         if (drag) setDrag({ ...drag, to: posToSample(ev) })
+        else if (ev.buttons === 1) onScrub?.(posToSample(ev))
       }}
       onPointerUp={() => {
         if (!drag) return

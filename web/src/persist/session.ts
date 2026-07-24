@@ -75,6 +75,12 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // v17 -> v18 (P7-08, D-WZ-DEVGONE-01): the session remembers its device.
     // Purely additive with a safe default — an older session simply had no
     // preference, which is exactly what the empty strings mean.
+    // v21 -> v22: deckSeek (scrub) was added. It is a COMMAND, not a document
+    // field, so the patch is unchanged — but the step must still exist, because
+    // migrate() walks version by version and a gap fails the load outright.
+    // An explicit identity is the honest way to say "nothing to do here".
+    21: { to: 22, name: 'deckSeek added (command-only, patch unchanged)', run: (s) => s },
+
     // v20 -> v21: `uiMode` is DELETED. It named 'console' | 'strip' as document
     // state, but the console no longer exists and "strip mode" is just a
     // zoomed-out plane, which `plane.scale` already carries. Leaving the field

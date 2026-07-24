@@ -51,6 +51,11 @@ struct Deck {
     // --- control → render ----------------------------------------------------
     std::atomic<uint32_t> state{0};        // DeckState
     std::atomic<uint32_t> pendingReset{0}; // retrigger/start: seek region start next block
+    // Scrub mailbox (turntable-style dragging). -1 = nothing pending; otherwise
+    // the frame the render thread should jump to at the top of the next block.
+    // Same discipline as pendingReset: the control thread only ever STORES, the
+    // render thread exchanges it away, so no lock and no torn read.
+    std::atomic<int64_t> pendingSeek{-1};
     std::atomic<double> rate{1.0};         // signed varispeed; <0 = reverse (P4-02)
 
     // Seqlock loop spec (writer: control thread; reader: render, once per block).

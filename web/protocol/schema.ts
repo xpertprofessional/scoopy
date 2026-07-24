@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 21
+export const SCHEMA_VERSION = 22
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -505,6 +505,18 @@ export const COMMANDS = {
         engineFrames: z.number().int().nonnegative(),
       })
       .strict(),
+  },
+  // SCRUB: put the playhead at `frame` (turntable-style dragging). Posted to a
+  // render-thread mailbox, so dragging never races the reader. A looping deck
+  // still wraps into its region — a loop is a loop.
+  deckSeek: {
+    params: z
+      .object({
+        deck: z.number().int().min(0).max(7),
+        frame: z.number().int().nonnegative(),
+      })
+      .strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
   },
   // Deck transport intent; state truth streams back via the HotFrame deck
   // block, never from this reply. Dispatch lands P1-07.

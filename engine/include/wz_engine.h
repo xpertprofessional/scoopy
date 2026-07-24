@@ -139,6 +139,13 @@ uint64_t wz_deck_frames(const wz_engine* e, uint32_t deck);
  * via the HotFrame deck block, never a reply. */
 void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
 
+/* SCRUB: put the playhead at `frame` (turntable-style dragging). Posted to a
+ * mailbox the render thread consumes at the top of its next block, so dragging
+ * never races the reader. Clamped to the buffer, NOT to the loop region —
+ * scrubbing outside the region is how you find the part you want to loop.
+ * Control thread. */
+void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame);
+
 /* Half-open [start, end) in buffer samples, seqlock-published (never torn).
  * enabled=0 or a degenerate/out-of-range pair plays the whole buffer. */
 void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
