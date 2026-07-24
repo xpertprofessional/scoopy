@@ -260,6 +260,31 @@ void wz_deck_set_record_cap_frames(wz_engine* e, uint32_t deck, uint64_t cap_fra
 uint32_t wz_deck_drain(wz_engine* e, uint32_t deck, float* out,
                        uint32_t capacity_frames, uint64_t* out_start_sample);
 
+/* --- GLOBAL RECORD (D-WZ-GREC-01) ----------------------------------------
+ * The archivist, not the instrument. A stereo tap of bus 0 taken POST master
+ * fader and POST limiter — what actually left the bus — drained to file by the
+ * host. It is deliberately NOT a deck: no RAM buffer, no 256 MB cap, not
+ * live-loopable. That is what lets it run a three-hour set while a deck caps at
+ * 11 min 39 s stereo.
+ *
+ * wz_global_record_start ARMS; the render thread picks the arm up at the top of
+ * its next block and stamps globalStartSample there, so the stamp is the exact
+ * engine sample capture began. Every per-strip file of the same session is
+ * written with TimeReference = its startEngineSample − this, which is what makes
+ * "drop every file at 0:00" reproduce the session (Law C-2). */
+void wz_global_record_start(wz_engine* e);
+/* Stops at the render's next block; returns the session's time origin. */
+uint64_t wz_global_record_stop(wz_engine* e);
+uint64_t wz_global_record_start_sample(wz_engine* e);
+uint32_t wz_global_record_active(wz_engine* e); /* render's own state, not the arm */
+/* Dropped-oldest events. The render thread never blocks on the host's disk, so
+ * a host that falls behind LOSES AUDIO — and this is how it finds out. */
+uint64_t wz_global_record_overruns(wz_engine* e);
+/* Host drain: interleaved stereo, up to `capacity` frames; returns frames
+ * copied. `out_start_sample` receives the session origin (may be NULL). */
+uint32_t wz_global_drain(wz_engine* e, float* out, uint32_t capacity_frames,
+                         uint64_t* out_start_sample);
+
 /* --- audio ------------------------------------------------------------- */
 /* Duplex render (D-WZ-RATE-01: inputs arrive in the SAME callback as the
  * output — same clock, zero SRC). `in_bus` is `in_count` device input channel

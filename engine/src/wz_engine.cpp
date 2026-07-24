@@ -128,6 +128,17 @@ struct wz_engine {
     std::vector<float> deckOutR[wz::kMaxDecks];
     // Per-deck parallel file drain (render writes captured frames, host pulls).
     wz::SourceRing deckDrain[wz::kMaxDecks];
+
+    // --- GLOBAL RECORD (P7-GREC-01, D-WZ-GREC-01) ---------------------------
+    // The archivist: a stereo tap of bus 0 taken POST master fader and POST
+    // limiter, drained to file by the host. Deliberately NOT a deck — no RAM
+    // buffer, no 256 MB cap, not live-loopable — which is what lets it run for a
+    // three-hour set while a deck caps at 11:39 stereo.
+    wz::SourceRing globalDrain;
+    std::atomic<uint32_t> globalArm{0};    // control → render: 1 = arm, 2 = stop
+    std::atomic<uint32_t> globalOn{0};     // render's own state, published for the UI
+    uint64_t globalStartSample = 0;        // Law C-2: the session's time origin
+    std::vector<float> globalScratch;      // interleaved, maxBlockFrames × 2
     std::atomic<uint32_t> deckRecArm[wz::kMaxDecks]; // control→render: 1=start,2=stop
     std::vector<float> recScratch; // interleaved capture staging (maxBlock*2)
 
@@ -169,6 +180,7 @@ wz_engine* wz_engine_create(double sample_rate,
     for (uint32_t i = 0; i < kParamCount; ++i)
         e->params[i].store(kParamDefaults[i], std::memory_order_relaxed);
     e->engineTimeSamples.store(0, std::memory_order_relaxed);
+    e->globalScratch.assign(static_cast<size_t>(max_block_frames) * 2u, 0.0f);
     e->mainPeakL.store(0.0, std::memory_order_relaxed);
     e->mainPeakR.store(0.0, std::memory_order_relaxed);
     e->monitorPeakL.store(0.0, std::memory_order_relaxed);
@@ -757,6 +769,43 @@ uint32_t wz_deck_drain(wz_engine* e, uint32_t deck, float* out,
     return n == 0 ? 0u : e->deckDrain[deck].read(out, n);
 }
 
+void wz_global_record_start(wz_engine* e) {
+    if (e == nullptr) return;
+    // Sized for a generous host lag: at 48 k this is ~5.5 s of stereo. The host
+    // drains on its own thread; an overrun is COUNTED, never blocking, because
+    // the render thread must not wait on a disk.
+    e->globalDrain.init("globaldrain", 2u, 1u << 18);
+    e->globalArm.store(1u, std::memory_order_release);
+}
+
+uint64_t wz_global_record_stop(wz_engine* e) {
+    if (e == nullptr) return 0;
+    e->globalArm.store(2u, std::memory_order_release); // render finalizes next block
+    return e->globalStartSample;
+}
+
+uint64_t wz_global_record_start_sample(wz_engine* e) {
+    return e != nullptr ? e->globalStartSample : 0ull;
+}
+
+uint32_t wz_global_record_active(wz_engine* e) {
+    return e != nullptr ? e->globalOn.load(std::memory_order_acquire) : 0u;
+}
+
+uint64_t wz_global_record_overruns(wz_engine* e) {
+    return e != nullptr ? e->globalDrain.overruns.load(std::memory_order_relaxed) : 0ull;
+}
+
+uint32_t wz_global_drain(wz_engine* e, float* out, uint32_t capacity_frames,
+                         uint64_t* out_start_sample) {
+    if (e == nullptr || out == nullptr) return 0;
+    if (out_start_sample != nullptr) *out_start_sample = e->globalStartSample;
+    const uint64_t fill = e->globalDrain.fillFrames();
+    uint32_t n = capacity_frames;
+    if (fill < n) n = static_cast<uint32_t>(fill);
+    return n == 0 ? 0u : e->globalDrain.read(out, n);
+}
+
 namespace {
 
 // Raised-cosine shape over ramp position r ∈ [0,1] (D-WZ-RAMP-01): 0 = closed,
@@ -1260,6 +1309,21 @@ void wz_engine_render_io(wz_engine* e,
     const double wdThresholdSq = std::pow(10.0, kWatchdogThresholdDb / 10.0); // dB→power
     const double wdReleaseStep = 1.0 / (kRampSeconds * fs);
 
+    // GLOBAL RECORD arm/stop is picked up HERE, at the top of the block, so the
+    // stamp is the exact engine sample capture began — Law C-2's whole point.
+    {
+        const uint32_t arm = e->globalArm.exchange(0u, std::memory_order_acq_rel);
+        if (arm == 1u) {
+            e->globalStartSample = blockStartSample;
+            e->globalOn.store(1u, std::memory_order_release);
+        } else if (arm == 2u) {
+            e->globalOn.store(0u, std::memory_order_release);
+        }
+    }
+    const bool globalRecording = e->globalOn.load(std::memory_order_relaxed) != 0 &&
+                                 frames <= e->maxBlockFrames;
+    float* gScratch = e->globalScratch.data();
+
     double mainPkL = 0.0, mainPkR = 0.0, monPkL = 0.0, monPkR = 0.0;
     float* outL = (bus_out != nullptr && bus_count >= 1) ? bus_out[0] : nullptr;
     float* outR = (bus_out != nullptr && bus_count >= 2) ? bus_out[1] : nullptr;
@@ -1299,6 +1363,14 @@ void wz_engine_render_io(wz_engine* e,
 
         if (outL != nullptr) outL[i] = static_cast<float>(l);
         if (outR != nullptr) outR[i] = static_cast<float>(r);
+        // Tapped HERE: after the master fader and after the limiter, so the
+        // archive is what actually left the bus. Taking it earlier would produce
+        // a file that disagrees with what the room heard — and, once the
+        // watchdog engaged, one that still contains the runaway.
+        if (globalRecording) {
+            gScratch[2u * i] = static_cast<float>(l);
+            gScratch[2u * i + 1u] = static_cast<float>(r);
+        }
         if (cueL != nullptr) cueL[i] = static_cast<float>(monL[i]);
         if (cueR != nullptr) cueR[i] = static_cast<float>(monR[i]);
         mainPkL = std::max(mainPkL, std::abs(l));
@@ -1343,6 +1415,8 @@ void wz_engine_render_io(wz_engine* e,
             if (busOutR != nullptr) busOutR[i] = static_cast<float>(br);
         }
     }
+    if (globalRecording) e->globalDrain.write(gScratch, frames, fs, blockStartSample);
+
     // ONE alarm lamp for the whole engine: the OR of every bus's hold. "Something
     // is running away" is the fact the user needs, and a runaway limited silently
     // on bus 3 would be worse than no lamp at all. Computed here, after every

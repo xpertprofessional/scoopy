@@ -113,6 +113,10 @@ add_executable(output_map_test tools/output_map_test.cpp)
 target_link_libraries(output_map_test PRIVATE wz_engine)
 add_test(NAME output_map_test COMMAND output_map_test)
 
+add_executable(global_record_test tools/global_record_test.cpp)
+target_link_libraries(global_record_test PRIVATE wz_engine)
+add_test(NAME global_record_test COMMAND global_record_test)
+
 add_executable(watchdog_test tools/watchdog_test.cpp)
 target_link_libraries(watchdog_test PRIVATE wz_engine)
 add_test(NAME watchdog_test COMMAND watchdog_test)
