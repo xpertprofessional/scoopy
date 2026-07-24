@@ -43,14 +43,20 @@ test('addChannel appends a strip with signed-decision defaults', () => {
   expect(useAppStore.getState().patch).toEqual(next)
 })
 
-test('addDeck creates the deck AND its strip, capped at 8', () => {
+test('material is attached to an existing strip, capped at 8 decks', () => {
+  // There is no "create a deck" gesture any more: a strip GAINS material. The
+  // 9th strip to record finds no deck free and is told so, rather than a ninth
+  // deck appearing behind the engine's ceiling.
   const s = useAppStore.getState()
-  for (let i = 0; i < 10; i++) s.addDeck()
+  for (let i = 0; i < 10; i++) s.addChannel(`s${i}`, { kind: 'none', id: '', name: '' })
+  const ids = Array.from({ length: 10 }, (_, i) => s.attachDeck(i).deckId)
+  expect(ids.slice(0, 8)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  expect(ids.slice(8)).toEqual([-1, -1])
   const patch = useAppStore.getState().patch
   expect(patch.decks).toHaveLength(8)
-  expect(patch.channels).toHaveLength(8)
+  expect(patch.channels).toHaveLength(10) // the strips exist either way
   expect(patch.decks[0]!.loopEnabled).toBe(true) // Law C-3 posture: loop by default
-  expect(patch.channels[0]!.source).toEqual({ kind: 'deck', id: '0', name: 'Deck 1' })
+  expect(patch.channels[0]!.material).toEqual({ deckId: 0 })
 })
 
 test('setChannelParam updates one strip without touching neighbours', () => {
@@ -78,31 +84,38 @@ test('capabilities are stored from the handshake', () => {
   expect(useAppStore.getState().capabilities?.fileSystem).toBe(true)
 })
 
-test('removeChannel removes strips; deck strips only from the end', () => {
+test('removeChannel frees the deck of a strip WITH MATERIAL, last one first', () => {
   const s = useAppStore.getState()
   s.addChannel('Mic', { kind: 'deviceInput', id: '0', name: '' })
-  s.addDeck() // deck 0 + strip
-  s.addDeck() // deck 1 + strip
-  // Removing deck 0's strip is refused (not the highest deck id).
+  s.addChannel('A', { kind: 'deviceInput', id: '0', name: '' })
+  s.addChannel('B', { kind: 'deviceInput', id: '1', name: '' })
+  s.attachDeck(1) // deck 0
+  s.attachDeck(2) // deck 1
+  // These strips still LISTEN to their inputs — material is what owns the deck.
+  // Keying off source.kind (as this once did) leaked the deck of every strip
+  // that had recorded, until all 8 were gone and recording silently failed.
+  expect(useAppStore.getState().patch.channels[1]!.source.kind).toBe('deviceInput')
+
+  s.removeChannel(1) // deck 0 is not the highest: refused
+  expect(useAppStore.getState().patch.decks).toHaveLength(2)
+
+  s.removeChannel(2) // deck 1 is the last: strip and deck both go
   let patch = useAppStore.getState().patch
-  const deck0Strip = patch.channels.findIndex((c) => c.source.kind === 'deck' && c.source.id === '0')
-  s.removeChannel(deck0Strip)
-  patch = useAppStore.getState().patch
-  expect(patch.decks).toHaveLength(2)
-  // Removing deck 1 (the last) removes deck + strip.
-  const deck1Strip = patch.channels.findIndex((c) => c.source.kind === 'deck' && c.source.id === '1')
-  s.removeChannel(deck1Strip)
-  patch = useAppStore.getState().patch
   expect(patch.decks).toHaveLength(1)
-  expect(patch.channels.some((c) => c.source.id === '1' && c.source.kind === 'deck')).toBe(false)
-  // Plain strips remove freely; out-of-range is a no-op.
+  expect(patch.channels.some((c) => c.name === 'B')).toBe(false)
+
+  // Strips without material remove freely; out-of-range is a no-op.
   s.removeChannel(0)
   s.removeChannel(99)
-  expect(useAppStore.getState().patch.channels.some((c) => c.name === 'Mic')).toBe(false)
+  patch = useAppStore.getState().patch
+  expect(patch.channels.some((c) => c.name === 'Mic')).toBe(false)
+  expect(patch.decks).toHaveLength(1)
 })
 
-test('a loopback strip is the one legal cycle, and arrives muted', () => {
-  const next = useAppStore.getState().addLoopback(0)
+test('a strip listening to a bus is the one legal cycle, and arrives muted', () => {
+  const s = useAppStore.getState()
+  // Not a separate creation path any more — the same addChannel every strip uses.
+  const next = s.addChannel('↺ main', { kind: 'busTap', id: '0', name: 'main bus' })
   expect(next.channels).toHaveLength(1)
   const lb = next.channels[0]!
   expect(lb.source.kind).toBe('busTap')
@@ -110,6 +123,6 @@ test('a loopback strip is the one legal cycle, and arrives muted', () => {
   // MUTED by default: an unmuted unity loopback of main is an instant sustained
   // feedback path. The user unmutes deliberately, with the watchdog behind them.
   expect(lb.mute).toBe(true)
-  const cue = useAppStore.getState().addLoopback(1)
+  const cue = s.addChannel('↺ cue', { kind: 'busTap', id: '1', name: 'cue bus' })
   expect(cue.channels[1]!.source.id).toBe('1')
 })
