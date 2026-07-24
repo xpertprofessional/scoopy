@@ -35,6 +35,7 @@ jobs:
       # stale generated header / ABI drift / stale bundle / hardcoded color fails
       # the build.
       - run: npm run protocol:check
+      - run: npm run shared:check
       - run: npm run abi:check
       - run: npm run check:tokens
       - run: npm run webdist:check
