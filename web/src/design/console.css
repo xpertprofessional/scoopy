@@ -511,3 +511,13 @@ canvas.meter {
   border-radius: var(--radius);
   text-align: center;
 }
+
+/* A loopback strip states its one-block cost rather than hiding it. */
+.strip-loopback {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--bg);
+  background: var(--chan-bus);
+  border-radius: var(--radius);
+  text-align: center;
+}

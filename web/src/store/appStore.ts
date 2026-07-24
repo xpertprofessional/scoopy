@@ -55,6 +55,10 @@ interface AppState {
   /** Topology edits — return the new Patch so the caller can publish it. */
   addChannel: (name: string, source: SourceRef) => Patch
   addDeck: () => Patch
+  /** Create a LoopbackBus strip (busTap): the one legal cycle — it reads the
+      named bus's PREVIOUS block, which is what makes record-own-output and
+      resample-the-mix possible without an illegal zero-delay cycle. */
+  addLoopback: (bus: number) => Patch
   /** Remove a strip. A deck strip also removes its deck — only the HIGHEST
       deck id is removable (no id renumbering; matches add/remove-at-the-end).
       Returns the unchanged patch when the removal is not legal. */
@@ -153,6 +157,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const channels = patch.channels.filter((_, i) => i !== index)
     const next = { ...patch, channels, decks }
+    set({ patch: next })
+    return next
+  },
+
+  addLoopback: (bus) => {
+    const patch = get().patch
+    const label = bus === 0 ? 'main' : 'monitor'
+    const strip = makeChannel(`loopback-${nextKey++}`, `↺ ${label}`, {
+      kind: 'busTap',
+      id: String(bus),
+      name: `${label} bus`,
+    })
+    // A loopback defaults MUTED: an unmuted unity loopback of main is an
+    // instant sustained feedback path. The user unmutes deliberately, with the
+    // watchdog behind them.
+    const next = { ...patch, channels: [...patch.channels, { ...strip, mute: true }] }
     set({ patch: next })
     return next
   },

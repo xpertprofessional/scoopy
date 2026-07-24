@@ -61,6 +61,17 @@ export function SourcesBrowser({ link }: { link: EngineLink | null }) {
         })}
         {inputs.length === 0 && <li className="dim">no inputs</li>}
       </ul>
+      <h3>Loopback ↺</h3>
+      <p className="dim">
+        record Wizard&rsquo;s own output — reads the bus one block behind, so the
+        cycle is legal. Arrives muted.
+      </p>
+      <button type="button" onClick={() => actions.addLoopbackStrip(0)}>
+        ↺ main
+      </button>
+      <button type="button" onClick={() => actions.addLoopbackStrip(1)}>
+        ↺ cue
+      </button>
       <h3>Decks</h3>
       <button type="button" disabled={deckCount >= 8} onClick={() => actions.addDeckWithStrip()}>
         + add deck ({deckCount}/8)

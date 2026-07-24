@@ -37,6 +37,7 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
 export function usePatchActions(link: EngineLink | null) {
   const addChannel = useAppStore((s) => s.addChannel)
   const addDeck = useAppStore((s) => s.addDeck)
+  const addLoopback = useAppStore((s) => s.addLoopback)
   const setChannelParam = useAppStore((s) => s.setChannelParam)
   const setDeckSourcePath = useAppStore((s) => s.setDeckSourcePath)
   const removeChannel = useAppStore((s) => s.removeChannel)
@@ -55,6 +56,10 @@ export function usePatchActions(link: EngineLink | null) {
     /** Add a deck + its strip and publish. */
     addDeckWithStrip() {
       publishPatch(link, addDeck())
+    },
+    /** Add a LoopbackBus strip and publish. Arrives muted — see addLoopback. */
+    addLoopbackStrip(bus: number) {
+      publishPatch(link, addLoopback(bus))
     },
     /** Remove a strip (and its deck when it is the last deck) and publish. */
     removeStrip(index: number) {

@@ -35,6 +35,12 @@ export function ChannelRack({ link }: { link: EngineLink | null }) {
   // a spatial patch on a stereo laptop and see honestly what won't be heard,
   // rather than have the option silently missing.
   const mappable = deviceInfo?.mappableBuses ?? 1
+  // The LoopbackBus costs exactly one engine block (spec §2: "the honest price,
+  // stated in the UI, not hidden"). Show it in ms at the real device rate.
+  const blockMs =
+    deviceInfo && deviceInfo.sampleRate > 0
+      ? ((512 / deviceInfo.sampleRate) * 1000).toFixed(1)
+      : null
 
   return (
     <section className="rack">
@@ -53,6 +59,14 @@ export function ChannelRack({ link }: { link: EngineLink | null }) {
               ×
             </button>
           </div>
+          {ch.source.kind === 'busTap' && (
+            <div
+              className="strip-loopback"
+              title="a loopback reads the bus one block behind — that delay is what makes the cycle legal and the schedule acyclic"
+            >
+              ↺ {blockMs ? `+${blockMs} ms` : 'one block'}
+            </div>
+          )}
           <div className="strip-body">
             <div className="fader-col">
               <input

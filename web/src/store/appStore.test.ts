@@ -100,3 +100,16 @@ test('removeChannel removes strips; deck strips only from the end', () => {
   s.removeChannel(99)
   expect(useAppStore.getState().patch.channels.some((c) => c.name === 'Mic')).toBe(false)
 })
+
+test('a loopback strip is the one legal cycle, and arrives muted', () => {
+  const next = useAppStore.getState().addLoopback(0)
+  expect(next.channels).toHaveLength(1)
+  const lb = next.channels[0]!
+  expect(lb.source.kind).toBe('busTap')
+  expect(lb.source.id).toBe('0') // main
+  // MUTED by default: an unmuted unity loopback of main is an instant sustained
+  // feedback path. The user unmutes deliberately, with the watchdog behind them.
+  expect(lb.mute).toBe(true)
+  const cue = useAppStore.getState().addLoopback(1)
+  expect(cue.channels[1]!.source.id).toBe('1')
+})
