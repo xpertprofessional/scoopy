@@ -8,6 +8,7 @@ import {
   type Patch,
   type Result,
   type SourceRef,
+  type Take,
 } from '../../protocol/schema'
 
 // 'disconnected' until the EngineLink handshake (getCapabilities) succeeds;
@@ -27,6 +28,12 @@ interface AppState {
   /** Deck states mirrored from HotFrame deck blocks (rare-change values only —
       meters and playheads stay on the HotSurface canvas, never in React). */
   deckStates: number[]
+  /** Per-deck 'the 256 MB cap stopped this recording' flags (D-WZ-DECK-01). */
+  deckCapReached: boolean[]
+  /** The session's takes, newest last (from listTakes / deckRecordStop). */
+  takes: Take[]
+  /** Which take the deck rack aligns others against (Law C-2 reference). */
+  alignReferencePath: string | null
   /**
    * The Patch — the routing document. TS OWNS it (ownership law); the engine
    * follows whatever publishWorld hands it. ParamWrite covers live moves
@@ -40,6 +47,10 @@ interface AppState {
   setEngineTimeSamples: (n: number) => void
   setFeedbackAlarm: (a: boolean) => void
   setDeckStates: (s: number[]) => void
+  setDeckCapReached: (c: boolean[]) => void
+  setTakes: (t: Take[]) => void
+  addTake: (t: Take) => void
+  setAlignReference: (path: string | null) => void
   /** Topology edits — return the new Patch so the caller can publish it. */
   addChannel: (name: string, source: SourceRef) => Patch
   addDeck: () => Patch
@@ -65,6 +76,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   engineTimeSamples: 0,
   feedbackAlarm: false,
   deckStates: [],
+  deckCapReached: [],
+  takes: [],
+  alignReferencePath: null,
   patch: emptyPatch(),
   setShellStatus: (shellStatus) => set({ shellStatus }),
   setCapabilities: (capabilities) => set({ capabilities }),
@@ -72,6 +86,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEngineTimeSamples: (engineTimeSamples) => set({ engineTimeSamples }),
   setFeedbackAlarm: (feedbackAlarm) => set({ feedbackAlarm }),
   setDeckStates: (deckStates) => set({ deckStates }),
+  setDeckCapReached: (deckCapReached) => set({ deckCapReached }),
+  setTakes: (takes) => set({ takes }),
+  addTake: (t) => set({ takes: [...get().takes, t] }),
+  setAlignReference: (alignReferencePath) => set({ alignReferencePath }),
 
   addChannel: (name, source) => {
     const patch = get().patch

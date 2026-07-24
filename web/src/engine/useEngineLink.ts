@@ -47,6 +47,7 @@ export function useEngineLink(): EngineLink | null {
       })
 
     let lastDeckStates = ''
+    let lastCapKey = ''
     const off = created.onHotFrame((frame) => {
       publishHotFrame(frame) // hot surfaces (meters, playheads) read this imperatively
       const s = useAppStore.getState()
@@ -66,6 +67,17 @@ export function useEngineLink(): EngineLink | null {
         if (key !== lastDeckStates) {
           lastDeckStates = key
           s.setDeckStates(states)
+        }
+        // D-WZ-DECK-01 cap indicator (rare-change mirror, like state).
+        const caps: boolean[] = []
+        for (let d = 0; d < decks.length; d++) {
+          const ci = deckFieldIndex(channels.length, d, 'recordCapReached')
+          caps.push(frame.length > ci ? frame[ci] === 1 : false)
+        }
+        const capKey = caps.join(',')
+        if (capKey !== lastCapKey) {
+          lastCapKey = capKey
+          s.setDeckCapReached(caps)
         }
       }
     })

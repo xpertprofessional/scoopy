@@ -374,3 +374,69 @@ canvas.meter {
   font-size: var(--type-value-size);
   padding: 2px 4px;
 }
+
+/* --- recording + takes ---------------------------------------------------- */
+
+.latched-rec {
+  background: var(--rec-lamp);
+  color: var(--bg);
+  border-color: var(--rec-lamp);
+}
+
+.deck-cap {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  text-transform: var(--type-label-transform);
+  color: var(--bg);
+  background: var(--warn);
+  border-radius: var(--radius);
+  padding: 0 4px;
+  align-self: flex-start;
+}
+
+.takes {
+  padding: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.takes h2 {
+  font-family: var(--type-title-family);
+  font-size: var(--type-title-size);
+  letter-spacing: var(--type-title-tracking);
+  text-transform: var(--type-title-transform);
+  color: var(--text-dim);
+  margin: 0 0 4px;
+}
+
+.takes table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.takes th {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  text-align: left;
+  padding: 2px 6px;
+}
+
+.takes td {
+  padding: 2px 6px;
+}
+
+.take-name {
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.take-load {
+  display: flex;
+  gap: 3px;
+}

@@ -39,6 +39,8 @@ export function usePatchActions(link: EngineLink | null) {
   const setChannelParam = useAppStore((s) => s.setChannelParam)
   const setDeckSourcePath = useAppStore((s) => s.setDeckSourcePath)
   const removeChannel = useAppStore((s) => s.removeChannel)
+  const addTake = useAppStore((s) => s.addTake)
+  const setTakes = useAppStore((s) => s.setTakes)
 
   return {
     /** Bind a source as a new strip and publish the new topology. */
@@ -81,6 +83,28 @@ export function usePatchActions(link: EngineLink | null) {
     /** Deck transport intents; state truth returns via HotFrame. */
     deckTrigger(deck: number, mode: 'loop' | 'oneShot' | 'stop' | 'retrigger') {
       void link?.command('deckTrigger', { deck, mode })
+    },
+    /** Arm + start recording a deck from an engine input (Law C-3: on stop it
+        loops instantly if the deck's loop is on). */
+    async deckRecordStart(deck: number, chan0: number, chan1: number, sourceDesc: string) {
+      if (!link) return
+      await link.command('deckRecordStart', { deck, chan0, chan1, sourceDesc })
+    },
+    /** Stop recording; the reply carries the Law C-2 stamp + the finished Take. */
+    async deckRecordStop(deck: number) {
+      if (!link) return
+      const r = await link.command('deckRecordStop', { deck })
+      if (r.ok && r.take) addTake(r.take)
+    },
+    async refreshTakes() {
+      if (!link) return
+      const r = await link.command('listTakes', {})
+      setTakes(r.takes)
+    },
+    /** Load a recorded take into any deck (CONCEPT: one click → any deck). */
+    async deckLoadTake(deck: number, path: string) {
+      if (!link) return
+      await link.command('deckLoadTake', { deck, path })
     },
     async deckLoadFile(deck: number) {
       if (!link) return
