@@ -32,13 +32,23 @@ a channel*; the current UI violates that by splitting inputs from decks).
 unaffected (this is why building engine-first was right). Realistically a PD-phase
 rewrite of the *panels*, not the app.
 
-**My recommendation:** yes, but as its own phase (**PD-CANVAS**) after P3's recorder
-lands — because a recorder is exactly what makes a cell interesting, and designing the
-canvas around cells that *can't record yet* would mean designing it twice. I'll do the
-GRM-manual deep research meanwhile (see §4) so the design is informed, not invented.
+**My recommendation: ADOPT.** A full design plan is now written:
+**`docs/specs/pd-canvas.md`** — read that, not this summary. Headlines:
+- The GRM Player documentation was FOUND and read (it is public HTML at
+  sites.inagrm.com, not the paywalled PDF I hit first). Its workspace is literally
+  *"un plan sans limite apparente"* — a plane with no apparent limits — with drag
+  placement and zoom/pan. **Your instinct matches a shipping instrument's model.**
+- GRM goes one step further than you asked: it splits *material* (séquence) from *ways of
+  reading it* (lecteurs), and lets **N readers live on one sound** — window size alone
+  takes you "from repetition to granular synthesis". Our engine can already do this
+  (decks are independent readers). Parked as PD-CANVAS-2, deliberately out of the first
+  cut.
+- **Engine cost: zero.** Schema cost: small and additive (x/y/w/h). UI cost: a real
+  rewrite of ~600 lines of panels, with all the logic (usePatch, takeAlign, MeterCanvas,
+  faderCurve) reusable as-is.
 
-**Decide:** (a) adopt as PD-CANVAS after P3 · (b) adopt NOW, pause P3 · (c) refine the
-vision further before committing.
+**Decide:** (a) adopt, sequence as PD-CANVAS-01..04 · (b) adopt + also take the N-readers
+model now · (c) refine the vision further before committing.
 
 ## 2. Take naming + storage layout (needed by P3-05/07, soon)
 
@@ -59,16 +69,14 @@ Sub-question this exposes: when a deck records a strip that's already audible, d
 mute the source strip during recording (like a channel-to-tape console), or accept the
 doubling? My instinct: **accept it** (no hidden state changes), and let the user mute.
 
-## 4. GRM Player manual — deep research (queued work, no decision needed)
+## 4. GRM Player manual — DONE (no longer blocked on you)
 
-You asked for a deep read of the GRM Player manual to inform the above. Status: the
-public web pages are a JS shell and the interface PDF is behind Scribd; the first-pass
-research (`docs/specs/design-notes-grm-player.md`) got the anatomy (Workspace →
-Sequences → Readers → Plug-ins) and the core gesture (N readers over one sound) from
-official copy + forum accounts. **Next step needs you:** the in-app documentation
-(`Help → online documentation`, French) or a downloaded manual PDF would let me do the
-real deep read. If you can point me at a PDF path or install GRM Player, I'll mine it
-properly for the canvas design.
+Found it: the official documentation is public HTML at
+`sites.inagrm.com/download/grmplayer/documentation` (I had been defeated by the
+JS-shelled marketing page and the Scribd copy). Read and mined into
+`docs/specs/pd-canvas.md` §2 with direct quotes: the boundless-plane workspace, drag
+placement, zoom/pan, the sequence/player split, Single Player vs Player × n, and the
+window-span → granular continuum. Nothing further needed from you here.
 
 ## 5. Live varispeed converter tier (P4-02, soon)
 
