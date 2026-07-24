@@ -98,9 +98,74 @@ is clearer than the Documentation." A powerful model with a discoverability tax.
    speed thumb; monitor → lamp + cue toggle. Matrix/sources open as overlays.
 ```
 
+## 4. Second pass — read from the manual itself (2026-07-24)
+
+The first pass worked from the marketing page and forum reports. This pass reads the
+official manual, which contradicts nothing above but adds three mechanisms worth naming.
+
+### 4.1 The Inspector — the answer to "inline everything vs. clutter"
+
+*"L'inspecteur permet de rassembler, d'éditer les informations sur les objets et de
+paramétrer plus précisément certaines commandes"* [Inspecteur]. It is a **contextual
+property panel** with three faces — Séquence, Pistes, Lecteur — that follow the current
+selection. Clicking an object populates it.
+
+This matters because our own PD-CANVAS plan asserts "every Cell shows its controls inline
+(no hidden modes)" as the antidote to GRM's discoverability tax. Taken literally that is
+unbuildable: a plane of twelve Cells each showing loop points, bus routing, cue and
+plugin state is *less* legible, not more. GRM already solved this and we mis-read it:
+**the slate carries what you touch while playing; the Inspector carries what you set
+precisely.** That is not a hidden mode — the panel is always visible and always reflects
+the selection.
+
+### 4.2 Two player species, and what "multi" actually means
+
+- **Lecteur simple** — one cursor over the sound, with direction and speed.
+- **Multi-lecteur** — *groups sub-players inside a reading span* ("un empan, une fenêtre,
+  une boucle") **that can itself move**. The span is a parameter in milliseconds, with
+  speed multiply/divide and a **verrouillage** (lock).
+
+So the granular claim is precise: it is not a separate synthesis engine, it is *N cursors
+sharing one moving window*. Shrink the window and repetition becomes grain. Our engine
+reaches this with the parts it already has — a deck is a cursor over a buffer — which is
+what makes PD-CANVAS-2 (N readers per Cell) a UI-and-scheduling problem rather than a DSP
+one.
+
+### 4.3 Memory slots A/B/C/D with an interpolation time
+
+Two or more grouped players expose **four preset slots** storing *"all settings contained
+in the slate"*, plus an **interpolation time** between them. This is a performance
+instrument, not a preset browser: you set two states and *morph* between them over a
+chosen duration.
+
+Wizard has no equivalent and should eventually: per-Cell snapshots with a glide time is
+exactly the "instrument, not a mixer" posture (CONCEPT §2). Parked as **PD-CANVAS-3**, not
+proposed for a first cut.
+
+### 4.4 The philosophy, in their words
+
+*"Les transformations sonores seront principalement réalisées par de multiples opérations
+de lecture"* — the transformations are achieved by **multiple acts of reading**
+[02_Lire_et_repeter]. Playback *is* the instrument. This is the same claim as our Law C-3
+(stop → loop, instantly) arrived at from the other direction, and it is worth keeping the
+sentence: it argues that Wizard's value is not the recorder but what you do to a sound
+once it is loopable.
+
+### 4.5 Correction to §2
+
+§2 filed "Sequences" under ADAPT, reading them as arrangement. The manual shows a sequence
+is **material** (sound on one or more tracks), not a timeline — the arrangement worry was
+misplaced. What we must still avoid is the *temporal selection + cut/copy/scale* editing
+surface the Inspector exposes over tracks: that is an editor, and Parlante is the editor
+of this suite.
+
 ## Sources
 
 - [inagrm.com/en/showcase/news/372/grm-player](https://inagrm.com/en/showcase/news/372/grm-player) — official overview ("doing and hearing", multiple players, simultaneous loops → granulation, formats, AU/VST, MIDI/OSC/JS)
 - [scribd 547781658 — GRM Player interface doc](https://www.scribd.com/document/547781658/GRM-Player) — named regions: Workspace, Sequences, Readers, Plug-ins
+- [Interface](https://sites.inagrm.com/download/grmplayer/documentation/co/03-Interface.html) — named regions + the manual's own page map
+- [Lecteurs](https://sites.inagrm.com/download/grmplayer/documentation/co/Lecteurs.html) — lecteur simple vs multi-lecteur; empan/verrouillage; A/B/C/D memories + interpolation time
+- [Inspecteur](https://sites.inagrm.com/download/grmplayer/documentation/co/Inspecteur.html) — "rassembler, éditer les informations sur les objets"; three faces; selection-driven
+- [Lire et répéter en mouvement](https://sites.inagrm.com/download/grmplayer/documentation/co/02_Lire_et_repeter.html) — "de multiples opérations de lecture"
 - [kvraudio forum t=608599](https://www.kvraudio.com/forum/viewtopic.php?t=608599) — readers over one sound, speed-tracking resample, GPU/touch/multi-user, aliases, infinite undo, edit-without-stopping, "?" tooltips
 - [kvraudio forum t=500424](https://www.kvraudio.com/forum/viewtopic.php?t=500424) — discoverability critique; "Tutorial clearer than the Documentation"

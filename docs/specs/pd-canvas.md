@@ -67,13 +67,46 @@ thumb. **Recording is just the verb that gives a Cell material** — which is pr
 C-3: you record into the thing you were already listening to, and it loops the instant you
 stop.
 
+### 3.0 On-Cell vs. Inspector — resolving the clutter tension
+
+An earlier draft of this plan said "every Cell shows *its controls* inline (no hidden
+modes)". Read literally that is unbuildable: a plane of a dozen Cells each showing loop
+points, output-bus choice, cue routing and (later) plugin state is *less* legible, not
+more — it recreates the density we are fleeing. The GRM manual shows the real answer, which
+we had misread: the slate carries **what you touch while playing**, and an always-visible,
+selection-driven **Inspector** carries **what you set precisely** [Inspecteur; design-notes
+§4.1]. Crucially that is *not* a hidden mode — the panel is always on screen and always
+reflects the current selection, so nothing is behind a gesture you must first discover.
+
+The split for a Wizard Cell:
+
+| On the Cell (always visible, direct-manipulation) | In the Inspector (selected Cell only) |
+|---|---|
+| meter, level, pan, mute/solo, cue, record | exact loop in/out samples (drag is coarse; type here) |
+| waveform + loop brace (drag to set region) | output-bus picker, cue routing |
+| transport (loop/one-shot/retrigger), speed thumb | source rebind, rename, per-Cell gain trim |
+| the "?" that labels everything in place | (later) plugin slot, snapshot A/B/C/D + glide |
+
+This keeps the plane scannable *and* keeps every live gesture on the object — the
+combination the console rack and the raw GRM plane each miss in opposite directions. It
+also means a zoomed-out/strip Cell can drop to just the left column and stay usable, which
+is the mechanism behind "strip mode is zoom-out" below.
+
 ### 3.1 Borrowing GRM's deeper split — *later, not now*
 
 GRM's material/reader split suggests a v2: **multiple readers on one Cell's material**
 (N playheads, each with its own window + speed → granular from the same buffer). Our
 engine is *already* capable — decks are independent units reading buffers. This is
 recorded as a **future** direction (PD-CANVAS-2), deliberately out of the first cut: the
-first cut must prove free placement + one item type, not add a synthesis model.
+first cut must prove free placement + one item type, not add a synthesis model. The manual
+confirms the mechanism is *N cursors sharing one moving window* (`empan`), not a distinct
+DSP engine [design-notes §4.2] — so PD-CANVAS-2 is a UI-and-scheduling problem, not a new
+synthesis model.
+
+A second future (**PD-CANVAS-3**): GRM's per-slate **A/B/C/D memory slots with an
+interpolation time** — set two states of a Cell and morph between them over a chosen
+duration [design-notes §4.3]. This is the "instrument, not a mixer" posture (CONCEPT §2)
+made literal, and Wizard has no equivalent today. Also out of the first cut.
 
 ## 4. Layout & interaction
 
@@ -87,8 +120,11 @@ first cut must prove free placement + one item type, not add a synthesis model.
   A zoomed-out plane where Cells collapse to mini-cells *is* the docked strip.
 - **The one thing GRM gets wrong, we avoid.** Reviewers found it unintuitive — *"couldn't
   even figure out how to make the sound loop"* without the manual [kvr 500424]. Our
-  antidote: every Cell shows its controls inline (no hidden modes), plus a single "?"
-  that reveals labels in place.
+  antidote: the live gestures live on the Cell (no hidden *modes*), the precise settings
+  live in an always-visible Inspector (§3.0 — not a hidden mode either), and a single "?"
+  reveals labels in place. Note GRM *has* an Inspector and still confused reviewers; the
+  difference is that our on-Cell controls cover the whole performance loop, so a first-time
+  user never *needs* the Inspector to make a sound loop — only to fine-tune it.
 
 ```
 ┌ plane (pannable, zoomable) ─────────────────────────────────────────────┐
@@ -114,8 +150,10 @@ first cut must prove free placement + one item type, not add a synthesis model.
 - **Schema: small, additive.** Add `x, y, w, h` (+ a `uiScale`/pan for the plane) to
   Channel/Patch. `uiMode` becomes a view state. Old Patches load with an auto-layout.
 - **UI: a real rewrite of the panels** — `ChannelRack`, `DeckRack`, `SourcesBrowser`,
-  `RoutingMatrix` (~600 lines) become `Plane` + `Cell` + drawers. The *logic* (usePatch,
-  takeAlign, MeterCanvas, faderCurve) is reusable as-is.
+  `RoutingMatrix` (~600 lines) become `Plane` + `Cell` + `Inspector` + drawers (add ~150
+  lines for the Inspector; the routing matrix's per-strip bus choice largely *moves into*
+  it rather than being rebuilt). The *logic* (usePatch, takeAlign, MeterCanvas, faderCurve)
+  is reusable as-is.
 - **What we'd lose:** the rack's fixed-width scannability, and "where is everything?" when
   a plane gets messy — mitigated by fit-to-content, and by the fact that arrangement is
   the user's own memory aid.
@@ -126,11 +164,16 @@ first cut must prove free placement + one item type, not add a synthesis model.
 2. `PD-CANVAS-01` schema: Cell geometry + plane view state, migration from the current
    Patch (auto-layout existing channels into rows).
 3. `PD-CANVAS-02` the `Plane` (pan/zoom/fit, selection) + `Cell` (all states in one
-   component).
-4. `PD-CANVAS-03` drag-to-create from a sources drawer + take drawer.
-5. `PD-CANVAS-04` retire `ChannelRack`/`DeckRack`/`SourcesBrowser`; re-scope P4-08 strip
-   mode as zoom-out.
-6. `PD-CANVAS-2` (later, optional): N readers per Cell — GRM's granular model.
+   component, showing only the always-visible left-column controls per §3.0).
+4. `PD-CANVAS-03` the **Inspector** — a selection-driven property panel holding the
+   set-precisely controls (§3.0). Built alongside the Cell because the two are designed as
+   a pair; splitting them would ship a Cell that either clutters or hides.
+5. `PD-CANVAS-04` drag-to-create from a sources drawer + take drawer.
+6. `PD-CANVAS-05` retire `ChannelRack`/`DeckRack`/`SourcesBrowser`; re-scope P4-08 strip
+   mode as zoom-out (a strip Cell = the Cell's left column only).
+7. `PD-CANVAS-2` (later, optional): N readers per Cell — GRM's granular model (UI +
+   scheduling; engine already capable).
+8. `PD-CANVAS-3` (later, optional): per-Cell A/B/C/D snapshots with a glide time.
 
 **Recommendation: adopt.** It is what the schema already says, it is what the user asked
 for, the engine is untouched, and GRM Player proves the interaction model works in a
@@ -141,4 +184,6 @@ shipping instrument.
 - [Plan de travail](https://sites.inagrm.com/download/grmplayer/documentation/co/PlanTravail.html) — "un plan sans limite apparente", drag placement, zoom/pan/Default
 - [Interface](https://sites.inagrm.com/download/grmplayer/documentation/co/03-Interface.html) — named regions; "ardoises séquences réparties dans le plan de travail"
 - [Rajouter un lecteur](https://sites.inagrm.com/download/grmplayer/documentation/co/Rajouter_un_lecteur.html) — drag a player onto a sequence; Single Player vs Player × n; window span → granular
+- [Inspecteur](https://sites.inagrm.com/download/grmplayer/documentation/co/Inspecteur.html) — the always-visible, selection-driven property panel (§3.0's resolution)
+- [Lecteurs](https://sites.inagrm.com/download/grmplayer/documentation/co/Lecteurs.html) — empan/verrouillage; A/B/C/D memories + interpolation (PD-CANVAS-3)
 - [KVR t=500424](https://www.kvraudio.com/forum/viewtopic.php?t=500424) — the discoverability critique we must avoid
