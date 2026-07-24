@@ -64,3 +64,16 @@ target_link_libraries(wz_session
 add_executable(session_store_test tools/session_store_test.cpp)
 target_link_libraries(session_store_test PRIVATE wz_session)
 add_test(NAME session_store_test COMMAND session_store_test)
+
+# `.wizard` package (P7-04): STORED zip of session.json + Takes/. Separate from
+# wz_session because the package is what a user SHARES, while the autosave is
+# what saves them — different lifetimes, different failure modes.
+add_library(wz_package STATIC src/PackageStore.cpp)
+target_include_directories(wz_package PUBLIC src)
+target_link_libraries(wz_package
+    PUBLIC juce::juce_core
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(package_store_test tools/package_store_test.cpp)
+target_link_libraries(package_store_test PRIVATE wz_package)
+add_test(NAME package_store_test COMMAND package_store_test)
