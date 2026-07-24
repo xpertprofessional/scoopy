@@ -10,7 +10,7 @@ unedited as the historical record). This file is the CURRENT state. Updated
 |---|---|---|
 | 1 | P0-B remainder — CI | **done** (`5f7e796`) |
 | 2 | P0-B remainder — engine vendoring lock | **done** (`8e04212`) |
-| 3 | P1 spike — JUCE WebView | **done, no disqualifier** (`900a7a7`) — verdicts in `P1-SPIKE-JUCE-WEBVIEW.md` |
+| 3 | P1 spike — JUCE WebView | **done, no disqualifier; all 4 questions answered** (`900a7a7`) — verdicts in `P1-SPIKE-JUCE-WEBVIEW.md` |
 | 4 | P1 plumbing | **3 of 4 bullets done** — see below |
 
 ### P1 plumbing detail
@@ -97,10 +97,11 @@ both and compares, not a ctest case. That job does not exist yet.
 
 ## Outstanding, not mine to close
 
-- **Human pass on spike Q1 (keys) and Q3 (drag-in).** Steps in
-  `P1-SPIKE-JUCE-WEBVIEW.md`. OS-level key/drag injection is refused in the
-  agent environment (`-1743`). The drag outcome is the only remaining spike
-  finding that could still change P1's plumbing.
+- ~~Human pass on spike Q1/Q3~~ — **DONE 2026-07-24, both PASS.** It found a
+  real defect: a file drop RELOADS the webview (see `P1-SPIKE-JUCE-WEBVIEW.md`
+  §Q3). Drop-navigation must be refused at the webview navigation policy before
+  any drop-to-load feature is wired, and file drop belongs in the PAGE
+  (`dataTransfer`), not a native `FileDragAndDropTarget`.
 - **Nothing is pushed.** `apps/wizard` is 8 commits ahead; `shared/` is 3 ahead
   (the `--lock` flag and two follow-ups). Note `origin` still points at the old
   `wizard.git` while `main` tracks `scoopy` — a bare `git push` may not go where

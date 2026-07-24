@@ -44,9 +44,18 @@ line('Q1', 'key-event fidelity', verdict(codesOk && ups.length > 0, keys.length 
 
 // Q2 — multi-window. Two DocumentWindows, each a live independent page.
 const lanes = of('lanes')
-const multi = panels.length > 1 && lanes.length === panels.length && lanes.every((l) => l.payload.slHotFrame > 0)
+// Judged PER DISTINCT WINDOW, not by record count: a page that reloads boots
+// again and reports its lanes again, and counting records would read that as a
+// window that failed to start. Reloads are reported separately because they are
+// a finding in their own right, not noise to smooth over.
+const liveByPanel = new Map()
+for (const l of lanes)
+  liveByPanel.set(l.source, Math.max(liveByPanel.get(l.source) ?? 0, l.payload.slHotFrame))
+const multi = panels.length > 1 && [...liveByPanel.values()].filter((n) => n > 0).length === panels.length
+const reloads = of('boot').length - panels.length
 line('Q2', 'multi-window', verdict(multi),
-  `${panels.length} windows · ${lanes.map((l) => `${l.source}: ${l.payload.slHotFrame} hotframes`).join(' · ')}`)
+  `${panels.length} windows · ${[...liveByPanel].map(([p, n]) => `${p}: ${n} hotframes`).join(' · ')}` +
+  (reloads > 0 ? `  ⚠ ${reloads} page reload(s) — see below` : ''))
 
 // Q3 — drag-in. Which SIDE receives the drop is the answer, so both are logged.
 const webDrop = of('web-drop')
@@ -76,6 +85,23 @@ console.log(`  slParam (web→native): ${params.length} write(s) received${param
 const cmds = {}
 for (const r of rows.filter((r) => r.payload?.kind === 'slCommand')) cmds[r.payload.method] = (cmds[r.payload.method] ?? 0) + 1
 console.log(`  slCommand (web→native): ${Object.entries(cmds).map(([m, n]) => `${m}×${n}`).join(', ') || 'none'}`)
+
+// A reload mid-run means the page navigated away and came back — the webview
+// left the app. Correlated against drops because an unprevented file drop is
+// the known way to cause it.
+if (reloads > 0) {
+  console.log(`\n⚠ ${reloads} page reload(s) during the run:`)
+  const order = rows.map((r, i) => ({ r, i }))
+  const seen = new Set()
+  for (const { r, i } of order) {
+    if (r.payload?.kind !== 'boot') continue
+    if (!seen.has(r.source)) { seen.add(r.source); continue }
+    const prior = order.slice(0, i).reverse()
+      .find(({ r: p }) => String(p.payload?.kind).includes('drop') && p.source === r.source)
+    console.log(`  [${r.source}] rebooted` +
+      (prior ? ` — ${i - prior.i} records after a ${prior.r.payload.kind} of ${JSON.stringify(prior.r.payload.files ?? [])}` : ''))
+  }
+}
 
 const errs = [...of('pageerror'), ...of('rejection')]
 console.log(`\npage errors / unhandled rejections: ${errs.length}`)

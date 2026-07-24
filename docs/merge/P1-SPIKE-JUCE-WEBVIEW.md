@@ -7,9 +7,11 @@ dispatcher, and every finding below is a line in a probe log.*
 
 **Headline: no disqualifier. JUCE WebView hosts scoopy's real UI, the whole
 dormant JuceLink contract works, and multi-window works — so the decision gate
-resolves to multi-window, not panel docking.** Two of the four questions
-(keys, drag-in) are physically un-automatable in this environment and need a
-human pass; the app is instrumented so that pass is one command.
+resolves to multi-window, not panel docking.**
+
+**All four questions are now answered.** Q2 and Q4 were machine-captured; Q1
+(keys) and Q3 (drag-in) were confirmed by the user's human pass on 2026-07-24,
+which also surfaced one real defect — a file drop **reloads the webview** (§Q3).
 
 ## How to reproduce
 
@@ -27,9 +29,9 @@ runs the probe, appends to `~/wizard-spike-probe.jsonl`, and quits.
 | Q | Question | Verdict | Evidence |
 |---|---|---|---|
 | Q0 | Real bundle mounts on a real backend | **PASS** | both windows: `hasJuceBackend=true`, React `#root` mounted, **0 page errors, 0 unhandled rejections** |
-| Q1 | Key-event fidelity | **NEEDS HUMAN** | not automatable here — see below |
+| Q1 | Key-event fidelity | **PASS** | 187 keydown (150 auto-repeat) / 28 keyup; physical `code`, correct `repeat`, matched hold |
 | Q2 | Multi-window | **PASS** | 2 `DocumentWindow`s, each an independent React root with its own live JuceLink |
-| Q3 | File drag-in | **NEEDS HUMAN** | not automatable here — both sides instrumented |
+| Q3 | File drag-in | **PASS, with a defect** | the **page** receives the drop, not JUCE — and the drop **reloads the webview** |
 | Q4 | OPFS | **PASS, with a shape constraint** | available; writes work **only off the main thread** |
 
 ### The JuceLink contract — all five lanes, machine-verified
@@ -98,48 +100,64 @@ Also captured: `crossOriginIsolated=false` (so no `SharedArrayBuffer`) and
 `AudioWorklet` present. Neither blocks the merged shell, whose engine is native
 rather than WASM — but the WASM companion path would care about the first.
 
-## What still needs a human pass (P1-KICKOFF law 5)
+## Q1 — keys: PASS
 
-I could not drive OS-level key or drag events: `osascript`/System Events is
-refused in this environment (`-1743 Not authorised to send Apple events`), and
-synthetic DOM events would prove nothing about the native→web path, which is
-the thing actually in question. Both were attempted; neither is a code defect.
+Confirmed by human pass (the agent cannot drive OS-level keys — `osascript`/
+System Events is refused with `-1743`, and synthetic DOM events would not
+exercise the native→web path that is actually in question).
 
-**Run this, then do the two actions below while the windows are up:**
+Captured: **187 keydown (150 of them auto-repeat) and 28 keyup**, codes
+`KeyA · KeyS · KeyD · KeyQ · MetaLeft · ShiftLeft`. All three properties the
+Serato layout depends on hold:
 
-```
-./build/spike/ScoopySpike_artefacts/Release/ScoopySpike.app/Contents/MacOS/ScoopySpike --probe --probe-seconds=90
-```
+- **`event.code` is the physical key** — `KeyA` while `event.key` is `"a"`, so a
+  binding survives a non-US layout.
+- **`event.repeat` is correct** — `false` on the first press, `true` on every
+  auto-repeat, so a cue can be suppressed on repeats rather than retriggered.
+- **A held key is a state, not an edge** — the held `q` produced 66 keydown
+  (64 repeats) and exactly one keyup, with the `held` set draining correctly.
+- `defaultPrevented` was `false` throughout: the webview is not swallowing keys.
 
-**Q1 — keys.** Click the `debug` window, then:
-1. Press `a`, `s`, `d` once each.
-2. **Hold `q` for ~2 seconds**, then release.
-3. Press `⌘S`.
-4. If you have a non-US layout available, switch to it and press the same
-   physical keys again.
+Bonus signal: `forwardKey` was called 4 times, so scoopy's own native
+key-forwarding relay (`useNativeKeyForwarding`) engaged against this backend
+unmodified.
 
-What the log must show for a PASS: `code` is the **physical** key
-(`KeyA`/`KeyS`/`KeyD`/`KeyQ`) and is layout-independent in step 4; the held `q`
-produces `repeat:true` on the auto-repeats (so a cue is not retriggered); and
-every `keydown` has a matching `keyup` with `held` draining back to empty.
+## Q3 — drag-in: PASS, and it found a defect
 
-**Q3 — drag-in.** Drag an audio file from Finder onto the `grid` window.
-The log tells you which side received it: `web-drop` (the page owns file drop —
-handle it in JS via `dataTransfer`) or `native-filesDropped` (JUCE sees it —
-handle it in the shell). If **neither** appears, the webview swallowed the drag
-and file-drop needs a different mechanism — that is the only outcome here that
-would change P1's plumbing, so it is worth the 30 seconds.
+Dragging an audio file (`HERMAN.wav`) onto the grid window produced
+**`web-drop` × 2 and `native-filesDropped` × 0.**
 
-Then `node spike/summarize-probe.mjs` prints the filled-in table.
+**Verdict: the PAGE owns file drop.** In P1 it must be handled in JS via
+`dataTransfer` — a JUCE `FileDragAndDropTarget` on the window never sees it,
+because the WebView consumes the drag first.
 
-Everything in this document that concerns what is *on screen* is unverified
-visually — I cannot see the UI. What is verified is that the bundle mounted,
-every transport lane carried real payloads, and nothing threw.
+**⚠️ DEFECT: the drop RELOADS the webview.** The probe log shows the grid page
+booting a third time, 7 records after the second `web-drop` — with a fresh
+React root and a HotFrame counter of 1633 (i.e. ~54 s into the run), having
+missed the one-shot `slEvent`/`slUiState` pushes. The probe already calls
+`preventDefault()` on `dragover` and `drop` at window capture phase, and the
+navigation happened anyway.
+
+This is a real P1 blocker for file drop, not a spike artifact: in the merged
+shell a stray drop would navigate the app away mid-session, silently losing
+UI state. It needs handling ABOVE the DOM — the WKWebView/WebKitGTK navigation
+policy — not only a page-level `preventDefault`. Tracked as the first item in
+"Consequences" below.
+
+Everything in this document that concerns what is *on screen* remains unverified
+visually — the agent cannot see the UI. What is verified is that the bundle
+mounted, every transport lane carried real payloads, nothing threw, and the
+human pass above.
 
 ## Consequences for P1 plumbing
 
+0. **Block drop-navigation before wiring file drop** (Q3 defect). A dropped file
+   currently reloads the webview. Page-level `preventDefault` is not sufficient
+   — the navigation must be refused at the webview's navigation policy. Until
+   that holds, any drop-to-load feature would intermittently reset the UI.
 1. Host scoopy's UI in `DocumentWindow` × `WebBrowserComponent`, one per panel,
-   `window.__slPanel` per window. No docking layer.
+   `window.__slPanel` per window. No docking layer. File drop is handled in the
+   PAGE via `dataTransfer` (Q3) — not with a native `FileDragAndDropTarget`.
 2. `CommandDispatch` grows an `sl`-named surface; the reply envelope is already
    right (`{ok, result?, error?}` — the shared envelope, P0-A).
 3. The HotFrame emitter must produce **284** slots at 30 Hz for schema v86, and
