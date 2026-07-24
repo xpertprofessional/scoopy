@@ -70,6 +70,9 @@ async function loadTakeInto(
     useAppStore.getState().setDeckUnresolved(deck, !r.ok)
     if (r.ok) {
       setDeckSourcePath(deck, path)
+      // The engine just told us how long the buffer actually is — keep it, or
+      // the waveform and playhead have nothing true to scale against.
+      useAppStore.getState().setDeckFrames(deck, r.engineFrames)
       bumpDeckRevision(deck)
     }
     return r.ok
@@ -165,6 +168,7 @@ export function usePatchActions(link: EngineLink | null) {
         const r = await link.command('deckLoadFile', { deck: deckId })
         if (r.ok) {
           setDeckSourcePath(deckId, r.path)
+          useAppStore.getState().setDeckFrames(deckId, r.engineFrames)
           bumpDeckRevision(deckId)
         }
       } finally {
@@ -252,7 +256,10 @@ export function usePatchActions(link: EngineLink | null) {
     async deckRecordStop(deck: number) {
       if (!link) return
       const r = await link.command('deckRecordStop', { deck })
-      if (r.ok && r.take) addTake(r.take)
+      if (r.ok && r.take) {
+        addTake(r.take)
+        useAppStore.getState().setDeckFrames(deck, r.take.frames)
+      }
       bumpDeckRevision(deck) // a take just became this deck's buffer (Law C-3)
       // Hand the strip back to its material: it was monitoring its input during
       // the take, and Law C-3 means the capture is ALREADY looping in the engine.
@@ -285,6 +292,7 @@ export function usePatchActions(link: EngineLink | null) {
         useAppStore.getState().setDeckUnresolved(deck, !r.ok)
         if (r.ok) {
           setDeckSourcePath(deck, path)
+          useAppStore.getState().setDeckFrames(deck, r.engineFrames)
           bumpDeckRevision(deck)
         }
       } finally {

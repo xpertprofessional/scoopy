@@ -110,6 +110,7 @@ export function Strip({
   // built but NOT heard, which the chip must say rather than hide.
   const mappable = useAppStore((s) => s.deviceInfo?.mappableBuses ?? 1)
   const takes = useAppStore((s) => s.takes)
+  const deckFrames = useAppStore((s) => (deckId >= 0 ? (s.deckFrames[deckId] ?? 0) : 0))
   const deviceInfo = useAppStore((s) => s.deviceInfo)
 
   const setChannelCell = useAppStore((s) => s.setChannelCell)
@@ -241,8 +242,13 @@ export function Strip({
           deck={deck.id}
           channelCount={channelCount}
           revision={deckRevision}
+          // The ENGINE's reported length first. A loaded FILE is not a take, so
+          // the take lookup missed and this fell back to max(loopEnd,1) = 1 —
+          // one frame — which drew a flat line and scaled the playhead off
+          // screen, making playback look dead when it was fine.
           frames={
-            takes.filter((t) => t.path === deck.sourcePath)[0]?.frames ??
+            deckFrames ||
+            takes.filter((t) => t.path === deck.sourcePath)[0]?.frames ||
             Math.max(deck.loopEndSample, 1)
           }
           loopStart={deck.loopStartSample}

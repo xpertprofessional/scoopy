@@ -102,6 +102,12 @@ interface AppState {
       refetches. Distinct from the Patch: the buffer is engine state. */
   deckRevisions: number[]
   bumpDeckRevision: (id: number) => void
+  /** A deck's ACTUAL buffer length in frames, reported by the engine on load /
+      record-stop. Runtime truth, not document: the waveform and the playhead are
+      both scaled by it, and without it they were being scaled by a fallback of
+      1 frame — which drew a flat line and put the playhead off-screen. */
+  deckFrames: number[]
+  setDeckFrames: (id: number, frames: number) => void
   /** True while a deck's audio is decoding on the shell's worker thread
       (P1-11). Runtime-only, never persisted — a load in flight is not a
       property of the document. */
@@ -126,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deckUnresolved: [],
   takes: [],
   deckRevisions: [],
+  deckFrames: [],
   deckLoading: [],
   deckLoadProgress: [],
   alignReferencePath: null,
@@ -156,6 +163,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const flags = get().deckUnresolved.slice()
     flags[id] = unresolved
     set({ deckUnresolved: flags })
+  },
+  setDeckFrames: (id, frames) => {
+    const f = get().deckFrames.slice()
+    f[id] = frames
+    set({ deckFrames: f })
   },
   setDeckLoading: (id, loading) => {
     const flags = get().deckLoading.slice()
