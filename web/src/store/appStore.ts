@@ -79,6 +79,10 @@ interface AppState {
   /** `at` places the new Strip on the map; omitted = the default cell origin. */
   addChannel: (name: string, source: SourceRef, at?: { x: number; y: number }) => Patch
   addDeck: (at?: { x: number; y: number }) => Patch
+  /** Give an existing Strip material: allocate a deck and point the Strip at it.
+      This is what makes "recording is the verb that gives a Strip material" true
+      without spawning a second object. Returns the deck id, or -1 if none free. */
+  attachDeck: (index: number) => { patch: Patch; deckId: number }
   /** Create a LoopbackBus strip (busTap): the one legal cycle — it reads the
       named bus's PREVIOUS block, which is what makes record-own-output and
       resample-the-mix possible without an illegal zero-delay cycle. */
@@ -93,6 +97,10 @@ interface AppState {
     key: 'gain' | 'pan' | 'mute' | 'solo' | 'toMonitor' | 'outBus',
     value: number | boolean,
   ) => void
+  /** Move a Strip on the map. Document-only: geometry NEVER crosses the ABI, so
+      this deliberately does not republish — the engine has no opinion on where a
+      strip is drawn. */
+  setChannelCell: (index: number, x: number, y: number) => void
   setDeckSourcePath: (id: number, path: string) => void
   setDeckRate: (id: number, rate: number) => void
   setDeckLoopRegion: (id: number, startSample: number, endSample: number) => void
@@ -129,7 +137,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alignReferencePath: null,
   sessionNotice: '',
   patch: emptyPatch(),
-  view: 'console',
+  view: 'plane',
   setView: (view) => set({ view }),
   setSessionDevice: (input, output) => {
     const p = get().patch
@@ -237,6 +245,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     return next
   },
 
+  attachDeck: (index) => {
+    const patch = get().patch
+    const ch = patch.channels[index]
+    if (!ch) return { patch, deckId: -1 }
+    if (ch.material) return { patch, deckId: ch.material.deckId } // already has one
+    const id = patch.decks.length
+    if (id > 7) return { patch, deckId: -1 } // 8 decks is the engine's ceiling
+    const deck = {
+      id,
+      name: ch.name,
+      loopEnabled: true,
+      loopStartSample: 0,
+      loopEndSample: 0,
+      rate: 1,
+      sourcePath: '',
+    }
+    const channels = patch.channels.slice()
+    channels[index] = { ...ch, material: { deckId: id } }
+    const next = { ...patch, decks: [...patch.decks, deck], channels }
+    set({ patch: next })
+    return { patch: next, deckId: id }
+  },
+
   addLoopback: (bus, at) => {
     const patch = get().patch
     const label = bus === 0 ? 'main' : 'monitor'
@@ -252,6 +283,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = { ...patch, channels: [...patch.channels, { ...placed, mute: true }] }
     set({ patch: next })
     return next
+  },
+
+  setChannelCell: (index, x, y) => {
+    const patch = get().patch
+    const ch = patch.channels[index]
+    if (!ch) return
+    const channels = patch.channels.slice()
+    channels[index] = { ...ch, cell: { ...ch.cell, x, y } }
+    set({ patch: { ...patch, channels } })
   },
 
   setChannelParam: (index, key, value) => {

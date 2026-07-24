@@ -885,3 +885,19 @@ canvas.meter {
   flex: 1;
   text-align: left;
 }
+
+/* A Strip is grabbable to move it; its controls keep their own cursors. */
+.plane-strip {
+  cursor: grab;
+}
+
+.plane-strip:active {
+  cursor: grabbing;
+}
+
+.plane-strip button,
+.plane-strip input,
+.plane-strip canvas,
+.plane-strip label {
+  cursor: default;
+}

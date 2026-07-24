@@ -26,6 +26,17 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
   const info = useAppStore.getState().deviceInfo
   const withMap: Patch = {
     ...patch,
+    // MATERIAL WINS AT PUBLISH TIME (PD-CANVAS-06 + D-WZ-RECMODEL-01 step A).
+    // The engine renders ONE source per channel, so a Strip that holds material
+    // is published as a deck source — that is what makes it play. The document's
+    // own `source` is left untouched, so the Strip never forgets what it records
+    // FROM. This is why recording can become a verb on any Strip without an
+    // engine change and without the rebind that would have erased provenance.
+    channels: patch.channels.map((ch) =>
+      ch.material
+        ? { ...ch, source: { kind: 'deck' as const, id: String(ch.material.deckId), name: ch.name } }
+        : ch,
+    ),
     outputMap: { main: [0, 1], monitor: info?.monitorAvailable ? [2, 3] : null },
   }
   void link.command('publishWorld', { patch: withMap }).catch(() => {
@@ -37,6 +48,7 @@ export function publishPatch(link: EngineLink | null, patch: Patch): void {
 export function usePatchActions(link: EngineLink | null) {
   const addChannel = useAppStore((s) => s.addChannel)
   const addDeck = useAppStore((s) => s.addDeck)
+  const attachDeck = useAppStore((s) => s.attachDeck)
   const addLoopback = useAppStore((s) => s.addLoopback)
   const setChannelParam = useAppStore((s) => s.setChannelParam)
   const setDeckSourcePath = useAppStore((s) => s.setDeckSourcePath)
@@ -60,6 +72,21 @@ export function usePatchActions(link: EngineLink | null) {
     /** Add a LoopbackBus strip and publish. Arrives muted — see addLoopback. */
     addLoopbackStrip(bus: number, at?: { x: number; y: number }) {
       publishPatch(link, addLoopback(bus, at))
+    },
+    /**
+     * RECORD INTO A STRIP (D-WZ-RECMODEL-01 step A) — recording is the verb that
+     * gives a Strip material. If the Strip has no material yet, a deck is
+     * allocated and attached to THIS Strip (never a second object), the new
+     * topology is published, and capture begins from the Strip's OWN input
+     * channels. Returns the deck now holding the material, or -1 if it could not.
+     */
+    async recordIntoStrip(index: number, chan0: number, chan1: number, sourceDesc: string) {
+      if (!link) return -1
+      const { patch, deckId } = attachDeck(index)
+      if (deckId < 0) return -1
+      publishPatch(link, patch) // the deck must exist in the world before capture
+      await link.command('deckRecordStart', { deck: deckId, chan0, chan1, sourceDesc })
+      return deckId
     },
     /** Remove a strip (and its deck when it is the last deck) and publish. */
     removeStrip(index: number) {

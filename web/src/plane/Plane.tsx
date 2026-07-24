@@ -121,7 +121,7 @@ export function Plane({ link }: { link: EngineLink | null }) {
         style={{ transform: `scale(${scale}) translate(${pan.x}px, ${pan.y}px)` }}
       >
         {channels.map((ch, i) => (
-          <Strip key={ch.key} channel={ch} index={i} link={link} />
+          <Strip key={ch.key} channel={ch} index={i} link={link} scale={scale} />
         ))}
       </div>
 

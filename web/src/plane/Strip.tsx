@@ -14,6 +14,7 @@
  * Precise settings (exact loop points, output bus, cue routing) move to the
  * Inspector in PD-CANVAS-03 — this stays what you touch while playing.
  */
+import { useRef } from 'react'
 import type { Channel } from '../../protocol/schema'
 import { channelFieldIndex } from '../../protocol/schema'
 import type { EngineLink } from '../engine/engineLink'
@@ -43,6 +44,34 @@ function faderLabel(position: number): string {
   return `${db > 0 ? '+' : ''}${db.toFixed(1)}`
 }
 
+/**
+ * Which ENGINE INPUT channels a Strip records. The engine captures input
+ * channels only (wz_engine.h: "records `channels` ENGINE-input channels"), so
+ * this is also the honest test of whether a Strip can record at all.
+ *   deviceInput "3"   -> mono   {3, -1}
+ *   deviceInput "0,1" -> stereo {0, 1}
+ * A bus tap or an app tap has no input channel to name, so it returns null and
+ * the record verb is disabled WITH the reason rather than silently doing
+ * nothing.
+ */
+export function recordChannels(
+  source: { kind: string; id: string },
+  fallbackInput: number | null,
+): { chan0: number; chan1: number } | null {
+  if (source.kind === 'deviceInput') {
+    const parts = source.id.split(',').map((p) => Number.parseInt(p, 10))
+    const a = parts[0]
+    if (a === undefined || !Number.isInteger(a) || a < 0) return null
+    const b = parts[1]
+    return { chan0: a, chan1: Number.isInteger(b) && b! >= 0 ? b! : -1 }
+  }
+  // A Strip that already holds material but names no input (a deck added empty)
+  // records the first available input, which is what the deck rack always did.
+  if (source.kind === 'deck' && fallbackInput !== null)
+    return { chan0: fallbackInput, chan1: -1 }
+  return null
+}
+
 function panLabel(pan: number): string {
   if (Math.abs(pan) < 0.005) return 'C'
   const side = pan < 0 ? 'L' : 'R'
@@ -53,10 +82,13 @@ export function Strip({
   channel,
   index,
   link,
+  scale = 1,
 }: {
   channel: Channel
   index: number
   link: EngineLink | null
+  /** The plane's zoom, so a screen drag converts to the right plane distance. */
+  scale?: number
 }) {
   const actions = usePatchActions(link)
   // MATERIAL is the authority for what a Strip plays (PD-CANVAS-06). Reading it
@@ -79,13 +111,49 @@ export function Strip({
   const takes = useAppStore((s) => s.takes)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
 
+  const setChannelCell = useAppStore((s) => s.setChannelCell)
+  const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+
   const cell = channel.cell
+
+  /**
+   * Drag the Strip to move it. Grabbing a CONTROL must never move the Strip —
+   * otherwise nudging a fader would relocate the thing you are playing — so any
+   * pointer-down that lands on an interactive element is left alone. The plane
+   * ignores pointer-downs on a Strip, so without this handler a drag on a Strip
+   * fell through to the pan and appeared to move every Strip at once.
+   */
+  const onPointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, canvas, label')) return
+    e.stopPropagation()
+    dragRef.current = { px: e.clientX, py: e.clientY, x: cell.x, y: cell.y }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d) return
+    e.stopPropagation()
+    // Screen delta -> plane delta is a division by the zoom.
+    setChannelCell(
+      index,
+      Math.round(d.x + (e.clientX - d.px) / scale),
+      Math.round(d.y + (e.clientY - d.py) / scale),
+    )
+  }
+  const endDrag = (e: React.PointerEvent) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+  }
   const recording = deckState === RECORDING
   const hasMaterial = deck !== undefined && deck.sourcePath !== ''
-  const inputName = deviceInfo?.inputs[0]?.name ?? 'input 1'
   // The wave is shown for anything that HAS material or is capturing it now —
   // that is what makes recording feel like a player rather than a form.
   const showWave = deck !== undefined && (hasMaterial || recording)
+  // What this Strip would record, and whether it can at all.
+  const firstInput = deviceInfo?.inputs[0]?.index ?? null
+  const rec = recordChannels(channel.source, firstInput)
+  const canRecord = rec !== null
   const waveWidth = Math.max(80, cell.w - 16)
 
   return (
@@ -93,6 +161,10 @@ export function Strip({
       className="plane-strip raised"
       style={{ left: cell.x, top: cell.y, width: cell.w, height: cell.h }}
       data-testid={`strip-${channel.key}`}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
     >
       <div className="plane-strip-head">
         {/* Kind rides a swatch, NOT the name's text colour: three of the five
@@ -184,20 +256,30 @@ export function Strip({
       )}
 
       <div className="plane-strip-transport">
+        {/* RECORD IS ON EVERY STRIP (D-WZ-RECMODEL-01 step A): recording is the
+            verb that gives a Strip material, so it cannot be a privilege of
+            Strips that already have some. Where the engine cannot capture the
+            source, it is disabled WITH the reason — never silently inert. */}
+        <button
+          type="button"
+          className={recording ? 'latched-rec' : ''}
+          disabled={!canRecord && !recording}
+          title={
+            recording
+              ? 'stop — the take loops instantly (Law C-3)'
+              : canRecord
+                ? `record ${channel.source.name} into this strip`
+                : `this strip cannot be recorded: the engine captures input channels, and “${channel.source.kind}” names none`
+          }
+          onClick={() => {
+            if (recording && deck) return void actions.deckRecordStop(deck.id)
+            if (rec) void actions.recordIntoStrip(index, rec.chan0, rec.chan1, channel.source.name)
+          }}
+        >
+          {recording ? '■' : '●'}
+        </button>
         {deck && (
           <>
-            <button
-              type="button"
-              className={recording ? 'latched-rec' : ''}
-              title={recording ? 'stop — loops instantly (Law C-3)' : `record ${inputName}`}
-              onClick={() =>
-                recording
-                  ? void actions.deckRecordStop(deck.id)
-                  : void actions.deckRecordStart(deck.id, 0, -1, inputName)
-              }
-            >
-              {recording ? '■' : '●'}
-            </button>
             <button type="button" onClick={() => actions.deckTrigger(deck.id, 'loop')} title="loop">
               ⟳
             </button>
