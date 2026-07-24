@@ -18,7 +18,7 @@
 import { z } from 'zod'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 15
+export const SCHEMA_VERSION = 16
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -169,6 +169,24 @@ export type SourceRef = z.infer<typeof SourceRefSchema>
  * RESERVED fields — carried, validated, ignored by the engine until their
  * phase — so adding P3/P6 is an increment, not a migration.
  */
+/** PD-CANVAS (D-WZ-PDCANVAS-01): where a strip sits on the boundless plane.
+    Geometry is PURE UI state — it never crosses the ABI (the engine has never
+    known where a strip is drawn). Additive: the console UI ignores it until the
+    Plane/Cell components (PD-CANVAS-02) render it. */
+export const CellSchema = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    w: z.number().positive(),
+    h: z.number().positive(),
+  })
+  .strict()
+export type Cell = z.infer<typeof CellSchema>
+
+/** Default Cell size for a freshly-created strip. Real placement (cascade,
+    drag, auto-layout) is PD-CANVAS-02's job; this just keeps the field valid. */
+export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 150, h: 132 }
+
 export const ChannelSchema = z
   .object({
     key: z.string().min(1), // stable identity across edits (engine world key)
@@ -187,6 +205,7 @@ export const ChannelSchema = z
     recordArm: z.boolean(), // P3 (reserved)
     monitorSwitch: z.boolean(), // P3 per-deck input monitoring (reserved)
     inserts: z.array(z.string()).length(4), // P6 plugin refs, '' = empty (reserved)
+    cell: CellSchema, // PD-CANVAS: plane geometry (UI-only, never crosses the ABI)
   })
   .strict()
 export type Channel = z.infer<typeof ChannelSchema>
@@ -219,6 +238,20 @@ export const OutputMapSchema = z
   .strict()
 export type OutputMap = z.infer<typeof OutputMapSchema>
 
+/** PD-CANVAS: the plane viewport — document state so a saved arrangement reopens
+    framed the way the user left it (pd-canvas.md §4). `uiMode` 'strip' becomes a
+    zoom-out VIEW rather than a separate layout. */
+export const PlaneSchema = z
+  .object({
+    scale: z.number().positive(), // zoom; the "Default" control resets to 1
+    panX: z.number(),
+    panY: z.number(),
+  })
+  .strict()
+export type Plane = z.infer<typeof PlaneSchema>
+
+export const DEFAULT_PLANE: Plane = { scale: 1, panX: 0, panY: 0 }
+
 export const PatchSchema = z
   .object({
     schemaVersion: z.number().int(),
@@ -226,6 +259,7 @@ export const PatchSchema = z
     decks: z.array(DeckSchema).max(8),
     outputMap: OutputMapSchema,
     uiMode: z.enum(['console', 'strip']), // display mode is document state (CONCEPT §6)
+    plane: PlaneSchema, // PD-CANVAS: viewport (UI-only, never crosses the ABI)
   })
   .strict()
 export type Patch = z.infer<typeof PatchSchema>
@@ -237,6 +271,7 @@ export function emptyPatch(): Patch {
     decks: [],
     outputMap: { main: [0, 1], monitor: null },
     uiMode: 'console',
+    plane: { ...DEFAULT_PLANE },
   }
 }
 
@@ -256,6 +291,7 @@ export function makeChannel(key: string, name: string, source: SourceRef): Chann
     recordArm: false,
     monitorSwitch: false,
     inserts: ['', '', '', ''],
+    cell: { ...DEFAULT_CELL }, // fresh copy so strips never share a geometry object
   }
 }
 

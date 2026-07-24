@@ -42,7 +42,42 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // Versions 1..11 predate sessions existing on disk: no user can hold one, so
     // there is nothing to migrate FROM. They are listed as a wall rather than
     // silently accepted, so a hand-edited or fabricated file fails honestly.
+
+    // v15 -> v16 (PD-CANVAS-01, D-WZ-PDCANVAS-01): the plane arrives. Every strip
+    // gains a `cell` (plane geometry) and the patch gains a `plane` (viewport).
+    // A pre-plane session had no geometry, so we AUTO-LAY-OUT the existing
+    // channels into a tidy grid — deterministic, nothing invented that could
+    // surprise the user, and it matches the console rack's left-to-right order.
+    // Runs on the RAW object: it must not assume the current schema's shape.
+    15: {
+      to: 16,
+      name: 'add-cell-plane (PD-CANVAS)',
+      run: (s) => addCellAndPlane(s),
+    },
   }
+
+/** The v15->v16 migration body. Kept as a named function so it is unit-testable
+    in isolation and reads as documentation of the layout it produces. */
+function addCellAndPlane(s: RawSession): RawSession {
+  const W = 150
+  const H = 132
+  const GAP = 12
+  const PER_ROW = 6 // a comfortable grid; the user rearranges freely afterward
+  const patch = (s.patch ?? {}) as RawSession
+  const channels = Array.isArray(patch.channels) ? patch.channels : []
+  const laidOut = channels.map((ch, i) => {
+    const col = i % PER_ROW
+    const row = Math.floor(i / PER_ROW)
+    return {
+      ...(ch as RawSession),
+      cell: { x: col * (W + GAP), y: row * (H + GAP), w: W, h: H },
+    }
+  })
+  return {
+    ...s,
+    patch: { ...patch, channels: laidOut, plane: { scale: 1, panX: 0, panY: 0 } },
+  }
+}
 
 /** Apply migrations from `from` up to SCHEMA_VERSION. */
 function migrate(raw: RawSession, from: number): { raw: RawSession } | { error: string } {
