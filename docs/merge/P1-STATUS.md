@@ -58,8 +58,27 @@ unedited as the historical record). This file is the CURRENT state. Updated
    writable home; small and additive. Sample sourcing (kit bytes → `registerSample`)
    is the other half — likely native decode of kit files, not JSON floats.
 2. **HotFrame emitter.** Produce scoopy's 284-slot frame at 30 Hz from v3 engine
-   state, so meters/playheads/carve go live. Indices from scoopy's schema
-   (`HOT_FRAME_SCALARS`), never hand-counted.
+   state, so meters/playheads/carve go live. Scoped 2026-07-24:
+   - **Prerequisite (do first): vendor scoopy's web protocol authority.** The
+     284-slot layout is `HOT_FRAME_SCALARS` in scoopy `web/protocol/schema.ts`
+     (268 scalars + 16 spectrum). The merged repo pins the ENGINE but not the
+     web schema, and the layout must be DERIVED from the authority, never
+     hand-counted (the discipline the whole session has held). So pin scoopy's
+     `web/protocol` into the merged repo (extend `engine.lock.json` or a new
+     lock), then codegen a C++ index header (`sl_hotframe.inc`: an index enum +
+     `SL_HOTFRAME_LENGTH`) from the pinned copy, with a `hotframe:check` gate —
+     same shape as `trackparams:*`. This vendoring also unblocks future
+     command-schema work (the merged shell needs scoopy's schema for more than
+     the frame).
+   - **Then the emitter.** A 30 Hz timer fills the known indices from engine
+     telemetry — the accessors exist on `NativeAudioEngineCore`:
+     `frameCounter` (own monotonic), `outputPeakL/R` from `peakFrames[mainL/R]`
+     (⚠️ confirm these are peak VALUES vs frame indices), `callbackLoad` +
+     `deadlineMissCount` from `diagnostics()`, `inputPeak` from
+     `consumeInputPeak()`, per-deck playhead from `deckPlayheadStep()`. Fields
+     with no v3 source yet are zero-filled (idle meters), not faked.
+   - **Headless-testable:** frame length == `SL_HOTFRAME_LENGTH`, `frameCounter`
+     advances, and a rendered tone shows a non-zero `outputPeak` slot.
 3. **Live window + self-contained hosting.** Wire `SlDispatch` + the play path +
    HotFrame into a real `WebBrowserComponent` window serving scoopy's UI, and
    vendor scoopy's `webdist` hash-pinned (runtime bytes ~2.3 MB; the 3.5 MB of
