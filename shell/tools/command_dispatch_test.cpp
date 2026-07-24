@@ -4,6 +4,7 @@
 #include "WZProtocol.h"
 #include "wz_engine.h"
 
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -83,6 +84,60 @@ int main() {
         // A malformed publish (no channels) is a structured failure.
         const auto bad = dispatch(e, "publishWorld", juce::JSON::parse(R"({"patch": {}})"));
         CHECK(!static_cast<bool>(bad.getProperty("ok", true)));
+    }
+
+    // WHICH bus a tap listens to must actually reach the engine. srcChan0 was
+    // never published for busTap, so every loopback silently tapped MAIN: an
+    // "↺ cue" strip was a second copy of main and nothing said so. There is no
+    // world getter, so this is checked where it matters — in the audio.
+    {
+        auto tapPatch = [](const char* busId) {
+            return juce::JSON::parse(juce::String(R"({
+                "patch": {
+                    "schemaVersion": 3,
+                    "channels": [
+                        {"key": "mic", "name": "Mic",
+                         "source": {"kind": "deviceInput", "id": "0", "name": "In"},
+                         "gain": 0.75, "pan": 0, "mute": false, "solo": false,
+                         "toMonitor": false},
+                        {"key": "tap", "name": "tap",
+                         "source": {"kind": "busTap", "id": "BUS", "name": "bus"},
+                         "gain": 0.75, "pan": 0, "mute": false, "solo": false,
+                         "toMonitor": false}
+                    ],
+                    "decks": [], "outputMap": {"main": [0,1], "monitor": null},
+                    "uiMode": "console"
+                }
+            })").replace("BUS", busId));
+        };
+        constexpr uint32_t kQ = 512;
+        std::vector<float> in(kQ, 1.0f), l(kQ), r(kQ), cl(kQ), cr(kQ);
+        const float* ins[1] = {in.data()};
+        float* outs[4] = {l.data(), r.data(), cl.data(), cr.data()};
+        auto renderPeak = [&](int blocks) {
+            double p = 0.0;
+            for (int b = 0; b < blocks; ++b) {
+                wz_engine_render_io(e, ins, 1, outs, 4, kQ);
+                for (uint32_t i = 0; i < kQ; ++i)
+                    p = std::max(p, std::abs(static_cast<double>(l[i])));
+            }
+            return p;
+        };
+
+        // Nothing is sent to the cue bus, so a tap that really listens to CUE
+        // contributes silence and main stays at the mic's own level.
+        CHECK(static_cast<bool>(
+            dispatch(e, "publishWorld", tapPatch("1")).getProperty("ok", false)));
+        const double cueTap = renderPeak(8);
+        CHECK(cueTap < 1.2);
+
+        // The same patch pointed at MAIN feeds main back into itself one block
+        // late — it climbs. That is the difference the dropped field erased.
+        CHECK(static_cast<bool>(
+            dispatch(e, "publishWorld", tapPatch("0")).getProperty("ok", false)));
+        const double mainTap = renderPeak(8);
+        CHECK(mainTap > cueTap * 1.5);
+        std::printf("  busTap: cue-tap peak=%.3f  main-tap peak=%.3f\n", cueTap, mainTap);
     }
 
     // Unknown method → structured failure, not a crash.

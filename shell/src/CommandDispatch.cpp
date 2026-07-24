@@ -93,6 +93,12 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
                 const auto r = id.fromFirstOccurrenceOf(",", false, false);
                 wz_world_channel_set(engine, kSrcChan0, l.isEmpty() ? -1 : l.getIntValue());
                 wz_world_channel_set(engine, kSrcChan1, r.isEmpty() ? -1 : r.getIntValue());
+            } else if (kind == "busTap") {
+                // WHICH bus this loopback taps rides in srcChan0. It was never
+                // published, so every loopback silently tapped bus 0 — the
+                // "↺ cue" strip was a second copy of main, and nothing said so.
+                const auto id = source.getProperty("id", "").toString();
+                wz_world_channel_set(engine, kSrcChan0, id.isEmpty() ? 0 : id.getIntValue());
             } else if (kind == "deck") {
                 const auto id = source.getProperty("id", "").toString();
                 wz_world_channel_set(engine, kDeckIndex, id.isEmpty() ? -1 : id.getIntValue());
