@@ -146,6 +146,27 @@ void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode);
  * Control thread. */
 void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame);
 
+/* --- TAPE SCRUB (turntable) ---------------------------------------------
+ * Hold the record and move it: the playhead follows the finger and the PITCH
+ * follows how fast the finger moves, because the rate is DERIVED from the gap
+ * between where the deck is and where you have dragged to.
+ *
+ * This is deliberately not the same gesture as wz_deck_seek, which jumps the
+ * read position at unchanged pitch (a granular stutter). Both are wanted.
+ *
+ * A scrubbing deck SOUNDS even when it is idle — that is the whole point of a
+ * turntable — and it renders through the same reader, so reverse is not a
+ * special case. Recording decks refuse. Control thread; the render thread reads
+ * the posted target and never locks.
+ *
+ *   begin: capture the current position and fade the scrub in
+ *   to:    post where the finger is now (call as often as you like)
+ *   end:   fade out and hand the deck back to its transport state
+ */
+void wz_deck_scrub_begin(wz_engine* e, uint32_t deck);
+void wz_deck_scrub_to(wz_engine* e, uint32_t deck, double frame);
+void wz_deck_scrub_end(wz_engine* e, uint32_t deck);
+
 /* Half-open [start, end) in buffer samples, seqlock-published (never torn).
  * enabled=0 or a degenerate/out-of-range pair plays the whole buffer. */
 void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,

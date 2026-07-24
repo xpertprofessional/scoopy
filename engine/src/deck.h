@@ -56,6 +56,19 @@ struct Deck {
     // Same discipline as pendingReset: the control thread only ever STORES, the
     // render thread exchanges it away, so no lock and no torn read.
     std::atomic<int64_t> pendingSeek{-1};
+
+    // --- TAPE SCRUB (turntable): position drives, RATE is derived -----------
+    // The control thread posts only where the finger is; the render thread works
+    // out how fast to travel to get there this block. That single mechanism
+    // yields both behaviours at once — moving the hand faster opens a bigger gap,
+    // which becomes a higher rate, which IS the pitch bend. Deriving rate from
+    // pixels instead (the reference implementation's approach) makes rate and
+    // position disagree as soon as the view is zoomed.
+    std::atomic<uint32_t> scrubActive{0};
+    std::atomic<double> scrubTarget{0.0};  // where the finger is, in frames
+    double scrubRate = 0.0;                // render-side smoothed travel rate
+    double scrubGain = 0.0;                // 0..1 ramp position (raised-cosine)
+    std::atomic<double> pubScrubRate{0.0}; // published for the UI
     std::atomic<double> rate{1.0};         // signed varispeed; <0 = reverse (P4-02)
 
     // Seqlock loop spec (writer: control thread; reader: render, once per block).

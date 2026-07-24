@@ -75,6 +75,11 @@ add_executable(deck_seek_test tools/deck_seek_test.cpp)
 target_link_libraries(deck_seek_test PRIVATE wz_engine)
 add_test(NAME deck_seek_test COMMAND deck_seek_test)
 
+# Tape scrub: pitch follows the hand, a stopped deck sounds, release is smooth.
+add_executable(deck_scrub_test tools/deck_scrub_test.cpp)
+target_link_libraries(deck_scrub_test PRIVATE wz_engine)
+add_test(NAME deck_scrub_test COMMAND deck_scrub_test)
+
 # D-WZ-RAMP-01 anti-click guarantee: gain/mute/solo TRANSITIONS glide, not step.
 add_executable(ramp_test tools/ramp_test.cpp)
 target_link_libraries(ramp_test PRIVATE wz_engine)

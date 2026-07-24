@@ -126,6 +126,19 @@ juce::var dispatch(wz_engine* engine, const juce::String& method, const juce::va
         return ok(juce::var(r));
     }
 
+    if (method == "deckScrub") {
+        const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
+        const auto phase = params.getProperty("phase", "end").toString();
+        if (phase == "begin") wz_deck_scrub_begin(engine, deck);
+        else if (phase == "to")
+            wz_deck_scrub_to(engine, deck, static_cast<double>(params.getProperty("frame", 0.0)));
+        else if (phase == "end") wz_deck_scrub_end(engine, deck);
+        else return fail("deckScrub: unknown phase " + phase);
+        auto* r = new juce::DynamicObject();
+        r->setProperty("ok", true);
+        return ok(juce::var(r));
+    }
+
     if (method == "deckTrigger") {
         const auto deck = static_cast<uint32_t>(static_cast<int>(params.getProperty("deck", 0)));
         const auto mode = params.getProperty("mode", "stop").toString();

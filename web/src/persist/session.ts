@@ -81,6 +81,11 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // An explicit identity is the honest way to say "nothing to do here".
     21: { to: 22, name: 'deckSeek added (command-only, patch unchanged)', run: (s) => s },
 
+    // v22 -> v23: deckScrub (tape/turntable) added. A COMMAND, not a document
+    // field, so the patch is unchanged — but the step must exist or migrate()
+    // hits a gap and refuses the load.
+    22: { to: 23, name: 'deckScrub added (command-only, patch unchanged)', run: (s) => s },
+
     // v20 -> v21: `uiMode` is DELETED. It named 'console' | 'strip' as document
     // state, but the console no longer exists and "strip mode" is just a
     // zoomed-out plane, which `plane.scale` already carries. Leaving the field

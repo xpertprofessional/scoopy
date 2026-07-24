@@ -472,6 +472,27 @@ void wz_deck_seek(wz_engine* e, uint32_t deck, uint64_t frame) {
     e->decks[deck].pendingSeek.store(static_cast<int64_t>(frame), std::memory_order_release);
 }
 
+void wz_deck_scrub_begin(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    auto& d = e->decks[deck];
+    // Recording owns the playhead; a scrub must not move the write head.
+    if (d.state.load(std::memory_order_acquire) ==
+        static_cast<uint32_t>(wz::DeckState::recording))
+        return;
+    d.scrubTarget.store(d.pubPlayhead.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    d.scrubActive.store(1, std::memory_order_release);
+}
+
+void wz_deck_scrub_to(wz_engine* e, uint32_t deck, double frame) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].scrubTarget.store(frame < 0.0 ? 0.0 : frame, std::memory_order_relaxed);
+}
+
+void wz_deck_scrub_end(wz_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= wz::kMaxDecks) return;
+    e->decks[deck].scrubActive.store(0, std::memory_order_release);
+}
+
 void wz_deck_trigger(wz_engine* e, uint32_t deck, uint32_t mode) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     auto& d = e->decks[deck];
@@ -797,8 +818,21 @@ void wz_engine_render_io(wz_engine* e,
         const uint64_t dFrames = d.frames.load(std::memory_order_acquire);
         // A recording deck's playback pass is silent (it is capturing, handled in
         // the record pass below); playback resumes on the Law C-3 stop→loop.
-        if (st == static_cast<uint32_t>(wz::DeckState::idle) ||
-            st == static_cast<uint32_t>(wz::DeckState::recording) || dFrames == 0) {
+        // A SCRUBBING deck sounds even when idle — that is what makes it a
+        // turntable rather than a seek bar. Recording still refuses: the write
+        // head is not the user's to drag.
+        const bool scrubHeld = d.scrubActive.load(std::memory_order_acquire) != 0;
+        // Keep rendering the scrub path while its gain is still ramping DOWN.
+        // Without this, releasing a scrub dropped straight into the idle
+        // early-out and wrote zeros on the very next sample — the fade existed in
+        // the code but never actually rendered, so release CLICKED. The fixture
+        // caught it; a listener would have too.
+        const bool scrubbing = (scrubHeld || d.scrubGain > 0.0) && dFrames > 0 &&
+                               st != static_cast<uint32_t>(wz::DeckState::recording);
+
+        if (!scrubbing &&
+            (st == static_cast<uint32_t>(wz::DeckState::idle) ||
+             st == static_cast<uint32_t>(wz::DeckState::recording) || dFrames == 0)) {
             // DRAIN THE SCRUB MAILBOX EVEN WHEN NOT PLAYING. Two reasons, both
             // bugs before this: a scrub on a STOPPED deck must still move the
             // visible head (otherwise dragging a stopped player does nothing at
@@ -820,6 +854,38 @@ void wz_engine_render_io(wz_engine* e,
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
             continue;
         }
+        if (scrubbing) {
+            // RATE IS DERIVED FROM THE GAP. Travelling the distance to the
+            // finger over this block is exactly what makes pitch follow hand
+            // speed: move faster, open a bigger gap, get a higher rate. One
+            // mechanism, both behaviours, and no dependence on pixels or zoom.
+            const double target = d.scrubTarget.load(std::memory_order_relaxed);
+            // On the way out, stop chasing: coast to a halt instead of lunging
+            // at a target the finger has already left.
+            const double gap = scrubHeld ? target - d.playhead : 0.0;
+            const double want = std::clamp(gap / static_cast<double>(frames), -4.0, 4.0);
+            for (uint32_t i = 0; i < frames; ++i) {
+                // Smoothed on the ONE D-WZ-RAMP-01 constant, so a flick glides
+                // like tape instead of stepping, and reverse is just a negative
+                // rate through the same reader.
+                d.scrubRate += alpha * (want - d.scrubRate);
+                d.scrubGain = rampStep(d.scrubGain, scrubHeld ? 1.0 : 0.0, step);
+                d.playhead += d.scrubRate;
+                if (d.playhead < 0.0) d.playhead = 0.0;
+                const double lastFrame = static_cast<double>(dFrames) - 1.0;
+                if (d.playhead > lastFrame) d.playhead = lastFrame;
+                const double sg = rampShape(d.scrubGain);
+                const float scrubL = d.sampleLerp(0, d.playhead);
+                const float scrubR = d.channels > 1 ? d.sampleLerp(1, d.playhead) : scrubL;
+                dl[i] = static_cast<float>(scrubL * sg);
+                dr[i] = static_cast<float>(scrubR * sg);
+            }
+            d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
+            d.pubScrubRate.store(d.scrubRate, std::memory_order_relaxed);
+            continue;
+        }
+        d.pubScrubRate.store(0.0, std::memory_order_relaxed);
+
         // Loop region, read torn-free once per block; degenerate → whole buffer.
         uint32_t le = 0; uint64_t ls = 0, lend = 0;
         d.readLoop(le, ls, lend);

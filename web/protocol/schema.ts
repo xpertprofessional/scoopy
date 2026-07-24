@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 22
+export const SCHEMA_VERSION = 23
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -514,6 +514,20 @@ export const COMMANDS = {
       .object({
         deck: z.number().int().min(0).max(7),
         frame: z.number().int().nonnegative(),
+      })
+      .strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
+  },
+  // TAPE SCRUB (turntable): hold the record and move it. Unlike deckSeek, which
+  // jumps at unchanged pitch, the engine DERIVES the rate from the gap between
+  // the deck and where you dragged — so pitch follows hand speed. A scrubbing
+  // deck sounds even when idle; a recording deck refuses.
+  deckScrub: {
+    params: z
+      .object({
+        deck: z.number().int().min(0).max(7),
+        phase: z.enum(['begin', 'to', 'end']),
+        frame: z.number().nonnegative(),
       })
       .strict(),
     result: z.object({ ok: z.boolean() }).strict(),

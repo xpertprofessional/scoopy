@@ -26,8 +26,10 @@ interface Props {
   loopStart: number
   loopEnd: number
   onSetLoop: (startSample: number, endSample: number) => void
-  /** Turntable scrub: drag the wave to move the playhead. */
+  /** Jump scrub: move the playhead at unchanged pitch (granular in feel). */
   onScrub?: (frame: number) => void
+  /** TAPE scrub (turntable): pitch follows hand speed. Option-drag. */
+  onTapeScrub?: (phase: 'begin' | 'to' | 'end', frame: number) => void
   /** The plane's zoom, so the head stays ~1 device px at any scale. */
   scale?: number
   width?: number
@@ -49,6 +51,7 @@ export function DeckWaveform({
   loopEnd,
   onSetLoop,
   onScrub,
+  onTapeScrub,
   scale = 1,
   width = 150,
   height = 40,
@@ -63,7 +66,7 @@ export function DeckWaveform({
   // Which gesture this pointer-down committed to. Locked once, so a drag can
   // never change its mind halfway (shift released mid-region-drag used to turn
   // it into a scrub).
-  const gestureRef = useRef<'scrub' | 'region' | null>(null)
+  const gestureRef = useRef<'scrub' | 'tape' | 'region' | null>(null)
   // Optimistic head: where the user has dragged to, drawn immediately instead of
   // waiting for the engine's next HotFrame — otherwise the head lags the finger
   // by a round trip. Cleared on release so the head hands back to the engine.
@@ -228,6 +231,17 @@ export function DeckWaveform({
     })
   }
 
+  /** Tape posts share the scrub throttle: one per frame, newest position. */
+  const postTape = (frame: number) => {
+    pendingScrubRef.current = frame
+    if (scrubRafRef.current !== 0) return
+    scrubRafRef.current = requestAnimationFrame(() => {
+      scrubRafRef.current = 0
+      const f = pendingScrubRef.current
+      if (f !== null) onTapeScrub?.('to', f)
+    })
+  }
+
   const endGesture = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const gesture = gestureRef.current
     gestureRef.current = null
@@ -244,6 +258,7 @@ export function DeckWaveform({
       if (b - a > 1) onSetLoop(a, b)
       return
     }
+    if (gesture === 'tape') onTapeScrub?.('end', 0)
     // Hand the head back to the engine: from here the HotFrame is the truth.
     scrubHeadRef.current = null
   }
@@ -259,7 +274,7 @@ export function DeckWaveform({
       ref={ref}
       className="deck-waveform"
       style={{ width, height }}
-      title="drag to scrub · shift-drag to set the loop region · double-click for the whole take — scrubbing sounds while the deck is playing"
+      title="drag to scrub · shift-drag to set the loop region · double-click for the whole take — alt-drag for TAPE scrub (pitch follows your hand, and it sounds even when stopped)"
       onPointerDown={(ev) => {
         // Nothing to aim at, or the buffer is being written: refuse outright
         // rather than scrub a moving target.
@@ -268,9 +283,14 @@ export function DeckWaveform({
         const at = posToSample(ev)
         // LOCK the gesture now. Deciding per-move let a released shift key turn
         // a region drag into a scrub mid-gesture.
-        gestureRef.current = ev.shiftKey ? 'region' : 'scrub'
+        // shift = set the loop region · alt/option = TAPE scrub (pitch follows
+        // the hand) · plain = jump scrub (unchanged pitch, granular in feel).
+        gestureRef.current = ev.shiftKey ? 'region' : ev.altKey ? 'tape' : 'scrub'
         if (gestureRef.current === 'region') {
           dragRef.current = { from: at, to: at }
+        } else if (gestureRef.current === 'tape') {
+          scrubHeadRef.current = at
+          onTapeScrub?.('begin', at)
         } else {
           scrubHeadRef.current = at
           postScrub(at)
@@ -281,8 +301,12 @@ export function DeckWaveform({
         // outlive a button report, and buttons lies during some trackpad drags.
         if (gestureRef.current === null) return
         const at = posToSample(ev)
-        if (gestureRef.current === 'region') dragRef.current = { from: dragRef.current?.from ?? at, to: at }
-        else {
+        if (gestureRef.current === 'region') {
+          dragRef.current = { from: dragRef.current?.from ?? at, to: at }
+        } else if (gestureRef.current === 'tape') {
+          scrubHeadRef.current = at
+          postTape(at)
+        } else {
           scrubHeadRef.current = at
           postScrub(at)
         }

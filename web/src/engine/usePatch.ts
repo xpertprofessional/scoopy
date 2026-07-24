@@ -242,6 +242,12 @@ export function usePatchActions(link: EngineLink | null) {
     deckSeek(deck: number, frame: number) {
       void link?.command('deckSeek', { deck, frame: Math.max(0, Math.round(frame)) })
     },
+    /** TAPE SCRUB (turntable): pitch follows hand speed, because the engine
+        derives the rate from the gap. Distinct from deckSeek, which jumps at
+        unchanged pitch — both are wanted, they are different instruments. */
+    deckScrub(deck: number, phase: 'begin' | 'to' | 'end', frame = 0) {
+      void link?.command('deckScrub', { deck, phase, frame: Math.max(0, frame) })
+    },
     /** Deck transport intents; state truth returns via HotFrame. */
     deckTrigger(deck: number, mode: 'loop' | 'oneShot' | 'stop' | 'retrigger') {
       void link?.command('deckTrigger', { deck, mode })
