@@ -40,7 +40,11 @@ struct ChannelState {
     int32_t srcChan1 = -1; // deviceInput: device input channel R (-1 = mono)
     int32_t deckIndex = -1; // srcKind==deck: which deck unit feeds this strip
     int32_t ringId = -1;    // tap kinds: which source ring (+ its ASRC) feeds this strip
-    bool toMonitor = false; // cue assign (main is always fed)
+    bool toMonitor = false; // cue assign (independent of the output bus)
+    // Which of the 8 output buses this strip feeds (P4-05). Bus 0 IS "main" —
+    // there is no separate main path, which is what makes a spatial layout just
+    // a wider bus map (CONCEPT §4: spatial falls out of the bus map for free).
+    int32_t outBus = 0;
     ChannelParams params;
     // Render-side smoother state — owned by the render thread; lives here so
     // it travels with the strip. Fresh worlds start strips at their targets

@@ -38,12 +38,12 @@ constexpr double kParamDefaults[kParamCount] = {
 // ParamIds: these describe TOPOLOGY + initial values at build time.
 constexpr const char* kWorldKeyNames[] = {
     "srcKind", "srcChan0", "srcChan1", "toMonitor",
-    "gain", "pan", "mute", "solo", "deckIndex", "ringId",
+    "gain", "pan", "mute", "solo", "deckIndex", "ringId", "outBus",
 };
 constexpr uint32_t kWorldKeyCount = sizeof(kWorldKeyNames) / sizeof(kWorldKeyNames[0]);
 enum WorldKey : int32_t {
     kWkSrcKind = 0, kWkSrcChan0, kWkSrcChan1, kWkToMonitor,
-    kWkGain, kWkPan, kWkMute, kWkSolo, kWkDeckIndex, kWkRingId,
+    kWkGain, kWkPan, kWkMute, kWkSolo, kWkDeckIndex, kWkRingId, kWkOutBus,
 };
 
 int32_t indexOfName(const char* name, const char* const* table, uint32_t count) {
@@ -94,7 +94,10 @@ struct wz_engine {
     double smMain;
     // Preallocated float64 bus accumulators (D-WZ-DSP-01), maxBlockFrames each
     // — sized at create so render never allocates.
-    std::vector<double> accMainL, accMainR, accMonL, accMonR;
+    // 8 stereo output buses (P4-05). Bus 0 is "main"; a spatial layout is just
+    // a wider map over the same array — there is no separate spatial engine.
+    std::vector<double> accBusL[wz::kMaxOutBuses], accBusR[wz::kMaxOutBuses];
+    std::vector<double> accMonL, accMonR;
     // LoopbackBus (P4-03, spec §2): the PREVIOUS block of each bus, kept so a
     // patch may route a bus back into a channel. The one-block delay is what
     // makes the cycle well-defined and keeps the render schedule acyclic BY
@@ -163,8 +166,10 @@ wz_engine* wz_engine_create(double sample_rate,
     e->monitorPeakL.store(0.0, std::memory_order_relaxed);
     e->monitorPeakR.store(0.0, std::memory_order_relaxed);
     e->smMain = -1.0;
-    e->accMainL.assign(max_block_frames, 0.0);
-    e->accMainR.assign(max_block_frames, 0.0);
+    for (uint32_t b = 0; b < wz::kMaxOutBuses; ++b) {
+        e->accBusL[b].assign(max_block_frames, 0.0);
+        e->accBusR[b].assign(max_block_frames, 0.0);
+    }
     e->accMonL.assign(max_block_frames, 0.0);
     e->accMonR.assign(max_block_frames, 0.0);
     for (uint32_t d = 0; d < wz::kMaxDecks; ++d) {
@@ -304,6 +309,11 @@ void wz_world_channel_set(wz_engine* e, int32_t key, double value) {
         case kWkSolo: ch.params.solo.store(value, std::memory_order_relaxed); break;
         case kWkDeckIndex: ch.deckIndex = static_cast<int32_t>(value); break;
         case kWkRingId: ch.ringId = static_cast<int32_t>(value); break;
+        case kWkOutBus: {
+            const auto b = static_cast<int32_t>(value);
+            ch.outBus = (b >= 0 && b < static_cast<int32_t>(wz::kMaxOutBuses)) ? b : 0;
+            break;
+        }
         default: break; // unknown key ignored, never misread
     }
 }
@@ -486,6 +496,18 @@ void wz_deck_set_loop(wz_engine* e, uint32_t deck, uint32_t enabled,
                       uint64_t start, uint64_t end) {
     if (e == nullptr || deck >= wz::kMaxDecks) return;
     e->decks[deck].publishLoop(enabled, start, end);
+}
+
+uint32_t wz_engine_max_out_buses(void) { return wz::kMaxOutBuses; }
+
+uint32_t wz_engine_mappable_buses(uint32_t device_out_channels) {
+    // Bus 0 needs device 0/1; every further bus needs a pair beyond the cue
+    // pair at 2/3. Fewer than 2 channels carries nothing.
+    if (device_out_channels < 2u) return 0u;
+    if (device_out_channels < 6u) return 1u; // main only (cue may share 2/3)
+    const uint32_t extra = (device_out_channels - 4u) / 2u;
+    const uint32_t total = 1u + extra;
+    return total < wz::kMaxOutBuses ? total : wz::kMaxOutBuses;
 }
 
 void wz_engine_set_watchdog_enabled(wz_engine* e, uint32_t enabled) {
@@ -690,11 +712,16 @@ void wz_engine_render_io(wz_engine* e,
         if (captured > 0) e->deckDrain[di].write(drs, captured, fs, blockStartSample);
     }
 
-    double* accL = e->accMainL.data();
-    double* accR = e->accMainR.data();
     double* monL = e->accMonL.data();
     double* monR = e->accMonR.data();
-    for (uint32_t i = 0; i < frames; ++i) accL[i] = accR[i] = monL[i] = monR[i] = 0.0;
+    for (uint32_t i = 0; i < frames; ++i) monL[i] = monR[i] = 0.0;
+    for (uint32_t b = 0; b < wz::kMaxOutBuses; ++b) {
+        double* bl = e->accBusL[b].data();
+        double* br = e->accBusR[b].data();
+        for (uint32_t i = 0; i < frames; ++i) bl[i] = br[i] = 0.0;
+    }
+    double* accL = e->accBusL[0].data(); // bus 0 == main
+    double* accR = e->accBusR[0].data();
 
     // Source-ring ASRC pre-pass: each open ring's ASRC produces ONE block of
     // engine-rate output into planar scratch (deinterleaved); tap strips read
@@ -887,6 +914,11 @@ void wz_engine_render_io(wz_engine* e,
 
             double pkL = 0.0, pkR = 0.0, sumSqL = 0.0, sumSqR = 0.0;
             const bool feedsMonitor = ch.toMonitor;
+            const uint32_t ob = (ch.outBus >= 0 &&
+                                 ch.outBus < static_cast<int32_t>(wz::kMaxOutBuses))
+                                    ? static_cast<uint32_t>(ch.outBus) : 0u;
+            double* busL = e->accBusL[ob].data();
+            double* busR = e->accBusR[ob].data();
 
             for (uint32_t i = 0; i < frames; ++i) {
                 ch.smGainL += alpha * (tgtL - ch.smGainL);
@@ -902,8 +934,10 @@ void wz_engine_render_io(wz_engine* e,
                 const double l = inL * ch.smGainL * muteG;
                 const double r = inR * ch.smGainR * muteG;
 
-                accL[i] += l * soloG; // solo ducks main only
-                accR[i] += r * soloG;
+                // Route into the strip's OUTPUT BUS (bus 0 == main). Solo
+                // ducks the output path only; the cue feed below is untouched.
+                busL[i] += l * soloG;
+                busR[i] += r * soloG;
                 if (feedsMonitor) {
                     monL[i] += l;
                     monR[i] += r;
@@ -982,11 +1016,27 @@ void wz_engine_render_io(wz_engine* e,
         monPkL = std::max(monPkL, std::abs(monL[i]));
         monPkR = std::max(monPkR, std::abs(monR[i]));
     }
-    // Any remaining device output channels stay silent.
-    if (bus_out != nullptr)
-        for (uint32_t b = 4; b < bus_count; ++b)
-            if (bus_out[b] != nullptr)
-                for (uint32_t i = 0; i < frames; ++i) bus_out[b][i] = 0.0f;
+    // Output buses 1..7 → device channel pairs beyond the main/cue block
+    // (P4-05). A layout wider than the device simply has no device channels to
+    // write into, so it is dropped here and reported unmapped by the host —
+    // never silently folded into another bus.
+    for (uint32_t b = 1; b < wz::kMaxOutBuses; ++b) {
+        const uint32_t chL = 2u * b + 2u; // bus 1 → device 4/5, bus 2 → 6/7, ...
+        const uint32_t chR = chL + 1u;
+        if (bus_out == nullptr || chR >= bus_count) break;
+        float* busOutL = bus_out[chL];
+        float* busOutR = bus_out[chR];
+        const double* srcBusL = e->accBusL[b].data();
+        const double* srcBusR = e->accBusR[b].data();
+        for (uint32_t i = 0; i < frames; ++i) {
+            if (busOutL != nullptr) busOutL[i] = static_cast<float>(srcBusL[i] * e->smMain);
+            if (busOutR != nullptr) busOutR[i] = static_cast<float>(srcBusR[i] * e->smMain);
+        }
+    }
+    // Any device channel with no bus mapped to it stays silent.
+    for (uint32_t c = 4u + 2u * (wz::kMaxOutBuses - 1u); c < bus_count; ++c)
+        if (bus_out != nullptr && bus_out[c] != nullptr)
+            for (uint32_t i = 0; i < frames; ++i) bus_out[c][i] = 0.0f;
 
     // Snapshot the buses for the next block's LoopbackBus reads. Taken AFTER
     // the master fader so a loopback strip hears what actually left the bus.

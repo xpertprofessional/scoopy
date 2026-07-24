@@ -212,6 +212,16 @@ void wz_engine_render(wz_engine* e,
                       uint32_t bus_count,
                       uint32_t frames);
 
+/* Output buses (P4-05, playback-composer.md §4). Bus 0 IS main — there is no
+ * separate main path, which is what makes a spatial layout (quad / 5.1 /
+ * octophonic) nothing but a wider bus map. Device channel layout:
+ *   bus 0 -> device 0/1 (main) · cue -> device 2/3 · bus 1 -> 4/5 · bus 2 -> 6/7 ...
+ * A bus with no device channels is DROPPED, never folded into another bus; the
+ * host reports it unmapped so silence is always explained. */
+uint32_t wz_engine_max_out_buses(void); /* the compiled-in maximum (8) */
+/* How many buses the given device channel count can actually carry. */
+uint32_t wz_engine_mappable_buses(uint32_t device_out_channels);
+
 /* Test/diagnostic seam: disable the feedback watchdog (P4-04). The shipping app
  * NEVER calls this — the watchdog is the only guard against an external
  * feedback loop. Fixtures that assert exact sample values use synthetic ramps

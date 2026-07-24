@@ -25,6 +25,8 @@
 namespace wz {
 
 inline constexpr uint32_t kMaxDecks = 8;
+// 8 user output buses (CONCEPT §4 / playback-composer.md §4). Bus 0 is main.
+inline constexpr uint32_t kMaxOutBuses = 8;
 // ~1M frames/chunk → 8 MB per stereo chunk. Cap (D-WZ-DECK-01: 256 MB/deck) is
 // enforced in frames by the recorder, independent of chunk size.
 inline constexpr uint64_t kDeckChunkFrames = 1u << 20;

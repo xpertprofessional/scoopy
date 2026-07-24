@@ -78,6 +78,10 @@ add_executable(deck_handoff_test tools/deck_handoff_test.cpp)
 target_link_libraries(deck_handoff_test PRIVATE wz_engine)
 add_test(NAME deck_handoff_test COMMAND deck_handoff_test)
 
+add_executable(output_map_test tools/output_map_test.cpp)
+target_link_libraries(output_map_test PRIVATE wz_engine)
+add_test(NAME output_map_test COMMAND output_map_test)
+
 add_executable(watchdog_test tools/watchdog_test.cpp)
 target_link_libraries(watchdog_test PRIVATE wz_engine)
 add_test(NAME watchdog_test COMMAND watchdog_test)
