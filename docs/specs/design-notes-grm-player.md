@@ -133,8 +133,8 @@ one.
 
 ### 4.3 Memory slots A/B/C/D with an interpolation time
 
-Two or more grouped players expose **four preset slots** storing *"all settings contained
-in the slate"*, plus an **interpolation time** between them. This is a performance
+Two or more grouped players expose **six preset slots (A–F**, ghosted when empty — CORRECTED 2026-07-24: the prose of an earlier pass said four; the manual's own screenshots show six) storing *"all settings contained
+in the slate"*, plus an **interpolation time** between them. The manual's screenshots are served from the documentation's `res/` directory and are the authority here, not the body prose. This is a performance
 instrument, not a preset browser: you set two states and *morph* between them over a
 chosen duration.
 

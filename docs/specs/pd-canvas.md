@@ -152,11 +152,14 @@ shows where Wizard should *diverge* rather than copy:
   position (bottom-right is where the hand already is after placing Cells), but add a
   **fit-to-content** alongside Default — GRM has no overview aid at all, which is part of
   its "where is everything?" problem.
-- **GRM has NO grid and NO snapping** — placement is entirely free [PlanTravail]. So the
-  "light snapping" this plan proposed is *our* addition, not GRM's, and it must stay
-  genuinely light: snap to alignment guides only when a Cell edge is within a few px of a
-  neighbour, never a forced grid. Placement is meaning (§4); a grid would impose a meaning
-  the user did not choose.
+- **CORRECTED 2026-07-24 — GRM ships BOTH a background grid and snapping.** An earlier pass
+  of this document claimed it had neither, reading only PlanTravail; the **Preferences** page
+  exposes *"Affiche la grille de fond"* (show the background grid) and *"Aimante les ardoises
+  sur la grille"* (snap the slates to the grid). So light snapping is **not** our invention —
+  it is precedent, which strengthens rather than weakens the case for it. It should still
+  stay light and defeatable (alignment guides when an edge is within a few screen px, plus an
+  opt-out modifier); placement is meaning (§4), and a *forced* grid would impose a meaning the
+  user did not choose.
 - **No minimap/overview exists** [PlanTravail]. fit-to-content (frame all Cells) is the
   cheap answer and is enough at Wizard's scale (≤ a few dozen Cells), so a minimap is
   explicitly out of the first cut.

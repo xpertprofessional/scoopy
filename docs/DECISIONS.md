@@ -497,6 +497,68 @@ strips ≈ 9 GB/h) and is stated in the UI, not hidden. Per-strip capture is tha
 post-fader contribution, not a dry archive (a pre-fader tap would be a new decision).
 
 
+## D-WZ-ARRIVAL-01 · 2026-07-24 · Material arrives STOPPED, not playing
+
+**Decision:** A Strip that gains material by a user action that is not recording —
+dropping a file, loading a take — **arrives stopped**. It does NOT auto-play. The one
+exception is unchanged and remains a law: **record-stop → looping playback instantly**
+(Law C-3), because there the user's gesture WAS the transport.
+
+**Rationale:** The design review argued for arriving-looping as the antidote to GRM's
+documented discoverability failure ("couldn't even figure out how to make the sound loop"),
+making the discoverable verb *stop*. The user chose stopped, and that is the right call for
+this app: Wizard already holds the line that software which makes sound you did not ask for
+is hostile (restore lands decks idle for the same reason). Discoverability is bought with
+affordances, not with unrequested audio.
+
+**Consequences:** Drop-a-file and load-a-take land idle with the transport visible.
+Discoverability must therefore be carried by the Strip's own affordances (a prominent,
+never-moving transport; consequence-stating tooltips) rather than by motion. Law C-3's
+stop→loop handoff is untouched.
+
+## D-WZ-RECMODEL-01 · 2026-07-24 · Recording is a verb on every Strip (two steps)
+
+**Decision:** Make "recording is the verb that gives a Strip material" true in code, in two
+steps. **(A) now, no schema:** the record verb is present on every Strip; recording captures
+**that Strip's own source** rather than a hardcoded `inputs[0]`; where the engine cannot
+capture a given source kind the verb is **visibly disabled with the reason**, never silently
+inert. **(B) `PD-CANVAS-06`, before PD-CANVAS-05 retires the console:** add
+`material: { deckId }` to Channel ALONGSIDE `source`, one version bump, named migration,
+engine untouched.
+
+**Rationale:** `Channel.source` currently does two jobs — where signal comes FROM and where
+material LIVES. That single conflation is why a mic Strip has no record button, why a deck
+Strip records a hardcoded input, and why provenance is lost once a take exists. Step B is
+the real repair; it is scheduled BEFORE the console is retired because afterwards there is
+no second surface left to repair it on.
+
+**Consequences:** A is a correctness fix and ships now. The interim rebind the review
+proposed for A (rebinding the recorded Channel's `source` to the new deck) is **rejected**:
+it would silently drop the strip's input binding, so a mic strip would stop hearing the mic
+the moment it gained a loop — wrong for a looper, and it would be churned away by B anyway.
+Until B lands, "a Strip keeps its source AND holds material" is not expressible; the record
+verb is honest about that rather than pretending.
+
+## D-WZ-ROUTINGVIEW-01 · 2026-07-24 · Routing on the plane: the bus chip, and nothing more yet
+
+**Decision:** Audio routing is shown on the plane by an **always-on bus chip on every
+Strip** — and nothing else for now. No general cable layer. The review's further layers
+(hold-to-trace highlight, an edge bus rail doubling as a drop target, the RoutingMatrix as a
+summoned ledger) are **deferred** until the chip proves insufficient.
+
+**Rationale:** Wizard's graph is a STAR (each strip → one of 8 buses), not a mesh; drawing
+cables would picture a topology the app does not have. The chip is the smallest thing that
+answers "where does this go?" at a glance, and it is the piece every richer layer would sit
+on top of anyway. Shipping the smallest correct surface first is how we avoid building
+chrome we then have to defend.
+
+**Consequences:** Every Strip carries its bus as a chip. Kind colour must move OFF the name
+text so the chip can own colour without the two hues fighting (the review's point: kind is
+what it IS, bus is where it GOES). The existing RoutingMatrix stays available in the console
+and is not yet re-hosted on the plane. If the chip proves too weak, the trace/rail layers are
+already specified in `docs/specs/pd-plane-playground.md`.
+
+
 ## Parked — awaiting decision (do not block earlier phases)
 
 | id | needed before | question |
