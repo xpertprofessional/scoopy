@@ -625,6 +625,11 @@ canvas.meter {
   flex-direction: column;
   gap: 5px;
   cursor: default; /* controls, not the pan surface */
+  /* Height is honoured (not just width) so a Strip NEVER resizes on a state
+     change — a learned constraint here, and fitToContent frames against the
+     persisted cell.h, so a box that grows silently corrupts the fit. */
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .plane-strip-head {

@@ -59,11 +59,15 @@ export function Strip({
   link: EngineLink | null
 }) {
   const actions = usePatchActions(link)
-  const deckId = channel.source.kind === 'deck' ? Number(channel.source.id) : -1
+  // Number('') is 0, which would silently bind an id-less deck channel to deck 0.
+  const parsedDeck = channel.source.kind === 'deck' ? Number.parseInt(channel.source.id, 10) : NaN
+  const deckId = Number.isInteger(parsedDeck) && parsedDeck >= 0 ? parsedDeck : -1
   const deck = useAppStore((s) => s.patch.decks.find((d) => d.id === deckId))
   const deckState = useAppStore((s) => (deckId >= 0 ? (s.deckStates[deckId] ?? 0) : 0))
   const deckRevision = useAppStore((s) => (deckId >= 0 ? (s.deckRevisions[deckId] ?? 0) : 0))
   const deckLoading = useAppStore((s) => (deckId >= 0 ? (s.deckLoading[deckId] ?? false) : false))
+  const loadProgress = useAppStore((s) => (deckId >= 0 ? (s.deckLoadProgress[deckId] ?? 0) : 0))
+  const capped = useAppStore((s) => (deckId >= 0 ? (s.deckCapReached[deckId] ?? false) : false))
   const unresolved = useAppStore((s) => (deckId >= 0 ? (s.deckUnresolved[deckId] ?? false) : false))
   const channelCount = useAppStore((s) => s.patch.channels.length)
   const takes = useAppStore((s) => s.takes)
@@ -81,7 +85,7 @@ export function Strip({
   return (
     <div
       className="plane-strip raised"
-      style={{ left: cell.x, top: cell.y, width: cell.w }}
+      style={{ left: cell.x, top: cell.y, width: cell.w, height: cell.h }}
       data-testid={`strip-${channel.key}`}
     >
       <div className="plane-strip-head">
@@ -95,6 +99,8 @@ export function Strip({
         )}
         <span className="plane-strip-meter">
           <MeterCanvas
+            width={10}
+            height={28}
             levels={(frame) => {
               const li = channelFieldIndex(index, 'peakL')
               const ri = channelFieldIndex(index, 'peakR')
@@ -130,7 +136,27 @@ export function Strip({
           audio missing
         </div>
       )}
-      {deckLoading && <div className="plane-strip-loading">loading…</div>}
+      {capped && (
+        <div
+          className="deck-cap"
+          title="256 MB deck memory cap reached — recording stopped; the take is on disk and still loops"
+        >
+          cap
+        </div>
+      )}
+      {deckLoading && (
+        <div
+          className="deck-loading"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={loadProgress}
+          title="decoding on a background thread — the rest of the app stays live"
+        >
+          <div className="deck-loading-bar" style={{ width: `${loadProgress * 100}%` }} />
+          <span className="deck-loading-label">decoding… {Math.round(loadProgress * 100)}%</span>
+        </div>
+      )}
 
       <div className="plane-strip-transport">
         {deck && (
@@ -156,6 +182,13 @@ export function Strip({
               title="one-shot"
             >
               ▸
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.deckTrigger(deck.id, 'retrigger')}
+              title="retrigger — seek to the region start, keep playing"
+            >
+              ⟲
             </button>
             <button type="button" onClick={() => actions.deckTrigger(deck.id, 'stop')} title="stop">
               ◼
