@@ -70,6 +70,11 @@ add_executable(render_chunk_invariance_test tools/render_chunk_invariance_test.c
 target_link_libraries(render_chunk_invariance_test PRIVATE wz_engine)
 add_test(NAME render_chunk_invariance_test COMMAND render_chunk_invariance_test)
 
+# D-WZ-RAMP-01 anti-click guarantee: gain/mute/solo TRANSITIONS glide, not step.
+add_executable(ramp_test tools/ramp_test.cpp)
+target_link_libraries(ramp_test PRIVATE wz_engine)
+add_test(NAME ramp_test COMMAND ramp_test)
+
 add_executable(ring_test tools/ring_test.cpp)
 target_link_libraries(ring_test PRIVATE wz_engine)
 add_test(NAME ring_test COMMAND ring_test)
