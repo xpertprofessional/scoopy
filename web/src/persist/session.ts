@@ -74,6 +74,34 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (s: RawSession
     // v17 -> v18 (P7-08, D-WZ-DEVGONE-01): the session remembers its device.
     // Purely additive with a safe default — an older session simply had no
     // preference, which is exactly what the empty strings mean.
+    // v18 -> v19 (PD-CANVAS-06): a Strip's MATERIAL splits from its SOURCE.
+    // A pre-split deck strip encoded both in `source` (kind 'deck', id = the
+    // deck index), so material is derived from exactly that and `source` is
+    // left ALONE — the engine still renders from it, so rewriting it here would
+    // silence every existing deck strip. Non-deck strips get null: they have no
+    // material, which is the honest answer, not a guess.
+    18: {
+      to: 19,
+      name: 'split-material-from-source (PD-CANVAS-06)',
+      run: (s) => {
+        const patch = (s.patch ?? {}) as RawSession
+        const channels = Array.isArray(patch.channels) ? patch.channels : []
+        return {
+          ...s,
+          patch: {
+            ...patch,
+            channels: channels.map((raw) => {
+              const ch = raw as RawSession
+              const src = (ch.source ?? {}) as RawSession
+              const id = Number.parseInt(String(src.id ?? ''), 10)
+              const isDeck = src.kind === 'deck' && Number.isInteger(id) && id >= 0 && id <= 7
+              return { ...ch, material: isDeck ? { deckId: id } : null }
+            }),
+          },
+        }
+      },
+    },
+
     17: {
       to: 18,
       name: 'add-session-device (P7-08)',

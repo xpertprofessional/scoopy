@@ -197,11 +197,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       rate: 1,
       sourcePath: '',
     }
-    const strip = makeChannel(`deck-${id}`, deck.name, {
-      kind: 'deck',
-      id: String(id),
-      name: deck.name,
-    })
+    const strip = {
+      // A deck strip HAS material by construction (PD-CANVAS-06): source still
+      // carries kind 'deck' because the engine renders from it, and material is
+      // what the UI asks. Both are set here so the two never disagree.
+      ...makeChannel(`deck-${id}`, deck.name, {
+        kind: 'deck',
+        id: String(id),
+        name: deck.name,
+      }),
+      material: { deckId: id },
+    }
     const next = {
       ...patch,
       decks: [...patch.decks, deck],

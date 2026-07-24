@@ -193,3 +193,58 @@ test('a v16 session is RE-LAID-OUT for the horizontal strip size', () => {
   expect(r.patch.channels[1]!.cell.x).toBeGreaterThan(r.patch.channels[0]!.cell.x)
   expect(r.patch.channels[0]!.key).toBe('a')
 })
+
+test('v18 → v19 splits MATERIAL out of source without disturbing source', () => {
+  // A pre-split deck strip encoded both facts in `source`. The engine still
+  // renders from source, so the migration must derive material and leave source
+  // untouched — rewriting it would silence every existing deck strip.
+  const patch = emptyPatch() as unknown as Record<string, unknown>
+  const strip = (key: string, kind: string, id: string) => {
+    const c = makeChannel(key, key, { kind: 'deviceInput', id: '0', name: 'in' }) as unknown as
+      Record<string, unknown>
+    const { material, ...rest } = c
+    void material
+    return { ...rest, source: { kind, id, name: key } }
+  }
+  const text = JSON.stringify({
+    schemaVersion: 18,
+    savedAt: NOW,
+    app: 'Wizard 0.0.1',
+    patch: { ...patch, channels: [strip('mic', 'deviceInput', '0'), strip('d2', 'deck', '2')] },
+  })
+
+  const r = loadSession(text)
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.migratedFrom).toBe(18)
+
+  const [mic, deck] = r.patch.channels
+  // A deck strip gains material pointing at its deck...
+  expect(deck!.material).toEqual({ deckId: 2 })
+  // ...and its source is LEFT ALONE, so the engine still renders it.
+  expect(deck!.source.kind).toBe('deck')
+  expect(deck!.source.id).toBe('2')
+  // A non-deck strip gets null — the honest answer, not a guess.
+  expect(mic!.material).toBeNull()
+  expect(mic!.source.kind).toBe('deviceInput')
+})
+
+test('a malformed deck id migrates to NO material rather than deck 0', () => {
+  // Number('') is 0; a blind parse would bind an id-less strip to someone
+  // else's audio.
+  const patch = emptyPatch() as unknown as Record<string, unknown>
+  const c = makeChannel('x', 'x', { kind: 'deviceInput', id: '0', name: 'in' }) as unknown as
+    Record<string, unknown>
+  const { material, ...rest } = c
+  void material
+  const text = JSON.stringify({
+    schemaVersion: 18,
+    savedAt: NOW,
+    app: 'Wizard 0.0.1',
+    patch: { ...patch, channels: [{ ...rest, source: { kind: 'deck', id: '', name: 'x' } }] },
+  })
+  const r = loadSession(text)
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.patch.channels[0]!.material).toBeNull()
+})

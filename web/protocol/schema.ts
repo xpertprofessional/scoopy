@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { MethodOf, ParamsOf, ResultOf } from './types.ts'
 
 /** Bumped on every boundary change. Shell refuses mismatched publishes. */
-export const SCHEMA_VERSION = 18
+export const SCHEMA_VERSION = 19
 
 /**
  * ParamWrite atomics — the live-control set, coalesced per (id, channel) per
@@ -193,6 +193,28 @@ export type Cell = z.infer<typeof CellSchema>
     just keeps the field valid and sets the auto-layout grid's cell size. */
 export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 196 }
 
+/**
+ * What a Strip PLAYS, as opposed to `source` — what it captures FROM
+ * (PD-CANVAS-06, D-WZ-RECMODEL-01 step B).
+ *
+ * `Channel.source` was doing two jobs: where signal comes from AND where
+ * material lives. That conflation is why a mic Strip had no record verb, why a
+ * deck Strip recorded a hardcoded input, and why provenance vanished the moment
+ * a take existed. Splitting them makes "recording is the verb that gives a Strip
+ * material" expressible instead of merely aspirational.
+ *
+ * null = no material yet. The ENGINE is untouched by this: it still renders from
+ * the published `source`, so a Strip that holds material continues to carry
+ * `source.kind === 'deck'` today. Rendering a Strip's input AND its material at
+ * once is a separate, engine-level change — this field is what makes that
+ * change describable when it comes.
+ */
+export const MaterialSchema = z
+  .object({ deckId: z.number().int().min(0).max(7) })
+  .strict()
+  .nullable()
+export type Material = z.infer<typeof MaterialSchema>
+
 export const ChannelSchema = z
   .object({
     key: z.string().min(1), // stable identity across edits (engine world key)
@@ -212,6 +234,7 @@ export const ChannelSchema = z
     monitorSwitch: z.boolean(), // P3 per-deck input monitoring (reserved)
     inserts: z.array(z.string()).length(4), // P6 plugin refs, '' = empty (reserved)
     cell: CellSchema, // PD-CANVAS: plane geometry (UI-only, never crosses the ABI)
+    material: MaterialSchema, // PD-CANVAS-06: what it PLAYS (source = what it captures)
   })
   .strict()
 export type Channel = z.infer<typeof ChannelSchema>
@@ -312,6 +335,7 @@ export function makeChannel(key: string, name: string, source: SourceRef): Chann
     monitorSwitch: false,
     inserts: ['', '', '', ''],
     cell: { ...DEFAULT_CELL }, // fresh copy so strips never share a geometry object
+    material: null, // no material until something records or loads into it
   }
 }
 

@@ -59,9 +59,12 @@ export function Strip({
   link: EngineLink | null
 }) {
   const actions = usePatchActions(link)
-  // Number('') is 0, which would silently bind an id-less deck channel to deck 0.
-  const parsedDeck = channel.source.kind === 'deck' ? Number.parseInt(channel.source.id, 10) : NaN
-  const deckId = Number.isInteger(parsedDeck) && parsedDeck >= 0 ? parsedDeck : -1
+  // MATERIAL is the authority for what a Strip plays (PD-CANVAS-06). Reading it
+  // from `source.kind === 'deck'` was the old conflation: source says what a
+  // Strip captures FROM, material says what it PLAYS. The engine still renders
+  // from source, so both are present on a deck strip — but the UI asks the
+  // field that actually means "has material".
+  const deckId = channel.material?.deckId ?? -1
   const deck = useAppStore((s) => s.patch.decks.find((d) => d.id === deckId))
   const deckState = useAppStore((s) => (deckId >= 0 ? (s.deckStates[deckId] ?? 0) : 0))
   const deckRevision = useAppStore((s) => (deckId >= 0 ? (s.deckRevisions[deckId] ?? 0) : 0))
