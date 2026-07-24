@@ -247,7 +247,7 @@ raising it later is one edit + a re-measure.
 ## D-WZ-DECK-01 · 2026-07-24 · Deck memory policy: cap + stop, ~256 MB/deck
 
 **Decision:** Each deck's in-RAM record buffer (which doubles as the playback buffer —
-Law C-3) is capped at **256 MB** (≈ 23 minutes of stereo float32 at 48 kHz). On reaching
+Law C-3) is capped at **256 MB** (≈ 11 min 39 s of STEREO float32 at 48 kHz — ≈23 min is the MONO figure; corrected 2026-07-24). On reaching
 the cap, **recording stops on that deck** and a UI indicator shows it; the deck keeps
 looping and varispeed-bending what it captured. The crash-safe BWF/RF64 file
 (D-WZ-CORE-02) is written in parallel **regardless** and holds the full take up to the
