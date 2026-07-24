@@ -48,6 +48,12 @@ interface AppState {
    * usePatch.ts wraps these edits with the publish).
    */
   patch: Patch
+  /** Which UI is showing (PD-CANVAS transition). Runtime-only — NOT persisted:
+      during 02–05 the console and the new plane coexist behind a toggle, and
+      which one you last looked at is not a property of the document. The console
+      is retired at PD-CANVAS-05 and this goes with it. */
+  view: 'console' | 'plane'
+  setView: (v: 'console' | 'plane') => void
   setShellStatus: (s: ShellStatus) => void
   setCapabilities: (c: Capabilities) => void
   setDeviceInfo: (d: DeviceInfo) => void
@@ -119,6 +125,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   alignReferencePath: null,
   sessionNotice: '',
   patch: emptyPatch(),
+  view: 'console',
+  setView: (view) => set({ view }),
   setShellStatus: (shellStatus) => set({ shellStatus }),
   setCapabilities: (capabilities) => set({ capabilities }),
   setDeviceInfo: (deviceInfo) => set({ deviceInfo }),

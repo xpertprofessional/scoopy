@@ -580,3 +580,129 @@ canvas.meter {
   text-align: center;
   line-height: 1.2em;
 }
+
+/* --- PD-CANVAS plane (PD-CANVAS-02) ---------------------------------------- */
+
+/* View toggle in the top bar — console vs the new plane, during the transition. */
+.view-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.plane {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: grab;
+  touch-action: none; /* pointer-drag pans; don't let the browser scroll instead */
+}
+
+.plane:active {
+  cursor: grabbing;
+}
+
+/* The transformed layer: strips are absolutely placed inside it by their cell
+   geometry; one transform pans/zooms the whole workspace. */
+.plane-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  width: 0; /* children are absolute; the layer itself has no box */
+  height: 0;
+}
+
+.plane-strip {
+  position: absolute;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: default; /* controls, not the pan surface */
+}
+
+.plane-strip-name {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  text-transform: var(--type-label-transform);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plane-strip-state {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+}
+
+.plane-strip-meter {
+  display: flex;
+  justify-content: center;
+}
+
+.plane-strip-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plane-strip-level input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.plane-strip-pan {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.plane-strip-switches,
+.plane-strip-transport {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+}
+
+.plane-strip-loading {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.plane-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+
+/* Zoom controls, bottom-right (GRM's placement) with a Default reset + fit. */
+.plane-controls {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+}
+
+.plane-controls .value {
+  min-width: 3.2em;
+  text-align: center;
+}

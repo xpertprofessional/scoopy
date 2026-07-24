@@ -15,6 +15,7 @@ import { DeckRack } from './panels/DeckRack'
 import { MasterSection } from './panels/MasterSection'
 import { RoutingMatrix } from './panels/RoutingMatrix'
 import { TakesPanel } from './panels/TakesPanel'
+import { Plane } from './plane/Plane'
 
 const STATUS_LABEL: Record<string, string> = {
   disconnected: 'disconnected',
@@ -32,6 +33,8 @@ export function App() {
   const engineTimeSamples = useAppStore((s) => s.engineTimeSamples)
   const deviceInfo = useAppStore((s) => s.deviceInfo)
   const sessionNotice = useAppStore((s) => s.sessionNotice)
+  const view = useAppStore((s) => s.view)
+  const setView = useAppStore((s) => s.setView)
 
   // Package save/open. The shell owns the dialog; packageIo owns the decisions.
   const onSave = async () => {
@@ -67,6 +70,22 @@ export function App() {
           {STATUS_LABEL[shellStatus] ?? shellStatus}
         </span>
         <span className="value" data-testid="engine-time">{seconds}</span>
+        <span className="view-toggle" role="group" aria-label="view">
+          <button
+            type="button"
+            className={view === 'console' ? 'latched-accent' : ''}
+            onClick={() => setView('console')}
+          >
+            Console
+          </button>
+          <button
+            type="button"
+            className={view === 'plane' ? 'latched-accent' : ''}
+            onClick={() => setView('plane')}
+          >
+            Plane
+          </button>
+        </span>
         <span className="topbar-actions">
           <button type="button" onClick={() => void onOpen()} disabled={!link}>
             Open package…
@@ -81,12 +100,22 @@ export function App() {
           session: {sessionNotice}
         </div>
       )}
-      <div className="console-body">
-        <SourcesBrowser link={link} />
-        <ChannelRack link={link} />
-        <MasterSection link={link} />
-      </div>
-      <DeckRack link={link} />
+      {view === 'console' ? (
+        <>
+          <div className="console-body">
+            <SourcesBrowser link={link} />
+            <ChannelRack link={link} />
+            <MasterSection link={link} />
+          </div>
+          <DeckRack link={link} />
+        </>
+      ) : (
+        <div className="console-body">
+          <SourcesBrowser link={link} />
+          <Plane link={link} />
+          <MasterSection link={link} />
+        </div>
+      )}
       <TakesPanel link={link} />
       <RoutingMatrix link={link} />
     </div>

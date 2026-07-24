@@ -86,3 +86,26 @@ export function fitToContent(
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v))
 }
+
+/**
+ * Zoom a plane transform by `factor` about a SCREEN point (relative to the
+ * plane's top-left), keeping the plane coordinate under that point fixed — the
+ * "zoom toward the cursor" invariant. Scale is clamped to [min,max]; if the
+ * clamp leaves scale unchanged the transform is returned untouched.
+ *
+ * Derivation: screen = (plane + pan)·scale, so plane = screen/scale − pan. To
+ * hold `plane` constant as scale s→s': pan' = pan + screen·(1/s′ − 1/s).
+ */
+export function zoomAbout(
+  t: Plane,
+  factor: number,
+  screenX: number,
+  screenY: number,
+  min: number,
+  max: number,
+): Plane {
+  const next = clamp(t.scale * factor, min, max)
+  if (next === t.scale) return t
+  const k = 1 / next - 1 / t.scale
+  return { scale: next, panX: t.panX + screenX * k, panY: t.panY + screenY * k }
+}

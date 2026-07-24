@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { autoLayout, fitToContent, LAYOUT } from './planeLayout'
+import { autoLayout, fitToContent, zoomAbout, LAYOUT } from './planeLayout'
 import type { Cell } from '../../protocol/schema'
 
 test('autoLayout is empty for zero cells and never divides', () => {
@@ -68,4 +68,38 @@ test('fitToContent is safe on a degenerate viewport', () => {
     panX: 0,
     panY: 0,
   })
+})
+
+// --- zoomAbout: the "zoom toward the cursor" invariant ----------------------
+
+/** The plane coordinate currently under a screen point. Inverse of the render
+    transform screen = (plane + pan)*scale. */
+function planeUnder(t: { scale: number; panX: number; panY: number }, sx: number, sy: number) {
+  return { x: sx / t.scale - t.panX, y: sy / t.scale - t.panY }
+}
+
+test('zoomAbout keeps the plane point under the cursor fixed', () => {
+  const start = { scale: 1, panX: 0, panY: 0 }
+  const cursor = { x: 640, y: 300 }
+  const before = planeUnder(start, cursor.x, cursor.y)
+  const zoomed = zoomAbout(start, 1.1, cursor.x, cursor.y, 0.2, 2.5)
+  const after = planeUnder(zoomed, cursor.x, cursor.y)
+  expect(zoomed.scale).toBeCloseTo(1.1, 6)
+  expect(after.x).toBeCloseTo(before.x, 4) // same plane point still under the cursor
+  expect(after.y).toBeCloseTo(before.y, 4)
+})
+
+test('zoomAbout clamps and returns the SAME transform when the clamp bites', () => {
+  const atMax = { scale: 2.5, panX: 10, panY: -5 }
+  const r = zoomAbout(atMax, 1.1, 100, 100, 0.2, 2.5)
+  expect(r).toBe(atMax) // unchanged reference — no spurious pan drift at the limit
+})
+
+test('zoomAbout out then in about the same point round-trips the transform', () => {
+  const start = { scale: 1, panX: 30, panY: 12 }
+  const out = zoomAbout(start, 1 / 1.25, 400, 250, 0.2, 2.5)
+  const back = zoomAbout(out, 1.25, 400, 250, 0.2, 2.5)
+  expect(back.scale).toBeCloseTo(start.scale, 6)
+  expect(back.panX).toBeCloseTo(start.panX, 4)
+  expect(back.panY).toBeCloseTo(start.panY, 4)
 })
