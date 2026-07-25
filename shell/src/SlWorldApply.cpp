@@ -57,7 +57,7 @@ juce::var applyWorld(sl_engine* engine, const juce::var& world) {
         // Deck 0 only today (the ABI refuses >0 rather than aliasing) — report
         // it as the honest reason instead of a silent empty world.
         return applied(false, "snapshot_begin refused (deck " + juce::String((int) deck) +
-                              " — only deck 0 is supported on this host)");
+                              " out of range — max is " + juce::String((int) sl_deck_count() - 1) + ")");
 
     const auto* tracks = world.getProperty("tracks", juce::var()).getArray();
     if (tracks == nullptr) return applied(false, "world.tracks missing or not an array");

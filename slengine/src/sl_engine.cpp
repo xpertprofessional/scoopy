@@ -69,10 +69,17 @@ struct sl_engine {
     // and in WASM it may be a heap growth.
     std::array<std::vector<float>, NativeAudioEngineCore::laneCount> lanes;
     std::array<float*, NativeAudioEngineCore::laneCount> lanePtrs{};
-    // The world being built by sl_snapshot_* — one track open at a time.
-    NativeSequencerSnapshot pending;
+    // The decks-in-strips world (SL-ABI-V3 §6): up to kMaxDecks sessions coexist,
+    // each its OWN snapshot (hence its own BPM/transport) — the core's DJ-mode
+    // multi-deck model, published atomically by publishDJWorld. The array is
+    // PERSISTENT: each sl_snapshot_begin(deck)…commit rebuilds one deck's slot
+    // and republishes all, so a strip publishes its deck independently and the
+    // engine retains the others.
+    std::array<DeckWorld, kMaxDecks> deckWorlds{};
+    std::size_t currentDeck = 0;         // which deck sl_snapshot_* is building
     NativeTrackSnapshot track;
     bool trackOpen = false;
+    MixerState mixer;                    // held so commit can hand it to publishDJWorld
 
     std::vector<float> silenceIn;
     std::uint32_t blockFrames = 0;
@@ -100,7 +107,7 @@ struct sl_engine {
         }
         silenceIn.assign(block, 0.0f);
 
-        MixerState mixer;
+        mixer = MixerState{};
         mixer.mainGain = 1.0f;
         mixer.send1Gain = 1.0f;
         mixer.send2Gain = 1.0f;
@@ -232,17 +239,24 @@ int sl_engine_register_sample(sl_engine* e, const char* sample_id,
     return e->core.registerSample(std::move(s)) ? 1 : 0;
 }
 
+uint32_t sl_deck_count(void) { return static_cast<uint32_t>(kMaxDecks); }
+
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {
-    if (e == nullptr) return 0;
-    // Refused, not aliased onto deck 0 — see the header. The core carries one
-    // sequencer world, and pretending otherwise would make two decks silently
-    // share state, which is the kind of bug that presents as "the wrong pattern
-    // plays" hours later.
-    if (deck != 0) return 0;
-    e->pending = NativeSequencerSnapshot{};
-    e->pending.bpm = bpm;
-    e->pending.isPlaying = is_playing != 0;
-    e->pending.startStep = start_step;
+    if (e == nullptr || deck >= kMaxDecks) return 0;
+    // Build THIS deck's slot; the others in the persistent array are retained so
+    // committing one strip's deck does not wipe the rest. Each deck's own bpm
+    // lives on its own snapshot — the per-deck-BPM isolation the merge requires.
+    DeckWorld& d = e->deckWorlds[deck];
+    d.snapshot = NativeSequencerSnapshot{};
+    d.snapshot.bpm = bpm;
+    d.snapshot.isPlaying = is_playing != 0;
+    d.snapshot.startStep = start_step;
+    d.active = true;             // this deck slot now renders
+    d.crossfaderGain = 1.0f;     // full into the main mix (no DJ crossfade yet)
+    d.tempoSyncRatio = 1.0;      // its own bpm, unstretched — master sync is §7
+    d.dedicatedOutput = false;
+    d.launchArmed = false;
+    e->currentDeck = deck;
     e->trackOpen = false; // a half-built track from a discarded world never carries over
     return 1;
 }
@@ -282,7 +296,7 @@ void sl_snapshot_track_set_array(sl_engine* e, int32_t param, const double* v, u
 
 void sl_snapshot_track_end(sl_engine* e) {
     if (e == nullptr || !e->trackOpen) return;
-    e->pending.tracks.push_back(std::move(e->track));
+    e->deckWorlds[e->currentDeck].snapshot.tracks.push_back(std::move(e->track));
     e->trackOpen = false;
 }
 
@@ -307,7 +321,11 @@ const char* sl_track_array_name(uint32_t id) {
 
 uint64_t sl_snapshot_commit(sl_engine* e) {
     if (e == nullptr) return 0;
-    return e->core.publishSequencerState(e->pending);
+    // Publish ALL decks in one atomic swap (DJ-mode multi-deck): each active
+    // deck renders its own snapshot at its own bpm. publishDJWorld sets
+    // djMode=true on the published world, so the render path reads per-deck
+    // snapshots rather than the single compose-mode sequencerState.
+    return e->core.publishDJWorld(e->deckWorlds, e->mixer);
 }
 
 uint32_t sl_hotframe_length(void) { return SL_HOTFRAME_LENGTH; }

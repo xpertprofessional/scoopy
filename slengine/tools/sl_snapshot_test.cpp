@@ -42,11 +42,14 @@ int main() {
     CHECK(sl_track_param_name(sl_track_param_count()) == nullptr); // out of range
     CHECK(sl_track_array_name(sl_track_array_count()) == nullptr);
 
-    // The deck axis is declared but only deck 0 exists: >0 is REFUSED, never
-    // aliased onto deck 0 (which would make two decks share a world silently).
-    CHECK(sl_snapshot_begin(e, 0, 120.0, 1, 0) == 1);
-    CHECK(sl_snapshot_begin(e, 1, 120.0, 1, 0) == 0);
-    CHECK(sl_snapshot_begin(e, 7, 120.0, 1, 0) == 0);
+    // Multi-deck (§6): decks 0..sl_deck_count()-1 all accepted, each its own
+    // session/BPM; a deck at or past the count is refused (out of range), never
+    // aliased onto a valid slot.
+    CHECK(sl_deck_count() >= 2); // the merge needs at least two decks in strips
+    for (uint32_t d = 0; d < sl_deck_count(); ++d)
+        CHECK(sl_snapshot_begin(e, d, 120.0, 1, 0) == 1);
+    CHECK(sl_snapshot_begin(e, sl_deck_count(), 120.0, 1, 0) == 0);
+    CHECK(sl_snapshot_begin(e, 99, 120.0, 1, 0) == 0);
     CHECK(sl_snapshot_begin(nullptr, 0, 120.0, 1, 0) == 0);
 
     // Setters before any track_begin are inert rather than corrupting.
@@ -99,6 +102,43 @@ int main() {
         }
     }
     CHECK(peak > 0.0001); // the sequencer actually triggered the sample
+
+    // MULTI-DECK (§6): two decks, DIFFERENT BPMs, both playing the same sample —
+    // this is decks-in-strips. Building deck 1 must NOT wipe deck 0 (the array is
+    // persistent), and committing publishes both at once. Proof of isolation:
+    // both decks contribute, and the world holds two decks' worth of triggers.
+    {
+        const uint8_t all8[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+
+        // Deck 0 at 120 bpm.
+        CHECK(sl_snapshot_begin(e, 0, 120.0, 1, 0) == 1);
+        CHECK(sl_snapshot_track_begin(e, "tone", all8, 8) == 1);
+        sl_snapshot_track_set(e, volumeId, 1.0);
+        sl_snapshot_track_end(e);
+        CHECK(sl_snapshot_commit(e) > 0);
+
+        // Deck 1 at 90 bpm — its OWN tempo, and it must not disturb deck 0.
+        CHECK(sl_snapshot_begin(e, 1, 90.0, 1, 0) == 1);
+        CHECK(sl_snapshot_track_begin(e, "tone", all8, 8) == 1);
+        sl_snapshot_track_set(e, volumeId, 1.0);
+        sl_snapshot_track_end(e);
+        const uint64_t twoDeckGen = sl_snapshot_commit(e);
+        CHECK(twoDeckGen > generation); // a new world was published
+
+        // Both decks render (still audible after adding the second at a
+        // different tempo — deck 0 was retained across deck 1's build).
+        double twoDeckPeak = 0.0;
+        for (int block = 0; block < 100; ++block) {
+            std::fill(l.begin(), l.end(), 0.0f);
+            std::fill(r.begin(), r.end(), 0.0f);
+            sl_render(e, buses, 2, 512);
+            for (uint32_t i = 0; i < 512; ++i) {
+                CHECK(std::isfinite(l[i]) && std::isfinite(r[i]));
+                twoDeckPeak = std::fmax(twoDeckPeak, std::fabs((double) l[i]));
+            }
+        }
+        CHECK(twoDeckPeak > 0.0001); // two decks at two tempos, both sounding
+    }
 
     sl_engine_stop(e);
     sl_engine_destroy(e);

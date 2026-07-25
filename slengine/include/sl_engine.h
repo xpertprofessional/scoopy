@@ -117,17 +117,19 @@ int sl_engine_register_sample(sl_engine* e,
                               uint32_t frames,
                               double sample_rate);
 
-/** Begin a new world for `deck`. Any snapshot in progress is discarded.
-    Returns 1 if the build started, 0 if it was refused.
+/** Begin building `deck`'s session. Returns 1, or 0 if `deck` is out of range
+    (>= sl_deck_count()) or the engine is null.
 
-    ⚠️ THE DECK AXIS IS DECLARED BUT ONLY DECK 0 IS IMPLEMENTED. §6 specifies up
-    to 8 coexisting session worlds; the vendored core holds exactly one
-    sequencer state, and giving it more is a CORE change that must happen in
-    apps/scoopy (the only writable home until the P3 flip) — not here. So the
-    axis is in the signature, where §6 puts it, and any deck > 0 is REFUSED
-    rather than silently writing over deck 0's world. A refusal is a bug report;
-    a silent aliasing is a mystery. */
+    Multi-deck (§6): up to sl_deck_count() sessions coexist, EACH WITH ITS OWN
+    BPM/transport — this is what lets a strip host a deck at 120 while another
+    hosts one at 90. The deck array is persistent: building and committing one
+    deck retains the others, so a strip publishes its deck independently. commit
+    swaps all decks atomically (the core's DJ-mode multi-deck path). `bpm` is
+    THIS deck's own tempo. */
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step);
+
+/** How many decks coexist (the core's kMaxDecks). A deck index must be < this. */
+uint32_t sl_deck_count(void);
 
 /** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
 int sl_snapshot_track_begin(sl_engine* e,

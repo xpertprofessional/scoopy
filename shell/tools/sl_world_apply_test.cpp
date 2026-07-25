@@ -98,9 +98,13 @@ int main() {
             "tracks":[{"sampleId":"tone"}]})"))));                    // no steps
     CHECK(!wasApplied(applyWorld(e, juce::JSON::parse(
         R"({"deck":0,"tracks":"nope"})"))));                          // tracks not array
+    // Multi-deck (§6): deck 1 is a VALID second deck now (its own session/BPM),
+    // so an empty world on it applies. Only an OUT-OF-RANGE deck is refused.
+    CHECK(wasApplied(applyWorld(e, juce::JSON::parse(
+        R"({"deck":1,"bpm":90,"isPlaying":true,"startStep":0,"tracks":[]})"))));
     CHECK(errorOf(applyWorld(e, juce::JSON::parse(
-        R"({"deck":1,"bpm":120,"isPlaying":true,"startStep":0,"tracks":[]})")))
-        .contains("deck"));                                          // deck>0 refused honestly
+        R"({"deck":99,"bpm":120,"isPlaying":true,"startStep":0,"tracks":[]})")))
+        .contains("deck"));                                          // out of range, refused
     CHECK(!wasApplied(applyWorld(nullptr, juce::JSON::parse(R"({"tracks":[]})"))));
 
     sl_engine_stop(e);
