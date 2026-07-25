@@ -76,14 +76,25 @@ point at the **same** take — recording never bloats the session, and a carved
 track is "this take, as a sampler sample." Reuses wizard's take system +
 scoopy's kit/session.
 
-## Open questions
-- **Input strips and the channel bus:** does a live-input strip get the full
-  channel DSP + sends immediately (run an input through master DRV, and record
-  *that* into a tape)? If yes, "record the input" and "record the deck output"
-  are literally the same tap on the channel bus — the cleanest outcome. (Awaiting
-  the user.)
-- The `LOOPER-DESIGN.md` sub-questions: overdub semantics (reuse signed
-  D-WZ-OVERDUB-01?), and loop-length↔tempo quantize on capture.
+## Input is a full channel citizen (DECIDED)
+
+A live-input strip gets the **full channel** — level, the **4 FX sends**, master
+DSP (DRV), the lot — exactly like a grid or tape strip (user, 2026-07-25). So an
+input can feed FX 1–4, run through master drive, and be recorded *after* all of
+that into a tape.
+
+**The consequence that closes the model: there is no special-case recorder.**
+Recording is always "capture this strip's **channel bus**" — and the channel bus
+is the same whether the source is a grid (sequencer output), a live input, or a
+file. "Record the input" and "record the deck output" are literally the same
+operation on the same bus. One tap, one code path, every source.
+
+## Remaining sub-questions (not blocking the model)
+- `LOOPER-DESIGN.md`: overdub semantics (reuse signed D-WZ-OVERDUB-01?), and
+  loop-length↔tempo quantize on capture.
+- Send tap point: are the 4 sends **pre- or post-** the strip's own record tap
+  (i.e. does a recorded tape include the send-return, or just the dry channel)?
+  Follows from the bus layout; settle when wiring the channel.
 
 ## Engine status against this model
 - **Grid (§6):** built — multi-deck sessions, per-deck BPM, master sync
