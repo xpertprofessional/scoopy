@@ -2,7 +2,38 @@
 
 *Companion to `P1-KICKOFF.md` (the brief, written at the close of P0 and left
 unedited as the historical record). This file is the CURRENT state. Updated
-2026-07-24.*
+2026-07-25.*
+
+## ⚠️ MISSION — read this first (confirmed with the user 2026-07-25)
+
+Earlier increments (and P1-KICKOFF) framed this as "wizard's JUCE shell hosts
+scoopy's UI." **That framing is wrong.** The confirmed mission:
+
+- The merged app is **scoopy at the core — its native engine + its web UI**,
+  Swift carved off. Scoopy is more developed and **leads**; wizard's engine is
+  the donor. Native + web only.
+- Wizard contributes its **UI concept**: the **strip/map plane**, strip +
+  audio-recording features, and a **master sync/tempo section** — built **INTO
+  scoopy's web UI** (both React). scoopy's web UI is the HOME; wizard's plane is
+  a new surface added into it, not the other way round.
+- Each **strip hosts a source**: a full **scoopy deck** (session — pattern,
+  samples, **its own BPM**, transport, recording) or a simpler **audio loop**.
+- A **master sync/tempo section** lives in the plane; any strip syncs to it,
+  each deck keeps its own BPM. Correct **per-deck BPM isolation** is critical.
+- The **browser companion survives** separately. (Supersedes the earlier
+  "scoopy = audio-only via virtual device" note — that stays for OTHER apps.)
+
+**So the real near-term work is NOT "run the companion in a window":**
+1. Engine: **N deck-sessions at once, each its own BPM** (SL-ABI-V3 §6 — only
+   deck 0 built; needs a change in scoopy's CORE, its writable home).
+2. **A master transport/clock the decks sync to** (SL-ABI-V3 §7 — designed, not built).
+3. **Wizard's strip/map plane built into scoopy's web UI**, strip source = a deck.
+
+The native host + scoopy web UI + native v3 engine already built (`WizardMerged`)
+is the right BASE. `MergedLink` (reusing the whole companion stack) was
+SCAFFOLDING to prove the engine end-to-end — it is not the product and its
+companion-identity (browser caps, OPFS-only) will be shed. Everything below this
+section predates this reframing; read it as "what was built," not "the plan."
 
 ## Queue
 
