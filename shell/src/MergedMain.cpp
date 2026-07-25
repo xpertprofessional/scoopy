@@ -195,9 +195,15 @@ private:
     }
 
     void removeWindow(PanelWindow* w) {
-        windows.erase(std::remove_if(windows.begin(), windows.end(),
-                                     [w](const std::unique_ptr<PanelWindow>& p) { return p.get() == w; }),
-                      windows.end());
+        // DEFERRED: this is called from w's own closeButtonPressed, so erasing
+        // the owning unique_ptr here would delete `w` while its method is still
+        // on the stack — a use-after-free the moment control returns. Hop to a
+        // later message so the window is torn down after its callback unwinds.
+        juce::MessageManager::callAsync([this, w] {
+            windows.erase(std::remove_if(windows.begin(), windows.end(),
+                                         [w](const std::unique_ptr<PanelWindow>& p) { return p.get() == w; }),
+                          windows.end());
+        });
     }
 
     void timerCallback() override {
