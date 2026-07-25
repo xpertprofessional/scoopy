@@ -55,6 +55,7 @@ add_test(NAME sl_dispatch_test COMMAND sl_dispatch_test)
 # the v3 engine; GUI-free so it is tested headlessly (a World payload -> audio).
 add_library(wz_sl_world STATIC src/SlWorldApply.cpp)
 target_include_directories(wz_sl_world PUBLIC src)
+target_include_directories(wz_sl_world PRIVATE ${CMAKE_SOURCE_DIR}/slengine/generated)
 target_link_libraries(wz_sl_world
     PUBLIC juce::juce_core
     PRIVATE wz_sl_engine juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

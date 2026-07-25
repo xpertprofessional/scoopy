@@ -49,6 +49,9 @@ jobs:
       # this fails if the schema moved and the 284-slot index header was not
       # regenerated — a mismatch would make every UI meter read a wrong slot.
       - run: npm run hotframe:check
+      # The WorldTrack->engine-param rename is DERIVED from scoopy's worklet
+      # field tables; fails if the worklet moved and the map was not regenerated.
+      - run: npm run worldmap:check
       - run: npm run abi:check
       - run: npm run check:tokens
       - run: npm run webdist:check

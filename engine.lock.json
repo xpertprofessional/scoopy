@@ -140,6 +140,10 @@
         ".map"
       ],
       "sha256": "53a62986dd549c77aaf51d4e7abcea689ccb3036616c5db3b068f64e52811911"
+    },
+    "vendor/scoopy/web-protocol/scoopy-worklet.js": {
+      "from": "web/src/audio/scoopy-worklet.js",
+      "sha256": "15271234ff11153bbbc042f5b088eeb3661570d7f4e0f8574dfe9ed826e843df"
     }
   }
 }

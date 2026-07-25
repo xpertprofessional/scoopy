@@ -154,8 +154,7 @@ int main() {
         delete left;
 
         auto world = juce::JSON::parse(R"({"world":{"deck":0,"bpm":120,"isPlaying":true,
-            "startStep":0,"tracks":[{"sampleId":"tone","steps":[1,1,1,1],
-            "params":{"SL_T_VOLUME":1.0}}]}})");
+            "startStep":0,"tracks":[{"sampleId":"tone","steps":[1,1,1,1],"volume":1.0}]}})");
         const auto r = dispatch("worldPublish", world, settings, e);
         CHECK(replyOk(r));
         CHECK((bool) result(r).getProperty("applied", false));

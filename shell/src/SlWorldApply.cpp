@@ -8,26 +8,16 @@ namespace wizard::sl {
 
 namespace {
 
+// scoopy WorldTrack field -> engine param NAME (kWorldScalarMap / kWorldArrayMap),
+// GENERATED from the pinned worklet's SCALAR_FIELDS / ARRAY_FIELDS. Never edit
+// here: `npm run worldmap:generate`, and CI's worldmap:check fails on drift.
+#include "sl_worldmap.inc"
+
 juce::var applied(bool ok, const juce::String& error) {
     auto* o = new juce::DynamicObject();
     o->setProperty("applied", ok);
     o->setProperty("error", error.isEmpty() ? juce::var() : juce::var(error));
     return juce::var(o);
-}
-
-/** Set every {name: value} in an object on the open track, resolving each name
-    through the ABI. `resolve` is the scalar or array id lookup; `apply` sets it.
-    An unknown name resolves to SL_PARAM_UNKNOWN and is skipped — the engine's
-    own setters would ignore it anyway, but skipping here keeps the intent
-    (forward-compatible, never misread) visible at the boundary. */
-template <typename Resolve, typename Apply>
-void setAll(const juce::var& fields, Resolve resolve, Apply apply) {
-    auto* obj = fields.getDynamicObject();
-    if (obj == nullptr) return;
-    for (const auto& kv : obj->getProperties()) {
-        const int32_t id = resolve(kv.name.toString().toRawUTF8());
-        if (id != SL_PARAM_UNKNOWN) apply(id, kv.value);
-    }
 }
 
 } // namespace
@@ -90,23 +80,32 @@ juce::var applyWorld(sl_engine* engine, const juce::var& world) {
                                     static_cast<uint32_t>(stepBytes.size())) != 1)
             return applied(false, "track " + juce::String(index) + " (" + sampleId + ") could not begin");
 
-        setAll(track.getProperty("params", juce::var()),
-               [](const char* n) { return sl_track_param_id(n); },
-               [engine](int32_t id, const juce::var& v) {
-                   sl_snapshot_track_set(engine, id, (double) v);
-               });
+        // The flat WorldTrack (worldFromSession.ts): each mapped scalar field the
+        // track carries is renamed to its engine param and set. A field the
+        // track doesn't carry is simply skipped (the engine keeps its default);
+        // a field whose param the engine doesn't know resolves UNKNOWN and is
+        // ignored — forward-compatible, never misread.
+        for (int m = 0; m < SL_WORLD_SCALAR_MAP_COUNT; ++m) {
+            const auto& map = kWorldScalarMap[m];
+            if (!track.hasProperty(map.field)) continue;
+            const int32_t id = sl_track_param_id(map.param);
+            if (id != SL_PARAM_UNKNOWN)
+                sl_snapshot_track_set(engine, id, (double) track.getProperty(map.field, 0.0));
+        }
 
-        setAll(track.getProperty("arrays", juce::var()),
-               [](const char* n) { return sl_track_array_id(n); },
-               [engine](int32_t id, const juce::var& v) {
-                   const auto* arr = v.getArray();
-                   if (arr == nullptr) return;
-                   std::vector<double> values(static_cast<size_t>(arr->size()));
-                   for (int i = 0; i < arr->size(); ++i)
-                       values[static_cast<size_t>(i)] = (double) arr->getReference(i);
-                   sl_snapshot_track_set_array(engine, id, values.data(),
-                                               static_cast<uint32_t>(values.size()));
-               });
+        // Per-step arrays, same rename; only actual arrays are applied.
+        for (int m = 0; m < SL_WORLD_ARRAY_MAP_COUNT; ++m) {
+            const auto& map = kWorldArrayMap[m];
+            const auto* arr = track.getProperty(map.field, juce::var()).getArray();
+            if (arr == nullptr) continue;
+            const int32_t id = sl_track_array_id(map.param);
+            if (id == SL_PARAM_UNKNOWN) continue;
+            std::vector<double> values(static_cast<size_t>(arr->size()));
+            for (int i = 0; i < arr->size(); ++i)
+                values[static_cast<size_t>(i)] = (double) arr->getReference(i);
+            sl_snapshot_track_set_array(engine, id, values.data(),
+                                        static_cast<uint32_t>(values.size()));
+        }
 
         sl_snapshot_track_end(engine);
         ++index;

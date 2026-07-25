@@ -31,14 +31,16 @@ bool registerSample(sl_engine* engine, const juce::var& sample);
 
 /** Apply a flat World to the engine as one published snapshot.
 
-    Expected shape (engine-name-keyed — the web side renamed via its table):
+    Expected shape — scoopy's flat `World` (worldFromSession.ts), sent as-is:
       {
         deck?: 0,                       // only 0 today; >0 is refused by the ABI
         bpm: number, isPlaying: bool, startStep: int,
         tracks: [
           { sampleId: string, steps: [0/1,...],
-            params?: { "SL_T_VOLUME": number, "SL_T_TONE_MODE": number, ... },
-            arrays?: { "SL_TA_PITCH_OFFSETS": [number,...], ... } }
+            // WorldTrack's flat camelCase fields, renamed to engine params via
+            // the generated map (sl_worldmap.inc, from the worklet's authority):
+            volume?: number, pan?: number, toneMode?: number, ...
+            pitchOffsets?: [number,...], send1Offsets?: [number,...], ... }
         ]
       }
 

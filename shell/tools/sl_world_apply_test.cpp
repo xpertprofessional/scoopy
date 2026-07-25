@@ -64,14 +64,14 @@ int main() {
     CHECK(!registerSample(nullptr, juce::JSON::parse(R"({"id":"x","left":[0.1]})")));
 
     // A name-keyed World: one track, all 8 steps, volume set by ENGINE NAME,
-    // plus an UNKNOWN name that must be ignored (not misread) and a per-step
+    // plus an UNMAPPED field that must be ignored (not misread) and a per-step
     // array.
     const char* worldJson = R"({
       "deck": 0, "bpm": 120, "isPlaying": true, "startStep": 0,
       "tracks": [
         { "sampleId": "tone", "steps": [1,1,1,1,1,1,1,1],
-          "params": { "SL_T_VOLUME": 1.0, "SL_T_NOT_A_REAL_PARAM": 999.0 },
-          "arrays": { "SL_TA_PITCH_OFFSETS": [0,0,0,0,0,0,0,0] } }
+          "volume": 1.0, "unmappedFutureField": 999.0,
+          "pitchOffsets": [0,0,0,0,0,0,0,0] }
       ]
     })";
     const auto r = applyWorld(e, juce::JSON::parse(worldJson));
@@ -92,7 +92,7 @@ int main() {
     // Refusals — reported, not silently committed as holey worlds.
     CHECK(!wasApplied(applyWorld(e, juce::JSON::parse(
         R"({"deck":0,"bpm":120,"isPlaying":true,"startStep":0,
-            "tracks":[{"steps":[1,0],"params":{}}]})"))));            // no sampleId
+            "tracks":[{"steps":[1,0]}]})"))));            // no sampleId
     CHECK(!wasApplied(applyWorld(e, juce::JSON::parse(
         R"({"deck":0,"bpm":120,"isPlaying":true,"startStep":0,
             "tracks":[{"sampleId":"tone"}]})"))));                    // no steps

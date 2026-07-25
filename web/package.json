@@ -22,7 +22,9 @@
     "trackparams:generate": "node --experimental-strip-types scripts/generateTrackParams.ts",
     "trackparams:check": "node --experimental-strip-types scripts/generateTrackParams.ts --check",
     "hotframe:generate": "node --experimental-strip-types scripts/generateHotFrame.ts",
-    "hotframe:check": "node --experimental-strip-types scripts/generateHotFrame.ts --check"
+    "hotframe:check": "node --experimental-strip-types scripts/generateHotFrame.ts --check",
+    "worldmap:generate": "node --experimental-strip-types scripts/generateWorldMap.ts",
+    "worldmap:check": "node --experimental-strip-types scripts/generateWorldMap.ts --check"
   },
   "dependencies": {
     "react": "^18.3.1",
