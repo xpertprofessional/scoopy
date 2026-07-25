@@ -131,6 +131,17 @@ int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, i
 /** How many decks coexist (the core's kMaxDecks). A deck index must be < this. */
 uint32_t sl_deck_count(void);
 
+/** Master sync (§7), the engine half. Set `deck`'s tempo-sync ratio =
+    target_bpm / deck_bpm (1.0 = free-running at its own bpm). This is how a
+    strip locks its deck to the plane's master tempo: the host picks the master
+    bpm and sets each SYNCED deck's ratio to master/deck; a deck left at 1.0
+    keeps its own tempo. Per SL-ABI-V3 §7 the engine owns time (the master step
+    clock) while TS owns the ratio math — this just carries the ratio TS
+    computed. `ratio <= 0` or an out-of-range deck is ignored. Republishes the
+    deck world so it takes effect immediately; safe at human rate. Transport
+    play/stop is sl_engine_start / sl_engine_stop. */
+void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
+
 /** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
 int sl_snapshot_track_begin(sl_engine* e,
                             const char* sample_id,

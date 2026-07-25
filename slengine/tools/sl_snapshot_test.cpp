@@ -138,6 +138,22 @@ int main() {
             }
         }
         CHECK(twoDeckPeak > 0.0001); // two decks at two tempos, both sounding
+
+        // Master sync (§7): lock deck 1 (90 bpm) to a 120 master → ratio 120/90.
+        // Invalid inputs are ignored (no crash, no corruption); a valid ratio
+        // republishes and the deck keeps rendering (audible tempo change is a
+        // human-pass, but the plumbing must hold).
+        sl_deck_set_tempo_sync(nullptr, 1, 1.33);          // null engine
+        sl_deck_set_tempo_sync(e, 99, 1.33);               // out of range
+        sl_deck_set_tempo_sync(e, 1, 0.0);                 // non-positive ratio
+        sl_deck_set_tempo_sync(e, 1, 120.0 / 90.0);        // valid: sync to 120
+        double syncedPeak = 0.0;
+        for (int block = 0; block < 60; ++block) {
+            std::fill(l.begin(), l.end(), 0.0f);
+            sl_render(e, buses, 2, 512);
+            for (uint32_t i = 0; i < 512; ++i) syncedPeak = std::fmax(syncedPeak, std::fabs((double) l[i]));
+        }
+        CHECK(syncedPeak > 0.0001); // still sounding after the sync republish
     }
 
     sl_engine_stop(e);

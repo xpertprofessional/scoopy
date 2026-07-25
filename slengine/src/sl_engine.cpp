@@ -241,6 +241,14 @@ int sl_engine_register_sample(sl_engine* e, const char* sample_id,
 
 uint32_t sl_deck_count(void) { return static_cast<uint32_t>(kMaxDecks); }
 
+void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio) {
+    if (e == nullptr || deck >= kMaxDecks || !(ratio > 0.0)) return;
+    e->deckWorlds[deck].tempoSyncRatio = ratio;
+    // The ratio lives on the published DeckWorld (no live per-deck setter in the
+    // core), so republish. Human-rate: a sync toggle, not an audio-thread write.
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {
     if (e == nullptr || deck >= kMaxDecks) return 0;
     // Build THIS deck's slot; the others in the persistent array are retained so
