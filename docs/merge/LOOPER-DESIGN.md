@@ -78,3 +78,49 @@ session as a normal track when you want it sequenced.
 - Overdub semantics for a strip loop: reuse the SIGNED D-WZ-OVERDUB-01 (destructive mix-into-buffer, still drains to a crash-safe take)?
 - Does a promoted-to-grid loop keep a link back to the strip loop, or is it a one-way copy?
 - Loop length ↔ tempo: does capture quantize the loop to bars at the strip's bpm (so it stays in sync when tempo changes)?
+
+## The resolution — TWO playback engines, not one (user, 2026-07-25)
+
+The user surfaced the flaw in "a loop becomes a grid track": a grid track is
+DISCRETE (stepped triggers), so it **loses scrubbing** — and "record my session
+output and scrub on it" is a first-class want. Forcing recorded audio onto the
+grid throws away the continuous-audio powers (scrub, varispeed, loop-region,
+overdub) that make a recorder worth having.
+
+The resolution is that the merged system already has **two playback engines**,
+and they are BOTH first-class — this is exactly what SL-ABI-V3 designed:
+
+- **§6 — the scoopy SESSION/GRID:** sequenced sampler tracks, discrete step
+  triggers, patterns, chop. Composition. (Built.)
+- **§5 — the wizard TAPE-DECK:** a continuous audio buffer with a playhead —
+  record, **scrub**, varispeed, loop-region, overdub, crash-safe takes. This IS
+  the looper/recorder. (Transplants from wizard's donor engine; NOT built yet.)
+
+So the answer to "are record and loop the same source?" is **yes** — they are the
+**same continuous tape-deck buffer.** You record into it; the "loop" is a region
+(start/end) of that same buffer, played continuously — so it is scrubbable,
+varispeedable, overdubbable, exactly like a wizard deck, because it IS one.
+
+**A strip can hold BOTH:** a tape-deck (record / scrub / loop of continuous
+audio) AND a scoopy grid (sequenced composition). They coexist, and audio flows
+between them:
+
+- **Record + scrub + loop** live in the **tape-deck** (§5, continuous) — no
+  scrubbing lost, because the recorded audio never had to become a grid track.
+- **Carve a region → a grid track** (§6) only WHEN you want it sequenced/chopped
+  in the composition. That is the one-way bridge that "changes session content."
+
+This keeps every scoopy grid power AND every wizard tape power, in one strip,
+with a clear door between them. Method D still holds — it just names the strip
+loop as a wizard tape-deck (§5) rather than a vague "loop buffer."
+
+**Consequence for the engine:** the merged engine needs §5 (wizard's deck
+surface — record/scrub/overdub/loop of a continuous buffer) transplanted in
+alongside §6 (built). SL-ABI-V3 §5 already specifies this 1:1 from wz_deck_*.
+That is the next big engine chunk.
+
+**Persistence:** recorded audio persists as wizard's crash-safe **takes** (WAV),
+referenced by the session/plane-map — reusing wizard's take system + scoopy's
+kit/session. A carved grid track references the same take as a sample. So one
+recording underlies both the scrubbable tape-deck and any grid track carved from
+it — no duplicate audio.
