@@ -154,6 +154,19 @@ int main() {
             for (uint32_t i = 0; i < 512; ++i) syncedPeak = std::fmax(syncedPeak, std::fabs((double) l[i]));
         }
         CHECK(syncedPeak > 0.0001); // still sounding after the sync republish
+
+        // A strip dropping its deck: clear deck 1 (it goes silent); deck 0 is
+        // retained. Out-of-range/null clears are ignored.
+        sl_deck_clear(nullptr, 1);
+        sl_deck_clear(e, 99);
+        sl_deck_clear(e, 1);   // remove the second deck
+        double afterClear = 0.0;
+        for (int block = 0; block < 60; ++block) {
+            std::fill(l.begin(), l.end(), 0.0f);
+            sl_render(e, buses, 2, 512);
+            for (uint32_t i = 0; i < 512; ++i) afterClear = std::fmax(afterClear, std::fabs((double) l[i]));
+        }
+        CHECK(afterClear > 0.0001); // deck 0 still plays after deck 1 was cleared
     }
 
     sl_engine_stop(e);

@@ -131,6 +131,12 @@ int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, i
 /** How many decks coexist (the core's kMaxDecks). A deck index must be < this. */
 uint32_t sl_deck_count(void);
 
+/** Remove `deck` from the world — it goes silent, its slot inactive, the OTHER
+    decks retained. This is a strip dropping its deck: the counterpart to
+    sl_snapshot_begin/commit adding one. Republishes so it takes effect
+    immediately. An out-of-range deck or null engine is ignored. */
+void sl_deck_clear(sl_engine* e, uint32_t deck);
+
 /** Master sync (§7), the engine half. Set `deck`'s tempo-sync ratio =
     target_bpm / deck_bpm (1.0 = free-running at its own bpm). This is how a
     strip locks its deck to the plane's master tempo: the host picks the master

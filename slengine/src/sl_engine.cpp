@@ -241,6 +241,12 @@ int sl_engine_register_sample(sl_engine* e, const char* sample_id,
 
 uint32_t sl_deck_count(void) { return static_cast<uint32_t>(kMaxDecks); }
 
+void sl_deck_clear(sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    e->deckWorlds[deck] = DeckWorld{};   // inactive slot → renders silence
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
 void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio) {
     if (e == nullptr || deck >= kMaxDecks || !(ratio > 0.0)) return;
     e->deckWorlds[deck].tempoSyncRatio = ratio;
