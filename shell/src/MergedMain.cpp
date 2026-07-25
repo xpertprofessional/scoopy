@@ -84,7 +84,7 @@ public:
 
     PanelWindow(Backend& backendToUse, juce::String panel, bool isMainToUse,
                 OpenPanel openPanel, CloseSelf closeSelf)
-        : juce::DocumentWindow("ScoopyLoops · " + panel, juce::Colours::black,
+        : juce::DocumentWindow("ScoopyLoops - " + panel, juce::Colours::black,
                                juce::DocumentWindow::allButtons),
           backend(backendToUse),
           panelName(std::move(panel)),
@@ -174,8 +174,8 @@ public:
         jassert(sl_abi_version() == SL_ABI_VERSION);
         backend = std::make_unique<Backend>(engine);
 
-        // The primary window is the DJ/compose grid; more open on demand.
-        openPanel("grid", /*isMain*/ true);
+        // The primary window is the companion shell (owns sessions, renders the grid);
+        openPanel("companion", /*isMain*/ true);
         startTimerHz(30); // the HotFrame broadcast
     }
 
