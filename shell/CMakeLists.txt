@@ -119,3 +119,46 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(Wizard PRIVATE
         ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
 endif()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The MERGED SHELL — scoopy's real UI on the SL ABI v3 engine (P1 live window).
+# Additive alongside Wizard until the P3 flip. Everything behind the transport
+# is unit-tested; this target is the GUI assembly, verified by running it.
+# ─────────────────────────────────────────────────────────────────────────────
+juce_add_gui_app(WizardMerged
+    PRODUCT_NAME "WizardMerged"
+    COMPANY_NAME "Wizard"
+    BUNDLE_ID com.wizard.merged
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "ScoopyLoops mixes and records audio; microphone access makes your inputs available.")
+
+target_sources(WizardMerged PRIVATE src/MergedMain.cpp)
+target_include_directories(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/slengine/include ${CMAKE_SOURCE_DIR}/host/src)
+
+target_compile_definitions(WizardMerged PRIVATE
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_CURL=0
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_VERSION>"
+    # The vendored, hash-pinned scoopy webdist — the merged repo hosts scoopy
+    # self-contained (no sibling checkout at runtime).
+    MERGED_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/vendor/scoopy/webdist")
+
+target_link_libraries(WizardMerged PRIVATE
+    wz_sl_engine    # the v3 engine
+    wz_sl_command   # SlDispatch: boot handshake + worldPublish play path
+    wz_sl_world     # applyWorld (pulled in via wz_sl_command, named for clarity)
+    wz_sl_settings  # FileSettingsStore
+    wz_webresources # resource serving + navigation policy
+    wz_audio_io     # duplex device -> SlRenderSink -> sl_render_io
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+    pkg_check_modules(WEBKIT2GTK REQUIRED webkit2gtk-4.1)
+    target_include_directories(WizardMerged PRIVATE ${GTK3_INCLUDE_DIRS} ${WEBKIT2GTK_INCLUDE_DIRS})
+    target_link_libraries(WizardMerged PRIVATE ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
+endif()
