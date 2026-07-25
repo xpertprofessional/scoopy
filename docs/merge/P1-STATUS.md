@@ -72,21 +72,35 @@ unedited as the historical record). This file is the CURRENT state. Updated
    - Tests: `sl_hotframe_test` (layout compiles, indices match schema),
      `sl_hotframe_emit_test` (counter advances, short buffer refused, a rendered
      tone lights `outputPeak`, drift-proof by restating indices independently).
-3. **Live window + self-contained hosting — the last increment (GUI + cross-repo).**
-   Everything headless-testable in the merged repo is now DONE (v3 ABI, render
-   via AudioIO, boot handshake, play path, HotFrame). What remains is the
-   assembly, which is GUI (not headless-testable — the spike already proved the
-   transport) and touches `apps/scoopy`:
-   - Wire `SlDispatch` + `applyWorld` + `sl_hotframe` (a 30 Hz timer emitting
-     `slHotFrame`) into a real `WebBrowserComponent` window serving scoopy's UI,
-     behind the v3 `SlRenderSink` + `AudioIO`.
-   - Vendor scoopy's `webdist` hash-pinned (~2.3 MB runtime; the 3.5 MB of
-     sourcemaps can be excluded) so the merged repo hosts scoopy without the
-     sibling checkout.
-   - The `apps/scoopy` web change: the merged host runs `worldFromSession` and
-     publishes the flat `World` (engine-name-keyed) to native over `worldPublish`.
-   - Sample sourcing: kit bytes → `registerSample` (native decode of kit files,
-     not JSON floats).
+3. **Live window — ✅ BUILT (`90979e9`), self-contained hosting ✅ (`987b433`).**
+   `WizardMerged.app`: multi-window `WebBrowserComponent`s serving the vendored
+   webdist, `SlDispatch` + `FileSettingsStore` + `applyWorld` + a 30 Hz
+   `sl_hotframe`→`slHotFrame` timer, behind `SlRenderSink` + `AudioIO`. Compiles
+   + links; **needs a human run-pass** (law 5) to confirm scoopy boots linked
+   with live meters. Additive alongside the legacy Wizard app until the P3 flip.
+4. **The native play path is COMPLETE and speaks scoopy's real World** (`008df7d`).
+   `applyWorld` consumes the flat `WorldTrack` (worldFromSession's shape),
+   renaming each camelCase field to its engine param via `sl_worldmap.inc`
+   (generated from the pinned worklet's SCALAR_FIELDS/ARRAY_FIELDS, gated by
+   `worldmap:check`). So the `apps/scoopy` side sends the World AS-IS; no rename
+   there.
+
+### What remains for scoopy to actually PLAY (cross-repo + run-verified)
+
+- **`apps/scoopy` merged-host play controller.** Bigger than first thought: the
+  merged host uses `JuceLink` (not the browser companion's `BrowserLink`/WASM
+  flow), so `companionEngine.publish()` (worldFromSession → `audio.publish`) does
+  not run here. Needs a merged-host controller that, on session load/edit/
+  transport, runs `projectScene` + `worldFromSession` and sends the flat `World`
+  over `juceLink.command("worldPublish", { world })`. Then rebuild scoopy's
+  webdist (its vite toolchain), commit in `apps/scoopy`, and re-vendor. Best done
+  where the merged app can be RUN to verify — not blind.
+- **Sample sourcing.** The `World` names samples by id; `registerSample` needs
+  the bytes. In the companion they live in OPFS; for the merged host, decide
+  native decode of kit files vs a bridge transfer. Headless-testable once chosen.
+- **§3 deck-scope live params** (`slParam` lane) — mostly DJ-mixer controls that
+  need the device/DJ host absent from the portable core; low priority, likely
+  partial. The `slParam` lane is received-and-dropped in the window meanwhile.
 
 ## Decisions taken during P1 (and why)
 
