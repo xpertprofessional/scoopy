@@ -11,6 +11,10 @@
 #include <cstdio>
 #include <vector>
 
+// The generated frame layout — the deck playhead slots are how this test
+// observes a deck's tempo (see stepCrossings below), same as sl_hotframe_test.
+#include "sl_hotframe.inc"
+
 #define CHECK(cond)                                                              \
     do {                                                                         \
         if (!(cond)) {                                                           \
@@ -18,6 +22,29 @@
             return 1;                                                            \
         }                                                                        \
     } while (0)
+
+/** How many STEP BOUNDARIES deck `deck` crosses over `blocks` rendered blocks.
+ *
+ * The deck-scope tempo params are only really testable through this. Reading
+ * back what we wrote proves a variable holds a value; counting step crossings
+ * proves the engine is actually running the deck faster, which is the claim.
+ * Robust to the step index wrapping, because it counts CHANGES rather than
+ * differencing the counter. */
+static int stepCrossings(sl_engine* e, uint32_t deck, float* const* buses, int blocks) {
+    std::vector<double> frame(sl_hotframe_length());
+    const uint32_t slot = deck == 0   ? SL_HF_playheadStepDeck0
+                          : deck == 1 ? SL_HF_playheadStepDeck1
+                                      : SL_HF_playheadStepDeck2;
+    double last = -1.0;
+    int crossings = 0;
+    for (int b = 0; b < blocks; ++b) {
+        sl_render(e, buses, 2, 512);
+        if (sl_hotframe(e, frame.data(), (uint32_t) frame.size()) == 0) continue;
+        if (last >= 0.0 && frame[slot] != last) ++crossings;
+        last = frame[slot];
+    }
+    return crossings;
+}
 
 int main() {
     sl_engine* e = sl_engine_create(48000.0, 512, 86);
@@ -139,7 +166,7 @@ int main() {
         }
         CHECK(twoDeckPeak > 0.0001); // two decks at two tempos, both sounding
 
-        // Master sync (§7): lock deck 1 (90 bpm) to a 120 master → ratio 120/90.
+        // Master sync: lock deck 1 (90 bpm) to a 120 master → ratio 120/90.
         // Invalid inputs are ignored (no crash, no corruption); a valid ratio
         // republishes and the deck keeps rendering (audible tempo change is a
         // human-pass, but the plumbing must hold).
@@ -154,6 +181,157 @@ int main() {
             for (uint32_t i = 0; i < 512; ++i) syncedPeak = std::fmax(syncedPeak, std::fabs((double) l[i]));
         }
         CHECK(syncedPeak > 0.0001); // still sounding after the sync republish
+
+        // ── DECK SCOPE (§3) ────────────────────────────────────────────────
+        //
+        // THE REGRESSION THIS SECTION EXISTS FOR. `sl_snapshot_begin` used to
+        // reset tempoSyncRatio to 1.0, so every world publish — which is what
+        // editing one step in the grid does — silently un-synced every synced
+        // deck. The plane carried a re-assert pass to survive it. Deck-scope
+        // params outlive a publish, so the re-assert can go away.
+        //
+        // Mutation check: restore that reset in sl_snapshot_begin and the
+        // survival CHECK below fails.
+        const int32_t syncId  = sl_param_id_for_name("syncRatio");
+        const int32_t modeId  = sl_param_id_for_name("tempoMode");
+        const int32_t rateId  = sl_param_id_for_name("rate");
+        const int32_t transId = sl_param_id_for_name("transpose");
+        CHECK(syncId != SL_PARAM_UNKNOWN);
+        CHECK(modeId != SL_PARAM_UNKNOWN);
+        CHECK(rateId != SL_PARAM_UNKNOWN);
+        CHECK(transId != SL_PARAM_UNKNOWN);
+        CHECK(sl_param_id_for_name("nosuchparam") == SL_PARAM_UNKNOWN);
+        CHECK(sl_param_id_for_name(nullptr) == SL_PARAM_UNKNOWN);
+
+        // Name/id introspection round-trips for every declared param — a host
+        // enumerating the surface must get back what it resolved.
+        CHECK(sl_param_count() == 4);
+        for (uint32_t k = 0; k < sl_param_count(); ++k) {
+            const char* nm = sl_param_name(k);
+            CHECK(nm != nullptr);
+            CHECK(sl_param_id_for_name(nm) == (int32_t) k);
+        }
+        CHECK(sl_param_name(sl_param_count()) == nullptr); // out of range
+
+        // The alias and the param are ONE value, not two that must be kept in
+        // step — that is what makes the old spelling safe to keep.
+        sl_param_set(e, 1, syncId, 1.5);
+        CHECK(sl_deck_tempo_sync(e, 1) == 1.5);
+        sl_deck_set_tempo_sync(e, 1, 120.0 / 90.0);
+        CHECK(sl_param_get(e, 1, syncId) == 120.0 / 90.0);
+
+        // Refusals: each leaves the previous value standing rather than landing
+        // somewhere else. An unknown mode must NOT be rounded into a real one.
+        sl_param_set(e, 1, syncId, -1.0);           // non-positive ratio
+        sl_param_set(e, 1, modeId, 7.0);            // not a mode
+        sl_param_set(e, 1, rateId, 0.0);            // non-positive rate
+        sl_param_set(e, 1, transId, NAN);           // not a number
+        sl_param_set(e, 1, 99, 1.0);                // unknown id
+        sl_param_set(e, 99, syncId, 1.0);           // out-of-range deck
+        sl_param_set(nullptr, 1, syncId, 1.0);      // null engine
+        CHECK(sl_param_get(e, 1, syncId) == 120.0 / 90.0);
+        CHECK(sl_param_get(e, 1, modeId) == 1.0);   // still timeStretch
+        CHECK(sl_param_get(e, 1, rateId) == 1.0);
+        CHECK(sl_param_get(e, 1, transId) == 0.0);
+        CHECK(sl_param_get(e, 1, 99) == 0.0);       // unknown id reads 0, not a neighbour
+        CHECK(sl_param_get(nullptr, 1, syncId) == 0.0);
+
+        // Transpose is the one param with a REALTIME setter: it round-trips and
+        // the deck keeps sounding, but it never republishes — nothing here can
+        // observe a world swap, which is exactly the property that matters.
+        sl_param_set(e, 1, transId, -5.0);          // negative IS valid (down a fourth)
+        CHECK(sl_param_get(e, 1, transId) == -5.0);
+        sl_param_set(e, 1, transId, 0.0);
+
+        // ── THE RATIO IS OBSERVED IN THE AUDIO, NOT READ BACK ──────────────
+        //
+        // Reading `sl_param_get` back only proves a variable holds a value. The
+        // first version of this test did exactly that, and a mutation restoring
+        // the old `d.tempoSyncRatio = 1.0` reset PASSED it — the param block
+        // survived while the world it was supposed to reach did not. Counting
+        // step crossings asks the engine instead.
+        //
+        // It also pins the DIRECTION, which was wrong in the shipped code:
+        // `DeckWorld.tempoSyncRatio` is output/input DURATION, so a deck told to
+        // run at 2× needs 0.5 there. Callers were passing 2.0 and getting a deck
+        // at HALF speed. If the inversion in applyDeckParams is dropped, `faster`
+        // comes back SLOWER than `base` and these fail.
+        const int kMeasureBlocks = 400;
+
+        sl_param_set(e, 1, modeId, 2.0);      // tempoOnly: the step clock alone
+        sl_param_set(e, 1, syncId, 1.0);
+        const int base = stepCrossings(e, 1, buses, kMeasureBlocks);
+        CHECK(base > 4); // the deck is running at all
+
+        sl_param_set(e, 1, syncId, 2.0);      // twice as fast
+        const int faster = stepCrossings(e, 1, buses, kMeasureBlocks);
+        CHECK(faster > base * 3 / 2); // ~2×, generously bounded against jitter
+
+        // THE SURVIVAL CHECK. Republish deck 1's session — the exact gesture a
+        // grid edit makes — and the deck must STILL be running at 2×. Before
+        // deck scope this is where it silently dropped back to its own tempo.
+        CHECK(sl_snapshot_begin(e, 1, 90.0, 1, 0) == 1);
+        CHECK(sl_snapshot_track_begin(e, "tone", all8, 8) == 1);
+        sl_snapshot_track_set(e, volumeId, 1.0);
+        sl_snapshot_track_end(e);
+        CHECK(sl_snapshot_commit(e) > 0);
+        CHECK(sl_param_get(e, 1, syncId) == 2.0);
+        const int afterPublish = stepCrossings(e, 1, buses, kMeasureBlocks);
+        CHECK(afterPublish > base * 3 / 2);
+
+        // ALL THREE MODES REACH THE MASTER, each by its own mechanism. This is
+        // the user-visible claim of the whole domain — "every element follows
+        // the master" — and it is the assertion that would catch `applyDeckParams`
+        // routing a ratio into a field that mode does not use, which would look
+        // like a deck that simply ignores sync in one mode out of three.
+        //
+        //   timeStretch  the bus stretcher consumes source faster
+        //   timePitch    masterSpeed AND the voice varispeed together
+        //   tempoOnly    masterSpeed alone (measured as `faster`, above)
+        //
+        // What is NOT asserted here is the PITCH difference between them, and
+        // that is deliberate rather than an omission: the modes differ in
+        // spectral content, not in any scalar this tier can read, so proving it
+        // is a listening test. The routing being right is what makes the
+        // listening test meaningful, and that is what this checks.
+        sl_param_set(e, 1, modeId, 1.0); // timeStretch
+        const int stretched = stepCrossings(e, 1, buses, kMeasureBlocks);
+        CHECK(stretched > base * 3 / 2);
+
+        sl_param_set(e, 1, modeId, 0.0); // timePitch
+        const int varispeeded = stepCrossings(e, 1, buses, kMeasureBlocks);
+        CHECK(varispeeded > base * 3 / 2);
+
+        // And every mode goes BACK to the deck's own tempo when sync is
+        // released — a mode that could only ever speed a deck up would strand
+        // it there, which is worse than never having synced it.
+        for (double mode : {0.0, 1.0, 2.0}) {
+            sl_param_set(e, 1, modeId, mode);
+            sl_param_set(e, 1, syncId, 1.0);
+            const int released = stepCrossings(e, 1, buses, kMeasureBlocks);
+            CHECK(released < base * 3 / 2);
+            sl_param_set(e, 1, syncId, 2.0);
+        }
+        sl_param_set(e, 1, syncId, 2.0);
+
+        // Every mode renders finite audio, with a standalone `rate` on top.
+        for (double mode : {0.0, 1.0, 2.0}) {
+            sl_param_set(e, 1, modeId, mode);
+            sl_param_set(e, 1, rateId, 1.25);
+            double modePeak = 0.0;
+            for (int block = 0; block < 40; ++block) {
+                std::fill(l.begin(), l.end(), 0.0f);
+                sl_render(e, buses, 2, 512);
+                for (uint32_t i = 0; i < 512; ++i) {
+                    CHECK(std::isfinite(l[i]) && std::isfinite(r[i]));
+                    modePeak = std::fmax(modePeak, std::fabs((double) l[i]));
+                }
+            }
+            CHECK(modePeak > 0.0001); // sounding in every tempo mode
+        }
+        sl_param_set(e, 1, modeId, 1.0);
+        sl_param_set(e, 1, rateId, 1.0);
+        sl_param_set(e, 1, syncId, 1.0);
 
         // A strip dropping its deck: clear deck 1 (it goes silent); deck 0 is
         // retained. Out-of-range/null clears are ignored.

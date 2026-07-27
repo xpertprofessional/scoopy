@@ -414,40 +414,52 @@ int main() {
         }
         CHECK(gridLoud > 0.01);
 
-        // ── MASTER SYNC, AND THE HAZARD IT SITS ON ──────────────────────────
+        // ── MASTER SYNC, AND THE HAZARD IT USED TO SIT ON ───────────────────
         //
         // `deckSetTempoSync` was the one grid op with a real ABI point, and it
         // had been lumped in with the scene ops as "no ABI" — so a synced deck
         // would have loaded carrying whatever ratio the previous map left.
         //
-        // ⚠️ AND IT DOES NOT SURVIVE A REPUBLISH. `sl_snapshot_begin` sets
-        // `tempoSyncRatio = 1.0`, and every world publish commits a snapshot —
-        // so publishing silently UN-SYNCS the deck. That is the same "a
-        // republish stomps live overrides" hazard the map's performance layer
-        // exists for, and it applies to tempo sync, which the PLANE owns rather
-        // than the session. Pinned here so it stays a known rule instead of
-        // being rediscovered as a deck that drifts off tempo whenever anything
-        // edits the grid.
+        // ⚠️ THIS BLOCK USED TO ASSERT THE OPPOSITE, and the inversion is P3-2.
+        // `sl_snapshot_begin` reset `tempoSyncRatio = 1.0`, so every world
+        // publish — which is what editing one step in the grid does — silently
+        // UN-SYNCED the deck, and the plane carried a re-assert pass to survive
+        // it. The ratio is now DECK SCOPE (SL-ABI-V3 §3): the engine holds it in
+        // a persistent param block and re-stamps it onto each rebuilt world, so
+        // a session publish no longer touches the tempo axis. The re-assert pass
+        // is gone with the hazard that required it.
         //
-        // (`tempoSyncRatio` is an audio time-stretch ratio — output/input
-        // duration on the deck's bus — NOT the sequencer step rate. Asserting
-        // on step counts would be asserting the wrong thing.)
+        // (`sl_deck_tempo_sync` reports the MUSICAL ratio the caller set —
+        // target/deck. What lands on the deck's bus is its reciprocal, because
+        // `DeckWorld.tempoSyncRatio` is output/input duration; `applyDeckParams`
+        // is the one place that knows. Asserting on step counts here would be
+        // asserting the wrong tier — sl_snapshot_test does that, against the
+        // engine, where the rate is observable.)
         CHECK(replyOk(cmd("slDeck", R"({"action":"setTempoSync","deck":0,"ratio":2.0})")));
         CHECK(sl_deck_tempo_sync(e, 0) == 2.0);
         for (int b = 0; b < 20; ++b) render(0.0);
 
         // Republish exactly as the grid does when anything is edited…
         CHECK(replyOk(dispatch("slWorld", world, settings, e, &services)));
-        // …and the sync is GONE.
-        CHECK(sl_deck_tempo_sync(e, 0) == 1.0);
+        // …and the sync IS STILL THERE. Reverting the deck-scope stamp in
+        // sl_snapshot_begin fails this line.
+        CHECK(sl_deck_tempo_sync(e, 0) == 2.0);
 
-        // So the owner of the intent must re-apply. This is the rule the plane
-        // follows, and the deck stays audible across all of it.
-        CHECK(replyOk(cmd("slDeck", R"({"action":"setTempoSync","deck":0,"ratio":2.0})")));
+        // A second publish does not drift it either, and the deck stays audible
+        // across all of it.
+        CHECK(replyOk(dispatch("slWorld", world, settings, e, &services)));
         CHECK(sl_deck_tempo_sync(e, 0) == 2.0);
         double afterSync = 0.0;
         for (int b = 0; b < 120; ++b) { render(0.0); afterSync = std::max(afterSync, peak(lane[0])); }
         CHECK(afterSync > 0.01);
+
+        // Dropping the deck DOES clear it: deck scope outlives a publish, not
+        // the deck. Otherwise the next strip to take this slot would inherit the
+        // previous one's sync — the "loaded carrying whatever ratio the previous
+        // map left" bug, back in a new place.
+        sl_deck_clear(e, 0);
+        CHECK(sl_deck_tempo_sync(e, 0) == 1.0);
+        CHECK(replyOk(dispatch("slWorld", world, settings, e, &services))); // restore the deck
     }
 
     // ── 10. TWO GRID DECKS AT ONCE, EACH ITS OWN TEMPO ───────────────────────
@@ -511,13 +523,14 @@ int main() {
         // it rather than routing it), so a playing deck reaches the output no
         // matter what the patchbay says. That is correct engine behaviour and
         // it would make every assertion below meaningless.
-        for (int d = 0; d < static_cast<int>(sl_deck_count()); ++d) {
-            const auto stop = juce::String(R"({"action":"publish","world":{"deck":)") +
-                              juce::String(d) +
-                              R"(,"bpm":120,"isPlaying":false,"startStep":0,
-                    "tracks":[{"sampleId":"tone","steps":[0,0,0,0],"volume":0.0}]}})";
-            dispatch("slWorld", juce::JSON::parse(stop), settings, e, &services);
-        }
+        // `sl_deck_clear`, not a stopped publish. A stopped publish leaves the
+        // deck's TEMPO axis standing — deck-scope params survive a publish by
+        // design (§9) — and §9 leaves deck 0 synced at 2×, which keeps its bus
+        // stretcher engaged and still flushing when the ground check runs.
+        // Clearing is what "this deck is gone" actually means, and it takes the
+        // params with it. (Before P3-2 a stopped publish reset the ratio as a
+        // side effect, which is the accident this step removes.)
+        for (uint32_t d = 0; d < sl_deck_count(); ++d) sl_deck_clear(e, d);
         for (uint32_t id = 0; id < sl_route_capacity(); ++id)
             if (sl_route_active(e, id) != 0) sl_route_remove(e, id);
         for (int b = 0; b < 32; ++b) render(0.0); // let every ramp reach zero
@@ -888,13 +901,14 @@ int main() {
         // strip channels would not touch it, because the channel projects onto
         // the core rather than routing it. Anything audible below has to be
         // attributable to this one strip.
-        for (int d = 0; d < static_cast<int>(sl_deck_count()); ++d) {
-            const auto stop = juce::String(R"({"action":"publish","world":{"deck":)") +
-                              juce::String(d) +
-                              R"(,"bpm":120,"isPlaying":false,"startStep":0,
-                    "tracks":[{"sampleId":"tone","steps":[0,0,0,0],"volume":0.0}]}})";
-            dispatch("slWorld", juce::JSON::parse(stop), settings, e, &services);
-        }
+        // `sl_deck_clear`, not a stopped publish. A stopped publish leaves the
+        // deck's TEMPO axis standing — deck-scope params survive a publish by
+        // design (§9) — and §9 leaves deck 0 synced at 2×, which keeps its bus
+        // stretcher engaged and still flushing when the ground check runs.
+        // Clearing is what "this deck is gone" actually means, and it takes the
+        // params with it. (Before P3-2 a stopped publish reset the ratio as a
+        // side effect, which is the accident this step removes.)
+        for (uint32_t d = 0; d < sl_deck_count(); ++d) sl_deck_clear(e, d);
         for (uint32_t id = 0; id < sl_route_capacity(); ++id)
             if (sl_route_active(e, id) != 0) sl_route_remove(e, id);
         // Tape 0 is still looping from §6/§7 and would sum in through channel 0.

@@ -43,12 +43,18 @@ const tape = (stereo: boolean, takeRef: string | null = null) => ({
   rate: 1,
 })
 
+// Spelled out rather than built from `plane/stripOps.newGridElement`: this file
+// tests the DOCUMENT, and reaching into the plane for a fixture would mean the
+// schema's round-trip was being checked against the plane's idea of it.
 const grid = () => ({
   kind: 'grid' as const,
   deck: 0,
   sessionId: 's1',
   bpm: 128,
   syncToMaster: true,
+  tempoMode: 'timeStretch' as const,
+  pulseRelation: 'auto' as const,
+  transpose: 0,
 })
 
 describe('map document', () => {
@@ -158,6 +164,68 @@ describe('map document', () => {
       // silence (or feedback) because it was not saved is the failure here.
       expect(r.map.strips[0]?.monitor).toBe(true)
       expect(r.map.strips[0]?.recordTap).toBe('bus')
+    })
+  })
+
+  describe('the v3 → v4 migration (a grid strip gains its tempo intent)', () => {
+    /** A v3 document: a grid strip with none of the tempo-intent fields. */
+    const v3Doc = () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: grid() })],
+      }) as unknown as {
+        schemaVersion: number
+        map: { strips: { element: Record<string, unknown> }[] }
+      }
+      doc.schemaVersion = 3
+      for (const s of doc.map.strips) {
+        delete s.element.tempoMode
+        delete s.element.pulseRelation
+        delete s.element.transpose
+      }
+      return doc
+    }
+
+    it('opens a v3 map SOUNDING THE SAME', () => {
+      const r = loadMap(v3Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(3)
+      const el = r.map.strips[0]?.element
+      expect(el?.kind).toBe('grid')
+      if (el?.kind !== 'grid') return
+      // v3 had exactly ONE sync mechanism — the bus stretcher at a plain
+      // master/deck ratio — so the faithful restatement is timeStretch, 1:1,
+      // no transpose. This follows the masterLevel migration's rule, not the
+      // split-tap migration's: nothing here was a bug to be corrected.
+      expect(el.tempoMode).toBe('timeStretch')
+      expect(el.transpose).toBe(0)
+    })
+
+    it('migrates to 1:1, NOT to the `auto` a new strip gets', () => {
+      const r = loadMap(v3Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const el = r.map.strips[0]?.element
+      if (el?.kind !== 'grid') return
+      // ⚠️ The one decision in this migration worth stating. `auto` is the right
+      // default for a NEW strip and the wrong answer for an existing document:
+      // it resolves to the nearest MUSICAL ratio, so a 70 BPM deck synced to a
+      // 140 master would come back at 1:2 — half-timed — where v3 played it at
+      // 2×. A migration that changes how a saved set plays is not a migration.
+      expect(el.pulseRelation).toBe('1:1')
+    })
+
+    it('leaves a TAPE strip alone', () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: tape(true, 't1') })],
+      }) as unknown as { schemaVersion: number }
+      doc.schemaVersion = 3
+      const r = loadMap(doc)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.map.strips[0]?.element.kind).toBe('tape')
     })
   })
 

@@ -21,6 +21,22 @@ function strip(over: Partial<Strip> = {}): Strip {
   }
 }
 
+/** A grid element, spelled out here rather than imported from
+    `plane/stripOps.newGridElement`: this is the persist tier, and taking its
+    fixture from the plane would mean the document's apply plan was being
+    checked against the plane's idea of a default. */
+const gridEl = (deck: number, sessionId: string, bpm: number) =>
+  ({
+    kind: 'grid',
+    deck,
+    sessionId,
+    bpm,
+    syncToMaster: false,
+    tempoMode: 'timeStretch',
+    pulseRelation: 'auto',
+    transpose: 0,
+  }) as const
+
 const indexOfOp = (ops: EngineOp[], pred: (o: EngineOp) => boolean) => ops.findIndex(pred)
 
 describe('planApply', () => {
@@ -62,7 +78,7 @@ describe('planApply', () => {
           channel: 2,
           level: 0.5,
           sends: [0.25, 0, 0, 0],
-          element: { kind: 'grid', deck: 1, sessionId: 's', bpm: 120, syncToMaster: false },
+          element: { ...gridEl(1, 's', 120), syncToMaster: false },
         }),
       ],
     }
@@ -152,7 +168,14 @@ describe('planApply', () => {
     expect(routes[2]).toMatchObject({ feedback: true })
   })
 
-  it('computes the sync ratio from master and deck bpm', () => {
+  it('resolves the sync ratio through the tempo LAW, not by dividing', () => {
+    // ⚠️ THIS ASSERTION USED TO BE `ratio: 2`, and the change is the point of
+    // P3-2. `planApply` computed `masterBpm / bpm`, which for a 70 BPM deck
+    // under a 140 master says "run at 2×". Scoopy's law resolves the PULSE
+    // RELATION first, and 1:2 is a perfect match here — same pulse, half-time
+    // feel — so the deck stays at 70 and sits under the master rather than
+    // doubling into it. That is what a musician means by synced, and it is the
+    // developed behaviour the merge exists not to lose.
     const map: PlaneMap = {
       ...emptyMap(),
       transport: { masterBpm: 140, masterLevel: 1 },
@@ -160,12 +183,54 @@ describe('planApply', () => {
         strip({
           key: 'a',
           channel: 0,
-          element: { kind: 'grid', deck: 0, sessionId: 's', bpm: 70, syncToMaster: true },
+          element: { ...gridEl(0, 's', 70), syncToMaster: true }, // pulseRelation: 'auto'
         }),
       ],
     }
-    const sync = planApply(map).find((o) => o.op === 'deckSetTempoSync')
-    expect(sync).toEqual({ op: 'deckSetTempoSync', deck: 0, ratio: 2 })
+    expect(planApply(map).find((o) => o.op === 'deckSetTempoSync')).toEqual({
+      op: 'deckSetTempoSync',
+      deck: 0,
+      ratio: 1,
+    })
+  })
+
+  it('still doubles when 1:1 is asked for explicitly', () => {
+    // The arithmetic answer is not gone, it is now a CHOICE. This is also what
+    // the v3 → v4 migration pins every existing document to, so a saved map
+    // keeps playing the way it did.
+    const map: PlaneMap = {
+      ...emptyMap(),
+      transport: { masterBpm: 140, masterLevel: 1 },
+      strips: [
+        strip({
+          key: 'a',
+          channel: 0,
+          element: { ...gridEl(0, 's', 70), syncToMaster: true, pulseRelation: '1:1' },
+        }),
+      ],
+    }
+    expect(planApply(map).find((o) => o.op === 'deckSetTempoSync')).toEqual({
+      op: 'deckSetTempoSync',
+      deck: 0,
+      ratio: 2,
+    })
+  })
+
+  it('carries the tempo MODE and the transpose beside the ratio', () => {
+    // Three ops, because the ratio alone cannot say which of the engine's three
+    // mechanisms it should drive. A ratio without a mode is the bug where a
+    // deck stretches when it was asked to change key.
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [
+        strip({
+          element: { ...gridEl(1, 's', 120), tempoMode: 'timePitch', transpose: -3 },
+        }),
+      ],
+    }
+    const ops = planApply(map)
+    expect(ops).toContainEqual({ op: 'deckSetTempoMode', deck: 1, mode: 0 }) // timePitch
+    expect(ops).toContainEqual({ op: 'deckSetTranspose', deck: 1, semitones: -3 })
   })
 
   it('sends ratio 1.0 for an UNSYNCED deck rather than omitting the call', () => {
@@ -176,7 +241,7 @@ describe('planApply', () => {
       transport: { masterBpm: 140, masterLevel: 1 },
       strips: [
         strip({
-          element: { kind: 'grid', deck: 2, sessionId: 's', bpm: 70, syncToMaster: false },
+          element: { ...gridEl(2, 's', 70), syncToMaster: false },
         }),
       ],
     }
@@ -324,7 +389,7 @@ describe('captureRoutes', () => {
 describe('the performance layer goes back on', () => {
   it('restores the scene and how it switches, per (strip, session)', () => {
     const s = rememberPerf(
-      strip({ element: { kind: 'grid', deck: 1, sessionId: 's1', bpm: 120, syncToMaster: false } }),
+      strip({ element: { ...gridEl(1, 's1', 120), syncToMaster: false } }),
       's1',
       { currentScene: 'D', switchMode: 'seamlessImmediate', queuedScenes: ['E'], queueLoop: true },
     )
@@ -343,7 +408,7 @@ describe('the performance layer goes back on', () => {
     // The strip remembers session A; it is currently carrying B, so B must not
     // inherit A's scene — that is the whole point of keying per pairing.
     const s = rememberPerf(
-      strip({ element: { kind: 'grid', deck: 0, sessionId: 'B', bpm: 120, syncToMaster: false } }),
+      strip({ element: { ...gridEl(0, 'B', 120), syncToMaster: false } }),
       'A',
       { currentScene: 'H', switchMode: 'restartImmediate', queuedScenes: [], queueLoop: true },
     )

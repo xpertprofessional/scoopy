@@ -66,6 +66,39 @@ struct ScopedFlushDenormals {
 
 using namespace scoopyloops;
 
+namespace sl {
+
+/** SL-ABI-V3 §3 — one deck's tempo axis, held OUTSIDE its world.
+ *
+ * The defaults are the neutral deck: its own tempo, pitch-preserving stretch if
+ * it is ever synced, no varispeed. A deck that has never been touched must
+ * sound exactly as it did before this surface existed. */
+struct DeckParams {
+    double syncRatio = 1.0;
+    double tempoMode = 1.0;   // 1 = timeStretch (see kDeckTempoMode* below)
+    double rate = 1.0;
+    double transpose = 0.0;   // semitones on the deck's stretch bus
+};
+
+/** Deck param ids ARE indices into this table — the ABI's keyed-by-name rule.
+    Order is therefore semantic and append-only; inserting in the middle would
+    renumber every cached id a running host holds. */
+const char* const kDeckParamNames[] = {
+    "syncRatio",
+    "tempoMode",
+    "rate",
+    "transpose",
+};
+constexpr std::uint32_t kDeckParamCount =
+    static_cast<std::uint32_t>(sizeof(kDeckParamNames) / sizeof(kDeckParamNames[0]));
+
+// tempoMode's three values, named so the routing below reads as the decision it is.
+constexpr int kTempoModeTimePitch   = 0;
+constexpr int kTempoModeTimeStretch = 1;
+constexpr int kTempoModeTempoOnly   = 2;
+
+} // namespace sl
+
 struct sl_engine {
     NativeAudioEngineCore core;
 
@@ -81,6 +114,13 @@ struct sl_engine {
     // and republishes all, so a strip publishes its deck independently and the
     // engine retains the others.
     std::array<DeckWorld, kMaxDecks> deckWorlds{};
+    // DECK SCOPE (§3), and the reason it is a SECOND array rather than fields on
+    // DeckWorld: DeckWorld is what gets rebuilt. `sl_snapshot_begin` blanks the
+    // deck's snapshot and its world fields, which is correct for session state
+    // and was silently wrong for tempo — a grid edit un-synced the deck. Held
+    // apart, these outlive every publish and are re-stamped onto the rebuilt
+    // world by applyDeckParams(). The plane no longer re-asserts anything.
+    std::array<sl::DeckParams, kMaxDecks> deckParams{};
     std::size_t currentDeck = 0;         // which deck sl_snapshot_* is building
     NativeTrackSnapshot track;
     bool trackOpen = false;
@@ -765,19 +805,138 @@ uint32_t sl_deck_count(void) { return static_cast<uint32_t>(kMaxDecks); }
 void sl_deck_clear(sl_engine* e, uint32_t deck) {
     if (e == nullptr || deck >= kMaxDecks) return;
     e->deckWorlds[deck] = DeckWorld{};   // inactive slot → renders silence
+    // The deck axis goes with the deck. Deck params outlive a PUBLISH, which is
+    // the point of them, but they must not outlive the deck itself — the next
+    // strip to take this slot would inherit the previous one's sync, which is
+    // the "loaded carrying whatever ratio the last map left" bug in a new place.
+    e->deckParams[deck] = sl::DeckParams{};
+    e->core.setDeckBusTranspose(static_cast<int>(deck), 0.0); // realtime, not in the world
     e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
+/** Stamp `deck`'s persistent params onto its (possibly just-rebuilt) world.
+ *
+ * THE ONE PLACE THAT DECIDES WHICH CORE FIELD A SYNC RATIO LANDS IN. Three
+ * modes, three different mechanisms already in the core, and keeping the choice
+ * here is what stops two of them being active at once:
+ *
+ *   timePitch    varispeed — the turntable. The step clock speeds up
+ *                (masterSpeed) AND the voices resample (externalVarispeedRatio),
+ *                so tempo and pitch move together.
+ *   timeStretch  the per-deck bus stretcher. The step clock is untouched; the
+ *                deck renders its own tempo into a stretcher that fits it to
+ *                the master, so pitch is preserved.
+ *   tempoOnly    the step clock alone. Hits land faster, each sample plays
+ *                exactly as recorded.
+ *
+ * ⚠️ THE BUS RATIO IS INVERTED, and this is the only place that knows it.
+ * `DeckWorld.tempoSyncRatio` is OUTPUT/INPUT DURATION on the deck's bus (the
+ * core: "playback speed = input/output = 1/ratio", and its 0.25 floor is
+ * documented as a 4× SPEED-UP). The musically meaningful number — the one TS
+ * computes and a human reads — is target_bpm/deck_bpm, which is its RECIPROCAL.
+ * So `syncRatio` is stored as the musical ratio and inverted exactly here.
+ * Callers passing target/deck straight into `tempoSyncRatio` were slowing decks
+ * down when they asked them to speed up.
+ *
+ * These three fields are ASSIGNED, and that is only correct because the deck
+ * axis is their sole owner today: the flat World the shell publishes carries
+ * bpm / isPlaying / startStep and nothing else (SlWorldApply.cpp), so a session
+ * never sets masterSpeed or externalVarispeedRatio. If the world builder ever
+ * starts carrying the session's own masterSpeed — the pattern format has one —
+ * this becomes the place the two have to COMPOSE rather than one overwriting
+ * the other, and that is a decision to take then, with the field in hand. */
+static void applyDeckParams(sl_engine* e, std::size_t deck) {
+    const sl::DeckParams& p = e->deckParams[deck];
+    DeckWorld& d = e->deckWorlds[deck];
+    const int mode = static_cast<int>(p.tempoMode);
+
+    const double stepRate = (mode == sl::kTempoModeTimePitch || mode == sl::kTempoModeTempoOnly)
+                                ? p.syncRatio
+                                : 1.0;
+    const double voiceRate = (mode == sl::kTempoModeTimePitch) ? p.syncRatio : 1.0;
+
+    d.tempoSyncRatio = (mode == sl::kTempoModeTimeStretch) ? 1.0 / p.syncRatio : 1.0;
+    d.snapshot.masterSpeed = stepRate;
+    // `rate` is a standalone varispeed on top of whatever sync is doing — a
+    // pitch-fader, not a mode — so it applies in every mode.
+    d.snapshot.externalVarispeedRatio = voiceRate * p.rate;
+}
+
+void sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    sl::DeckParams& p = e->deckParams[deck];
+    switch (id) {
+        case 0: // syncRatio
+            // A non-positive ratio is a division by zero downstream, not a slow
+            // deck. Refused, exactly as sl_deck_set_tempo_sync always refused it.
+            if (!(value > 0.0)) return;
+            p.syncRatio = value;
+            break;
+        case 1: // tempoMode
+            if (value != sl::kTempoModeTimePitch && value != sl::kTempoModeTimeStretch &&
+                value != sl::kTempoModeTempoOnly)
+                return; // an unknown mode is refused, never rounded into a real one
+            p.tempoMode = value;
+            break;
+        case 2: // rate
+            // Reverse is not carried: the core has no per-deck reverse feed, and
+            // declaring a value the engine cannot honour is the dead ABI the
+            // coverage gate exists to prevent.
+            if (!(value > 0.0)) return;
+            p.rate = value;
+            break;
+        case 3: // transpose
+            // THE ONE PARAM THAT DOES NOT REPUBLISH. `setDeckBusTranspose` is a
+            // real realtime setter in the core — it stores an atomic the render
+            // callback reads — so this takes effect mid-playback without a world
+            // swap. Returning early is not an optimisation, it is the difference
+            // between a pitch fader you can ride and one that restages the world
+            // on every pixel of movement.
+            //
+            // It rides the deck's STRETCH BUS, so it is audible whenever that bus
+            // is engaged. In tempoOnly the bus is neutral and this is inaudible —
+            // correct, not a gap: tempoOnly means "do not touch the sample".
+            if (!std::isfinite(value)) return;
+            p.transpose = value;
+            e->core.setDeckBusTranspose(static_cast<int>(deck), value);
+            return;
+        default:
+            return; // unknown id IGNORED, never misapplied to a neighbour
+    }
+    // The params live on the published world (the core has no live per-deck
+    // setter), so republish. Human-rate: a knob, not an audio-thread write.
+    applyDeckParams(e, deck);
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
+double sl_param_get(const sl_engine* e, uint32_t deck, int32_t id) {
+    if (e == nullptr || deck >= kMaxDecks) return 0.0;
+    const sl::DeckParams& p = e->deckParams[deck];
+    switch (id) {
+        case 0: return p.syncRatio;
+        case 1: return p.tempoMode;
+        case 2: return p.rate;
+        case 3: return p.transpose;
+        default: return 0.0;
+    }
+}
+
+int32_t sl_param_id_for_name(const char* name) {
+    return lookupName(sl::kDeckParamNames, sl::kDeckParamCount, name);
+}
+
+uint32_t sl_param_count(void) { return sl::kDeckParamCount; }
+
+const char* sl_param_name(uint32_t id) {
+    return id < sl::kDeckParamCount ? sl::kDeckParamNames[id] : nullptr;
 }
 
 void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio) {
-    if (e == nullptr || deck >= kMaxDecks || !(ratio > 0.0)) return;
-    e->deckWorlds[deck].tempoSyncRatio = ratio;
-    // The ratio lives on the published DeckWorld (no live per-deck setter in the
-    // core), so republish. Human-rate: a sync toggle, not an audio-thread write.
-    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+    sl_param_set(e, deck, 0 /* syncRatio */, ratio);
 }
 
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck) {
-    return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckWorlds[deck].tempoSyncRatio;
+    return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckParams[deck].syncRatio;
 }
 
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {
@@ -792,9 +951,13 @@ int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, i
     d.snapshot.startStep = start_step;
     d.active = true;             // this deck slot now renders
     d.crossfaderGain = 1.0f;     // full into the main mix (no DJ crossfade yet)
-    d.tempoSyncRatio = 1.0;      // its own bpm, unstretched — master sync is §7
     d.dedicatedOutput = false;
     d.launchArmed = false;
+    // THE TEMPO AXIS IS NOT THE SESSION'S, so rebuilding the session does not
+    // reset it. This line used to be `d.tempoSyncRatio = 1.0`, which meant every
+    // grid edit silently un-synced every synced deck and the plane carried a
+    // re-assert pass to survive it. Deck-scope params are re-stamped instead.
+    applyDeckParams(e, deck);
     e->currentDeck = deck;
     e->trackOpen = false; // a half-built track from a discarded world never carries over
     return 1;

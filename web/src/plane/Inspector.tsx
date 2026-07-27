@@ -20,11 +20,15 @@
  */
 import type { EngineLink } from '../engineLink.ts'
 import type { PlaneMap, Strip } from '../persist/mapDocument.ts'
+import type { DJPulseRelation, DJTempoMode } from '../panels/djMix.ts'
+import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
 import { chipsOf, feedbackMs } from './cables.ts'
 import { channelLabel, useDeviceStore } from './devices.ts'
 import { send } from './send.ts'
 import { summarise, summaryLines } from './summary.ts'
-import { useMapStore, updateStrip } from '../state/mapStore.ts'
+import { useMapStore, updateGridTempo, updateStrip } from '../state/mapStore.ts'
+
+type GridPulse = DJPulseRelation
 
 export function Inspector({
   link,
@@ -97,6 +101,7 @@ function StripInspector({
   const channels = useDeviceStore((d) => d.channels)
   const chips = chipsOf(map, strip)
   const tape = strip.element.kind === 'tape' ? strip.element : null
+  const grid = strip.element.kind === 'grid' ? strip.element : null
   const input = map.routes.find(
     (r) => r.src.kind === 'deviceInput' && r.dst.kind === 'channelIn' && r.dst.index === strip.channel,
   )
@@ -172,6 +177,84 @@ function StripInspector({
           </div>
         )}
       </section>
+
+      {/* TEMPO — a grid strip only, for the same reason `material` is a tape
+          only: a pulse relation on a strip with no deck is meaningless, not
+          disabled. This is the half of the tempo domain that does NOT belong
+          on the object: you set a pulse relation once and then live with it,
+          where the mode is something you flip mid-set and hear immediately. */}
+      {grid && (
+        <section className="ins-section">
+          <h3 className="mono dim">tempo</h3>
+          <div className="ins-row mono">
+            <dt>runs at</dt>
+            {/* WHAT IT WILL ACTUALLY PLAY, resolved through scoopy's law. This
+                is the number the strip's own bpm box does not show: a synced
+                deck keeps its session tempo and is stretched to the master, so
+                its own bpm and its running bpm are different facts. */}
+            <dd>
+              {grid.syncToMaster
+                ? `${formatSyncedBpm(deckTempoIntent(grid, map.transport.masterBpm))} BPM · ${
+                    deckTempoIntent(grid, map.transport.masterBpm).pulse
+                  } of master ${map.transport.masterBpm}`
+                : `${grid.bpm} BPM · free`}
+            </dd>
+          </div>
+          <label className="ins-field mono">
+            mode
+            <select
+              value={grid.tempoMode}
+              onChange={(e) =>
+                updateGridTempo(strip.key, link, { tempoMode: e.target.value as DJTempoMode })
+              }
+            >
+              <option value="timeStretch">stretch — tempo moves, pitch stays</option>
+              <option value="timePitch">time + pitch — varispeed, like a turntable</option>
+              <option value="tempoOnly">tempo only — the step clock alone</option>
+            </select>
+          </label>
+          <label className="ins-field mono">
+            pulse
+            <select
+              value={grid.pulseRelation}
+              onChange={(e) =>
+                updateGridTempo(strip.key, link, {
+                  pulseRelation: e.target.value as GridPulse,
+                })
+              }
+            >
+              {/* `auto` first because it is right most of the time: it picks the
+                  nearest MUSICAL relation in log-tempo distance, which is what
+                  keeps a 90 BPM session under a 128 master from landing on a
+                  meaningless 1.42×. The explicit ones are for when you want the
+                  deck deliberately in half-time or in three-against-two. */}
+              {(['auto', '1:3', '1:2', '2:3', '1:1', '3:2', '2:1', '3:1'] as const).map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ins-field mono">
+            transpose
+            {/* Semitones, independent of tempo — the other half of "tempo and
+                pitch". It is what lets a synced deck sit in the key of the set
+                rather than the key it was sampled in. */}
+            <input
+              type="number"
+              min={-24}
+              max={24}
+              step={1}
+              value={grid.transpose}
+              onChange={(e) => {
+                const transpose = Number(e.target.value)
+                if (!Number.isFinite(transpose)) return
+                updateGridTempo(strip.key, link, { transpose })
+              }}
+            />
+          </label>
+        </section>
+      )}
 
       {/* MATERIAL — present only for a tape, because loop points on a strip
           with no material are not "disabled", they are meaningless. That is a

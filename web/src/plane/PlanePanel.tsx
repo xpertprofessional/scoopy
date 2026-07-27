@@ -43,6 +43,7 @@ import {
   spawnPoint,
 } from './stripOps.ts'
 import { useCompanion } from '../store/companionEngine.ts'
+import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
 import { updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import './plane.css'
@@ -62,6 +63,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       nothing to compose, which is layout law L2 applied to the bar. */
   const firstGrid = strips.find((s) => s.element.kind === 'grid')
   const firstLoadedDeck = firstGrid?.element.kind === 'grid' ? firstGrid.element.deck : null
+  /** Every deck on the plane — what the MASTER transport acts on, as against a
+      strip's transport, which acts on its own. Same verbs, wider scope. */
+  const loadedDecks = strips.flatMap((s) => (s.element.kind === 'grid' ? [s.element.deck] : []))
+  const companionPlay = useCompanion((c) => c.play)
+  const companionStop = useCompanion((c) => c.stop)
+  /** The synced strips, resolved through the tempo law, for the master's
+      readout. Only the synced ones: a free-running deck has no relation to the
+      master and listing it as "1:1 120" would claim one. */
+  const syncedReadout = strips.flatMap((s) => {
+    if (s.element.kind !== 'grid' || !s.element.syncToMaster) return []
+    const intent = deckTempoIntent(s.element, masterBpm)
+    return [{ pulse: intent.pulse, bpm: formatSyncedBpm(intent) }]
+  })
   const mapDoc = useMapStore((s) => s.map)
   const selectedKey = useMapStore((s) => s.selectedKey)
   const mapName = useMapStore((s) => s.name)
@@ -444,8 +458,23 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           link={link}
           level={masterLevel}
           masterBpm={masterBpm}
+          synced={syncedReadout}
           onLevel={setMasterLevel}
-          onBpm={setMasterBpm}
+          // ⚠️ TAKES THE LINK. `setMasterBpm` used to write the document and
+          // stop, so the master tempo moved on screen and changed nothing.
+          onBpm={(bpm) => setMasterBpm(bpm, link)}
+          // The master transport drives EVERY loaded deck, through the same
+          // companion path a strip's own transport uses (P3-1) — one vocabulary,
+          // two scopes. Restart is stop-then-play for the same reason it is on a
+          // strip: a publish is phase-continuous by design and cannot retrigger.
+          onPlay={() => loadedDecks.forEach((d) => companionPlay(d))}
+          onStop={() => loadedDecks.forEach((d) => companionStop(d))}
+          onRestart={() =>
+            loadedDecks.forEach((d) => {
+              companionStop(d)
+              companionPlay(d)
+            })
+          }
         />
       </div>
 

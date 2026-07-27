@@ -58,7 +58,7 @@ describe('allocation', () => {
       strip({
         key: 'b',
         channel: 1,
-        element: { kind: 'grid', deck: 1, sessionId: 's', bpm: 120, syncToMaster: false },
+        element: newGridElement(1, 's', 120),
       }),
     ])
     // Tape 1 is free even though grid deck 1 is in use — different spaces.
@@ -287,7 +287,20 @@ describe('grid decks — the third index space', () => {
     // "Decks load into strips, each with its own BPM" is the mission sentence,
     // so a session arriving locked to the plane's master would be its opposite.
     const el = newGridElement(1, 'forest', 174)
-    expect(el).toEqual({ kind: 'grid', deck: 1, sessionId: 'forest', bpm: 174, syncToMaster: false })
+    // Spelled out, NOT `{...newGridElement(...)}` — this asserts the DEFAULTS a
+    // fresh grid element carries, and comparing the function to itself would
+    // assert nothing. Unsynced at its own tempo, pitch-preserving if it is ever
+    // synced, and `auto` so the pulse relation is the engine's problem.
+    expect(el).toEqual({
+      kind: 'grid',
+      deck: 1,
+      sessionId: 'forest',
+      bpm: 174,
+      syncToMaster: false,
+      tempoMode: 'timeStretch',
+      pulseRelation: 'auto',
+      transpose: 0,
+    })
   })
 })
 

@@ -90,6 +90,51 @@
   text-align: right;
 }
 
+/* THE MASTER TRANSPORT. Same three verbs a strip's transport row shows, and
+   deliberately the same glyphs — one vocabulary, two scopes. */
+.master-transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.master-transport button {
+  width: 22px;
+  height: 20px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.master-transport button:hover { background: var(--bg); }
+
+/* −/+ nudge, flanking the tempo box. Narrower than the transport verbs because
+   they are an adjustment to a number, not a transport action, and reading as
+   the same weight would put them in the wrong category on sight. */
+.bpm-nudge {
+  width: 16px;
+  height: 20px;
+  background: transparent;
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.bpm-nudge:hover { color: var(--text); }
+
+/* The synced readout. Dim and last in the bar: it is something you GLANCE at to
+   confirm, never something you reach for. */
+.master-sync {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
 .plane-note {
   margin: 0;
   padding: 4px 10px;
@@ -417,6 +462,33 @@
 .strip-sync.active {
   background: var(--accent);
   color: var(--bg);
+  border-color: var(--accent);
+}
+
+/* The TEMPO MODE, beside SYNC. Fixed 34 px for a three-character face (T+P /
+   STR / TMP) so the row's geometry does not shift when the mode changes — the
+   bpm box is the only flexible thing in this row, by design. Lit only while
+   SYNCED, because that is when the choice is audible: with the deck free
+   running there is no master to follow and no cost to choose. */
+.strip-tempomode {
+  flex: 0 0 34px;
+  /* `padding: 0` and `min-width: 0` are load-bearing, not tidying. A flex item
+     defaults to `min-width: auto`, so its MIN-CONTENT width wins over the
+     basis — with the browser's default button padding this rendered 41 px and
+     ate 7 px the bpm box was budgeted. All three faces are three characters, so
+     with the padding gone the basis is the whole story. */
+  padding: 0;
+  min-width: 0;
+  height: 18px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-tempomode.active {
+  color: var(--text);
   border-color: var(--accent);
 }
 

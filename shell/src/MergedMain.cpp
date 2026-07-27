@@ -146,10 +146,13 @@ public:
                            juce::WebBrowserComponent::NativeFunctionCompletion complete) {
                         complete(handleCommand(args));
                     })
-                // Live control writes. §3 (the deck-scope param surface) is not
-                // in v3 yet, so these are received and dropped rather than
-                // misrouted — the snapshot/worldPublish path is what plays.
-                .withEventListener("slParam", [](juce::var) {}));
+                // Live control writes (SL-ABI-V3 §3). This listener USED TO BE
+                // EMPTY — `[](juce::var) {}` — so every param the UI wrote was
+                // received and thrown away, and there was nothing on screen to
+                // say so. That is the failure mode this shell keeps having to
+                // design against, so what replaces it is explicit about both
+                // halves: what native owns, and what it does not.
+                .withEventListener("slParam", [this](juce::var v) { handleParam(v); }));
 
         setUsingNativeTitleBar(true);
         setContentNonOwned(webView.get(), false);
@@ -171,6 +174,53 @@ public:
     }
 
 private:
+    /** THE PARAM LANE, and the map from scoopy's names to the engine's.
+     *
+     * scoopy's `PARAM_IDS` are the Swift-era vocabulary: most of them name a
+     * document the merged shell does not own, and several name controls this
+     * app reaches by a BETTER route. So the table is short on purpose, and the
+     * omissions are the interesting part:
+     *
+     *   deckVolume · deckMuted · deckSoloed   the strip's channel owns these
+     *       (`sl_channel_*`). Mapping them here would be a second way to set
+     *       one gain, and the two would disagree the moment either moved.
+     *   masterTempo · deckNudgeBpm · sessionBpm   TEMPO INTENT, not engine
+     *       state. The plane resolves them through scoopy's tempo law
+     *       (djMix.ts) into a per-deck ratio and sends THAT. An engine that
+     *       took a master bpm would be a second tempo authority.
+     *   everything else   belongs to panels whose document owner is the
+     *       browser companion, not this shell.
+     *
+     * An unmapped name is REFUSED IN THE LOG, once per name — loudly enough to
+     * find, quietly enough that a per-rAF drag does not become a console storm.
+     * Silence is what cost this shell a session already. */
+    void handleParam(const juce::var& v) {
+        auto* obj = v.getDynamicObject();
+        if (obj == nullptr) return;
+        const auto name = obj->getProperty("p").toString();
+        const auto deck = (int) obj->getProperty("deck");
+        const double value = (double) obj->getProperty("v");
+
+        // scoopy name → engine deck-param name. Resolved to ids on first use;
+        // the ABI's rule is resolve-once-by-name, not hardcode-the-int.
+        const char* engineName = name == "deckTranspose" ? "transpose" : nullptr;
+
+        if (engineName == nullptr) {
+            if (!warnedParams.contains(name)) {
+                warnedParams.add(name);
+                DBG("slParam: '" << name << "' has no engine deck param in the merged shell "
+                                 << "(see the omission list in MergedMain::handleParam)");
+            }
+            return;
+        }
+        if (deck < 0 || deck >= (int) sl_deck_count()) return;
+        const int32_t id = sl_param_id_for_name(engineName);
+        if (id == SL_PARAM_UNKNOWN) return; // engine and shell disagree — refuse, never guess
+        sl_param_set(backend.engine, (uint32_t) deck, id, value);
+    }
+
+    juce::StringArray warnedParams;
+
     juce::var handleCommand(const juce::Array<juce::var>& args) {
         const auto method = args.size() > 0 ? args[0].toString() : juce::String();
         const auto params = args.size() > 1 ? args[1] : juce::var();

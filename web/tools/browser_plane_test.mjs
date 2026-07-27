@@ -141,7 +141,18 @@ await page.evaluate(() => {
       ...s.map,
       strips: s.map.strips.map((x) => ({
         ...x,
-        element: { kind: 'grid', deck: 0, sessionId: 'test', bpm: 120, syncToMaster: false },
+        // SYNCED, so the tempo mode renders in its lit state — that is the one
+        // that has to fit, since it is the state a performing strip is in.
+        element: {
+          kind: 'grid',
+          deck: 0,
+          sessionId: 'test',
+          bpm: 120,
+          syncToMaster: true,
+          tempoMode: 'timeStretch',
+          pulseRelation: 'auto',
+          transpose: 0,
+        },
       })),
     },
   }))
@@ -161,6 +172,19 @@ const g = await page.evaluate(() => {
     scenefield: box('.strip-scenefield'),
     pads: document.querySelectorAll('.strip-pad').length,
     gridrow: box('.strip-gridrow'),
+    tempomode: box('.strip-tempomode'),
+    // Does the control row OVERFLOW its own width? The vertical budget has
+    // always been checked; the horizontal one only became a risk when P3-2 put
+    // a fourth control (the tempo mode) into an 18 px row that already held
+    // SYNC, a number box and COMPOSE. A row that overflows does not grow the
+    // box — it clips or wraps, which the height checks would not see.
+    gridrowOverflow: (() => {
+      const row = document.querySelector('.strip-gridrow')
+      if (!row) return null
+      const r = row.getBoundingClientRect()
+      const last = [...row.children].map((c) => c.getBoundingClientRect().right)
+      return Math.round(Math.max(...last) - r.right)
+    })(),
     // Every row a TAPE strip has must still be here — presence never changes.
     rows: ['strip-kindbar','strip-head','strip-waverow','strip-meter','strip-transport','strip-rec','strip-status','strip-params']
       .filter((c) => !document.querySelector('.' + c)),
@@ -180,6 +204,8 @@ check('grid strip is the SAME 340 × 196 box', g.strip?.w === 340 && g.strip?.h 
 check('scene field takes the wave rect exactly (308 × 48)', g.scenefield?.w === 308 && g.scenefield?.h === 48, JSON.stringify(g.scenefield))
 check('all 8 scene pads fit at 340px', g.pads === 8, `${g.pads} pads`)
 check('grid control row is 18px', g.gridrow?.h === 18, JSON.stringify(g.gridrow))
+check('tempo mode button is 34 × 18', g.tempomode?.w === 34 && g.tempomode?.h === 18, JSON.stringify(g.tempomode))
+check('grid control row does not overflow its width', g.gridrowOverflow !== null && g.gridrowOverflow <= 0, `overflow=${g.gridrowOverflow}px`)
 check('grid strip keeps every row a tape strip has', g.rows.length === 0, `missing: ${g.rows.join(', ')}`)
 check('grid content fits the box', g.contentBottom !== null && g.contentBottom <= 196 - 8, `bottom=${g.contentBottom}`)
 

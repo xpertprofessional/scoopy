@@ -96,26 +96,30 @@ describe("MergedLink routing", () => {
     const link = createEngineLink();
     expect(link).not.toBeNull();
 
-    for (const method of [
+    // The last four were missing until P3-2 and had callers the whole time:
+    // slDeck (every deck's sync, on every map load), slMaster (the master
+    // fader), slMap (the entire .scoopyMap document) and slDevices (the input
+    // picker) all refused, once, to the console. This list is the allowlist's
+    // only real specification, so a method added there without a line here is
+    // untested routing.
+    const planeMethods = [
       "slChannel",
       "slTape",
       "slRoute",
       "slRouteList",
       "slRecord",
       "slTakes",
-    ]) {
+      "slDeck",
+      "slMaster",
+      "slMap",
+      "slDevices",
+    ];
+    for (const method of planeMethods) {
       await link!.command(method as never, {});
     }
 
     const native = sent.filter((s) => s.name === "slCommand").map((s) => s.params[0]);
-    expect(native).toEqual([
-      "slChannel",
-      "slTape",
-      "slRoute",
-      "slRouteList",
-      "slRecord",
-      "slTakes",
-    ]);
+    expect(native).toEqual(planeMethods);
   });
 
   it("sends the handshake and settings native — they are the SHELL's, not this webview's", async () => {

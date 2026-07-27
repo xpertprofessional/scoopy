@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Strip, formatGain, formatRate, waveWidth } from './Strip.tsx'
-import { newStrip, newTapeElement } from './stripOps.ts'
+import { newGridElement, newStrip, newTapeElement } from './stripOps.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 
 /**
@@ -144,7 +144,7 @@ describe('the object is a player from the first frame', () => {
 
 describe('a grid strip has a transport (P3-1)', () => {
   const gridDoc = () =>
-    base({ element: { kind: 'grid', deck: 0, sessionId: 'beach', bpm: 120, syncToMaster: false } })
+    base({ element: newGridElement(0, 'beach', 120) })
 
   it('renders the SAME transport row a tape strip has', () => {
     // One species, one vocabulary. A grid strip that were missing verbs would
@@ -169,6 +169,46 @@ describe('a grid strip has a transport (P3-1)', () => {
   it('shows the DECK\'s state, not a tape\'s', () => {
     expect(render(gridDoc(), { gridPlaying: true })).toContain('play')
     expect(render(gridDoc(), { gridPlaying: false })).toContain('idle')
+  })
+})
+
+describe('a grid strip carries its tempo MODE (P3-2)', () => {
+  const gridDoc = (over: Record<string, unknown> = {}) =>
+    base({ element: { ...newGridElement(0, 'beach', 120), ...over } })
+
+  it('renders the mode beside SYNC', () => {
+    // The per-element half of the tempo domain: the master sets the tempo, this
+    // says what following it COSTS. On the object rather than the Inspector
+    // because you flip it mid-set and hear the answer immediately.
+    const html = render(gridDoc())
+    expect(html).toContain('strip-tempomode')
+    expect(html).toContain('STR') // timeStretch, the default
+  })
+
+  it('shows which mode is actually selected', () => {
+    expect(render(gridDoc({ tempoMode: 'timePitch' }))).toContain('T+P')
+    expect(render(gridDoc({ tempoMode: 'tempoOnly' }))).toContain('TMP')
+  })
+
+  it('lights the mode only while SYNCED', () => {
+    // With the deck free-running there is no master to follow, so the choice
+    // costs nothing and must not read as engaged.
+    expect(render(gridDoc({ syncToMaster: false }))).toContain('class="strip-tempomode"')
+    expect(render(gridDoc({ syncToMaster: true }))).toContain('class="strip-tempomode active"')
+  })
+
+  it('SYNC states what the deck will ACTUALLY run at', () => {
+    // ⚠️ Not the ratio that was asked for. `auto` resolves a 70 BPM deck under
+    // a 140 master to 1:2 — it stays at 70, half-timed under the master — and a
+    // SYNC control that does not say so is one you have to test by ear.
+    const html = render(
+      base({
+        element: { ...newGridElement(0, 'beach', 70), syncToMaster: true },
+      }),
+      { masterBpm: 140 },
+    )
+    expect(html).toContain('synced at 1:2')
+    expect(html).toContain('70.0 BPM')
   })
 })
 

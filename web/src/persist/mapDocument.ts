@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 3
+export const MAP_SCHEMA_VERSION = 4
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -78,6 +78,23 @@ export const ElementSchema = z.discriminatedUnion('kind', [
       /** Locked to the plane's master tempo? The engine takes a RATIO
           (master/deck); the document stores the intent. */
       syncToMaster: z.boolean(),
+      /** HOW this deck follows the master, which is a per-ELEMENT choice
+          because it is a musical one: a drum deck usually wants `timeStretch`
+          (tempo moves, pitch does not) while a bassline being pitched up on
+          purpose wants `timePitch`. The master sets the tempo; the strip says
+          what following it costs. Resolved into the engine's `tempoMode` param
+          (0/1/2) by `plane/tempo.ts`. */
+      tempoMode: z.enum(['timePitch', 'timeStretch', 'tempoOnly']),
+      /** The musical relation to the master, not just a number: '1:2' half-times
+          a deck against the plane, '3:2' puts it in three against two. `auto`
+          picks the nearest musical ratio in log-tempo distance, which is what
+          makes syncing a 90 BPM session to a 128 master land somewhere musical
+          instead of at 1.42×. Scoopy's `resolvePulseRelation` owns the choice. */
+      pulseRelation: z.enum(['auto', '1:3', '1:2', '2:3', '1:1', '3:2', '2:1', '3:1']),
+      /** Semitones on this deck's stretch bus, independent of tempo. The "pitch"
+          half of tempo-and-pitch: it is what lets a synced deck sit in the key
+          of the set rather than the key it was sampled in. */
+      transpose: z.number().min(-24).max(24),
     })
     .strict(),
 ])
@@ -307,6 +324,40 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
             // the input case the split tap.
             recordTap: null,
           })),
+        },
+      }
+    },
+  },
+  3: {
+    to: 4,
+    name: 'a grid strip carries its tempo intent',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      const strips = Array.isArray(map.strips) ? (map.strips as RawMap[]) : []
+      return {
+        ...m,
+        map: {
+          ...map,
+          strips: strips.map((s) => {
+            const element = (s.element ?? {}) as RawMap
+            if (element.kind !== 'grid') return s
+            return {
+              ...s,
+              element: {
+                ...element,
+                // CHOSEN SO A v3 MAP SOUNDS UNCHANGED, the same rule the
+                // masterLevel migration followed. v3 had one sync mechanism —
+                // the bus stretcher, at a plain master/deck ratio — so the
+                // faithful restatement is timeStretch at 1:1 with no transpose.
+                // `auto` would be the better DEFAULT for a new strip and the
+                // wrong migration: it can resolve to 1:2 and would silently
+                // half-time a deck the next time an old map was opened.
+                tempoMode: 'timeStretch',
+                pulseRelation: '1:1',
+                transpose: 0,
+              },
+            }
+          }),
         },
       }
     },

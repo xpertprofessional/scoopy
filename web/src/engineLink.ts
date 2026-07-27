@@ -295,6 +295,25 @@ class MergedLink extends BrowserLink {
     "slRouteList",
     "slRecord",
     "slTakes",
+    // ⚠️ THESE FOUR WERE MISSING, and they are exactly the failure this list's
+    // header describes — a method silently landing on the wrong side, invisible
+    // until someone needs it. All four have had callers since P2 step 4, and
+    // every call fell through to the companion, which answers "not implemented"
+    // for all of them. `send`/`ask` log a refusal once and carry on, so the
+    // symptom was a control that moved on screen and did nothing.
+    //
+    //   slDeck     the grid deck's tempo axis (§3) — `mapStore.applyMap` and
+    //              the strip's SYNC toggle. Loading a map applied every channel,
+    //              route and tape, and not one deck's sync.
+    //   slMaster   the master fader. `applyMap` ends with it; `Master.tsx`
+    //              sends it on every move.
+    //   slMap      the `.scoopyMap` document — list/save/open/delete/export.
+    //              Map persistence has never worked in this app.
+    //   slDevices  the plane's input-source picker.
+    "slDeck",
+    "slMaster",
+    "slMap",
+    "slDevices",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

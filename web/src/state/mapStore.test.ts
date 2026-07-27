@@ -7,9 +7,10 @@ import {
   flushLiveEdits,
   getMap,
   liveSetLevel,
-  reapplyAfterPublish,
+  applyTempo,
   liveSetSend,
   setMap,
+  setMasterBpm,
   setMute,
   updateStrip,
   useMapStore,
@@ -22,6 +23,7 @@ import {
   type PlaneMap,
   type Strip,
 } from "../persist/mapDocument.ts";
+import { newGridElement } from "../plane/stripOps.ts";
 import type { EngineLink } from "../engineLink.ts";
 
 /** Records every command, so a test can assert on ORDER as well as content —
@@ -181,7 +183,7 @@ describe("applyMap", () => {
         strip({
           key: "s2",
           channel: 1,
-          element: { kind: "grid", deck: 0, sessionId: "x", bpm: 120, syncToMaster: true },
+          element: { ...newGridElement(0, "x", 120), syncToMaster: true },
         }),
       ]),
     );
@@ -196,52 +198,104 @@ describe("applyMap", () => {
   });
 });
 
-describe("reapplyAfterPublish", () => {
-  it("re-asserts tempo sync for every grid strip", () => {
-    // `sl_snapshot_begin` resets tempoSyncRatio to 1.0, and every world publish
-    // commits a snapshot — so editing anything in the grid silently un-syncs
-    // every synced deck. The sync intent belongs to the MAP, not the session,
-    // so the map has to put it back. Pinned in C++ by plane_audio_test; pinned
-    // here so the TS side keeps issuing it.
+/**
+ * ⚠️ THIS BLOCK USED TO TEST `reapplyAfterPublish`, and its replacement is the
+ * point of P3-2. That function existed because `sl_snapshot_begin` reset every
+ * deck's tempoSyncRatio to 1.0, so any world publish — editing one step in the
+ * grid — silently un-synced every synced deck, and the map re-asserted the
+ * ratio after every publish to survive it.
+ *
+ * The ratio is now DECK SCOPE in the engine (SL-ABI-V3 §3) and survives a
+ * publish by construction, so there is nothing to re-assert. What remains is
+ * the opposite problem, which nothing covered: the master tempo CHANGING and
+ * not reaching the engine at all.
+ */
+describe("applyTempo", () => {
+  it("pushes every grid strip's tempo when the master moves", () => {
     setMap(
       mapWith([
         strip({
           key: "g",
           channel: 0,
-          element: { kind: "grid", deck: 1, sessionId: "s", bpm: 60, syncToMaster: true },
+          // 1:1 rather than the default `auto`, so this asserts the PLUMBING
+          // with an arithmetic ratio. `auto` picking a musical relation is the
+          // law's business and is covered in tempo.test.ts.
+          element: {
+            ...newGridElement(1, "s", 60),
+            syncToMaster: true,
+            pulseRelation: "1:1",
+          },
         }),
       ]),
     );
     const { link, calls } = fakeLink();
-    return reapplyAfterPublish(link).then(() => {
-      expect(calls).toHaveLength(1);
-      // master 120 ÷ deck 60 = 2.0
-      expect(calls[0]?.params).toMatchObject({ action: "setTempoSync", deck: 1, ratio: 2 });
+    return applyTempo(link).then(() => {
+      // Three calls, not one: the ratio, the mode that decides which engine
+      // mechanism it drives, and the transpose.
+      expect(calls.map((c) => (c.params as { action: string }).action)).toEqual([
+        "setTempoMode",
+        "setTempoSync",
+        "setTranspose",
+      ]);
+      // master 120 ÷ deck 60 at 1:1 = 2.0
+      expect(calls[1]?.params).toMatchObject({ action: "setTempoSync", deck: 1, ratio: 2 });
+      // timeStretch is mode 1 — the default a fresh grid element carries.
+      expect(calls[0]?.params).toMatchObject({ value: 1 });
     });
   });
 
   it("sends ratio 1.0 for an UNSYNCED deck rather than omitting it", () => {
-    // Omitting would leave the deck carrying whatever ratio the last publish or
-    // the previous map left behind — stretched, with nothing explaining it.
+    // Omitting would leave the deck carrying whatever ratio the previous map
+    // left behind — stretched, with nothing in the document explaining it.
     setMap(
       mapWith([
         strip({
           key: "g",
           channel: 0,
-          element: { kind: "grid", deck: 0, sessionId: "s", bpm: 90, syncToMaster: false },
+          element: { ...newGridElement(0, "s", 90), syncToMaster: false },
         }),
       ]),
     );
     const { link, calls } = fakeLink();
-    return reapplyAfterPublish(link).then(() => {
-      expect(calls[0]?.params).toMatchObject({ ratio: 1 });
+    return applyTempo(link).then(() => {
+      expect(calls.find((c) => (c.params as { action: string }).action === "setTempoSync")?.params)
+        .toMatchObject({ ratio: 1 });
     });
   });
 
   it("does nothing for a map with no grid strips", () => {
     setMap(mapWith([strip()]));
     const { link, calls } = fakeLink();
-    return reapplyAfterPublish(link).then(() => expect(calls).toHaveLength(0));
+    return applyTempo(link).then(() => expect(calls).toHaveLength(0));
+  });
+
+  it("setMasterBpm REACHES THE ENGINE, not just the document", () => {
+    // The regression this whole step exists for: `setMasterBpm` mutated the map
+    // and stopped, so the master knob moved on screen and changed nothing until
+    // some unrelated world publish happened to re-derive the ratios.
+    setMap(
+      mapWith([
+        strip({
+          key: "g",
+          channel: 0,
+          element: {
+            ...newGridElement(2, "s", 100),
+            syncToMaster: true,
+            pulseRelation: "1:1",
+          },
+        }),
+      ]),
+    );
+    const { link, calls } = fakeLink();
+    setMasterBpm(200, link);
+    return Promise.resolve().then(() =>
+      new Promise((r) => setTimeout(r, 0)).then(() => {
+        expect(getMap().transport.masterBpm).toBe(200);
+        expect(
+          calls.find((c) => (c.params as { action: string }).action === "setTempoSync")?.params,
+        ).toMatchObject({ deck: 2, ratio: 2 }); // 200 ÷ 100
+      }),
+    );
   });
 });
 
@@ -393,7 +447,7 @@ describe("the lane budget", () => {
       strip({
         key: `g${i}`,
         channel: i,
-        element: { kind: "grid", deck: 0, sessionId: "s", bpm: 120, syncToMaster: false },
+        element: { ...newGridElement(0, "s", 120), syncToMaster: false },
       }),
     ); // 3 grids = 6 lanes
     setMap(mapWith(strips));

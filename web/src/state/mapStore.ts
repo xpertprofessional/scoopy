@@ -33,6 +33,7 @@ import {
   type PlaneMap,
   type Strip,
 } from "../persist/mapDocument.ts";
+import { TEMPO_MODE_ID, mapTempoIntents } from "../persist/tempo.ts";
 
 /* ── the store ────────────────────────────────────────────────────────────── */
 
@@ -103,11 +104,20 @@ export function updatePlaneView(plane: PlaneMap["plane"]): void {
   useMapStore.setState((st) => ({ map: { ...st.map, plane } }));
 }
 
-export function setMasterBpm(masterBpm: number): void {
+/** The plane's master tempo. Takes the link because IT HAS TO REACH THE ENGINE:
+    this used to be a pure document write, which is why the master knob did
+    nothing. See `applyTempo`.
+
+    `link` is REQUIRED, with no default. A default of `null` would compile at
+    every call site and silently restore the exact bug this signature exists to
+    fix — a master tempo that moves on screen and reaches nothing. A caller that
+    genuinely has no engine passes `null` and says so. */
+export function setMasterBpm(masterBpm: number, link: EngineLink | null): void {
   useMapStore.setState((st) => ({
     map: { ...st.map, transport: { ...st.map.transport, masterBpm } },
     dirty: true,
   }));
+  void applyTempo(link);
 }
 
 export function setMasterLevel(masterLevel: number): void {
@@ -222,6 +232,12 @@ async function issue(link: EngineLink, op: EngineOp): Promise<void> {
         ratio: op.ratio,
       });
       return;
+    case "deckSetTempoMode":
+      await ask(link, "slDeck", { action: "setTempoMode", deck: op.deck, value: op.mode });
+      return;
+    case "deckSetTranspose":
+      await ask(link, "slDeck", { action: "setTranspose", deck: op.deck, value: op.semitones });
+      return;
     case "sceneSelect":
     case "sceneSetSwitch":
       // These do NOT. `sl_deck_*` has no scene entry point at all, because a
@@ -265,33 +281,72 @@ export async function applyMap(link: EngineLink | null, map: PlaneMap): Promise<
 }
 
 /**
- * RE-APPLY WHAT A REPUBLISH STOMPS.
+ * THE MASTER TEMPO, PUSHED AT THE ENGINE.
  *
- * `sl_snapshot_begin` resets `tempoSyncRatio` to 1.0, and every world publish
- * commits a snapshot — so editing anything in the grid silently un-syncs every
- * synced deck. The sync intent belongs to the MAP, not the session, so the map
- * has to put it back. Pinned by `plane_audio_test`.
+ * ⚠️ `setMasterBpm` USED TO REACH NOTHING. It mutated the document and stopped
+ * there — no engine call anywhere on the path — so turning the plane's master
+ * tempo changed the audio only by accident, at whatever unrelated world publish
+ * happened next (which re-derived the ratios on its way past). The master is
+ * the plane's control, so the plane has to carry it.
  *
- * Same shape as the performance-layer hazard the map already carries: a
- * republish hands control back to the snapshot, and whatever the plane owns on
- * top of that must be re-asserted after it.
+ * Every synced deck is re-resolved through the tempo law, because the master
+ * moving changes more than a number: `auto` can resolve to a different pulse
+ * relation at a different master tempo, and only the law knows when.
  *
- * Cheap and idempotent — one call per grid strip — so it is safe to run after
- * every publish rather than trying to detect which publishes matter.
+ * Awaited in order, like `applyMap`: a few calls at human rate, and a refusal
+ * must stop the sequence rather than leave half the decks at the old tempo.
  */
-export async function reapplyAfterPublish(link: EngineLink | null): Promise<void> {
+export async function applyTempo(link: EngineLink | null): Promise<void> {
   if (!link) return
   const map = getMap()
-  for (const strip of map.strips) {
-    if (strip.element.kind !== 'grid') continue
-    const g = strip.element
+  for (const intent of mapTempoIntents(map)) {
+    // All three sent every time rather than diffed: the engine is the only
+    // thing that knows what it is currently carrying, and a diff against a
+    // stale local guess is how a deck ends up stretched with the UI at 1:1.
     await ask(link, 'slDeck', {
-      action: 'setTempoSync',
-      deck: g.deck,
-      // 1.0 is SENT for an unsynced deck, never omitted — see planApply.
-      ratio: g.syncToMaster ? map.transport.masterBpm / g.bpm : 1,
+      action: 'setTempoMode',
+      deck: intent.deck,
+      value: TEMPO_MODE_ID[intent.tempoMode],
+    })
+    await ask(link, 'slDeck', { action: 'setTempoSync', deck: intent.deck, ratio: intent.syncRatio })
+    await ask(link, 'slDeck', {
+      action: 'setTranspose',
+      deck: intent.deck,
+      value: intent.transpose,
     })
   }
+}
+
+/** A grid element's tempo fields — the ones `applyTempo` resolves. */
+type GridElement = Extract<Element, { kind: 'grid' }>
+type TempoPatch = Partial<
+  Pick<GridElement, 'bpm' | 'syncToMaster' | 'tempoMode' | 'pulseRelation' | 'transpose'>
+>
+
+/**
+ * Edit one grid strip's tempo AND tell the engine.
+ *
+ * ⚠️ THE STRIP'S SYNC TOGGLE USED TO REACH THE ENGINE BY ACCIDENT. It called
+ * `updateStrip` and stopped, so nothing was pushed — and it appeared to work
+ * only because the next world publish ran `reapplyAfterPublish`, which re-sent
+ * every strip's ratio for an unrelated reason. Deleting that hook (the engine
+ * no longer stomps the ratio, so there is nothing to re-assert) removed the
+ * accident with it, which is why this exists.
+ *
+ * The whole map is re-pushed rather than just this deck: `masterBpm` is shared,
+ * so in principle only this strip changed — but the cost is three calls per
+ * grid strip at human rate, and a targeted push is one more place that has to
+ * be right about which decks a change can reach.
+ */
+export function updateGridTempo(
+  key: string,
+  link: EngineLink | null,
+  patch: TempoPatch,
+): void {
+  updateStrip(key, (s) =>
+    s.element.kind === 'grid' ? { ...s, element: { ...s.element, ...patch } } : s,
+  )
+  void applyTempo(link)
 }
 
 /**

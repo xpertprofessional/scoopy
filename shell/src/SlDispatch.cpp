@@ -563,6 +563,39 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             sl_deck_set_tempo_sync(engine, deck, numProp(params, "ratio", 1.0));
             return ok(okFlag());
         }
+        // The rest of the deck's TEMPO AXIS (SL-ABI-V3 §3). These take the
+        // command path rather than the param lane because the plane sends them
+        // as part of applying a map — an ordered sequence whose failures must be
+        // visible — while the param lane is fire-and-forget for live drags. Both
+        // reach the same `sl_param_set`; the difference is whether anyone is
+        // listening for a refusal.
+        //
+        // A NAME THAT THE ENGINE DOES NOT KNOW IS A FAILED REPLY, not a shrug.
+        // The engine ignores an unknown id by design (it must never misapply a
+        // value), which means the only place a mismatch can be reported is here,
+        // while the id is being resolved.
+        {
+            const char* paramName = action == "setTempoMode"  ? "tempoMode"
+                                    : action == "setRate"     ? "rate"
+                                    : action == "setTranspose" ? "transpose"
+                                                               : nullptr;
+            if (paramName != nullptr) {
+                const int32_t id = sl_param_id_for_name(paramName);
+                if (id == SL_PARAM_UNKNOWN)
+                    return fail(juce::String("slDeck: engine has no param '") + paramName + "'");
+                sl_param_set(engine, deck, id, numProp(params, "value", 0.0));
+                // Read back, so a REFUSED value (an unknown tempo mode, a
+                // non-positive rate) is visible to the caller instead of looking
+                // like it landed. The engine refuses rather than clamps, and a
+                // silent refusal is the same defect class as a dropped param.
+                return ok([&] {
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty("ok", true);
+                    o->setProperty("value", sl_param_get(engine, deck, id));
+                    return juce::var(o);
+                }());
+            }
+        }
         if (action == "clear") {
             sl_deck_clear(engine, deck);
             return ok(okFlag());

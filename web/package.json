@@ -6,7 +6,6 @@
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "bundle": "tsc --noEmit && vite build --outDir ../webdist --emptyOutDir && node --experimental-strip-types scripts/webdistFresh.ts --write",
-    "bundle:mac": "npm run build && rm -rf ../webdist && cp -R dist ../webdist && sh ../scripts/websrc-hash.sh > ../webdist/.srcstamp",
     "check:tokens": "node --experimental-strip-types scripts/check-tokens.ts",
     "dev": "vite",
     "dev:lan": "SL_LAN=1 vite",

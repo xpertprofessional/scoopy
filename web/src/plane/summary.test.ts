@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyMap, type PlaneMap, type Route, type Strip } from '../persist/mapDocument.ts'
-import { newStrip, newTapeElement } from './stripOps.ts'
+import { newGridElement, newStrip, newTapeElement } from './stripOps.ts'
 import { summarise, summaryLines } from './summary.ts'
 
 const strip = (key: string, channel: number, over: Partial<Strip> = {}): Strip => ({
@@ -38,7 +38,7 @@ describe('the plane summary — the Inspector with nothing selected', () => {
         strip('a', 0),
         strip('b', 1, { element: { ...newTapeElement(0, false), takeRef: '/t.wav' } }),
         strip('c', 2, {
-          element: { kind: 'grid', deck: 0, sessionId: 'x', bpm: 120, syncToMaster: false },
+          element: newGridElement(0, 'x', 120),
         }),
       ]),
     )

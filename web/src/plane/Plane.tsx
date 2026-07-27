@@ -455,11 +455,16 @@ export function Plane({
               onPickInput={(left, right) => repointInput(s.channel, left, right)}
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}
+              masterBpm={map.transport.masterBpm}
               // Scene selection goes to the SESSION store, not the engine:
               // sl_deck_* has no scene entry point because a scene is a
               // projection of the document. Selecting re-projects and
-              // republishes the world — which is also what trips the
-              // tempo-sync re-apply. Targeted at THIS strip's deck.
+              // republishes the world. Targeted at THIS strip's deck.
+              //
+              // (It used to trip a tempo-sync re-apply too — a publish reset
+              // every deck's ratio, so the map re-asserted it afterwards. The
+              // ratio is deck scope in the engine now and survives a publish,
+              // so selecting a scene is just selecting a scene.)
               onSelectScene={(sc, immediate) =>
                 deck >= 0 && selectScene(sc, { immediate, deck })
               }

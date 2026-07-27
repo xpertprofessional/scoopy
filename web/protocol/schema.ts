@@ -1745,15 +1745,33 @@ export const COMMANDS = {
    */
   slDeck: {
     params: z.object({
-      action: z.enum(["setTempoSync", "clear"]),
+      /** THE DECK'S TEMPO AXIS (SL-ABI-V3 §3). `setTempoSync` sets the ratio;
+          `setTempoMode` decides HOW the deck follows it (0 timePitch ·
+          1 timeStretch · 2 tempoOnly); `setRate` is a standalone varispeed and
+          `setTranspose` a semitone offset on the deck's stretch bus — the
+          "pitch" half of tempo-and-pitch, and the one control here that reaches
+          the engine without a world publish. */
+      action: z.enum([
+        "setTempoSync",
+        "setTempoMode",
+        "setRate",
+        "setTranspose",
+        "clear",
+      ]),
       deck: z.number().int().min(0).max(2),
       /** setTempoSync: master ÷ deck bpm. 1.0 is "run at your own tempo" and
           must be SENT, not omitted — a deck may be carrying a ratio from a
           previously loaded map, and silence would leave it stretched with
           nothing in the document explaining why. */
       ratio: z.number().positive().optional(),
+      /** setTempoMode / setRate / setTranspose. */
+      value: z.number().optional(),
     }).strict(),
-    result: z.object({ ok: z.boolean() }).strict(),
+    /** `value` is the engine's READ-BACK, present for the param actions. The
+        engine REFUSES a value it cannot honour (an unknown mode, a non-positive
+        rate) rather than clamping it, so `ok: true` alone would not tell you
+        whether the write landed — the read-back does. */
+    result: z.object({ ok: z.boolean(), value: z.number().optional() }).strict(),
   },
   /**
    * THE `.scoopyMap` DOCUMENT ON DISK (merge P2 step 4, increment 6).

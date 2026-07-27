@@ -193,6 +193,43 @@ int main() {
         CHECK(!replyOk(dispatch("slRoute", juce::JSON::parse(R"({"action":"nope"})"),
                                 settings, e)));
 
+        // ── The deck's tempo axis (SL-ABI-V3 §3) ────────────────────────────
+        //
+        // The param actions REPORT THE ENGINE'S READ-BACK, and that is the whole
+        // point of them replying with a value. The engine refuses a value it
+        // cannot honour rather than clamping it, so `ok: true` alone would say
+        // nothing about whether the write landed — a tempo mode the engine does
+        // not have would look applied and the deck would keep stretching.
+        {
+            auto deckParam = [&](const char* json) {
+                return dispatch("slDeck", juce::JSON::parse(json), settings, e);
+            };
+            const auto mode = deckParam(R"({"action":"setTempoMode","deck":0,"value":2})");
+            CHECK(replyOk(mode));
+            CHECK((double) result(mode).getProperty("value", -1.0) == 2.0);
+
+            // A mode the engine does not have: the reply is OK (the command was
+            // understood) and the VALUE is unchanged (the write was refused).
+            const auto badMode = deckParam(R"({"action":"setTempoMode","deck":0,"value":9})");
+            CHECK(replyOk(badMode));
+            CHECK((double) result(badMode).getProperty("value", -1.0) == 2.0);
+
+            const auto rate = deckParam(R"({"action":"setRate","deck":0,"value":1.5})");
+            CHECK((double) result(rate).getProperty("value", -1.0) == 1.5);
+            const auto badRate = deckParam(R"({"action":"setRate","deck":0,"value":0})");
+            CHECK((double) result(badRate).getProperty("value", -1.0) == 1.5);
+
+            // Transpose accepts negatives — it is semitones, not a ratio. The
+            // param that most obviously must NOT share the ratio's positive-only
+            // guard, which is why the engine keys them separately.
+            const auto trans = deckParam(R"({"action":"setTranspose","deck":0,"value":-7})");
+            CHECK((double) result(trans).getProperty("value", 0.0) == -7.0);
+
+            CHECK(!replyOk(deckParam(R"({"action":"nope","deck":0})")));
+            CHECK(!replyOk(dispatch("slDeck", juce::var(), settings, nullptr)));
+            sl_deck_clear(e, 0); // leave the ground as it was found
+        }
+
         // A channel binding REPORTS the engine's refusal instead of assuming
         // success: kind 9 does not exist, and a strip silently bound to nothing
         // would render silence with no explanation anywhere in the UI.

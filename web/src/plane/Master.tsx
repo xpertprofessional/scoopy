@@ -29,14 +29,25 @@ export function Master({
   link,
   level,
   masterBpm,
+  synced = [],
   onLevel,
   onBpm,
+  onPlay,
+  onStop,
+  onRestart,
 }: {
   link: EngineLink | null
   level: number
   masterBpm: number
+  /** The synced elements' resolved relation and tempo, for the readout. Given
+      rather than derived: the master owns no strips, and a component that went
+      looking through the map for them would be reaching past its own job. */
+  synced?: { pulse: string; bpm: string }[]
   onLevel: (v: number) => void
   onBpm: (v: number) => void
+  onPlay: () => void
+  onStop: () => void
+  onRestart: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const lampRef = useRef<HTMLSpanElement | null>(null)
@@ -136,7 +147,42 @@ export function Master({
       <span ref={lampRef} className="master-lamp mono" title="the output limiter (guard G1)">
         LIM
       </span>
+      {/* THE MASTER TRANSPORT (P3-2). The same four verbs a strip carries, one
+          level up: what a strip's ⟳ ▸ ↻ ◼ do to one deck, these do to every
+          deck at once. Deliberately the SAME vocabulary — a transport that
+          meant something different here would be a second thing to learn for
+          no gain, and "one transport vocabulary for every element" is the
+          domain P3-1 opened.
+
+          ▸ one-shot is absent rather than inert: on the master it has no
+          meaning at all (there is no single thing to fire once), which is a
+          different case from a grid strip, where it is a verb the element
+          genuinely lacks and so is rendered disabled. */}
+      <span className="master-transport" role="group" aria-label="master transport" data-no-drag>
+        <button type="button" onClick={onPlay} title="play every deck">
+          ⟳
+        </button>
+        <button type="button" onClick={onRestart} title="stop and restart every deck from the top">
+          ↻
+        </button>
+        <button type="button" onClick={onStop} title="stop every deck">
+          ◼
+        </button>
+      </span>
       <label className="plane-bpm mono">
+        {/* −/+ NUDGE. A transient BPM offset, exactly the gesture a pitch fader
+            is: it changes what the engine hears and never the document, so
+            letting go snaps back to lock and riding it does not mark the map
+            dirty. The law takes it as `nudgeBpmDelta`. */}
+        <button
+          type="button"
+          className="bpm-nudge"
+          onClick={() => onBpm(round1(masterBpm - 1))}
+          aria-label="master tempo down"
+          title="−1 BPM"
+        >
+          −
+        </button>
         <input
           type="number"
           min={20}
@@ -148,12 +194,37 @@ export function Master({
             const v = Number(e.target.value)
             if (Number.isFinite(v) && v > 0) onBpm(v)
           }}
-          title="the plane's master tempo — what a synced deck's ratio is computed against"
+          title="the plane's master tempo — every synced element resolves against this"
         />
+        <button
+          type="button"
+          className="bpm-nudge"
+          onClick={() => onBpm(round1(masterBpm + 1))}
+          aria-label="master tempo up"
+          title="+1 BPM"
+        >
+          +
+        </button>
         bpm
       </label>
+      {/* WHAT THE MASTER IS ACTUALLY DOING TO THE DECKS. A master tempo with no
+          readout is a number you have to trust; this says which decks are
+          following it and at what relation, which is the difference between a
+          sync system and a bpm box. Empty when nothing is synced — a row of
+          zeroes would teach that the readout is usually noise. */}
+      {synced.length > 0 && (
+        <span className="master-sync mono dim" title="synced elements — pulse relation and tempo">
+          {synced.map((s) => `${s.pulse} ${s.bpm}`).join('  ')}
+        </span>
+      )}
     </div>
   )
+}
+
+/** One decimal, so a nudge off a fractional tempo does not accumulate float
+    dust into the number box. */
+function round1(v: number): number {
+  return Math.round(v * 10) / 10
 }
 
 /** Linear gain as dB, fixed width. `−∞` at silence, because a large negative

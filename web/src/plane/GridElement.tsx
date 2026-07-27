@@ -23,6 +23,8 @@
  */
 import { SCENE_LETTERS, type SceneLetter } from '../audio/sceneProjection.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+import type { DJTempoMode } from '../panels/djMix.ts'
+import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
 
 export type GridElementProps = {
   strip: StripDoc
@@ -34,10 +36,40 @@ export type GridElementProps = {
       that looks unpressed for two bars after you pressed it reads as a dead
       control. */
   queued: SceneLetter | null
+  /** The plane's master, so a synced strip can show what it will ACTUALLY run
+      at. Passed in rather than read from the store here: this component is
+      rendered per strip and a store read per strip is a subscription per strip
+      to a value that is the same for all of them. */
+  masterBpm: number
   onSelectScene: (scene: SceneLetter, immediate: boolean) => void
   onSetBpm: (bpm: number) => void
   onToggleSync: () => void
+  onCycleTempoMode: () => void
   onCompose: () => void
+}
+
+/** The mode's three-character face. Abbreviated because it sits in an 18 px row
+    next to a number box, and because these are the words the panel this came
+    from uses: T+P is scoopy's own label for time-and-pitch. */
+export const TEMPO_MODE_LABEL: Record<DJTempoMode, string> = {
+  timePitch: 'T+P',
+  timeStretch: 'STR',
+  tempoOnly: 'TMP',
+}
+
+const TEMPO_MODE_TITLE: Record<DJTempoMode, string> = {
+  timePitch: 'time + pitch — varispeed, like a turntable: tempo and pitch move together',
+  timeStretch: 'stretch — follows the master tempo with the pitch left where it is',
+  tempoOnly: 'tempo only — the step clock alone; each sample plays exactly as recorded',
+}
+
+/** The cycle order the button walks. STRETCH first because it is the default
+    and the one most material wants; TMP last because it is the specialist. */
+const TEMPO_MODE_CYCLE: DJTempoMode[] = ['timeStretch', 'timePitch', 'tempoOnly']
+
+export function nextTempoMode(mode: DJTempoMode): DJTempoMode {
+  const i = TEMPO_MODE_CYCLE.indexOf(mode)
+  return TEMPO_MODE_CYCLE[(i + 1) % TEMPO_MODE_CYCLE.length]!
 }
 
 /** How many scene pads fit the strip's width without the row reflowing. All
@@ -94,15 +126,32 @@ export function GridScenes({
   )
 }
 
-/** Sync · tempo · compose — the rate row's slot on a grid strip. */
+/**
+ * Sync · mode · tempo · compose — the rate row's slot on a grid strip.
+ *
+ * THE MODE BUTTON IS THE PER-ELEMENT HALF OF THE TEMPO DOMAIN. The master sets
+ * the tempo; this says what following it COSTS — pitch or nothing. It is on the
+ * object rather than in the Inspector because it passes §3.1's test: you change
+ * it one-handed, with sound running, and you hear the answer immediately.
+ *
+ * The pulse relation and the transpose do NOT pass that test — they are set
+ * once and then lived with — so they are in the Inspector, where there is room
+ * to label them.
+ */
 export function GridControls({
   strip,
+  masterBpm,
   onSetBpm,
   onToggleSync,
+  onCycleTempoMode,
   onCompose,
-}: Pick<GridElementProps, 'strip' | 'onSetBpm' | 'onToggleSync' | 'onCompose'>) {
+}: Pick<
+  GridElementProps,
+  'strip' | 'masterBpm' | 'onSetBpm' | 'onToggleSync' | 'onCycleTempoMode' | 'onCompose'
+>) {
   if (strip.element.kind !== 'grid') return null
   const g = strip.element
+  const intent = deckTempoIntent(g, masterBpm)
   return (
     <>
       <div className="ds-row strip-row strip-gridrow" data-no-drag>
@@ -112,11 +161,24 @@ export function GridControls({
           onClick={onToggleSync}
           title={
             g.syncToMaster
-              ? 'synced — this deck follows the plane’s master tempo'
+              ? // WHAT IT WILL ACTUALLY RUN AT, not what was asked for. `auto`
+                // can resolve a 70 BPM deck under a 140 master to 1:2, and a
+                // sync control that does not say so is one you have to test by
+                // ear before you trust it.
+                `synced at ${intent.pulse} — this deck runs at ${formatSyncedBpm(intent)} BPM against the plane’s master`
               : 'free — this deck runs at its own tempo'
           }
         >
           {g.syncToMaster ? 'SYNC' : 'FREE'}
+        </button>
+        <button
+          type="button"
+          className={`strip-tempomode${g.syncToMaster ? ' active' : ''}`}
+          onClick={onCycleTempoMode}
+          aria-label="tempo mode"
+          title={TEMPO_MODE_TITLE[g.tempoMode]}
+        >
+          {TEMPO_MODE_LABEL[g.tempoMode]}
         </button>
         <label className="strip-bpm mono">
           <input
@@ -133,7 +195,13 @@ export function GridControls({
               const v = Number(e.target.value)
               if (Number.isFinite(v) && v > 0) onSetBpm(v)
             }}
-            title="this deck’s own tempo"
+            // Its OWN tempo, which stays the truth while synced — sync stretches
+            // the deck, it does not rewrite the session.
+            title={
+              g.syncToMaster
+                ? `this deck’s own tempo — synced, it runs at ${formatSyncedBpm(intent)}`
+                : 'this deck’s own tempo'
+            }
           />
           bpm
         </label>

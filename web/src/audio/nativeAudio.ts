@@ -61,9 +61,14 @@ export class NativeWorldSink implements WorldSink {
   private positionCbs = new Set<(pos: EnginePosition) => void>();
   private offHotFrame: (() => void) | null = null;
 
-  /** Called after every successful publish. The map installs its
-      re-apply-what-a-republish-stomps hook here (see mapStore). */
-  onPublished: (() => void) | null = null;
+  // ⚠️ THERE WAS AN `onPublished` HOOK HERE and it is gone (P3-2). It existed
+  // for exactly one subscriber: `sl_snapshot_begin` reset every deck's
+  // tempoSyncRatio to 1.0, so any publish silently un-synced every synced deck,
+  // and the map re-asserted its sync after every single one. The ratio is deck
+  // scope in the engine now (SL-ABI-V3 §3) and survives a publish, so there is
+  // nothing to re-assert. Kept as a comment rather than an unused hook: a
+  // publish callback with no subscribers is an invitation to re-solve a problem
+  // that no longer exists.
 
   constructor(private readonly link: EngineLink) {}
 
@@ -149,13 +154,6 @@ export class NativeWorldSink implements WorldSink {
         const r = raw as { applied?: boolean; error?: string | null };
         this.lastError = r?.applied === false ? (r.error ?? "publish refused") : null;
         if (this.lastError) console.error("native sink: world refused —", this.lastError);
-        // A publish commits a snapshot, and `sl_snapshot_begin` RESETS
-        // tempoSyncRatio to 1.0 — so publishing silently un-syncs every synced
-        // deck. The sync intent belongs to the map, so the map puts it back.
-        // Fired from here rather than from each caller because every publish
-        // has this effect, and a caller that forgot would produce a deck that
-        // drifts off tempo whenever anything edits the grid.
-        this.onPublished?.();
       })
       .catch((e: unknown) => {
         this.lastError = `publish failed: ${String(e)}`;

@@ -50,6 +50,7 @@ import {
   noteMonitor,
   setMonitor,
   setMute,
+  updateGridTempo,
   updateStrip,
 } from '../state/mapStore.ts'
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
@@ -57,7 +58,7 @@ import type { Chips } from './cables.ts'
 import { channelLabel, inputChoices, setInputDevice, useDeviceStore } from './devices.ts'
 import { ask, send } from './send.ts'
 import { StripMeter, METER_W } from './StripMeter.tsx'
-import { GridControls, GridScenes } from './GridElement.tsx'
+import { GridControls, GridScenes, nextTempoMode } from './GridElement.tsx'
 import { TapeWave, WAVE_H } from './TapeWave.tsx'
 import {
   IDLE_LIVE,
@@ -115,6 +116,7 @@ export function Strip({
   chips,
   gridScene = 'A',
   gridQueued = null,
+  masterBpm = 120,
   onSelectScene,
   onCompose,
   sessions = [],
@@ -155,6 +157,12 @@ export function Strip({
   chips?: Chips
   gridScene?: SceneLetter
   gridQueued?: SceneLetter | null
+  /** The plane's master tempo. GRID strips only, and passed in for the same
+      reason `chips` is: one subscription in the plane beats one per strip to a
+      value every strip shares. It is what the strip resolves its SYNC readout
+      against — a synced deck showing its own bpm and not the one it will run at
+      is a control you have to test by ear. */
+  masterBpm?: number
   onSelectScene?: (scene: SceneLetter, immediate: boolean) => void
   onCompose?: () => void
   /** The session library, for the creation gesture. Passed in rather than read
@@ -736,17 +744,24 @@ export function Strip({
         {isGrid ? (
           <GridControls
             strip={strip}
-            onSetBpm={(bpm) =>
-              updateStrip(strip.key, (x) =>
-                x.element.kind === 'grid' ? { ...x, element: { ...x.element, bpm } } : x,
-              )
-            }
+            masterBpm={masterBpm}
+            // ⚠️ `updateGridTempo`, not `updateStrip`. Every one of these has to
+            // reach the ENGINE as well as the document — they used to write the
+            // document only, and appeared to work because an unrelated
+            // publish-time re-assert happened to re-send the ratio afterwards.
+            onSetBpm={(bpm) => updateGridTempo(strip.key, link, { bpm })}
             onToggleSync={() =>
-              updateStrip(strip.key, (x) =>
-                x.element.kind === 'grid'
-                  ? { ...x, element: { ...x.element, syncToMaster: !x.element.syncToMaster } }
-                  : x,
-              )
+              updateGridTempo(strip.key, link, {
+                syncToMaster: !(strip.element.kind === 'grid' && strip.element.syncToMaster),
+              })
+            }
+            onCycleTempoMode={() =>
+              updateGridTempo(strip.key, link, {
+                tempoMode:
+                  strip.element.kind === 'grid'
+                    ? nextTempoMode(strip.element.tempoMode)
+                    : 'timeStretch',
+              })
             }
             onCompose={() => onCompose?.()}
           />

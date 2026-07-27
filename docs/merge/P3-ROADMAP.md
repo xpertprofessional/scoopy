@@ -91,7 +91,7 @@ in one tree, with `apps/scoopy` on disk holding all the code.**
 Why now, before more UI work: the current topology is
 `apps/wizard/vendor/scoopy/` — a hash-pinned mirror of `apps/scoopy` that
 includes a **built** copy of the web UI. The merged app serves that build. It has
-to be rebuilt (`bundle:mac`) and re-vendored (`engine:sync`) by hand, and on
+to be rebuilt (`bundle`) and re-vendored (`engine:sync`) by hand, and on
 2026-07-27 that step was missed for a whole session: MON, the record-tap menu,
 the session-loading gesture and the in-window composer were all built, tested and
 **invisible in the running app**, because it was serving the previous day's
@@ -277,3 +277,79 @@ Sync is NOT "match a number". It is **stretch and re-pitch every element to the
 master** — a tape loop time-stretching to master tempo the same way a scoopy deck
 does, with `tempoMode` choosing whether that costs pitch. That is what makes the
 four domains worth detaching, and it is why a bpm box is not a master section.
+
+---
+
+## P3-2 — DONE. What it actually turned out to be.
+
+*The sizing above was pessimistic in one direction and blind in another, which
+is worth recording because both errors are the phase's own rule #2 (check the
+plumbing) applied in each direction.*
+
+### The hard part was not hard — it had a working precedent
+
+`sl_deck_set_tempo_sync` already wrote the persistent `deckWorlds[]` and
+republished. So "a live setter or a re-assert?" was a false choice: the answer
+was a THIRD thing neither option named. The engine now holds a persistent
+per-deck param block and **stamps it onto the world at commit**
+(`applyDeckParams`), so `sl_snapshot_begin` no longer resets the tempo axis at
+all. Session state is session scope; deck params are deck scope; a session
+publish does not touch the other axis.
+
+That retired the hazard class rather than working around it:
+`mapStore.reapplyAfterPublish` and the `onPublished` hook in `companionEngine`
+are **deleted**, and `plane_audio_test`'s "…and the sync is GONE" assertion is
+now "…and the sync IS STILL THERE".
+
+### Three of the four mechanisms were already built and unreachable
+
+The core implements all three tempo modes; only one had a route to it.
+
+| mode | core field | reachable before |
+|---|---|---|
+| timeStretch | `DeckWorld.tempoSyncRatio` → bus stretcher | ✅ |
+| timePitch | `snapshot.externalVarispeedRatio` → voice rate | ❌ |
+| tempoOnly | `snapshot.masterSpeed` → step clock | ❌ |
+
+`applyDeckParams` is the one place that decides which field a ratio lands in.
+`transpose` was added beside them — `setDeckBusTranspose` is a genuine realtime
+setter in the core, so it is the one param that does not republish.
+
+### Four defects found on the way, all of the same species
+
+1. **The bus ratio was INVERTED.** `DeckWorld.tempoSyncRatio` is output/input
+   duration, so a deck told to run at 2× needs 0.5. Every caller passed 2.0.
+   Syncing a deck to a faster master **slowed it down**. The inversion now
+   happens in exactly one place and is pinned by a step-rate measurement.
+2. **`setMasterBpm` reached nothing** — a pure document write. The master knob
+   moved on screen and changed the audio only when some unrelated publish
+   happened past.
+3. **The strip's SYNC toggle reached the engine BY ACCIDENT**, via the
+   publish-time re-assert. Deleting that hook exposed it; `updateGridTempo` is
+   the explicit path.
+4. **`slDeck`, `slMaster`, `slMap` and `slDevices` were missing from
+   `MergedLink.NATIVE_METHODS`** and had been falling through to the browser
+   companion since P2 step 4. `slMap` is the whole `.scoopyMap` document, so
+   **map save/open had never worked in the merged app**.
+
+### And the law was there the whole time
+
+`panels/djMix.ts` — 33 golden fixtures proving it matches the Swift original to
+six decimals — had **zero callers**. The plane computed `masterBpm / deck.bpm`.
+It is now the authority (`persist/tempo.ts`), which is why a 70 BPM deck under a
+140 master resolves to 1:2 and stays at 70 instead of doubling.
+
+**The v3 → v4 map migration pins existing documents to `1:1`** precisely so this
+change does not alter how a saved set plays; `auto` is the default for new
+strips only.
+
+### Still open, and deliberately
+
+- **§7, the engine clock** — not built, and not needed for this. TS keeps the
+  tempo authority.
+- **Tape sync (P3-2b)** — the payoff sentence above is still only half true. A
+  tape has no stretcher and no tempo, so "every element" currently means every
+  DECK. That is the next step, and it is new engine DSP.
+- **`checkAbiCoverage` was already failing on `main`** before this work (it
+  measures against a stale WASM build with `kHotFrameLength=8`) and is not
+  wired into CI. Untouched here; it needs its own look.

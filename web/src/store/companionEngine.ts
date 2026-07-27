@@ -74,16 +74,18 @@ const WORKLET_URL = new URL("../audio/scoopy-worklet.js", import.meta.url).href;
 const audio: WorldSink = makeSink();
 
 function makeSink(): WorldSink {
-  if (!hasNativeEngine()) return new ScoopyAudio();
-  const sink = new NativeWorldSink(nativeLink());
-  // A publish commits a snapshot, which resets every deck's tempoSyncRatio to
-  // 1.0 — so editing anything in the grid silently un-syncs every synced deck.
-  // The sync intent belongs to the MAP, so the map re-asserts it here. Imported
-  // lazily to keep this module free of a cycle through the plane's store.
-  sink.onPublished = () => {
-    void import("../state/mapStore.ts").then((m) => m.reapplyAfterPublish(nativeLink()));
-  };
-  return sink;
+  // ⚠️ THIS USED TO INSTALL AN `onPublished` HOOK, and its removal is P3-2.
+  // A publish commits a snapshot, and `sl_snapshot_begin` reset every deck's
+  // tempoSyncRatio to 1.0 — so editing anything in the grid silently un-synced
+  // every synced deck, and the hook re-asserted the map's sync after every
+  // single publish to paper over it.
+  //
+  // The ratio is now DECK SCOPE in the engine (SL-ABI-V3 §3): held in a
+  // persistent per-deck param block and re-stamped onto each rebuilt world, so
+  // a session publish does not touch the tempo axis at all. Nothing to
+  // re-assert, and the grid no longer reaches into the plane's store on every
+  // keystroke to do it.
+  return hasNativeEngine() ? new NativeWorldSink(nativeLink()) : new ScoopyAudio();
 }
 
 /** Is there a JUCE backend to publish to? Guarded on `window` because this

@@ -208,9 +208,25 @@ export type GridElement = Extract<Element, { kind: 'grid' }>
  * own BPM" is the mission sentence, so a session arriving locked to the plane's
  * master would be the opposite of it — sync is a thing you ask for, per strip,
  * and the SYNC control on the strip is where you ask.
+ *
+ * The tempo intent is carried anyway, unsynced, so that turning SYNC on is one
+ * decision rather than three: `timeStretch` because pitch-preserving is what
+ * "sync" means to most material, and `auto` because the pulse relation is the
+ * one of the three a human should not have to compute. (The v3→v4 migration
+ * deliberately uses 1:1 instead — see MIGRATIONS: `auto` is the right default
+ * for a NEW strip and the wrong answer for an existing document.)
  */
 export function newGridElement(deck: number, sessionId: string, bpm: number): GridElement {
-  return { kind: 'grid', deck, sessionId, bpm, syncToMaster: false }
+  return {
+    kind: 'grid',
+    deck,
+    sessionId,
+    bpm,
+    syncToMaster: false,
+    tempoMode: 'timeStretch',
+    pulseRelation: 'auto',
+    transpose: 0,
+  }
 }
 
 /* ── what the engine says this strip is doing ─────────────────────────────── */

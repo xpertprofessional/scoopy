@@ -48,6 +48,9 @@ add_test(NAME track_params_test COMMAND track_params_test)
 # renders non-silence.
 add_executable(sl_snapshot_test tools/sl_snapshot_test.cpp)
 target_link_libraries(sl_snapshot_test PRIVATE wz_sl_engine)
+# generated/ for the HotFrame slot enum: the deck-param tests observe a deck's
+# tempo through its published playhead step rather than reading the param back.
+target_include_directories(sl_snapshot_test PRIVATE generated)
 add_test(NAME sl_snapshot_test COMMAND sl_snapshot_test)
 
 # The generated HotFrame layout compiles and matches scoopy's schema indices.

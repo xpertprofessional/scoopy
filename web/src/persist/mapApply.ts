@@ -18,6 +18,7 @@
  *     The document layer decides WHAT should be true; nothing here decides when.
  */
 import { perfFor, type PlaneMap, type Route, type Strip } from './mapDocument'
+import { TEMPO_MODE_ID, deckTempoIntent } from './tempo'
 
 /** One engine call, named for the ABI entry point it becomes. */
 export type EngineOp =
@@ -30,7 +31,12 @@ export type EngineOp =
   | { op: 'tapeLoadTake'; tape: number; takeRef: string }
   | { op: 'tapeSetLoop'; tape: number; enabled: boolean; start: number; end: number }
   | { op: 'tapeSetRate'; tape: number; rate: number }
+  /** The deck's tempo axis (SL-ABI-V3 §3). Three ops rather than one because
+      they are three engine params: the ratio, the MODE that decides which
+      mechanism the ratio drives, and a pitch offset independent of both. */
   | { op: 'deckSetTempoSync'; deck: number; ratio: number }
+  | { op: 'deckSetTempoMode'; deck: number; mode: 0 | 1 | 2 }
+  | { op: 'deckSetTranspose'; deck: number; semitones: number }
   /** The performance layer going back on. NOT composition: these restore which
       scene is running and how scenes launch, which is all a map owns of a
       session (see GridPerfSchema for why it is this narrow). */
@@ -128,13 +134,23 @@ export function planApply(map: PlaneMap): EngineOp[] {
       })
       ops.push({ op: 'tapeSetRate', tape: t.index, rate: t.rate })
     } else if (strip.element.kind === 'grid') {
-      // The engine takes a RATIO (master / deck bpm); the document stores the
-      // intent, so the ratio is computed here. A deck that is not synced runs
-      // at its own tempo, which is ratio 1.0 — NOT "no call", because the deck
-      // may be carrying a ratio from a previously loaded map.
+      // The engine takes a RATIO; the document stores the intent, so the ratio
+      // is RESOLVED here — through scoopy's tempo law, not by dividing.
+      //
+      // ⚠️ THIS WAS `masterBpm / g.bpm`, and the difference is musical, not
+      // cosmetic. The law resolves a pulse relation first: a 70 BPM deck synced
+      // to a 140 master is 1:2 — the same pulse, half-time — where the division
+      // could only say 2×. It also carries the tempo MODE, which decides which
+      // of the engine's three mechanisms the ratio reaches, and the ceilings
+      // that stop a 5 BPM master producing a deck at 0.04×.
+      //
+      // A deck that is not synced still gets ratio 1.0 — NOT "no call", because
+      // the deck may be carrying a ratio from a previously loaded map.
       const g = strip.element
-      const ratio = g.syncToMaster ? map.transport.masterBpm / g.bpm : 1
-      ops.push({ op: 'deckSetTempoSync', deck: g.deck, ratio })
+      const intent = deckTempoIntent(g, map.transport.masterBpm)
+      ops.push({ op: 'deckSetTempoMode', deck: g.deck, mode: TEMPO_MODE_ID[g.tempoMode] })
+      ops.push({ op: 'deckSetTempoSync', deck: g.deck, ratio: intent.syncRatio })
+      ops.push({ op: 'deckSetTranspose', deck: g.deck, semitones: g.transpose })
       // The performance layer for THIS pairing. A strip that has hosted this
       // session before gets its scene state back; one that has not starts at
       // the defaults rather than inheriting another session's.

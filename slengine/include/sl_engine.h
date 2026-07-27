@@ -105,6 +105,67 @@ void sl_render(sl_engine* e,
  * does not advance it, because nothing was rendered. */
 uint64_t sl_engine_time_samples(const sl_engine* e);
 
+/* ── Deck-scope parameters (§3) ─────────────────────────────────────────────
+ *
+ * THE TEMPO AXIS OF A GRID DECK, and the second of the ABI's two param
+ * families. `sl_track_param_id` (§6) keys a track INSIDE a deck's session;
+ * these key the DECK ITSELF, and the difference is not cosmetic — it is a
+ * difference of LIFETIME:
+ *
+ *   session scope   rebuilt wholesale by every sl_snapshot_begin…commit.
+ *                   The document owns it; a publish is how it changes.
+ *   deck scope      SURVIVES a publish. The engine holds it in a persistent
+ *                   per-deck block and re-stamps it onto each rebuilt world.
+ *
+ * That distinction is the entire point of this surface. Before P3-2 the sync
+ * ratio lived only on the published world, so editing one step in the grid
+ * un-synced the deck, and the plane carried a re-assert pass to paper over it.
+ * Deck scope removes the hazard class rather than working around it: a session
+ * publish may not touch the tempo axis, because the tempo axis is not the
+ * session's.
+ *
+ * Names, never hardcoded integers — resolve once at boot and cache the ints
+ * (the same discipline, and the same reason, as the track params).
+ *
+ *   syncRatio   target_bpm / deck_bpm; 1.0 = free-running at its own tempo.
+ *               TS computes it (djMix.ts, golden-pinned against the Swift
+ *               original); the engine only carries it.
+ *   tempoMode   HOW the deck follows that ratio, and the control the merge
+ *               exists to expose:
+ *                 0 timePitch    varispeed — tempo and pitch move together
+ *                 1 timeStretch  the bus stretcher — tempo moves, pitch does not
+ *                 2 tempoOnly    the step clock alone; sample playback untouched
+ *               One place decides which core field the ratio lands in, so the
+ *               three paths can never disagree about which is active.
+ *   rate        signed varispeed multiplier, independent of sync. Negative is
+ *               reserved for reverse and is REFUSED here until the core's
+ *               per-deck reverse exists — declare-only-what-is-implemented.
+ *   transpose   semitones on the deck's stretch bus. The ONE param here that
+ *               does not republish: the core carries a realtime setter for it,
+ *               so it is a fader you can ride. It is what lets a deck sit in
+ *               its own key while staying tempo-locked, which is the half of
+ *               "tempo and pitch" that sync alone does not give you.
+ *
+ * Master globals (mainGain, master bpm) are NOT here: mainGain is
+ * sl_master_set_level, and master bpm is the host's, carried to each deck as
+ * the ratio above. A param that means something different per deck and a
+ * global that means one thing do not belong in one keyed space. */
+
+/** Resolve a deck param by name; SL_PARAM_UNKNOWN if unknown. */
+int32_t sl_param_id_for_name(const char* name);
+
+/** Introspection, so a host can enumerate rather than hardcode. */
+uint32_t    sl_param_count(void);
+const char* sl_param_name(uint32_t id);   /* NULL if out of range */
+
+/** Write/read a deck param. An unknown id, an out-of-range deck, a null engine
+    or a value the param refuses is IGNORED — never misapplied to something
+    else. `set` republishes the deck world so the change is immediate; that is
+    a control-thread publish at human rate (a knob, not an audio-thread write),
+    exactly as sl_deck_set_tempo_sync has always done. */
+void   sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value);
+double sl_param_get(const sl_engine* e, uint32_t deck, int32_t id);
+
 /* ── Tape decks (§5) ────────────────────────────────────────────────────────
  *
  * A TAPE is a continuous audio buffer with a playhead: record / scrub /
@@ -564,25 +625,23 @@ uint32_t sl_deck_count(void);
     immediately. An out-of-range deck or null engine is ignored. */
 void sl_deck_clear(sl_engine* e, uint32_t deck);
 
-/** Master sync (§7), the engine half. Set `deck`'s tempo-sync ratio =
-    target_bpm / deck_bpm (1.0 = free-running at its own bpm). This is how a
-    strip locks its deck to the plane's master tempo: the host picks the master
-    bpm and sets each SYNCED deck's ratio to master/deck; a deck left at 1.0
-    keeps its own tempo. Per SL-ABI-V3 §7 the engine owns time (the master step
-    clock) while TS owns the ratio math — this just carries the ratio TS
-    computed. `ratio <= 0` or an out-of-range deck is ignored. Republishes the
-    deck world so it takes effect immediately; safe at human rate. Transport
-    play/stop is sl_engine_start / sl_engine_stop. */
+/** Master sync, the engine half — now a thin alias for the `syncRatio` deck
+    param (§3 above), kept because it is the spelling P2/P3-1 callers and
+    `plane_audio_test` already use. Set `deck`'s tempo-sync ratio =
+    target_bpm / deck_bpm (1.0 = free-running at its own bpm). `ratio <= 0` or
+    an out-of-range deck is ignored. Transport play/stop is sl_engine_start /
+    sl_engine_stop. */
 void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
 
 /** This deck's current tempo-sync ratio (1.0 = its own tempo, unstretched).
 
-    ⚠️ READ IT AFTER ANY PUBLISH. `sl_snapshot_begin` RESETS this to 1.0, so
-    committing a snapshot — which every world publish does — silently un-syncs
-    the deck. That is the same "a republish stomps live overrides" hazard the
-    map's performance layer exists for, and it applies to tempo sync too: the
-    owner of the sync intent (the plane's map) must re-apply after a republish.
-    Exposed so the UI can show what is TRUE rather than what it last asked for. */
+    SURVIVES A PUBLISH, as of P3-2. It used to be reset to 1.0 by
+    `sl_snapshot_begin`, so every world publish silently un-synced every synced
+    deck and the plane had to re-assert the ratio afterwards (TS carried a
+    `reapplyAfterPublish` for exactly this). It is now deck scope, held in the
+    engine's persistent param block and re-stamped onto the rebuilt world — a
+    session publish no longer touches the tempo axis. Equivalent to
+    sl_param_get(e, deck, id_of("syncRatio")). */
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck);
 
 /** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
