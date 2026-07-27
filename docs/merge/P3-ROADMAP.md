@@ -210,3 +210,70 @@ by omission.
    Check the plumbing before treating a line as a component.
 3. **Name steps after the goal, not the surface.** A step called "increment 3"
    can be finished without anything visible changing.
+
+---
+
+## P3-2 — master tempo, transport, pitch and stretch. WHY IT IS ENGINE WORK.
+
+*Measured 2026-07-27 after the user, correctly, called the goal obvious: "of
+course we want our advanced transport and master tempo with pitch and time
+stretch functional here and not the low function of previous wizard with just a
+tempo selector."*
+
+They are right, and the question I posed ("which clock is authoritative?") was a
+non-question — the mission already answers it. **Scoopy's wins.** Wizard
+contributed the PLANE CONCEPT (strips, the map, the patchbay) and nothing else;
+everywhere scoopy has the better version, scoopy's is the one that survives.
+
+### The gap, measured
+
+| | |
+|---|---|
+| the plane's master TODAY | a level slider, a limiter lamp, one bpm number box |
+| scoopy's transport | play · stop · restart · play-once · skip-step · reverse · beat-repeat with length + region shifting · musical keyboard |
+| scoopy's core, ALREADY COMPILED IN | `useTimeStretch`, `stretchTimeOnly`, `djTimeStretchActive`, `varispeedRate`, `setDeckBusTranspose`, the Signalsmith/RubberBand stretcher |
+
+All of it is in the binary today and **unreachable**.
+
+### Two dead channels, and they are the whole reason
+
+1. **`slParam` IS RECEIVED AND DROPPED.** `MergedMain.cpp:152` —
+   `.withEventListener("slParam", [](juce::var) {})`. So `paramWrite("masterTempo",
+   …)` and every scoopy param (tempo, transpose, stretch) is a **no-op in the
+   merged app**.
+2. **`transportGlobalPlay/Stop/Restart` are not in `MergedLink.NATIVE_METHODS`**,
+   so they fall through to the browser companion, which does not implement them.
+
+So scoopy's advanced surface could not appear even with the UI wired: both
+channels it speaks through are disconnected.
+
+### What has to be built — and it is already SPECIFIED
+
+**SL-ABI-V3 §3 (deck-scope params)** and **§7 (master transport)** are designed
+and not implemented. §3 is exactly this domain:
+
+```c
+int32_t sl_param_id_for_name(const char* name);
+void    sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value);
+double  sl_param_get(const sl_engine* e, uint32_t deck, int32_t id);
+```
+
+with an initial set including `rate` (signed varispeed) and — the control the
+user is asking for by name — **`tempoMode`: 0 timePitch · 1 timeStretch ·
+2 tempoOnly**. §7 is the engine-side clock that `masterBpm` intent goes through.
+
+⚠️ **The hard part, found while sizing it.** The core carries `useTimeStretch` /
+`stretchTimeOnly` / `varispeedRate` as fields INSIDE the deck's world snapshot,
+not as live setters. So `sl_param_set(deck, tempoMode)` must write the deck's
+persistent `DeckWorld` and republish — and a republish RESETS `tempoSyncRatio`
+(the hazard already pinned by `plane_audio_test`). Either the param path
+re-asserts sync the way `mapStore.reapplyAfterPublish` does, or §3 needs a live
+setter added to the core. That is a design decision, not a keystroke, and it is
+the first thing P3-2 must settle.
+
+### The payoff, stated so it cannot be under-read again
+
+Sync is NOT "match a number". It is **stretch and re-pitch every element to the
+master** — a tape loop time-stretching to master tempo the same way a scoopy deck
+does, with `tempoMode` choosing whether that costs pitch. That is what makes the
+four domains worth detaching, and it is why a bpm box is not a master section.
