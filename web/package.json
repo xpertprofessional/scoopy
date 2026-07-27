@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "bundle": "tsc --noEmit && vite build --outDir ../webdist --emptyOutDir && node --experimental-strip-types scripts/webdistFresh.ts --write",
     "webdist:check": "node --experimental-strip-types scripts/webdistFresh.ts --check",
+    "scoopydist:check": "node --experimental-strip-types scripts/scoopydistFresh.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

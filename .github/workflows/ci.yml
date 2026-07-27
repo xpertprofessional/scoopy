@@ -60,6 +60,13 @@ jobs:
       - run: npm run tape:check
       - run: npm run check:tokens
       - run: npm run webdist:check
+      # The bundle the MERGED APP actually serves. Two tiers by design: here it
+      # can only prove `vendor/scoopy/webdist` EXISTS (this repo is checked out
+      # alone, so there is no shipping tree to compare against and it says so and
+      # skips). On a developer machine it proves the whole chain. Both halves
+      # matter — a session's UI work was already lost once to a stale vendored
+      # bundle, and the empty-bundle case is provable everywhere.
+      - run: npm run scoopydist:check
 
   native:
     name: native (${{ matrix.os }})
