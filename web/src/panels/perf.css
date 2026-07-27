@@ -1,0 +1,25 @@
+/* Perf harness (P3-02). */
+.perf {
+  max-width: 520px;
+}
+
+.meter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--cell);
+}
+
+.meter-grid canvas {
+  width: 100%;
+  height: calc(var(--slider-bar-h) * 0.75);
+}
+
+.perf .spectrum {
+  width: 100%;
+  height: calc(var(--slider-bar-h) * 3);
+}
+
+.perf .playhead {
+  width: 100%;
+  height: var(--slider-bar-h);
+}

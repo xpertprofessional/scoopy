@@ -1,0 +1,910 @@
+/* Sequencer grid + fat track rows (panels/grid.md, trackrow.md). The panel is
+   the scroll viewport; the stack grows to content height (cells + fat bands). */
+.grid-panel {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh; /* iOS toolbar-collapse; engines without dvh keep vh */
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Compose focus ring (2026-07-14): the editing deck's identity color, INSET
+   like `.dj-deck.active` so nothing shifts, matching the ring on that deck's
+   transport box — the two surfaces read as one fact. Compose only (the DJ
+   slots never set `.deck-focus`). */
+.grid-panel.deck-focus {
+  box-shadow: inset 0 0 0 1px var(--sem-color);
+}
+
+.grid-canvas-stack {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  /* height set inline = max(viewport, content) */
+}
+
+.grid-static,
+.grid-hot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Without this, a finger drag on the canvas becomes a browser pan: the
+   pointer stream dies in pointercancel and NO touch composing gesture can
+   complete. Scrolling over the grid is two-finger (GridPanel pan handler);
+   no effect on mouse/wheel input. */
+.grid-static {
+  touch-action: none;
+}
+
+.grid-hot {
+  pointer-events: none;
+}
+
+/* TR-2/3 fat track-row control band (panels/trackrow.md §8). Full-width bands,
+   absolutely positioned from the shared gridRowLayout so each sits directly
+   below its track's canvas cells (native TrackRowView = VStack[cells, mods]). */
+.track-strips {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--font-mono);
+}
+
+/* Selected-track overlay: one tinted rectangle per selected/navigator track,
+   spanning the FULL row (cells + control band, RowBlock.top/height). It sits
+   between the canvases and .track-strips — the strips are transparent, so one
+   layer tints both — and never takes pointer events. The tint is the TRACK'S
+   OWN color (NAV-9, trackDisplayColor) at the canvas selection alpha
+   (tokens.surface.selectionAlpha, applied inline): a selected row reads as
+   itself, lit — and the accent focus ring stays readable on top of it. */
+.track-sel-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tso-row {
+  position: absolute;
+  border-radius: var(--radius);
+}
+
+.trk-strip {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 6px 6px;
+  overflow: hidden;
+  pointer-events: auto;
+  /* Transparent band: the row sits on the app background like the grid —
+     --bg-raised is the CONTROL color (troughs, boxes, buttons; toolbar
+     convention), never a panel-sized fill. */
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+}
+
+.trk-strip.muted {
+  opacity: 0.62;
+}
+
+/* A solo is engaged somewhere and this row is NOT it — it is currently silenced.
+   Recede the whole band (a touch below muted's 0.62, since solo-silencing is a
+   temporary override you want to undo, not a state you set) so the mix visibly
+   collapses to the soloed row(s). Transition so an accidental solo reads as the
+   band dimming, not snapping. */
+.trk-strip {
+  transition: opacity var(--dur-latch) var(--ease);
+}
+
+.trk-strip.soloed-out {
+  opacity: 0.5;
+}
+
+/* The soloed row — the one track you ARE hearing. An accent left edge marks the
+   winner even before the eye reaches its lit S button. */
+.trk-strip.solo-on {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* A sample dragged out of the file browser is hovering over this row (BR-4).
+   Only audio rows ever light up — a MIDI row refuses the drag rather than
+   accepting it and failing afterwards. */
+.trk-strip.drop {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Track name — inline in the identity row (TR-FT-4, no dedicated head line).
+   FIXED width (TR-FT-6): the name changes with every browse ◀▶, and a
+   content-sized name reflowed the row so ◀▶/LOAD/M/S shifted under the
+   cursor mid-click. A fixed basis pins every following control in place. */
+/* Per-track colour swatch — the compose identity row's colour picker (native
+   ColorPickerBox). Sits just left of the name it tints; click opens the palette. */
+.trk-color {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  /* An inset hairline rather than a border: a border would resize the 16px
+     swatch. Same technique, same token as the strip's resting edge. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  cursor: pointer;
+}
+
+.trk-color:hover {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line), 0 0 0 2px var(--accent);
+}
+
+.trk-name {
+  flex: 0 0 140px;
+  width: 140px;
+  color: var(--text); /* overridden inline with the track colour */
+  font-size: var(--type-value-size);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+/* C3 — in the ⌘-click MULTI-TRACK selection.
+   This has to be unmissable, not decorative: STEP, REG/OWN, ↻, direction, output and tuning
+   all fan out across every selected track. An invisible selection is how a STEP change
+   silently rewrites tracks you never touched — which is exactly what could happen before,
+   because the web could not see the native selection at all.
+   The bar is drawn in the TRACK's own colour (currentColor), so the row still reads as itself. */
+.trk-name.sel {
+  box-shadow: inset 3px 0 0 0 currentColor;
+  padding-left: 7px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: var(--radius);
+}
+
+/* Inline rename editor (double-click the name) */
+/* Same fixed footprint as .trk-name so entering/leaving rename never reflows
+   the identity row (TR-FT-6). */
+.trk-name-input {
+  flex: 0 0 140px;
+  width: 140px;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: var(--type-value-size);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  background: var(--bg-raised); /* raised = control surface (toolbar parity) */
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0 3px;
+  outline: none;
+}
+
+.trk-tag,
+.trk-badge {
+  flex: 0 0 auto;
+  padding: 0 3px;
+  font-size: var(--type-mini-size);
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+}
+
+.trk-badge.sub {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.trk-loc {
+  flex: 0 0 auto;
+  font-size: var(--type-mini-size);
+  color: var(--warn);
+}
+
+.trk-param {
+  flex: 0 0 auto;
+  font-size: var(--type-mini-size);
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.trk-flex {
+  flex: 1 1 auto;
+}
+
+/* --- The 3-row control band (transport · DSP · sends) --- */
+/* Natural (non-flex-grow) heights so the band's scrollHeight reports its TRUE
+   content height — the layout reserve is measured from it, so the sends row
+   is never clipped. */
+.trk-band {
+  border-radius: var(--radius);
+  box-shadow: var(--elev-1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.trk-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* min (not fixed) so a wrapped row grows; the band's measured height then
+     accounts for it. Control (slider/box) centres within the line. */
+  min-height: calc(var(--slider-bar-h, 18px) + 6px);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* Rows with many fixed-width controls (R1 transport, cell tools) wrap instead
+   of overflowing/clipping — the band auto-grows to the wrapped height. */
+.trk-wrap {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+/* Vertical group divider inside a control row */
+.trk-vsep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: 1px 2px;
+  background: var(--line);
+}
+
+/* Paired box + inline-label geometric slider */
+.trk-paired {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 88px; /* floor so the geometric bar stays usable, never collapses */
+}
+
+/* Override the library's 9ch min-width for the compact row (value-only,
+   right-aligned; ~5 mono chars fit: "+14.5" / "104" / "L13"). */
+.trk-paired .ds-dragbox {
+  flex: 0 0 auto;
+  width: 48px;
+  min-width: 48px;
+}
+
+.trk-paired .ds-geo {
+  flex: 1 1 0;
+  min-width: 40px;
+}
+
+/* Value-only box with a caption */
+.trk-box {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.trk-box .ds-dragbox {
+  width: 40px;
+  min-width: 40px;
+}
+
+.trk-box-cap {
+  font-size: var(--type-nano-size);
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+/* Compact toggle/cycle button */
+.trk-tog {
+  flex: 0 0 auto;
+  height: var(--slider-bar-h, 18px);
+  min-width: 22px;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  background: var(--bg-raised); /* raised = control surface (toolbar parity) */
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.trk-tog:hover {
+  color: var(--text);
+}
+
+/* P8-9 — inert "desktop" pill: the document carries a binding this host cannot
+   drive (instrument plugin, MIDI port, hard output). Same footprint as a
+   toggle so the row doesn't reflow between hosts, but visibly not a control:
+   no hover, no cursor, dashed hairline, dimmed. */
+.trk-desktop-badge {
+  flex: 0 0 auto;
+  height: var(--slider-bar-h, 18px);
+  min-width: 22px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  opacity: 0.55;
+  background: transparent;
+  border: var(--hairline) dashed var(--line);
+  border-radius: var(--radius);
+  cursor: default;
+  user-select: none;
+}
+
+/* Step-count steppers: narrower than a toggle — they flank the STEP box, and the
+   ‹ box › trio has to read as one control rather than three buttons. */
+.trk-step {
+  min-width: 14px;
+  padding: 0 3px;
+}
+
+/* TR-FT-12: cursor-world focus ring on band buttons — same accent language
+   as .ds-dragbox.focused (exactly one accent ring on screen = the lane). */
+.trk-tog.focused,
+.trk-chip.focused {
+  outline: var(--focus-ring-w) solid var(--accent);
+  outline-offset: calc(var(--focus-ring-w) * -1);
+}
+
+.trk-tog.on {
+  color: var(--bg);
+  background: var(--text-dim);
+  border-color: var(--text-dim);
+}
+
+.trk-tog.on.mute {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.trk-tog.on.solo {
+  background: var(--accent);
+  border-color: var(--accent);
+  /* Solo is a mix OVERRIDE — it silences every peer, so its button must read
+     louder than an ordinary latch: an accidental solo has to be findable at a
+     glance (and be recognisable as the reason the rest of the mix went quiet). A
+     steady accent halo — a --bg gap ring plus a soft outer bloom — NOT a pulse:
+     the pulse language is reserved for TIMING (.trk-tog.pending, the playhead).
+     Shares its shape with the mixer S button (controls.css .tone-solo). */
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 6px 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* A soloed button under the cursor keeps BOTH marks: the accent focus outline
+   (owns `outline`) and the solo halo (owns `box-shadow`) never clobber. */
+
+/* NK-3 — the note-keyboard PIN. --signal, matching the playhead and the TARGET
+   readout in the transport's keyboard cluster: all three mean "this is the live
+   one". Deliberately NOT --accent (solo) or --warn (mute) — a pin routes input,
+   it does not change what you hear, and it must not read as either. */
+.trk-tog.on.pin {
+  background: var(--signal);
+  border-color: var(--signal);
+}
+
+/* Locator repeat — the ↻ loop toggle for the ⌊ start · length ⌉ window. --warn,
+   the SAME colour the locator brackets wear in the grid, so the loop button reads
+   as part of the locator language and is never mistaken for the adjacent
+   rate-reset ⟲ (user, 2026-07-16: the two circular arrows were too alike). Warn
+   glyph at rest; solid warn fill when engaged. The neighbouring rate reset stays
+   neutral, so the two differ in BOTH colour and arrow direction. */
+.trk-tog.locator {
+  color: var(--warn);
+}
+.trk-tog.on.locator {
+  color: var(--bg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+/* CM-5b — MUTE GROUP MEMBERSHIP. A halo around the M button, never a fill: the
+   fill already means "muted", and a member is usually NOT muted (the group sits
+   unlatched until you slam it). Two different facts, two different marks.
+
+   --sem-mute-group (DESIGN-SYSTEM §2b) — THE mute group's identity color, shared
+   with the MUTE latch in the transport that owns these members. They used to be
+   two different colors (members --warn, the button --accent), so the two halves of
+   one object looked unrelated. With semantic colors OFF this token resolves to
+   --warn, i.e. exactly the stroke it has always been.
+
+   It stays legible on a muted (--warn) button because the halo is a box-shadow with
+   a --bg gap ring inside it, which reads as a separated outline rather than a blob.
+   box-shadow and not `outline` because the cursor world already owns `outline` here
+   (.trk-tog.focused): a member under the cursor must show BOTH rings, not one
+   clobbering the other. */
+.trk-tog.member {
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px color-mix(in srgb, var(--sem-mute-group) 55%, transparent);
+}
+
+/* Latched: the group is live, so its members are the tracks currently being
+   silenced — full-strength halo (native thickens 1.0px → 1.5px for the same
+   reason). This is the state you are reading mid-performance. */
+.trk-tog.member.member-armed {
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px var(--sem-mute-group);
+}
+
+/* ARMED LAUNCH — a quantized play/stop is waiting for its boundary. --signal, the
+   same token as the playhead and the note-keyboard TARGET: all of them are facts
+   about TIMING, about what the transport is doing next. Deliberately not --accent
+   (solo) or --warn (mute), and deliberately not the `on` fill — the track has not
+   changed state yet, that is the whole point of the pending state.
+
+   It pulses because the information is "not yet, wait" — a static mark would read
+   as a settled state, and the user needs to see that the engine is holding. The
+   pulse is a border/glow, never the label, so the ▶/■ stays readable at a glance
+   mid-set. */
+@keyframes trk-launch-pending {
+  0%,
+  100% {
+    border-color: var(--signal);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 20%, transparent);
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 30%, transparent);
+  }
+}
+
+.trk-tog.pending {
+  color: var(--signal);
+  animation: trk-launch-pending var(--dur-pulse) ease-in-out infinite;
+}
+
+/* Reduced motion: keep the mark, drop the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .trk-tog.pending {
+    animation: none;
+    border-color: var(--signal);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--signal) 30%, transparent);
+  }
+}
+
+/* Cell-tool selectors carry a monospace count; keep them tight. */
+.trk-celltool {
+  min-width: 26px;
+  padding: 0 4px;
+}
+
+/* P5-PCE Family-1 dial chips (PIT·TON·PAN·VOL·STA·END). Ghost outline;
+   active = accent border + accent text (the one focus language); the dot =
+   per-cell data exists for that param on this track. */
+.trk-chips {
+  display: inline-flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.trk-chip {
+  position: relative;
+  flex: 0 0 auto;
+  height: var(--slider-bar-h, 18px);
+  min-width: 24px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: var(--type-mini-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg-raised); /* raised = control surface (toolbar parity) */
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.trk-chip:hover {
+  color: var(--text);
+}
+
+.trk-chip.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.trk-chip-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 2px;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--text-dim);
+}
+
+/* SIG-3 — the track OUTPUT meter, at the end of the DSP row (the channel's
+   post-fader output position). A HORIZONTAL bar in the app's meter language
+   (OutputMeter/CpuMeter): DragBox width (48px), toggle height, hairline-bordered
+   on the control radius, with a peak-hold tick and a reserved right-edge clip
+   latch. The bar area paints a FIXED green→amber→red gradient left→right (the
+   live-activity/warn/hot roles — never --accent); the fill grows from the left,
+   so a short green bar reads nominal and it only reaches the red end when a
+   track runs HOT (near/over 0 dBFS). GridPanel's loop writes cap width, tick
+   position and the latch class from the HotFrame — nothing on a timer. */
+.trk-led {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: stretch;
+  width: 48px;
+  height: var(--slider-bar-h, 18px);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+/* The bar area (everything left of the clip latch). The full green→red scale is
+   always painted; the cap hides the unlit right, the tick rides on top. */
+.trk-led-bar {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    var(--signal) 0%,
+    var(--signal) 55%,
+    var(--warn) 80%,
+    var(--hot) 100%
+  );
+}
+
+/* The unlit CAP: covers the right (1 − level) of the bar with the empty-meter
+   surface, so only the left `level` fraction of the gradient shows. Width is
+   written by the loop; at rest it is 100% (an empty, dim meter). */
+.trk-led-cap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  background: var(--bg-raised);
+}
+
+/* Peak-hold tick: a 1 px --text marker parked at the highest recent level,
+   painted over the cap (DOM order) so it shows even past the live fill. The
+   loop sets `left` + `opacity`. */
+.trk-led-hold {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+  background: var(--text);
+  opacity: 0;
+}
+
+/* Right-edge clip latch: a reserved strip that lights --hot and HOLDS after a
+   0 dBFS peak (loop toggles `.on`), so a clip that already fell off the bar is
+   still visible — the "this track just clipped" memory. */
+.trk-led-clip {
+  flex: 0 0 auto;
+  width: 5px;
+  border-left: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+}
+
+.trk-led-clip.on {
+  background: var(--hot);
+}
+
+/* DJ density: narrower row, so the meter tightens to the deck DragBox width. */
+.density-dj .trk-led {
+  width: 40px;
+}
+
+/* P5-04 shadow DRIFT ALARM — the only persistent shadow chrome, and only when
+   something is actually wrong. The evidence gate passed (9/9, zero drift), so
+   the always-on readout retired to the grid's right-click menu; the compose
+   window carries zero non-session chrome. A drift still interrupts, because
+   until THE FLIP lands this is the safety net for a reducer regression. */
+.grid-shadow-badge {
+  position: fixed; /* stays visible while the grid scrolls */
+  right: 8px;
+  bottom: 6px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: var(--type-mini-size);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--warn);
+  border: var(--hairline) solid var(--warn);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: var(--z-raised);
+}
+
+/* Drift diff panel — the canonical strings, readable WITHOUT devtools (the
+   console.warn was invisible to anyone not already debugging, so a drift
+   event seen once was effectively lost). */
+.grid-drift-detail {
+  position: fixed;
+  right: 8px;
+  bottom: 24px;
+  width: min(560px, calc(100vw - 24px));
+  max-height: 50vh;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--warn);
+  border-radius: var(--radius-lg);
+  z-index: var(--z-float);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  color: var(--text);
+}
+.gdd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--warn);
+  letter-spacing: 0.06em;
+}
+.gdd-head button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.gdd-note {
+  margin: 6px 0;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.gdd-diff {
+  display: flex;
+  gap: 8px;
+}
+.gdd-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.gdd-label {
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.gdd-diff pre {
+  margin: 0;
+  padding: 4px;
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 22vh;
+  overflow: auto;
+}
+.gdd-copy {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  color: var(--text);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+/* ‹ label › speed-ratio stepper */
+.trk-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  height: var(--slider-bar-h, 18px);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.trk-step,
+.trk-step-label {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-raised); /* raised = control surface (toolbar parity) */
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.trk-step {
+  width: 12px;
+}
+
+.trk-step:hover,
+.trk-step-label:hover {
+  color: var(--text);
+}
+
+.trk-step-label {
+  min-width: 28px;
+  padding: 0 3px;
+  border-left: var(--hairline) solid var(--line);
+  border-right: var(--hairline) solid var(--line);
+  letter-spacing: 0.04em;
+}
+
+/* Locator group ⌊ start len ⌉ ↻ */
+.trk-loc-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.trk-bracket {
+  font-size: var(--type-value-size);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.trk-loc-group .ds-dragbox {
+  width: 26px;
+  min-width: 26px;
+}
+
+.trk-browse {
+  display: inline-flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* INST source (v81): the current preset's name beside the ‹› steppers. Read-
+   only text, not a control — it names what the steppers just chose. */
+.trk-preset-name {
+  align-self: center;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-mini-size);
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
+/* Unified track: what it SOUNDS (SMP | INST + the bound plugin) and where its
+   pattern GOES (→MIDI). Groups tightly so the two questions read as one
+   decision, and sits right of the name where the old inert MIDI tag was. */
+.trk-src {
+  display: inline-flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+/* The bound plugin's name. Content-sized but capped: a long AU name must not
+   push the rest of the identity row around (the TR-FT-6 lesson — a row that
+   reflows under the cursor is a row you can't click). */
+.trk-inst {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+/* Unified rate (TR-FT-9): ⟳ reset · value box · detent-ticked log tape slider */
+.trk-rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 160px;
+}
+
+.trk-rate .ds-dragbox {
+  flex: 0 0 auto;
+  width: 56px;
+  min-width: 56px;
+}
+
+.trk-ratetape {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 80px;
+}
+
+.trk-ratetape .ds-range {
+  width: 100%;
+}
+
+/* Multiply-ratio detents; 1:1 reads stronger so the neutral position anchors the eye. */
+.trk-ratetick {
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--text-dim);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.trk-ratetick.unity {
+  opacity: 0.9;
+  background: var(--text);
+}
+
+.trk-ratetick.major {
+  opacity: 0.7;
+}
+
+/* Anchor numerals (×1/2/4/8/16, both sides) — the wayfinding map for the
+   log-scale detent field (TR-FT-14). Bottom-hugging so the hover chip and
+   the fill stay legible above. */
+.trk-ratenum {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: var(--type-nano-size);
+  line-height: 1;
+  color: var(--text-dim);
+  opacity: 0.75;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Hover/drag readout: names the detent (or ⌥ tape rate) under the pointer. */
+.trk-ratehover {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 3px;
+  font-size: var(--type-mini-size);
+  line-height: 12px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--text-dim);
+  border-radius: var(--radius);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--z-base);
+}
+
+
+/* Sample-window waveform. TR-FT-7: it no longer owns a row — it rides the
+   IDENTITY row and takes all remaining width to the right of
+   name/browse/LOAD/M·S/mode. flex:1 1 0 absorbs the slack; the min-width
+   keeps it usable and lets the row wrap gracefully on a very narrow panel. */
+.trk-trim-wave {
+  flex: 1 1 0;
+  min-width: 80px;
+  height: calc(var(--slider-bar-h, 18px) + 2px);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: ew-resize;
+  touch-action: none;
+}

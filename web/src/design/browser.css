@@ -1,0 +1,259 @@
+/*
+ * Browser chrome — shared by the compose sample browser and the DJ session
+ * browser (BR-4). Every value is a token: the rail is chrome, and chrome must
+ * follow the theme like everything else (DESIGN-SYSTEM.md §1).
+ */
+
+.br-rail {
+  flex: 0 0 auto;
+  width: 22px;
+  writing-mode: vertical-rl;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  border-left: var(--hairline) solid var(--line);
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: var(--cell) 0;
+}
+
+.br-rail:hover {
+  color: var(--text);
+}
+
+/* Default: a fixed rail sitting in a flex row of other things — which is how
+   the DJ page mounts it, beside the deck columns. */
+.br {
+  flex: 0 0 auto;
+  width: 190px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border-left: var(--hairline) solid var(--line);
+}
+
+/* `fill`: the shell IS the page. The compose browser is its own WKWebView whose
+   frame SwiftUI sizes, so the shell takes all of it rather than setting a width
+   the host would only disagree with. */
+.br.fill {
+  width: 100%;
+}
+
+/* --- header ------------------------------------------------------------- */
+
+.br-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+  padding: calc(var(--cell) / 2);
+  border-bottom: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+}
+
+.br-fold {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.br-fold:hover {
+  color: var(--text);
+}
+
+.br-title {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.85em;
+}
+
+.br-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Header affordances are icon-sized, not full controls — they sit in a 22px
+   bar and must not push the title out of it. */
+.br-actions button {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px 4px;
+  font-size: 0.85em;
+  border-radius: var(--radius);
+}
+
+.br-actions button:hover {
+  color: var(--text);
+  background: var(--line);
+}
+
+.br-actions button.on {
+  color: var(--signal);
+}
+
+/* --- breadcrumb --------------------------------------------------------- */
+
+.br-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  padding: calc(var(--cell) / 2);
+  border-bottom: var(--hairline) solid var(--line);
+  font-size: 0.8em;
+  line-height: 1.4;
+}
+
+.br-crumbs button {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--radius);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.br-crumbs button:hover {
+  color: var(--text);
+  background: var(--line);
+}
+
+/* The level you are looking at is not a link to itself. */
+.br-crumbs button:last-child {
+  color: var(--text);
+}
+
+.br-crumb-sep {
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
+/* --- list --------------------------------------------------------------- */
+
+.br-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Keep the list's scroll INSIDE the list. Without this, reaching the top or
+     bottom of the file/session list chains the wheel to the ancestor — in the
+     DJ view that is the deck grid, which then scrolls its cells out of the
+     viewport (the browser and the decks share one webview there). The browser
+     is a fixed-height region with its own scroll; it should stay that way. */
+  overscroll-behavior: contain;
+}
+
+.br-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.br-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+  padding: 3px calc(var(--cell) / 2);
+  cursor: pointer;
+  border-bottom: var(--hairline) solid transparent;
+}
+
+.br-row:hover {
+  background: var(--bg-raised);
+}
+
+.br-row.sel {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.br-row.sel .br-icon,
+.br-row.sel .br-name {
+  color: var(--bg);
+}
+
+.br-row.dim {
+  color: var(--text-dim);
+}
+
+.br-icon {
+  flex: 0 0 auto;
+  width: 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8em;
+}
+
+/* The whole point of the single-column layout (browser.md §3): the filename
+   gets the entire rail width, so depth costs nothing. */
+.br-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+.br-trailing {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1px;
+}
+
+.br-empty {
+  padding: var(--cell);
+  color: var(--text-dim);
+  font-size: 0.85em;
+  text-align: center;
+}
+
+/* --- footer ------------------------------------------------------------- */
+
+.br-foot {
+  flex: 0 0 auto;
+  border-top: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+  padding: calc(var(--cell) / 2);
+}
+
+/* --- banners ------------------------------------------------------------ */
+
+.br-progress {
+  height: 2px;
+  background: var(--line);
+}
+
+.br-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+}
+
+.br-error,
+.br-notice {
+  margin: 0;
+  padding: calc(var(--cell) / 2);
+  font-size: 0.85em;
+}
+
+.br-error {
+  color: var(--warn);
+}
+
+.br-notice {
+  color: var(--signal);
+}

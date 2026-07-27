@@ -1,0 +1,559 @@
+/* Shared control styling — every value is a token var (tokens.ts).
+   Row layout B: label | control | value on one line.
+
+   UNIFORM CONTROL HEIGHT: sliders, drag boxes, buttons, selects and steppers
+   all take `height: var(--control-h)` — one token, so a box in front of a bar
+   is always exactly as tall as the bar. A control must never introduce its own
+   height token or a literal height; that is how the drag box and the slider
+   drifted apart when the Appearance panel's bar height was changed. */
+
+/* THE DISPLAY STEP — the app's one typographic voice (DESIGN-SYSTEM §4d).
+   A panel title is the only place a typeface gets to be seen: every other step
+   is 10-11px, and no face says anything at 11px. Colour is --text, not
+   --text-dim: this is the panel NAMING itself, not a caption. */
+.ds-display {
+  font-family: var(--type-display-family);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  letter-spacing: var(--type-display-tracking);
+  text-transform: var(--type-display-transform);
+  color: var(--text);
+  line-height: 1.1;
+}
+
+/* A SECTION title stays small and dim — it labels a group, it does not name a
+   panel. Keeping the two steps distinct is what makes the hierarchy real. */
+.ds-title {
+  font-family: var(--type-title-family);
+  font-size: var(--type-title-size);
+  font-weight: var(--type-title-weight);
+  letter-spacing: var(--type-title-tracking);
+  text-transform: var(--type-title-transform);
+  color: var(--text-dim);
+}
+
+.ds-section {
+  font-family: var(--type-title-family);
+  font-size: var(--type-title-size);
+  font-weight: var(--type-title-weight);
+  letter-spacing: var(--type-title-tracking);
+  text-transform: var(--type-title-transform);
+  color: var(--text-dim);
+  border-top: var(--hairline) solid var(--line);
+  padding-top: calc(var(--cell) * 2);
+  margin-top: var(--cell);
+}
+
+.ds-caption {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.ds-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 2);
+  min-height: var(--row-height);
+}
+
+.ds-label {
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text);
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The 34% label column is a ParamRow/FieldRow layout rule ONLY — scoping
+   it here (not on bare .ds-label) is what keeps toolbar labels from
+   exploding rows (P4-08c: WIN label got 34% of the deck block). */
+.ds-row > .ds-label {
+  width: 34%;
+}
+
+.ds-value {
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  font-weight: var(--type-value-weight);
+  color: var(--text);
+  flex: 0 0 auto;
+  min-width: 7ch; /* scales with the value font, not a px assumption */
+  text-align: right;
+}
+
+.ds-field .ds-control {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--cell);
+}
+
+/* GeoRange wrapper: ALL sizing rules target .ds-geo, never the input.
+   RULE (P4-08b): default is `flex: 1` for ParamRow; in any fixed-width
+   context a bare `width:` is IGNORED by flex layout — pair it with
+   `flex: 0 0 auto` or the bar drifts off-grid. */
+.ds-geo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: var(--control-h);
+}
+
+.ds-geo .ds-range {
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+/* Inside-the-bar labels (native GeoValueSlider parity). */
+.ds-geo-label {
+  position: absolute;
+  left: calc(var(--cell) * 1.5);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--type-label-family);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.ds-geo-value {
+  position: absolute;
+  right: calc(var(--cell) * 1.5);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--type-value-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.ds-range {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  height: var(--control-h);
+  border: var(--hairline) solid var(--line);
+  cursor: pointer;
+  margin: 0;
+}
+
+/* The thumb lives in the input's CONTENT box, which border-box shrinks by the
+   1px borders. Sizing it to the full --control-h made it overhang the bar top
+   and bottom, so the slider read ~2px taller than the drag box beside it. */
+.ds-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-marker-w);
+  height: calc(var(--control-h) - 2px);
+  background: var(--text);
+}
+
+.ds-range:hover {
+  border-color: var(--text-dim);
+}
+
+/* ── Motion: hoverLift + latchSweep ──────────────────────────────────────────
+   Scoped by hand, NOT applied to a shared base class, because two things in
+   this app must never be transitioned:
+
+   1. THE SLIDER FILL. GeoRange/MicroSend/the send faders paint with an inline
+      `linear-gradient` whose STOP IS THE VALUE. A transition on `background`
+      would make the fill chase the pointer on every drag. So .ds-range gets
+      border-color only — never background.
+   2. FOCUS. `outline` is the answer to "where am I", and an answer must not
+      arrive late. It stays instant, at every motion setting.
+
+   Both durations resolve to 0ms when their trick is off, so these rules are
+   always present and simply do nothing — no class toggling, no half-styled
+   states. */
+.ds-button,
+.ds-select,
+.ds-dragbox,
+.ds-menu-item,
+.ds-numentry-set {
+  transition:
+    background-color var(--dur-hover) var(--ease),
+    border-color var(--dur-hover) var(--ease),
+    color var(--dur-hover) var(--ease);
+}
+
+.ds-range {
+  transition: border-color var(--dur-hover) var(--ease);
+}
+
+/* A latch (MUTE, arm, solo) fills IN rather than snapping — the slower --dur-latch,
+   because a state you are toggling deserves to be seen changing. --fill is
+   registered via @property in base.css, which is the only reason a custom
+   property can be transitioned at all. */
+.ds-button.active,
+.sem-latch.ds-button.active {
+  transition:
+    background-color var(--dur-latch) var(--ease-out),
+    border-color var(--dur-latch) var(--ease-out),
+    color var(--dur-latch) var(--ease-out),
+    --fill var(--dur-latch) var(--ease-out);
+}
+
+.ds-dragbox {
+  /* A <div>, so base.css's element selectors don't reach it. */
+  border-radius: var(--radius);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  font-weight: var(--type-value-weight);
+  line-height: 1; /* never let the value glyphs push the box off the shared height */
+  color: var(--text);
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  height: var(--control-h);
+  min-width: 9ch;
+  padding: 0 var(--cell);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: ns-resize;
+  touch-action: none;
+  flex: 0 0 auto;
+}
+
+.ds-dragbox.focused {
+  /* Focus must be visible — it anchors the ö/ä editing flow. */
+  outline: var(--focus-ring-w) solid var(--accent);
+  outline-offset: calc(var(--focus-ring-w) * -1);
+}
+
+/* MIDI learn (CM-2), mirroring the native tints (DraggableNumberBox:445):
+   armed = warn, bound = signal. Distinct from --accent, which means focus. */
+.ds-dragbox.learning {
+  background: color-mix(in srgb, var(--warn) 30%, var(--bg-raised));
+  border-color: var(--warn);
+}
+
+.ds-dragbox.mapped {
+  border-color: var(--signal);
+}
+
+/* Pinned to the current scene (CM-3) — native rings the control so you can see
+   that this value is scene-local, not global (ScenePinRing). */
+.ds-dragbox.scene-pinned {
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.ds-select {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  height: var(--control-h);
+  padding: 0 calc(var(--cell) * 2);
+}
+
+.ds-button {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  font-family: var(--type-label-family);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  height: var(--control-h);
+  padding: 0 calc(var(--cell) * 3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ds-button:hover {
+  border-color: var(--accent);
+}
+
+.ds-button.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+/* SOLO — a mix OVERRIDE, not an ordinary latch. An engaged solo silences every
+   peer channel, so it must read louder than any other active button: the reason
+   the rest of the mixer went quiet has to be findable at a glance. A steady
+   accent halo (a --bg gap ring + a soft outer bloom), deliberately NOT a pulse —
+   the pulse language belongs to TIMING (launch-pending, the playhead). Mirrors
+   the track-row solo toggle (grid.css .trk-tog.on.solo) so the two solo surfaces
+   speak one language. */
+.ds-button.tone-solo.active {
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 7px 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ds-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* HIT GROUND — `.ds-hot` marks a heavily-used control (transport, scene pads,
+   track M/S/play): a transparent ::after extends its hit region --hit-slop past
+   every edge, so the gutter around it is clickable and the painted box never
+   moves. The slop is half the standard gap (tokens.ts), which makes the whole
+   space between two hot neighbours clickable while splitting it at the midline —
+   a click always fires the NEARER target, never the farther one. This region
+   must stay invisible: no background, no border, ever. To see what is claimed:
+   document.documentElement.classList.add("debug-hit"). */
+.ds-hot {
+  position: relative;
+}
+
+.ds-hot::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--hit-slop));
+}
+
+.debug-hit .ds-hot::after {
+  outline: 1px dashed color-mix(in srgb, red 70%, transparent);
+}
+
+/* HOT SLIDER — a `.ds-hot` GeoRange grows an invisible grab band --hit-slop-y
+   above and below the painted bar (missing a horizontal slider means missing
+   VERTICALLY). The bar's chrome moves from the input to the wrapper so the
+   input can be taller than what is drawn: the wrapper wears the border at the
+   exact old geometry, the input paints its fill only in its content box. */
+.ds-geo.ds-hot {
+  border: var(--hairline) solid var(--line);
+  transition: border-color var(--dur-hover) var(--ease);
+}
+
+/* NO slop overlay on a hot slider. On a button the ::after belongs to the
+   interactive element, so clicks on it fire the button — but here it would sit
+   ON TOP of the input and shield the whole bar (only the overhanging grab
+   fringe kept working). The grown input IS the hit area. */
+.ds-geo.ds-hot::after {
+  content: none;
+}
+
+.ds-geo.ds-hot:hover {
+  border-color: var(--text-dim);
+}
+
+.ds-geo.ds-hot .ds-range {
+  border: none;
+  height: calc(var(--control-h) - var(--hairline) * 2 + var(--hit-slop-y) * 2);
+  padding: var(--hit-slop-y) 0;
+  /* The fill arrives as an inline `background` SHORTHAND (the stop is the
+     value), and a shorthand resets background-clip — !important is the one way
+     the clip survives against an inline style. */
+  background-clip: content-box !important;
+}
+
+.ds-checkbox {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+.ds-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.ds-stepper button {
+  width: 22px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  height: var(--control-h);
+  padding: 0;
+  cursor: pointer;
+}
+
+.ds-stepper button:hover {
+  border-color: var(--accent);
+}
+
+.ds-stepper .ds-value {
+  min-width: 4ch;
+  text-align: center;
+}
+
+/* ── Secondary-click menus (CM-1) ────────────────────────────────────────────
+   The app-wide home for right-click menus + typed numeric entry. Lived in
+   panels/grid.css while the only menus were the grid's; now every panel's
+   DragBox opens one, so it is design-system furniture. */
+
+/* menuEntry — a menu ARRIVES rather than popping into being. Origin is top-left
+   because that is where the pointer that summoned it is, so the menu grows out
+   of the click.
+
+   Only on OPEN. Dismissal is instant and always will be: waiting to close
+   something you have already decided against is the most irritating animation a
+   UI can have. --dur-menu is 0ms when the trick is off, which makes the
+   animation take no time rather than needing a second rule. */
+@keyframes ds-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.ds-menu,
+.ds-numentry {
+  animation: ds-arrive var(--dur-menu) var(--ease-out);
+  transform-origin: top left;
+}
+
+.ds-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  min-width: 150px;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2);
+  font-family: var(--font-mono);
+}
+
+.ds-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 10px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ds-menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Touch: long-press is the only door into these menus, so the rows must be
+   tappable — ~40px against the 3px mouse rows. Scoped to the capability
+   class; desktop menus keep their density. */
+body.touch-capable .ds-menu-item {
+  padding: 11px 12px;
+  font-size: 12px;
+}
+
+.ds-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* Non-interactive readout row (kind: "info") — a status line, not an action.
+   No hover, no pointer: a menu row that looks clickable and does nothing lies. */
+.ds-menu-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 10px;
+  text-align: left;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ds-menu-check {
+  flex: 0 0 auto;
+  width: 8px;
+  font-size: 9px;
+}
+
+.ds-menu-swatch {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 25%);
+}
+
+.ds-menu-sep {
+  height: 1px;
+  margin: 3px 2px;
+  background: var(--line);
+}
+
+/* Typed numeric entry (native NumberEntryPopover). */
+.ds-numentry {
+  position: fixed;
+  z-index: var(--z-entry);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2);
+  font-family: var(--font-mono);
+}
+
+.ds-numentry-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ds-numentry-input {
+  width: 9ch;
+  padding: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg);
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.ds-numentry-set {
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.ds-numentry-set:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.ds-numentry-range {
+  font-size: 9px;
+  color: var(--text-dim);
+}

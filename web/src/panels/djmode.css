@@ -1,0 +1,165 @@
+/* ---- DJ view (P6-03/P6-09, panels/djmode.md) -----------------------------
+   Two deck slots side by side; deck C PROJECTS into one of them (never a third
+   column). Each slot mounts the SAME grid+row surface the compose view uses,
+   at "dj" density — plus the shared MASTER TRACK ROW (scenes · BPM · volume).
+
+   After the P6-09 de-dupe this file styles only the DJ view's OWN chrome: the
+   slots, the deck identity, the xfader-side picker, the GRID toggle, the C
+   projection and the session browser. Everything else a DJ deck needs has its
+   single home elsewhere — the transport box above it, the master row inside it,
+   the mixer's XFADE strip (djmode.md §4C). */
+
+.dj {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* --- Deck slots ----------------------------------------------------------
+   ALIGNMENT LAW (djmode.md §7 item 12, enforced 2026-07-14): this row's
+   horizontal padding and gap MIRROR the transport strip's (.transport-strip
+   padding + .deck-blocks gap in deckmixer.css), and both rows lay out equal
+   `flex: 1 1 0` children — two here, and exactly two transport deck blocks in
+   DJ mode (slot-keyed). That is the whole alignment mechanism: change one side
+   and the columns shear. The session browser is an OVERLAY (below) precisely
+   so it cannot steal flow width from this equation. */
+
+.dj-decks {
+  position: relative; /* the browser overlay anchors to this row */
+  display: flex;
+  gap: calc(var(--cell) * 2); /* = .deck-blocks gap (replaces the old 1px divider) */
+  padding: var(--cell) calc(var(--cell) * 2); /* = .transport-strip padding */
+  flex: 1 1 auto;
+  min-height: 0; /* let the grids scroll instead of pushing the X·MIX bar off */
+}
+
+.dj-deck {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0; /* = .deck-blocks > .deck-block — equal columns, both rows */
+  min-width: 0;
+  min-height: 0;
+  /* The active-deck ring is an INSET border: an outset one would shift the two
+     decks' grids relative to each other every time focus moved. */
+  box-shadow: inset 0 0 0 1px transparent;
+}
+
+.dj-deck.active {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The deck HEADER (letter badge · GRID · C) is GONE (2026-07-14): the letter's
+   job went to the identity-colored transport box column-aligned directly above
+   each slot, and GRID + C moved into that box (djmode.md §4C — one control,
+   one home). The header's styles went with it. Earlier departures: SYNC/pulse/
+   session-name/BPM/nudge and the X·MIX bar (P6-09/P6-10) — transport box,
+   master track row, and the mixer's XFADE strip respectively. */
+
+/* `.dj-side` lived here. Phase XN relocated the X-side picker to the mixer channel strip
+   (`.ch-side` in deckmixer.css) — a crossfader side belongs to any signal the carve can eat,
+   not to a deck, so it goes where all those signals are rendered as peer channels. */
+
+.dj-deck-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* --- DJ density: the shared track strips, compacted ----------------------
+   The SAME TrackBand controls the compose row renders (sends 3–4, mod slots,
+   free-rate — all confirmed live for the DJ workflow) — just tighter, because
+   two decks share the window. Scale here, never fork the component.
+
+   Row order (user layout 2026-07-12; compose-order + trim bar 2026-07-16):
+     1 play · STEP · RATE · locator
+     2 name · trim bar (S · waveform · E) · M · S · IN
+     3 gain · pitch · filter · pan · volume
+     4 modifier sliders
+     5 send sliders                                   */
+
+.track-strips.density-dj {
+  font-size: 0.85em;
+}
+
+.track-strips.density-dj .trk-strip {
+  gap: calc(var(--cell) / 2);
+}
+
+/* The DJ name line: fixed-width identity, then the trim bar eating the slack
+   (its own `flex:1 1 0`), then the mid-set controls (M/S/IN) hard right. The
+   name keeps its natural 140px footprint — the trim bar, not the name, is what
+   grows, so start/end are a wide performative target. */
+.trk-dj-name {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+}
+
+/* Two decks share the window, so the line can get tight: let the name give up
+   some of its 140px (min-width:0 defeats the flex-item text floor) rather than
+   push the trim bar past its own min-width and force the row to overflow. */
+.trk-dj-name .trk-name,
+.trk-dj-name .trk-name-input {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Grid hidden: the deck is nothing but its control rows, so the stack must sit
+   at its natural height (top-aligned) rather than being stretched over the
+   slot — the point of the toggle is to GIVE the height back. */
+.dj-deck-grid.cells-hidden {
+  overflow-y: auto;
+}
+
+/* --- Session browser (P6-04, re-shelled BR-5) ----------------------------
+   The rail, header, list and banner chrome come from the SHARED BrowserShell
+   (web/src/design/browser.css). Since 2026-07-14 it floats as a right-edge
+   OVERLAY instead of a flex sibling: an in-flow rail steals width from the
+   deck columns and breaks their 1:1 alignment with the transport deck boxes.
+   Native does the same (.overlay(alignment: .trailing) in DJModeView) —
+   expanded, it covers deck B's right edge, exactly like the native panel. */
+
+/* (`dj-sessions-*`, deliberately NOT a "browser"-prefixed class: the BR-5
+   guard in fileBrowser.test.tsx bans the old pre-shell chrome tokens from
+   ever creeping back into this stylesheet.) */
+.dj-sessions-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  z-index: var(--z-overlay);
+}
+
+/* The universal deck-load strip in the shell footer (native sessionDeckStrip).
+   These were per-row buttons at the list's right edge, where the overlay
+   scrollbar sat exactly on top of them — big equal-width targets instead. */
+.dj-deck-strip {
+  display: flex;
+  gap: calc(var(--cell) / 2);
+}
+
+.dj-deck-load {
+  flex: 1 1 0;
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 5px 0;
+  font-size: 0.95em;
+}
+
+.dj-deck-load:hover:enabled {
+  color: var(--text);
+  background: color-mix(in srgb, var(--sem-color) 18%, transparent);
+}
+
+.dj-deck-load:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

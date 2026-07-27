@@ -1,0 +1,309 @@
+/* Modulation strip + Mod Lab (MOD-5 / MOD-6).
+ *
+ * Every colour here is a token or the channel's own identity colour (--mod-color, set inline from
+ * MOD_COLORS — a DATA colour, like a track colour, not chrome). No literals: check:tokens fails on
+ * a hex in web/src outside design/.
+ *
+ * Sizes ride --control-h / --cell so the layout survives the full token range (label 9–16px,
+ * row 20–40px) per DESIGN-SYSTEM §4b. */
+
+.mod-strip-wrap {
+  position: relative;
+}
+
+.mod-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  padding: 2px var(--cell);
+}
+
+.mod-lane {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0; /* the thumbnail must be allowed to shrink, not push the row wide */
+}
+
+.mod-lane.is-open .mod-lane-face {
+  outline: 1px solid var(--accent);
+}
+
+/* The Mn label IS the arm button (native MasterTrackRowView:1085). */
+.mod-arm {
+  flex: 0 0 auto;
+  height: var(--control-h);
+  min-width: 3ch;
+  padding: 0 4px;
+  font-family: var(--type-label-family);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: color-mix(in srgb, var(--mod-color) 15%, transparent);
+  border: var(--hairline) solid color-mix(in srgb, var(--mod-color) 40%, transparent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.mod-arm:hover {
+  border-color: var(--text-dim);
+}
+
+.mod-arm.is-armed {
+  background: var(--mod-color);
+  color: var(--bg);
+  border-color: var(--mod-color);
+}
+
+.mod-lane-face {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0; /* no descender gap under the canvas */
+}
+
+.mod-lane-meta {
+  flex: 0 0 auto;
+  min-width: 6ch;
+  text-align: right;
+}
+
+.mod-canvas {
+  display: block;
+}
+
+/* ---- Mod Lab ---- */
+
+.mod-lab {
+  position: absolute;
+  z-index: var(--z-popover);
+  left: var(--cell);
+  right: var(--cell);
+  top: calc(100% + 2px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  padding: var(--cell);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-top: 2px solid var(--mod-color);
+  max-height: 60vh;
+  overflow-y: auto; /* must scroll, never clip, at the large end of the token range */
+}
+
+/* Every slider in the Lab is a MODIFIER of this one channel (rate, depth, phase,
+   symmetry, the follower's A/R…), so they all take the channel's identity color —
+   the Lab already sets --mod-color on its root, and every GeoRange paints with
+   var(--fill), so re-pointing --fill here is the whole change (semantic.css
+   `.sem-fill`, same mechanism, spelled locally because the identity var here is
+   --mod-color). At strength 0 it collapses back to the neutral fill. */
+.mod-lab {
+  --fill: color-mix(in srgb, var(--mod-color) var(--sem-mix), var(--fill-neutral));
+}
+
+.mod-lab-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.mod-lab-title {
+  font-weight: 700;
+}
+
+.mod-lab-types {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.mod-chip {
+  height: var(--control-h);
+  padding: 0 6px;
+  font-family: var(--type-label-family);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.mod-chip:hover {
+  border-color: var(--text-dim);
+}
+
+.mod-chip.is-on {
+  color: var(--bg);
+  background: var(--mod-color);
+  border-color: var(--mod-color);
+}
+
+.mod-waves {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+/* ── Track-row control-band parity (MOD-11) ──────────────────────────────────
+   The Lab's parameters wear the same clothes as a track row's DSP band: a 48px
+   value box, the parameter name printed INSIDE the geometric bar, and as many
+   controls packed per wrapping row as fit. Metrics mirror grid.css `.trk-paired`
+   / `.trk-box` / `.trk-ctrl-row.trk-wrap` (not reused directly — grid.css is
+   co-loaded but unscoped, so a mod-local mirror avoids cross-panel coupling). */
+.mod-paired {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 88px;
+}
+
+.mod-paired .ds-dragbox {
+  flex: 0 0 auto;
+  width: 48px;
+  min-width: 48px;
+}
+
+.mod-paired .ds-geo {
+  flex: 1 1 0;
+  min-width: 40px;
+}
+
+/* Value-only box with a caption (source / trigger picker). No dragbox width
+   override — it shows track NAMES, so it keeps the library's 9ch min-width. */
+.mod-box {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.mod-box-cap {
+  font-size: var(--type-nano-size);
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.mod-lab-params {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 5px;
+}
+
+.mod-note {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: var(--type-caption-size);
+}
+
+
+/* ---- Sweep band on a modulated control (MOD-7) ---- */
+
+/* The slider is the rail the band + dot are drawn on, so it must be a positioning context.
+   `flex: 1` because it replaces the bare <GeoRange> that used to sit in the paired row. */
+.trk-rail {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.mod-swept {
+  position: relative;
+}
+
+/* The range the modulation actually covers — base ± depth, in the channel's colour. */
+.mod-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--mod-color) 22%, transparent);
+  border-left: var(--hairline) solid color-mix(in srgb, var(--mod-color) 70%, transparent);
+  border-right: var(--hairline) solid color-mix(in srgb, var(--mod-color) 70%, transparent);
+  pointer-events: none;
+}
+
+/* Draggable edges — this is where depth is edited. Only when ONE channel drives the target;
+   with two or more the split is ambiguous and MOD-7 disables it (edit on the M-slots). */
+.mod-band-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+/* The live modulated value. Moved by transform in the shared rAF ticker — never React state. */
+.mod-dot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--signal);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ---- Arm-to-map (MOD-7, corrected 2026-07-13) ----
+ *
+ * While a channel is armed, a mappable control CANNOT BE EDITED — only mapped.
+ *
+ * This is not decoration, it is the fix for a real bug: GeoRange is an <input type="range">, and a
+ * mousedown on its track jumps the thumb and fires `change` immediately — before any `click`
+ * handler could suppress it. So clicking a slider to assign a modulator silently changed the value
+ * you were assigning. Intercepting the click is too late; the control must never RECEIVE the event.
+ *
+ * Hence: every child goes pointer-events:none, and a single transparent button (.mod-map-hit) is
+ * the only thing that can be clicked. This is native's `.allowsHitTesting(false)` + overlay,
+ * ported faithfully. */
+.mod-armed {
+  position: relative;
+  cursor: crosshair;
+}
+
+/* The control itself is inert. Nothing below the overlay may take a pointer event. */
+.mod-armed > *:not(.mod-map-hit) {
+  pointer-events: none;
+}
+
+.mod-armed::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1.5px solid var(--mod-color);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+/* Already routed to the ARMED channel — clicking again unmaps it. */
+.mod-armed.is-mapped::after {
+  border-color: var(--signal);
+}
+
+.mod-map-hit {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-base);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+}
+
+.mod-map-hit:hover {
+  background: color-mix(in srgb, var(--mod-color) 14%, transparent);
+}

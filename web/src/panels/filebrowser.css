@@ -1,0 +1,145 @@
+/*
+ * Compose sample browser (BR-4). The shell (rail, header, list, footer frame)
+ * is shared — `web/src/design/browser.css`. This file styles only what is the
+ * SAMPLE browser's own: the audition footer.
+ */
+
+/* The compose browser is the WHOLE webview, and #root carries no height — so
+   the viewport is what it stretches against. SwiftUI sizes the frame (280px
+   open / 28px folded), so the shell just fills whatever it is given. */
+.fb-root {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; /* iOS toolbar-collapse; engines without dvh keep vh */
+  width: 100%;
+}
+
+.fb-root > .br-rail {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.fb-choose {
+  margin-top: calc(var(--cell) / 2);
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+}
+
+.fb-choose:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+/* --- audition footer ----------------------------------------------------- */
+
+.fb-preview {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) / 2);
+}
+
+.fb-preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--cell) / 2);
+}
+
+.fb-preview-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85em;
+}
+
+.fb-preview-time {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+}
+
+/* The waveform: the reason the panel exists — you see the sample before you
+   spend a track on it. Drawn with the grid's own drawWave, so a sample looks
+   the same here as in the row it lands on. */
+.fb-wave {
+  position: relative;
+  height: 34px;
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.fb-wave canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fb-wave-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--signal);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fb-preview-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+}
+
+.fb-play {
+  flex: 0 0 auto;
+  width: 20px;
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  padding: 1px 0;
+  font-size: 0.8em;
+}
+
+.fb-play:hover {
+  border-color: var(--text-dim);
+}
+
+.fb-meter {
+  flex: 1 1 auto;
+  height: 5px;
+  background: var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.fb-meter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--signal);
+}
+
+.fb-load {
+  flex: 0 0 auto;
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  padding: 1px 6px;
+  font-size: 0.8em;
+  letter-spacing: 0.06em;
+}
+
+.fb-load:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

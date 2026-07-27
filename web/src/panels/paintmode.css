@@ -1,0 +1,168 @@
+/* Pane-specific bits — shared idiom lives in design/controls.css. */
+.paintmode {
+  max-width: 440px;
+}
+
+.bank-editor {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 2);
+  border-top: var(--hairline) solid var(--line);
+  padding-top: calc(var(--cell) * 2);
+}
+
+.bank-picker {
+  display: flex;
+  gap: var(--cell);
+  align-items: center;
+}
+
+.bank-picker .template-fill {
+  margin-left: auto;
+}
+
+.interval-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--cell);
+}
+
+.interval-grid input {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+  text-align: right;
+}
+
+.interval-grid input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.path-display {
+  word-break: break-all;
+}
+
+.audio-pane {
+  max-width: 480px;
+}
+
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 2);
+  min-height: var(--row-height);
+}
+
+.mapping-target {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cell);
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+}
+
+/* Routing matrix (P4-09c2): signals × hardware channels. */
+.rmx {
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+}
+
+.rmx-grid {
+  display: grid;
+  gap: 2px;
+  align-items: stretch;
+}
+
+.rmx-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cell);
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  white-space: nowrap;
+  padding-right: var(--cell);
+}
+
+.rmx-col-label {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.rmx-cell {
+  min-width: calc(var(--cell) * 3);
+  height: calc(var(--cell) * 4);
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  padding: 0;
+  cursor: pointer;
+}
+
+button.rmx-cell:hover {
+  border-color: var(--accent);
+}
+
+.rmx-cell.rmx-on {
+  background: var(--fill);
+}
+
+.rmx-cell.rmx-main,
+.rmx-cell.rmx-main-ride {
+  background: var(--fill);
+  opacity: 0.45;
+}
+
+.rmx-cell.rmx-off {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.rmx-cell.rmx-fold {
+  border-style: dashed;
+  opacity: 0.5;
+}
+
+.rmx-mode {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  padding: 0 var(--cell);
+  cursor: pointer;
+}
+
+.rmx-mode.rmx-on {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.rmx-sublabel {
+  margin-left: auto;
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  color: var(--text);
+}
+
+.rmx-fold-note {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  padding: var(--cell) 0;
+}

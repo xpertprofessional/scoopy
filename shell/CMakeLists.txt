@@ -83,57 +83,17 @@ target_include_directories(command_dispatch_test PRIVATE generated ${CMAKE_SOURC
 target_link_libraries(command_dispatch_test PRIVATE wz_command)
 add_test(NAME command_dispatch_test COMMAND command_dispatch_test)
 
-juce_add_gui_app(Wizard
-    PRODUCT_NAME "Wizard"
-    COMPANY_NAME "Wizard"
-    BUNDLE_ID com.wizard.wizard
-    # Without this, macOS TCC silently starves the duplex input side: the
-    # device opens but input buffers arrive as zeros (P1-G1 field finding).
-    # This injects NSMicrophoneUsageDescription and JUCE's permission request.
-    MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Wizard mixes and records audio inputs; microphone access makes your hardware inputs available as channel strips.")
-
-target_sources(Wizard PRIVATE src/Main.cpp)
-
-# generated/ holds WZProtocol.h (codegen from web/protocol/schema.ts); include/
-# holds the engine ABI. Main.cpp creates the engine directly (single explicit
-# link), same as parlante's shell.
-target_include_directories(Wizard PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include ${CMAKE_SOURCE_DIR}/host/src)
-
-target_compile_definitions(Wizard PRIVATE
-    JUCE_WEB_BROWSER=1
-    JUCE_USE_CURL=0
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Wizard,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Wizard,JUCE_VERSION>"
-    # Dev builds serve the committed bundle straight from the repo; release
-    # packaging (P8) switches this to a bundled copy.
-    WIZARD_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/webdist")
-
-target_link_libraries(Wizard PRIVATE
-    wz_engine # Main.cpp calls the engine directly
-    wz_webresources
-    wz_command # Main.cpp's wzCommand native fn dispatches through this
-    wz_audio_io # host/ duplex device layer: drives wz_engine_render
-    wz_decode   # deckLoadFile: decode + SINC_BEST resample (D-WZ-DECKSRC-01)
-    wz_record   # P3: drain thread -> crash-safe take files
-    wz_session  # P7: atomic session file read/write
-    wz_package  # P7: .wizard package (STORED zip)
-    juce::juce_gui_extra
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_warning_flags)
-
-# JUCE 8's juce_gui_extra declares no `linuxPackages`, so nothing supplies the
-# GTK/WebKit headers its Linux WebBrowserComponent includes (<gtk/gtk.h>).
-# Provide them via pkg-config — macOS gets its webview from the OS.
-if(UNIX AND NOT APPLE)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
-    pkg_check_modules(WEBKIT2GTK REQUIRED webkit2gtk-4.1)
-    target_include_directories(Wizard PRIVATE
-        ${GTK3_INCLUDE_DIRS} ${WEBKIT2GTK_INCLUDE_DIRS})
-    target_link_libraries(Wizard PRIVATE
-        ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
-endif()
+# THE `Wizard` APP TARGET IS GONE (P3-0 step 2, 2026-07-27).
+#
+# It served `webdist/` built from wizard's own `web/` — a SECOND plane
+# implementation, 49 files, superseded concept for concept by the merged plane
+# (MeterCanvas -> StripMeter, DeckWaveform -> TapeWave, DevicePicker ->
+# devices.ts). That plane was never ported: pd-strip-anatomy critiqued wizard's
+# Strip.tsx with fourteen numbered defects and the merged one was built fresh.
+#
+# Keeping both meant two `web` trees and two apps that both looked like "the
+# app", which is most of the folder confusion this collapse exists to end. The
+# code is in git if it is ever wanted back.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The MERGED SHELL — scoopy's real UI on the SL ABI v3 engine (P1 live window).
@@ -157,7 +117,11 @@ target_compile_definitions(WizardMerged PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_VERSION>"
     # The vendored, hash-pinned scoopy webdist — the merged repo hosts scoopy
     # self-contained (no sibling checkout at runtime).
-    MERGED_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/vendor/scoopy/webdist")
+    # BUILT IN-TREE from `web/` (P3-0 step 2). It was `vendor/scoopy/webdist` — a
+    # vendored BUILD of another repo's UI — and that indirection cost a session:
+    # a day's work was invisible because nothing rebuilt or re-vendored it. One
+    # tree, one build, nothing to forget.
+    MERGED_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/webdist")
 
 target_link_libraries(WizardMerged PRIVATE
     wz_sl_engine    # the v3 engine

@@ -1,0 +1,892 @@
+/* The plane and its strips (merge P2 step 4).
+ *
+ * COLOUR, TYPE, RADIUS, DURATION AND Z ALL COME FROM TOKENS — check:tokens
+ * rejects a hex literal, an rgb()/hsl() literal, a px font-size, a radius
+ * literal, a raw z-index, a raw duration and a dangling var(). GEOMETRY does
+ * not: the 48/22/12/10/3 numbers below are the strip's pixel budget
+ * (wizard docs/specs/pd-strip-anatomy.md §4.1), which closes exactly at
+ * 340 × 196, and they belong here rather than in a token file where nobody
+ * would find them.
+ *
+ * ⚠️ THE SPEC'S TOKEN CHECKLIST DOES NOT SURVIVE THE MOVE. pd-strip-anatomy §6
+ * promises "zero token additions" and lists --rec-lamp, --chan-deck,
+ * --chan-bus and --feedback-lamp. Those are WIZARD's tokens; scoopy emits none
+ * of them, and check:tokens' dangling-var rule caught it. Rather than add four
+ * tokens to scoopy's system to satisfy a checklist written against a different
+ * one, the strip speaks scoopy's own vocabulary, which already carries the same
+ * meanings:
+ *
+ *     --rec-lamp      -> --hot        recording, and the loudest state there is
+ *     --chan-deck     -> --signal     material: the waveform, "there is audio"
+ *     --chan-bus      -> --text-dim   unbound: a strip with no element yet
+ *     --feedback-lamp -> --warn       a consented loop, and what it costs
+ *     kind identity   -> --sem-color  via semanticColor("deck", channel)
+ *
+ * The last line is the real gain: scoopy's SEMANTIC system already gives every
+ * numbered family an identity colour and tints every fill beneath it from one
+ * variable, so the kind bar and the send faders inherit their colour instead of
+ * each naming one.
+ */
+
+/* FIXED, not just 100vh-in-flow. The plane is the whole window, and anything
+   prepended to <body> — the fatal-error blocks, a future banner — would
+   otherwise push a 100vh block straight off the bottom of the screen and leave
+   the workspace unreachable. That is precisely what happened on the first
+   run-pass: twelve error blocks and the plane was scrolled out of existence.
+   A workspace that owns the window should not be in the document flow. */
+.plane-panel {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  /* Above the body flow so an error block overlays rather than displaces; the
+     block stays readable, and the app stays usable underneath it. */
+  z-index: var(--z-base);
+}
+
+/* ── the bar ─────────────────────────────────────────────────────────────── */
+
+.plane-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: var(--hairline) solid var(--line);
+  flex: 0 0 auto;
+}
+
+.plane-spacer { flex: 1 1 auto; }
+
+.plane-compose {
+  height: 22px;
+  padding: 0 10px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.plane-compose:hover { background: var(--bg); }
+
+.plane-bpm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
+
+.plane-bpm input {
+  width: 72px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  font: inherit;
+  text-align: right;
+}
+
+.plane-note {
+  margin: 0;
+  padding: 4px 10px;
+  flex: 0 0 auto;
+}
+
+/* ── the surface ─────────────────────────────────────────────────────────── */
+
+.plane {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: var(--bg);
+  /* The plane is a workspace, not a document: a drag pans it, so no text
+     selection and no touch scrolling should fight the gesture. */
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.plane:active { cursor: grabbing; }
+
+/* One transform over every strip. Top-left origin is the convention
+   fitToContent() and zoomAbout() both compute against — changing it here
+   silently breaks fit and zoom-toward-cursor together. */
+.plane-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.plane-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.plane-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  z-index: var(--z-overlay);
+}
+
+.plane-controls button {
+  min-width: 26px;
+  height: 22px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.plane-controls button:hover { background: var(--bg-raised); }
+.plane-controls .plane-add { min-width: 56px; }
+.plane-controls .value { min-width: 44px; text-align: center; color: var(--text-dim); }
+
+/* ── cables ──────────────────────────────────────────────────────────────── */
+
+/* BEHIND the strips and click-through except on the paths themselves. The plane
+   is an instrument first and a diagram second: a cable must never intercept a
+   click meant for a fader. */
+.plane-cables {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: var(--z-base);
+}
+
+.plane-cable-line {
+  fill: none;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+/* A wide invisible stroke under the visible one. A 2 px line is almost
+   impossible to hit, and a cable you cannot click is a cable you cannot
+   remove. */
+.plane-cable-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.plane-cable:hover .plane-cable-line { stroke-width: 3; }
+
+/* A feedback edge is DASHED — it is the one cable that costs a whole block, and
+   two routes differing only in that bit differ by ~10.7 ms. The dash is the
+   difference made visible at a glance; the exact price is in the title and in
+   the destination strip's status line. */
+.plane-cable.feedback .plane-cable-line {
+  stroke-dasharray: 6 4;
+}
+
+/* ── the strip ───────────────────────────────────────────────────────────── */
+
+/* L1: the box is authoritative. `width` and `height` come from the document via
+   inline style; `overflow: hidden` is what makes that a guarantee rather than a
+   preference — content that overruns is clipped, never allowed to grow the box
+   and invalidate every saved arrangement around it. */
+.plane-strip {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  padding-left: 11px; /* 8 + the 3px kind bar */
+  background: var(--bg-raised);
+  border-radius: var(--radius);
+  cursor: default;
+  /* THE EDGE COSTS NO LAYOUT. An actual `border` would consume 2px of a budget
+     that closes to the pixel at 196, silently pushing the `rate` row under
+     `overflow: hidden` — the control would simply be gone, with nothing to see.
+     This is the same reasoning L6 gives for drawing SELECTION as an outline,
+     applied to the resting edge as well. Measured by browser_plane_test.mjs. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+
+/* L6: selection is an OUTLINE. A border would move every child by a pixel the
+   moment you clicked, which is a layout change caused by looking at something. */
+.plane-strip.selected {
+  outline: var(--hairline) solid var(--accent);
+  outline-offset: 1px;
+  z-index: var(--z-raised);
+}
+
+.plane-strip:focus-visible {
+  outline: var(--hairline) solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* State 12. OPACITY, not display: a muted strip stays entirely present. The
+   kind bar, the meter and the status line are deliberately excluded so you can
+   still see a muted strip receiving signal — which is the question you are
+   actually asking when you look at one. */
+.plane-strip.muted .strip-head,
+.plane-strip.muted .strip-wavefield,
+.plane-strip.muted .strip-transport,
+.plane-strip.muted .strip-params {
+  opacity: 0.45;
+}
+
+/* D9: kind is carried by a large saturated area, never by tinting small text. */
+.strip-kindbar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--sem-color, var(--text-dim));
+}
+
+.plane-strip.recording .strip-kindbar { background: var(--hot); }
+.plane-strip[data-kind='none'] .strip-kindbar { background: var(--text-dim); }
+
+/* ── head (16px) ─────────────────────────────────────────────────────────── */
+
+.strip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.strip-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+/* Where this strip's signal goes. Fixed width so the head cannot reflow when it
+   changes (L4) — `▸main` and `▸—` occupy the same box. */
+.strip-out {
+  flex: 0 0 auto;
+  min-width: 40px;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.strip-out.warn { color: var(--warn); }
+
+/* The feedback lamp's slot, reserved at ALL times so an alarm can never shift
+   the state word sideways (L2). */
+.strip-fb-slot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+}
+
+.plane-strip.feedback .strip-fb-slot { background: var(--warn); }
+
+/* Fixed-width fields: the state word and the elapsed counter cannot widen the
+   head, whatever they say (L4). */
+.strip-state {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.strip-state.rec { color: var(--hot); }
+
+.strip-elapsed {
+  flex: 0 0 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* ── wave row (48px) ─────────────────────────────────────────────────────── */
+
+.strip-waverow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  height: 48px;
+  flex: 0 0 48px;
+}
+
+.strip-wavefield {
+  position: relative;
+  flex: 0 0 auto;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.strip-wavefield.missing { border-color: var(--hot); }
+
+.strip-wave-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* ── the grid element ────────────────────────────────────────────────────── */
+
+/* The scene pads take the WAVE FIELD's rect exactly — same width, same 48 px.
+   A grid strip and a tape strip are the same object with different material,
+   and a different-sized field would break that on sight. */
+.strip-scenefield {
+  flex: 0 0 auto;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.strip-scenes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.strip-pad {
+  background: var(--bg);
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+  min-width: 0; /* a pad must shrink, not push the row wider */
+}
+
+.strip-pad:hover { background: var(--bg-raised); }
+
+.strip-pad.active {
+  background: var(--signal);
+  color: var(--bg);
+}
+
+/* Armed for the next cycle boundary. A pad that looked unpressed for two bars
+   after you pressed it would read as a dead control, so the wait is visible. */
+.strip-pad.queued {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Sync · tempo · compose, in the rate row's 18 px slot. */
+.strip-gridrow { gap: 4px; }
+
+.strip-sync {
+  flex: 0 0 44px;
+  height: 18px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-sync.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.strip-bpm {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-dim);
+}
+
+.strip-bpm input {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 3px;
+  font: inherit;
+  text-align: right;
+}
+
+.strip-compose {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-compose:hover { background: var(--bg-raised); }
+
+/* The meter is 10 × 48 by construction (StripMeter.tsx). Explicit geometry is
+   the fix for the worst defect in the donor strip, where a default-sized meter
+   made the header six times the height of the transport row. */
+.strip-meter {
+  flex: 0 0 auto;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+/* ── transport (22px) ────────────────────────────────────────────────────── */
+
+/* The row's rhythm — record · verbs · switches — is its only structure. */
+.strip-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  flex: 0 0 22px;
+}
+
+/* REC dominates: 56 px, a text label, and a lamp. It is the verb that changes
+   what the object IS, and it must never be the same weight as its neighbours. */
+.strip-rec {
+  flex: 0 0 56px;
+  height: 22px;
+  background: var(--bg);
+  color: var(--hot);
+  border: var(--hairline) solid var(--hot);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.strip-rec:hover:not(:disabled) { background: var(--bg-raised); }
+
+.strip-rec.latched {
+  background: var(--hot);
+  color: var(--bg);
+}
+
+.strip-rec:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--line);
+  color: var(--text-dim);
+}
+
+.strip-verbs,
+.strip-switches {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.strip-verbs { flex: 1 1 auto; }
+
+.strip-verbs button {
+  min-width: 26px;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+}
+
+.strip-switches button {
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+/* MON carries a WORD, not a glyph, so it gets the width a word needs.
+   These two switches sit side by side and are exactly the pair this whole fix
+   exists to stop people confusing — MON is the strip's INPUT, M is its OUTPUT
+   — so spelling one of them out is the cheapest way to keep them apart. Two
+   glyphs in identical squares would be the version you have to learn.
+
+   The row still closes with room to spare: 56 (REC) + 4×26 (verbs) + 34 + 22
+   (switches) + gaps = 240 of the 324 available inside the box. */
+.strip-mon { display: flex; }
+
+.strip-mon button {
+  min-width: 34px;
+  width: 34px;
+  height: 22px;
+  padding: 0;
+}
+
+/* ── status (12px) ───────────────────────────────────────────────────────── */
+
+/* L3: ONE line, always present, never a stack. `flex: 0 0 12px` is what makes
+   "reserved" true — an empty message keeps its box. */
+.strip-status {
+  height: 12px;
+  flex: 0 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.strip-status.warn { color: var(--warn); }
+.strip-status.hot { color: var(--hot); }
+
+/* ── params (3 × 18px) ───────────────────────────────────────────────────── */
+
+.strip-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.strip-row {
+  min-height: 18px;
+  height: 18px;
+  gap: 6px;
+}
+
+/* The label is a fixed narrow column so the BAR gets the room. The bar is the
+   value; a 34%-width label would spend a third of the strip on three words you
+   already know. */
+.strip-row .ds-label {
+  flex: 0 0 34px;
+  width: 34px;
+  color: var(--text-dim);
+}
+
+.strip-row .ds-value {
+  flex: 0 0 52px;
+  width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.strip-row .ds-value.warn { color: var(--warn); }
+
+/* L2 made visual: an inert row is dimmed and unclickable, never absent. */
+.ds-row-disabled,
+.ds-geo-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.strip-sends { gap: 4px; }
+
+.strip-micro {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 8px;
+  height: 18px;
+}
+
+.strip-sends .ch-micro {
+  width: 8px;
+  height: 18px;
+  margin: 0;
+}
+
+/* ── the routing ledger ──────────────────────────────────────────────────── */
+
+/* Summoned, never docked. A scrim so the plane behind it reads as parked, and
+   a click outside closes — the same dismissal every menu in the app has. */
+.plane-matrix-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: var(--z-popover);
+}
+
+.plane-matrix {
+  width: min(760px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.plane-matrix-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: var(--hairline) solid var(--line);
+}
+
+.plane-matrix-head button {
+  min-width: 26px;
+  height: 22px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.plane-matrix-empty { padding: 20px; text-align: center; }
+
+.plane-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.plane-matrix-table th,
+.plane-matrix-table td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: var(--hairline) solid var(--line);
+}
+
+.plane-matrix-table th { color: var(--text-dim); }
+.plane-matrix-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Default wiring recedes — it is correct, it is 40 rows, and it is not what
+   anyone opened this table to find. */
+.plane-matrix-table tr.is-default { opacity: 0.5; }
+
+.plane-matrix-table button {
+  background: none;
+  color: var(--text-dim);
+  border: 0;
+  cursor: pointer;
+}
+
+.plane-matrix-table button:hover { color: var(--hot); }
+
+.plane-matrix-order {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: var(--hairline) solid var(--line);
+}
+
+/* ── the master section ──────────────────────────────────────────────────── */
+
+/* In the BAR, not on the plane. A strip is something you place; the master is
+   not — there is exactly one, it is never routed anywhere, and it has no
+   element. Making it a strip would buy a consistency the eye does not need in
+   exchange for an object you could drag away from or lose. */
+.plane-master {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.master-fader { display: inline-flex; width: 120px; }
+
+.master-db {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.master-meter {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+/* The limiter lamp. Not decoration: the watchdog HOLDS the output rather than
+   muting it, so a session being limited otherwise just sounds quiet and
+   squashed with nothing saying why. */
+.master-lamp {
+  min-width: 56px;
+  text-align: center;
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+}
+
+.master-lamp.engaged {
+  color: var(--bg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+/* ── the Inspector ───────────────────────────────────────────────────────── */
+
+/* The plane and the Inspector share the panel's remaining height. The plane
+   FLEXES and the Inspector is fixed: the workspace is what should grow with the
+   window, and a details panel that widened on a big screen would just push the
+   plane's own controls further from the hand. */
+.plane-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plane-body .plane { flex: 1 1 auto; }
+
+.plane-inspector {
+  flex: 0 0 260px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-left: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+}
+
+.ins-title {
+  margin: 0 0 8px;
+  font: inherit;
+  color: var(--text);
+}
+
+.ins-section {
+  padding: 8px 0;
+  border-top: var(--hairline) solid var(--line);
+}
+
+.ins-section h3 { margin: 0 0 6px; font: inherit; }
+
+.ins-rows { display: block; margin: 0; }
+
+.ins-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text-dim);
+}
+
+.ins-row dt { flex: 0 0 auto; }
+.ins-row dd { margin: 0; text-align: right; color: var(--text); overflow-wrap: anywhere; }
+.ins-row.warn dd { color: var(--warn); }
+
+.ins-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text-dim);
+}
+
+.ins-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  font: inherit;
+  text-align: right;
+}
+
+.ins-hint { margin: 10px 0 0; line-height: 1.5; }
+
+/* Destructive, so it is here and never one-handed near a REC button. */
+.ins-remove {
+  width: 100%;
+  height: 22px;
+  background: var(--bg);
+  color: var(--hot);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ins-remove:hover { border-color: var(--hot); }
+
+/* The map's name, in the bar. An inline field rather than a dialog: a JS modal
+   blocks the whole WebView, and this doubles as the "what is this called"
+   display that a prompt would only ever show once. */
+.plane-name {
+  width: 140px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font: inherit;
+}
+
+/* Carve — a COMMITMENT, so it looks like one: full width, in the Inspector,
+   never a glyph on the object next to the transport. */
+.ins-carve {
+  width: 100%;
+  height: 22px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ins-carve:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ins-carve:disabled { opacity: 0.4; cursor: default; }
+
+/* ── the composer, beside the map ────────────────────────────────────────── */
+
+/* An OVERLAY over the plane, not a split: the grid needs the whole window to be
+   usable, and a half-width composer would be a worse version of both surfaces.
+   Fixed and inset for the same reason `.plane-panel` is — anything prepended to
+   <body> must overlay it rather than push it off screen. */
+.plane-composer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  z-index: var(--z-overlay);
+}
+
+.plane-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: var(--hairline) solid var(--line);
+  flex: 0 0 auto;
+}
+
+.plane-composer-bar button {
+  height: 22px;
+  padding: 0 10px;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.plane-composer-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  position: relative;
+}

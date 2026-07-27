@@ -1,0 +1,44 @@
+/* Sync nudge — momentary; lit only WHILE the deck is being pushed off lock. */
+
+.nudge-box {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+  padding: 0 calc(var(--cell) / 2);
+  background: transparent;
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+}
+
+.nudge-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5ch;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  border: none;
+  cursor: pointer;
+  touch-action: none;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.nudge-arrow:active {
+  color: var(--signal);
+}
+
+.nudge-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: center;
+}
+
+.nudge-box.live {
+  border-color: var(--signal);
+  color: var(--signal);
+}

@@ -1,0 +1,146 @@
+/* Pattern-scene cluster (pads · S/R/0 · SCN · MUTE).
+
+   Lives in the DECK'S TRANSPORT BOX, on a row of its own (user, 2026-07-13):
+   snapshot switching is a transport act — it schedules against the pattern
+   boundary exactly like launching a deck.
+
+   ONE row of REGULAR-SIZE buttons. Native stacked them 4+4 only because both
+   rows had to fit inside the toolbar's single bar height; with the cluster on
+   its own row that constraint is gone, so the eight snapshots you hit mid-set
+   get the app's standard button geometry (--control-h, the .ds-button padding)
+   instead of a cramped 2x4 postage stamp. */
+
+/* Its own row inside the deck box: the cluster spans the width and never
+   competes with SYNC/TR/WIN for space. */
+.scene-row {
+  flex-wrap: wrap;
+}
+
+.scene-row .scene-cluster {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+/* GRID · PERF — the deck's grid TOOLS, pinned to the box's right edge so the
+   snapshot cluster keeps the left and the two grid-mode toggles read as their
+   own group (user, 2026-07-16). margin-left:auto holds them right even when the
+   scene cluster is narrow; on a cramped box the scene row wraps and the tools
+   drop to their own line, still right-bound. */
+.scene-row .deck-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.scene-cluster {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.scene-pads {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* The pads' 2px gap is tighter than the standard gutter, so the hot slop
+     scopes down to half of IT — the .ds-hot midline rule (a click never routes
+     to the farther pad) holds only while slop ≤ half the gap. */
+  --hit-slop: 1px;
+}
+
+/* Same geometry as .ds-button — a scene pad IS a button, so it reads and hits
+   like every other one (DS-01c uniform-height law). Monospace + a min-width of
+   2ch so 1…8 never make the row twitch. */
+.scene-pad {
+  flex: 0 0 auto;
+  height: var(--control-h);
+  min-width: 2ch;
+  padding: 0 calc(var(--cell) * 2);
+  border: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scene-pad:hover {
+  border-color: var(--accent);
+}
+
+/* native: active fill = text colour, label = background (hard inversion) */
+.scene-pad.is-active {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* native: scheduled = warning tint, loop-scheduled = the distinct "scenes"
+   colour. The token system has no scenes/record chrome role yet, so
+   loop-scheduled maps to --accent. Flagged for the P4-06 gate. */
+.scene-pad.is-scheduled {
+  background: var(--warn);
+  color: var(--bg);
+  animation: scene-blink var(--dur-pulse) ease-in-out infinite alternate;
+}
+
+.scene-pad.is-loop {
+  background: var(--accent);
+  color: var(--bg);
+  animation: scene-blink var(--dur-pulse) ease-in-out infinite alternate;
+}
+
+@keyframes scene-blink {
+  from { opacity: 1; }
+  to { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-pad.is-scheduled,
+  .scene-pad.is-loop {
+    animation: none;
+  }
+}
+
+/* The add slot is the same button, dashed — it is an affordance, not a scene. */
+.scene-add {
+  flex: 0 0 auto;
+  height: var(--control-h);
+  min-width: 2ch;
+  padding: 0 calc(var(--cell) * 2);
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scene-add:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.scene-mode {
+  display: flex;
+  gap: 1px;
+  height: var(--control-h);
+}
+
+.scene-mode button {
+  width: calc(var(--cell) * 5);
+  border: var(--hairline) solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  cursor: pointer;
+}
+
+.scene-mode button.is-on {
+  background: var(--text);
+  color: var(--bg);
+}

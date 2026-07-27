@@ -1,0 +1,68 @@
+/* Capture take window (CAP-3). Floating NSWindow, so unlike the mixer strip
+   this surface has room to breathe — it is sized to its content, not squeezed
+   into a toolbar row. */
+
+.capture {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.cap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cap-phase {
+  font-size: var(--type-caption-size);
+  letter-spacing: 0.08em;
+}
+
+/* The trace. Height is fixed: the take's LENGTH is the x axis, so a taller box
+   would only stretch the amplitude, never show more of the recording. */
+.cap-wave {
+  width: 100%;
+  height: 64px;
+  display: block;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  cursor: ew-resize;
+  touch-action: none; /* the crop drag owns the pointer */
+}
+
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Destinations share the width evenly — neither is the "safe" default; they are
+   two equal answers to "where does this take go". */
+.cap-dest > * {
+  flex: 1 1 0;
+}
+
+.cap-saved {
+  flex: 1 1 0;
+  text-align: center;
+  height: var(--slider-bar-h);
+  line-height: var(--slider-bar-h);
+  font-size: var(--type-caption-size);
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 12%, var(--bg-raised));
+  border-radius: var(--radius);
+}
+
+.cap-error {
+  margin: 0;
+  font-size: var(--type-caption-size);
+  color: var(--hot);
+}

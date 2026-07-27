@@ -1,0 +1,166 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// `engineLink.ts` reads `window` at module scope (the WKWebView handler probe),
+// and this suite runs in the node environment like every other test here. Set
+// it up BEFORE the import so the module can evaluate.
+vi.stubGlobal("window", {});
+vi.stubGlobal("requestAnimationFrame", () => 0);
+vi.stubGlobal("cancelAnimationFrame", () => {});
+// The companion stack's start() reaches for OPFS. Refusing it is realistic —
+// there is no OPFS in the node environment — and this suite is about ROUTING,
+// not about the companion's storage. A rejected init must not take the link
+// down with it, which this incidentally proves.
+vi.stubGlobal("navigator", {
+  storage: { getDirectory: () => Promise.reject(new Error("no OPFS here")) },
+});
+vi.stubGlobal("localStorage", {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+});
+
+const { createEngineLink } = await import("./engineLink.ts");
+
+/**
+ * THE MERGED SHELL'S COMMAND ROUTING.
+ *
+ * This test exists because `MergedLink` was an EMPTY subclass: it held the JUCE
+ * backend and never called it, so every command in the merged desktop app was
+ * answered by the browser-companion code path and anything that path does not
+ * implement threw "not implemented in the browser companion". The native engine
+ * was running, with an audio device open, being asked nothing — and the fault
+ * was invisible until a panel came along that depended on the native side.
+ *
+ * Nothing in the type system can catch that: both sides satisfy `EngineLink`.
+ * Only an assertion about WHICH SIDE a method lands on can.
+ */
+
+type Sent = { name: string; params: unknown[] };
+
+/** A fake `window.__JUCE__.backend`, which is what makes createEngineLink()
+    believe it is inside the merged shell. */
+/** A minimally VALID reply per method. Replies are parsed through the command
+    table on the way back, so a lazy `{}` fails the schema rather than the
+    routing — which is the schema doing its job, and worth not defeating. */
+const REPLY: Record<string, unknown> = {
+  getCapabilities: {
+    schemaVersion: 87,
+    pluginHosting: false,
+    fileSystem: true,
+    midiHardware: false,
+    audioDeviceSelection: true,
+    returnFx: false,
+  },
+  slRouteList: { routes: [], renderOrder: [] },
+  setSetting: {},
+  getSetting: { value: null },
+  openPanelWindow: {},
+};
+
+function installJuceBackend() {
+  const sent: Sent[] = [];
+  const listeners = new Map<string, (payload: unknown) => void>();
+  const backend = {
+    emitEvent(eventId: string, payload: unknown) {
+      if (eventId === "__juce__invoke") {
+        const p = payload as { name: string; params: unknown[]; resultId: number };
+        sent.push({ name: p.name, params: p.params });
+        // Resolve as JUCE does, so the caller's promise settles.
+        listeners.get("__juce__complete")?.({
+          promiseId: p.resultId,
+          result: { ok: true, result: REPLY[String(p.params[0])] ?? { ok: true } },
+        });
+        return;
+      }
+      sent.push({ name: eventId, params: [payload] });
+    },
+    addEventListener(eventId: string, fn: (payload: unknown) => void) {
+      listeners.set(eventId, fn);
+      return listeners.size;
+    },
+    removeEventListener() {},
+  };
+  (globalThis as unknown as { window: Record<string, unknown> }).window.__JUCE__ = { backend };
+  return { sent, listeners };
+}
+
+beforeEach(() => {
+  (globalThis as unknown as { window: Record<string, unknown> }).window = {};
+});
+
+describe("MergedLink routing", () => {
+  it("sends the PLANE's commands to the native side", async () => {
+    // The regression that cost a whole run-pass: every one of these threw
+    // "not implemented in the browser companion".
+    const { sent } = installJuceBackend();
+    const link = createEngineLink();
+    expect(link).not.toBeNull();
+
+    for (const method of [
+      "slChannel",
+      "slTape",
+      "slRoute",
+      "slRouteList",
+      "slRecord",
+      "slTakes",
+    ]) {
+      await link!.command(method as never, {});
+    }
+
+    const native = sent.filter((s) => s.name === "slCommand").map((s) => s.params[0]);
+    expect(native).toEqual([
+      "slChannel",
+      "slTape",
+      "slRoute",
+      "slRouteList",
+      "slRecord",
+      "slTakes",
+    ]);
+  });
+
+  it("sends the handshake and settings native — they are the SHELL's, not this webview's", async () => {
+    // Settings must be the shell's file: every panel is a separate webview, and
+    // localStorage would give each one its own private copy of the theme.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()!;
+    await link.command("getCapabilities" as never, {});
+    await link.command("setSetting" as never, { key: "k", value: 1 });
+    const native = sent.filter((s) => s.name === "slCommand").map((s) => s.params[0]);
+    expect(native).toContain("getCapabilities");
+    expect(native).toContain("setSetting");
+  });
+
+  it("sends window spawning native — it needs the window layer", async () => {
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()!;
+    await link.command("openPanelWindow" as never, { panel: "companion" });
+    expect(sent.filter((s) => s.name === "slCommand").map((s) => s.params[0])).toContain(
+      "openPanelWindow",
+    );
+  });
+
+  it("sends the WORLD SINK native — the grid must not drive a WASM copy", async () => {
+    // The structural bug: `companionEngine` publishes worlds, and its sink was
+    // ScoopyAudio — an Emscripten build of the same C++ core — so in the merged
+    // desktop app the grid drove a WASM COPY of the engine inside an app that
+    // already had the original, on a second clock, into a second output.
+    // `SlWorldApply` sat built and tested with zero callers.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()!;
+    await link.command("slWorld" as never, { action: "publish", world: {} });
+    expect(sent.filter((s) => s.name === "slCommand").map((s) => s.params[0])).toContain(
+      "slWorld",
+    );
+  });
+
+  it("keeps the GRID DOCUMENT on the companion side", async () => {
+    // `MergedMain` implements none of the document methods, and the flip that
+    // would move them native is P3. Routing these native would break the grid
+    // in exactly the way routing the plane's methods to the browser broke the
+    // plane — the same bug, mirrored.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()!;
+    await link.command("getUiState" as never, { topic: "gridMeta" }).catch(() => {});
+    expect(sent.filter((s) => s.name === "slCommand")).toHaveLength(0);
+  });
+});

@@ -1,514 +1,766 @@
 /**
- * Strip — the ONE unified item on the plane (PD-CANVAS-02, D-WZ-PDCANVAS-01).
+ * Strip — the ONE player object on the plane (merge P2 step 4).
  *
- * Every current species is this same component in a different state: an input,
- * a tap, a loopback, or a deck that has recorded material. It is positioned by
- * its `cell` geometry; the Plane applies pan/zoom, so this only lays out its own
- * contents.
+ * Built to `apps/wizard/docs/specs/pd-strip-anatomy.md`, deliberately NOT
+ * ported from wizard's own Strip.tsx, which that spec critiques with fourteen
+ * numbered defects. Its thesis, and this file's:
  *
- * SHAPE: horizontal and player-like (the Parlante reference) — a header line, a
- * wide waveform, a transport row, then Layout-B parameter rows (label · bar ·
- * value) from the shared control idiom. The waveform is the centre of gravity,
- * as it is in a player, and it draws LIVE while recording.
+ *   A STRIP IS A PLAYER WHOSE MATERIAL MAY NOT EXIST YET — so it is drawn as a
+ *   player from the first frame, not as a mixer strip that grows a player when
+ *   you record into it.
  *
- * Precise settings (exact loop points, output bus, cue routing) move to the
- * Inspector in PD-CANVAS-03 — this stays what you touch while playing.
+ * THE LAYOUT-STABILITY LAWS, which every change here must keep:
+ *
+ *   L1 THE BOX IS AUTHORITATIVE. The root sets width AND height from `cell`,
+ *      with overflow hidden. Content is laid out to fit the box; the box is
+ *      never laid out to fit the content. A strip that grows when it records
+ *      silently invalidates `cell.h` — which fit-to-content frames against and
+ *      the document persists — so every saved arrangement becomes wrong.
+ *   L2 EVERY ROW ALWAYS EXISTS. State changes FILL, never PRESENCE. A control
+ *      that is meaningless right now is disabled, not removed.
+ *   L3 THE STATUS LINE IS ONE LINE with a priority ladder, never a stack.
+ *   L4 NO FONT-SIZE CHANGES ON STATE.
+ *   L5 CANVAS GEOMETRY IS A PURE FUNCTION of cell.w — never of state.
+ *   L6 SELECTION IS AN OUTLINE, never a border (a border moves every child by
+ *      a pixel on select).
+ *
+ * The test for any future addition: render the strip in two states and diff the
+ * bounding box of every child. Any child that moves is a bug — and
+ * `Strip.test.tsx` asserts exactly that, mechanically, across every state.
  */
-import { useRef, useState } from 'react'
-import type { Channel } from '../../protocol/schema'
-import { channelFieldIndex } from '../../protocol/schema'
-import type { EngineLink } from '../engine/engineLink'
-import { FADER_UNITY_POSITION, faderPositionToDb } from '../engine/faderCurve'
-import { usePatchActions } from '../engine/usePatch'
-import { MeterCanvas } from '../hotsurface/MeterCanvas'
-import { useAppStore } from '../store/appStore'
-import { DeckWaveform } from '../panels/DeckWaveform'
-import { ParamRow } from '../design/controls'
-import { StripLoad } from './StripLoad'
-import { rateToPosition, positionToRate, formatRate, snapUnity } from '../panels/VarispeedSlider'
+import { useEffect, useRef, useState } from 'react'
+import {
+  HotFrameLayout,
+  SL_TAPE_STATE,
+  slChannelMonitorOn,
+  slTapeIndex,
+} from '../../protocol/schema.ts'
+import type { EngineLink } from '../engineLink.ts'
+import { Button, GeoRange } from '../design/controls.tsx'
+import { semanticColor } from '../design/tokens.ts'
+import type { SceneLetter } from '../audio/sceneProjection.ts'
+import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+import {
+  checkBudget,
+  flushLiveEdits,
+  getMap,
+  liveSetLevel,
+  liveSetRate,
+  liveSetSend,
+  noteMonitor,
+  setMonitor,
+  setMute,
+  updateStrip,
+} from '../state/mapStore.ts'
+import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
+import type { Chips } from './cables.ts'
+import { channelLabel, inputChoices, setInputDevice, useDeviceStore } from './devices.ts'
+import { ask, send } from './send.ts'
+import { StripMeter, METER_W } from './StripMeter.tsx'
+import { GridControls, GridScenes } from './GridElement.tsx'
+import { TapeWave, WAVE_H } from './TapeWave.tsx'
+import {
+  IDLE_LIVE,
+  enabledControls,
+  freeTape,
+  isRecording,
+  mmss,
+  newTapeElement,
+  recordTapFor,
+  stateWord,
+  statusLine,
+  type Live,
+} from './stripOps.ts'
 
-const KIND_VAR: Record<string, string> = {
-  deviceInput: 'var(--chan-device)',
-  appTap: 'var(--chan-app-tap)',
-  deck: 'var(--chan-deck)',
-  virtualDeviceInput: 'var(--chan-virtual)',
-  busTap: 'var(--chan-bus)',
-  none: 'var(--chan-bus)',
+/** Interior padding and the meter gutter, from the §4.1 pixel budget. Geometry
+    constants live here, not in tokens: `check:tokens` gates colour and type,
+    and a layout number in a token file would be a number nobody can find. */
+const PAD = 8
+const GUTTER = 6
+
+/** The wave canvas width, a pure function of the box (L5). Derived once per
+    render rather than in the canvas, so nothing downstream can make it depend
+    on state. */
+export function waveWidth(cellW: number): number {
+  return Math.max(80, cellW - PAD * 2 - GUTTER - METER_W)
 }
 
-const DECK_STATE_LABEL = ['idle', 'loop', 'shot', 'rec']
-const RECORDING = 3
-
-function faderLabel(position: number): string {
-  if (position <= 0) return '−∞'
-  const db = faderPositionToDb(position)
-  return `${db > 0 ? '+' : ''}${db.toFixed(1)}`
+/** Signed varispeed, displayed in a FIXED-WIDTH field so `−0.75×` and `+1.00×`
+    occupy the same box and the row cannot reflow at the reverse crossing. */
+export function formatRate(rate: number): string {
+  const glyph = rate < 0 ? '◄' : '►'
+  return `${glyph} ${Math.abs(rate).toFixed(2)}×`
 }
 
-/**
- * Which ENGINE INPUT channels a Strip records. The engine captures input
- * channels only (wz_engine.h: "records `channels` ENGINE-input channels"), so
- * this is also the honest test of whether a Strip can record at all.
- *   deviceInput "3"   -> mono   {3, -1}
- *   deviceInput "0,1" -> stereo {0, 1}
- * A bus tap or an app tap has no input channel to name, so it returns null and
- * the record verb is disabled WITH the reason rather than silently doing
- * nothing.
- */
-export function recordChannels(
-  source: { kind: string; id: string },
-  fallbackInput: number | null,
-): { chan0: number; chan1: number } | null {
-  if (source.kind === 'deviceInput') {
-    const parts = source.id.split(',').map((p) => Number.parseInt(p, 10))
-    const a = parts[0]
-    if (a === undefined || !Number.isInteger(a) || a < 0) return null
-    const b = parts[1]
-    return { chan0: a, chan1: Number.isInteger(b) && b! >= 0 ? b! : -1 }
-  }
-  // A Strip that already holds material but names no input (a deck added empty)
-  // records the first available input, which is what the deck rack always did.
-  if (source.kind === 'deck' && fallbackInput !== null)
-    return { chan0: fallbackInput, chan1: -1 }
-  return null
-}
-
-function panLabel(pan: number): string {
-  if (Math.abs(pan) < 0.005) return 'C'
-  const side = pan < 0 ? 'L' : 'R'
-  return `${side}${Math.round(Math.abs(pan) * 100)}`
+const RATE_MIN = -2
+const RATE_MAX = 2
+/** Snap to exactly 1.0 near unity. The engine's identity path is BIT-EXACT at
+    1.0, so a slider that could only ever reach 0.998 would quietly resample
+    material that should pass through untouched. */
+function snapUnity(rate: number): number {
+  if (Math.abs(rate - 1) < 0.02) return 1
+  if (Math.abs(rate + 1) < 0.02) return -1
+  return rate
 }
 
 export function Strip({
-  channel,
-  index,
+  strip,
   link,
-  scale = 1,
+  selected,
+  unresolvedRef = null,
+  decoding = null,
+  feedbackMs = null,
+  input = null,
+  onPickInput,
+  chips,
+  gridScene = 'A',
+  gridQueued = null,
+  onSelectScene,
+  onCompose,
+  sessions = [],
+  onLoadSession,
+  onDropElement,
 }: {
-  channel: Channel
-  index: number
+  strip: StripDoc
   link: EngineLink | null
-  /** The plane's zoom, so a screen drag converts to the right plane distance. */
-  scale?: number
+  selected: boolean
+  /**
+   * This strip's `takeRef` could not be found in the take library. Supplied by
+   * the owner rather than derived here, because RESOLUTION is the library's job
+   * (`persist/takeLibrary.ts`) and a strip must not guess at it — a strip that
+   * decided for itself would call every reference missing until the library had
+   * loaded, and flash "audio missing" on every open.
+   */
+  unresolvedRef?: string | null
+  /** 0..1 while a take decodes into this tape. */
+  decoding?: number | null
+  /** This strip is fed by a consented feedback edge, and what it costs in ms. */
+  feedbackMs?: number | null
+  /** The device input patched into this strip, if any — what REC will capture.
+      Supplied by the plane, which owns the map, rather than read here: a strip
+      must not go looking through the routing graph for itself. */
+  input?: { left: number; right: number | null } | null
+  /** Re-point this strip's input route. */
+  onPickInput?: (left: number, right: number | null) => void
+  /** GRID strips only. The scene actually RUNNING and one armed for the next
+      cycle boundary — from the session store, not the map: the map remembers a
+      scene per (strip, session), the engine is what is playing one, and those
+      differ the moment anything else selects. */
+  /** What this strip states about its own routing — the CHIPS half of the
+      routing decision (cables for graph edges, chips for terminal facts).
+      Supplied by the plane, which owns the map: a strip must not go reading the
+      routing graph looking for itself. */
+  chips?: Chips
+  gridScene?: SceneLetter
+  gridQueued?: SceneLetter | null
+  onSelectScene?: (scene: SceneLetter, immediate: boolean) => void
+  onCompose?: () => void
+  /** The session library, for the creation gesture. Passed in rather than read
+      from the store here so the strip stays a rendering of state — and so a
+      strip in a test needs no session store at all. */
+  sessions?: { name: string }[]
+  /** Load a session into this strip: allocate a deck, bind the channel, publish.
+      The plane owns deck allocation because it owns the map. */
+  onLoadSession?: (sessionId: string) => void
+  /** Give up this strip's element, freeing the deck (or tape) it held. */
+  onDropElement?: () => void
 }) {
-  const actions = usePatchActions(link)
-  // MATERIAL is the authority for what a Strip plays (PD-CANVAS-06). Reading it
-  // from `source.kind === 'deck'` was the old conflation: source says what a
-  // Strip captures FROM, material says what it PLAYS. The engine still renders
-  // from source, so both are present on a deck strip — but the UI asks the
-  // field that actually means "has material".
-  const deckId = channel.material?.deckId ?? -1
-  const deck = useAppStore((s) => s.patch.decks.find((d) => d.id === deckId))
-  const deckState = useAppStore((s) => (deckId >= 0 ? (s.deckStates[deckId] ?? 0) : 0))
-  const deckRevision = useAppStore((s) => (deckId >= 0 ? (s.deckRevisions[deckId] ?? 0) : 0))
-  const deckLoading = useAppStore((s) => (deckId >= 0 ? (s.deckLoading[deckId] ?? false) : false))
-  const loadProgress = useAppStore((s) => (deckId >= 0 ? (s.deckLoadProgress[deckId] ?? 0) : 0))
-  const capped = useAppStore((s) => (deckId >= 0 ? (s.deckCapReached[deckId] ?? false) : false))
-  const unresolved = useAppStore((s) => (deckId >= 0 ? (s.deckUnresolved[deckId] ?? false) : false))
-  const channelCount = useAppStore((s) => s.patch.channels.length)
-  // How many buses this device can actually carry — a strip routed past it is
-  // built but NOT heard, which the chip must say rather than hide.
-  const mappable = useAppStore((s) => s.deviceInfo?.mappableBuses ?? 1)
-  const takes = useAppStore((s) => s.takes)
-  const deckFrames = useAppStore((s) => (deckId >= 0 ? (s.deckFrames[deckId] ?? 0) : 0))
-  const deviceInfo = useAppStore((s) => s.deviceInfo)
+  const tape = strip.element.kind === 'tape' ? strip.element.index : null
+  const channels = useDeviceStore((d) => d.channels)
+  const devices = useDeviceStore((d) => d.devices)
+  const currentDevice = useDeviceStore((d) => d.current)
+  const { openMenu } = useContextMenu()
+  const isGrid = strip.element.kind === 'grid'
+  const [live, setLive] = useState<Live>(IDLE_LIVE)
+  const [revision, setRevision] = useState(0)
+  const recStartedAt = useRef<number | null>(null)
+  const [recSeconds, setRecSeconds] = useState(0)
 
-  const setChannelCell = useAppStore((s) => s.setChannelCell)
-  const selected = useAppStore((s) => s.selectedKey === channel.key)
-  const setSelected = useAppStore((s) => s.setSelected)
-  // Overdub is a live engine mode, not document state: it is armed and dropped
-  // in the moment, and nothing about it should survive a save.
-  const [overdubbing, setOverdubbing] = useState(false)
-  // Punch mode: layer on top, or erase and write. Live engine state, not the
-  // document — which mode you last punched in is not a property of the patch.
-  const [punchMode, setPunchMode] = useState<'sum' | 'replace'>('sum')
-  /** Armed cue point, in frames — where the next ⟳ fires from, or null.
-      One-shot: the engine consumes it on the trigger, so the UI clears it on
-      the same gesture and the two never disagree (D-WZ-SCRUBCUE-01). */
-  const [cue, setCue] = useState<number | null>(null)
-  const dragRef = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+  /* ── the engine's truth about this strip, at frame rate ───────────────────
+   * Sampled down to ~6 Hz before it reaches React. The canvases read the
+   * HotFrame directly at 30 Hz for the playhead and the meter; the STRIP only
+   * re-renders for things a person reads as text — the state word, whether a
+   * button is enabled, the status line — and those do not need 30 Hz.
+   */
+  useEffect(() => {
+    if (!link) return
+    const iState = tape !== null ? slTapeIndex(tape, 'State') : -1
+    const iCap = tape !== null ? slTapeIndex(tape, 'Cap') : -1
+    const iHead = tape !== null ? slTapeIndex(tape, 'Playhead') : -1
+    let last = 0
+    return link.onHotFrame((frame) => {
+      const now = performance.now()
+      if (now - last < 160) return
+      last = now
+      const next: Live = {
+        tapeState: iState >= 0 ? (frame[iState] ?? SL_TAPE_STATE.idle) : SL_TAPE_STATE.idle,
+        playhead: iHead >= 0 ? (frame[iHead] ?? 0) : 0,
+        capReached: iCap >= 0 ? (frame[iCap] ?? 0) > 0.5 : false,
+        peakL: 0,
+        peakR: 0,
+        // THE ENGINE'S monitor state, not the document's. The engine opens this
+        // switch at record-start and closes it at the Law C-3 handoff
+        // (D-WZ-MON-01/02), so a MON lamp drawn from `strip.monitor` would sit
+        // lit over a closed gate the moment a loop closed.
+        monitor: slChannelMonitorOn(frame[HotFrameLayout.slChanMonitorMask] ?? 0, strip.channel),
+      }
+      // …and the DOCUMENT follows it, so a save stores what was true rather
+      // than an intent the engine already overruled.
+      noteMonitor(strip, next.monitor)
+      setLive((prev) =>
+        // Only re-render when something a READER can see changed. The playhead
+        // is excluded deliberately: it moves every frame and it is the
+        // canvas's, not React's.
+        prev.tapeState === next.tapeState &&
+        prev.capReached === next.capReached &&
+        prev.monitor === next.monitor
+          ? prev
+          : next,
+      )
+    })
+  }, [link, tape, strip])
 
-  const cell = channel.cell
+  const recording = isRecording(live)
+
+  // The elapsed counter. Ticks only while recording, and at 1 Hz — the display
+  // is m:ss, so anything faster is re-rendering to show the same string.
+  useEffect(() => {
+    if (!recording) {
+      recStartedAt.current = null
+      setRecSeconds(0)
+      return
+    }
+    recStartedAt.current ??= performance.now()
+    const id = setInterval(() => {
+      if (recStartedAt.current !== null)
+        setRecSeconds((performance.now() - recStartedAt.current) / 1000)
+    }, 250)
+    return () => clearInterval(id)
+  }, [recording])
+
+  // When recording STOPS, the material changed in a way the wave cannot see.
+  const wasRecording = useRef(false)
+  useEffect(() => {
+    if (wasRecording.current && !recording) setRevision((r) => r + 1)
+    wasRecording.current = recording
+  }, [recording])
+
+  /* ── derived state ───────────────────────────────────────────────────── */
+  // A strip that is CURRENTLY recording is never "missing audio": it is making
+  // some. Suppressed here so a re-record over a dead reference — which is the
+  // repair — does not keep showing the failure it is fixing.
+  const missing = recording ? null : unresolvedRef
+  const ctx = {
+    unresolvedRef: missing,
+    decoding,
+    feedbackMs,
+    // NAMES THE ACTUAL INPUT. "records: this strip's input" was true and
+    // useless — the strip could not say which input, because nothing could turn
+    // a route's channel index into a name. Now it can, so the object answers
+    // "what will REC capture?" with an answer you can act on.
+    recordSource: input
+      ? channelLabel(channels, input.left, input.right)
+      : recordSourceLabel(strip),
+    recSeconds: recording ? recSeconds : null,
+  }
+  const status = statusLine(strip, live, ctx)
+  const can = enabledControls(strip, live, ctx)
+  const word = stateWord(strip, live)
+  const w = waveWidth(strip.cell.w)
+
+  /* ── transport ───────────────────────────────────────────────────────── */
 
   /**
-   * Drag the Strip to move it. Grabbing a CONTROL must never move the Strip —
-   * otherwise nudging a fader would relocate the thing you are playing — so any
-   * pointer-down that lands on an interactive element is left alone. The plane
-   * ignores pointer-downs on a Strip, so without this handler a drag on a Strip
-   * fell through to the pan and appeared to move every Strip at once.
+   * REC. The hinge between the two lives of the object, and the reason the
+   * strip can claim to be one species.
+   *
+   * On a strip with NO element it allocates a tape, points it at this strip's
+   * own channel bus and starts — so "recording is the verb that gives a strip
+   * material" is true in the implementation and not just in the prose. On stop
+   * the tape becomes this strip's element while `key`, `name`, `cell`, `level`,
+   * `mute` and `sends` are all kept, so the box you were watching starts
+   * looping without remounting. That is Law C-3 made visible.
    */
-  const onPointerDown = (e: React.PointerEvent) => {
-    // Selecting on pointer-DOWN (not click) means the Inspector follows you even
-    // when the gesture turns into a drag — you are working on the thing you just
-    // grabbed, which is what you would expect.
-    setSelected(channel.key)
-    if ((e.target as HTMLElement).closest('button, input, select, textarea, canvas, label')) return
-    e.stopPropagation()
-    dragRef.current = { px: e.clientX, py: e.clientY, x: cell.x, y: cell.y }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-  }
-  const onPointerMove = (e: React.PointerEvent) => {
-    const d = dragRef.current
-    if (!d) return
-    e.stopPropagation()
-    // Screen delta -> plane delta is a division by the zoom.
-    setChannelCell(
-      index,
-      Math.round(d.x + (e.clientX - d.px) / scale),
-      Math.round(d.y + (e.clientY - d.py) / scale),
+  const onRecord = async () => {
+    if (!link) return
+    if (recording) {
+      const reply = await ask<{ path?: string }>(link, 'slRecord', {
+        action: 'stop',
+        tape: tape ?? 0,
+      })
+      // The take's path becomes this strip's `takeRef`. Without it the audio
+      // exists on disk and the document has no idea, so reopening the map finds
+      // an empty tape and the recording is lost to everything but a file
+      // browser. One assignment, and it is the whole of "the take library
+      // holds the full take, reloadable later".
+      if (reply?.path)
+        updateStrip(strip.key, (s) =>
+          s.element.kind === 'tape'
+            ? { ...s, element: { ...s.element, takeRef: reply.path as string } }
+            : s,
+        )
+      setRevision((r) => r + 1)
+      return
+    }
+
+    let index = tape
+    if (index === null) {
+      const free = freeTape(getMap())
+      if (free === null) return // every tape is spoken for; nothing to say yet
+      const element = newTapeElement(free, /* stereo */ false)
+      if (!checkBudget(strip.key, element).ok) return
+      updateStrip(strip.key, (s) => ({ ...s, element }))
+      // Bind the channel to the new tape BEFORE recording into it: the record
+      // source is this strip's channel bus, and a channel carrying nothing
+      // would capture silence.
+      await ask(link, 'slChannel', {
+        action: 'setSource',
+        channel: strip.channel,
+        kind: 1,
+        index: free,
+      })
+      index = free
+    }
+
+    // WHERE REC READS FROM — the rule, or this strip's explicit override.
+    //
+    // This used to be hardcoded to the channel bus, on the argument that
+    // recording is always "capture this strip's bus" — one tap, one code path,
+    // every source. That argument is still right for a strip with no live
+    // input, and it was WRONG for one with an input: it made capture and
+    // monitoring the same signal path, so silencing an input to stop feedback
+    // made REC record silence. See `recordTapFor`.
+    const tap = recordTapFor(
+      strip,
+      input,
+      input ? channelLabel(channels, input.left, input.right) : null,
     )
+    await ask(link, 'slRecord', {
+      action: 'start',
+      tape: index,
+      sourceKind: tap.kind,
+      chan0: tap.chan0,
+      chan1: tap.chan1,
+      sourceDesc: tap.label,
+    })
   }
-  const endDrag = (e: React.PointerEvent) => {
-    if (!dragRef.current) return
-    dragRef.current = null
-    ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+
+  /**
+   * WHERE THIS STRIP LISTENS. A menu rather than a control on the object,
+   * because picking a source is a DECISION FROM A LIST — it fails
+   * pd-strip-anatomy §3.1's test ("would you do this one-handed, with sound
+   * running, without reading?") — while the RESULT of the decision stays on the
+   * object, in the status line, where you can see it without selecting.
+   *
+   * The device itself is here too: it is the same question one level up, and
+   * splitting them across two surfaces would mean discovering that your inputs
+   * are missing in one place and fixing it in another.
+   */
+  const openSourceMenu = (ev: React.MouseEvent) => {
+    // The menu now carries more than the input picker (the session library, the
+    // record tap), so it opens whenever ANY of its sections has an owner.
+    if (!onPickInput && !onLoadSession) return
+    ev.preventDefault()
+    const items: MenuItem[] = []
+    if (onPickInput) {
+      if (channels.length === 0) {
+        items.push({ kind: 'info', label: 'no inputs on this device' })
+      } else {
+        items.push({ kind: 'info', label: 'record from' })
+        for (const c of inputChoices(channels)) {
+          items.push({
+            kind: 'item',
+            label: c.label,
+            checked: input?.left === c.left && (input?.right ?? null) === c.right,
+            onSelect: () => onPickInput(c.left, c.right),
+          })
+        }
+      }
+    }
+    // ⚠️ THE GRID CREATION GESTURE — how a scoopy session gets into a strip,
+    // and the thing the whole per-deck session map existed to unblock.
+    //
+    // It belongs in this menu rather than on the object for the same reason the
+    // input picker does (pd-strip-anatomy §3.1): choosing from a list of
+    // sessions is not something you do one-handed with sound running. What
+    // stays on the object is the RESULT — the scene pads, the tempo, and the
+    // status line naming the session.
+    if (onLoadSession && sessions.length > 0) {
+      items.push({ kind: 'sep' })
+      items.push({ kind: 'info', label: 'load a session' })
+      for (const s of sessions) {
+        items.push({
+          kind: 'item',
+          label: s.name,
+          checked: strip.element.kind === 'grid' && strip.element.sessionId === s.name,
+          onSelect: () => onLoadSession(s.name),
+        })
+      }
+      // Letting go is part of the gesture. Without it a strip that took a
+      // session could never become anything else, and the deck it holds is one
+      // of only three.
+      if (strip.element.kind === 'grid' && onDropElement) {
+        items.push({
+          kind: 'item',
+          label: 'drop this session',
+          onSelect: () => onDropElement(),
+        })
+      }
+    }
+
+    // WHAT REC CAPTURES. Normally the rule answers this and the menu never
+    // needs looking at — but the rule cannot know that you patched another
+    // strip into this one in order to record the CHAIN, and a strip that
+    // silently captured only its own input would give you a take with the
+    // interesting half missing. So the tap is stated, and overridable.
+    items.push({ kind: 'sep' })
+    items.push({ kind: 'info', label: 'REC captures' })
+    const taps: { value: StripDoc['recordTap']; label: string }[] = [
+      { value: null, label: input ? 'this strip’s input (default)' : 'this strip’s bus (default)' },
+      { value: 'bus', label: 'this strip’s bus — everything routed in' },
+      { value: 'mainMix', label: 'the main mix — what leaves the app' },
+    ]
+    if (input) taps.splice(1, 0, { value: 'input', label: 'this strip’s input only' })
+    for (const t of taps) {
+      items.push({
+        kind: 'item',
+        label: t.label,
+        checked: strip.recordTap === t.value,
+        onSelect: () => updateStrip(strip.key, (s) => ({ ...s, recordTap: t.value })),
+      })
+    }
+
+    if (devices.length > 1) {
+      items.push({ kind: 'sep' })
+      items.push({ kind: 'info', label: 'input device' })
+      for (const d of devices) {
+        items.push({
+          kind: 'item',
+          label: d,
+          checked: d === currentDevice,
+          onSelect: () => void setInputDevice(link, d),
+        })
+      }
+    }
+    openMenu(items, ev.clientX, ev.clientY)
   }
-  const recording = deckState === RECORDING
-  const hasMaterial = deck !== undefined && deck.sourcePath !== ''
-  // The wave is shown for anything that HAS material or is capturing it now —
-  // that is what makes recording feel like a player rather than a form.
-  const showWave = deck !== undefined && (hasMaterial || recording)
-  // What this Strip would record, and whether it can at all.
-  const firstInput = deviceInfo?.inputs[0]?.index ?? null
-  const rec = recordChannels(channel.source, firstInput)
-  const canRecord = rec !== null
-  const waveWidth = Math.max(80, cell.w - 16)
-  const sampleRate = deviceInfo?.sampleRate ?? 0
-  const blockMs = sampleRate > 0 ? ((512 / sampleRate) * 1000).toFixed(1) : null
-  const materialName = hasMaterial
-    ? (deck?.sourcePath.split('/').pop() ?? '')
-    : recording
-      ? 'recording…'
-      : 'empty'
+
+  const trigger = (mode: number) => {
+    if (tape === null) return
+    send(link, 'slTape', { action: 'trigger', tape, mode })
+  }
 
   return (
-    <div
-      className={`plane-strip raised${selected ? ' plane-strip-selected' : ''}`}
-      style={{ left: cell.x, top: cell.y, width: cell.w, height: cell.h }}
-      data-testid={`strip-${channel.key}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+    <section
+      className={`plane-strip sem sem-fill${selected ? ' selected' : ''}${
+        strip.mute ? ' muted' : ''
+      }${recording ? ' recording' : ''}`}
+      data-key={strip.key}
+      data-kind={strip.element.kind}
+      style={{
+        // L1: BOTH dimensions from the document. The single most important
+        // line in this file.
+        left: strip.cell.x,
+        top: strip.cell.y,
+        width: strip.cell.w,
+        height: strip.cell.h,
+        // The kind bar and every fill below inherit this one colour.
+        ['--sem-color' as string]: semanticColor('deck', strip.channel),
+      }}
+      tabIndex={0}
+      aria-label={strip.name}
     >
-      <div className="plane-strip-head">
-        {/* Kind rides a swatch, NOT the name's text colour: three of the five
-            kind colours are aliases of chrome (deck=signal, virtual=accent,
-            bus=textDim), so tinting the name both weakens its contrast and
-            fights the bus chip for meaning. Kind is what it IS; bus is where it
-            GOES — they must not share a hue. */}
+      {/* The 3 px full-height kind bar. Kind is carried by a large saturated
+          area, never by tinting 11 px text — small coloured text is the weakest
+          possible carrier of a category AND it costs contrast on the one string
+          you read while scanning a plane. */}
+      <span className="strip-kindbar" aria-hidden />
+
+      <header className="strip-head" onContextMenu={onPickInput || onLoadSession ? openSourceMenu : undefined}>
         <span
-          className="plane-strip-kind"
-          style={{ background: KIND_VAR[channel.source.kind] }}
-          title={`source: ${channel.source.kind} — ${channel.source.name}`}
-        />
-        <span className="plane-strip-name">{channel.name}</span>
-        {deck && (
-          <span className={`plane-strip-state deck-state-${deckState}`}>
-            {DECK_STATE_LABEL[deckState] ?? '?'}
-          </span>
-        )}
-        {/* The bus chip is EDITABLE, not just a badge: routing is a live
-            decision, and the chip is where the plan says it opens (pd-merge §3).
-            A bus the device cannot carry is still offered — you should be able
-            to BUILD a spatial patch on a stereo laptop and see honestly what
-            will not be heard, rather than find the option missing. */}
-        <select
-          className={`plane-strip-bus${channel.outBus >= mappable ? ' plane-strip-bus-unmapped' : ''}`}
-          value={channel.outBus}
+          className="strip-name mono"
           title={
-            channel.outBus >= mappable
-              ? 'routed to a bus this device cannot carry — this strip is NOT heard'
-              : 'output bus — bus 1 is main; a spatial layout is just strips on different buses'
+            onPickInput
+              ? `${strip.name} — right-click to choose the input this strip records`
+              : strip.name
           }
-          onChange={(ev) => actions.setOutBus(index, Number(ev.target.value))}
         >
-          {Array.from({ length: 8 }, (_, b) => (
-            <option key={b} value={b}>
-              {b === 0 ? 'main' : `bus ${b + 1}`}
-              {b >= mappable ? ' ⚠' : ''}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="plane-strip-remove"
-          title="remove this strip"
-          onClick={() => actions.removeStrip(index)}
+          {strip.name}
+        </span>
+        {/* The feedback lamp's slot is reserved at all times (L2), so an alarm
+            cannot shift the state word sideways. */}
+        {/* THE OUT CHIP — where this strip's signal goes, stated on the object.
+            `→ main` is the resting state and is shown ANYWAY: a strip that is
+            not on main is the interesting case, and you can only see that if
+            the normal case is visible too. Terminal routes are chips precisely
+            because drawing 8 lines converging on one point would be maximum ink
+            for zero information (see cables.ts). */}
+        <span
+          className={`strip-out mono${chips && !chips.toMain ? ' warn' : ''}`}
+          title={
+            chips?.toMain
+              ? 'this strip reaches the main output'
+              : 'this strip does NOT reach the main output'
+          }
         >
-          ×
-        </button>
+          {chips?.toMain ? '▸main' : '▸—'}
+        </span>
+        <span className="strip-fb-slot" aria-hidden />
+        <span className={`strip-state mono${recording ? ' rec' : ''}`}>{word}</span>
+        {/* Fixed-width m:ss, always present: a counter that appeared on record
+            would widen the head at the worst moment. */}
+        <span className="strip-elapsed mono">{recording ? mmss(recSeconds) : ''}</span>
+      </header>
+
+      {/* THE ELEMENT'S OWN ROWS. A grid strip and a tape strip are the SAME
+          object with different material: same box, same row heights, same
+          transport and switches — only what fills the wave rect and the last
+          param row differs. A grid strip that were a different size would break
+          the one-species claim on sight. */}
+      {/* ONE wave row, whichever element fills it. Two rows behind a ternary
+          would be two boxes to keep in step, and the moment they diverged the
+          two strip kinds would stop being the same object. */}
+      <div className="strip-waverow">
+        {isGrid ? (
+          <div className="strip-scenefield" style={{ width: w, height: WAVE_H }}>
+            <GridScenes
+              strip={strip}
+              scene={gridScene}
+              queued={gridQueued}
+              onSelectScene={(sc, immediate) => onSelectScene?.(sc, immediate)}
+            />
+          </div>
+        ) : (
+          <TapeWave
+            link={link}
+            tape={tape}
+            width={w}
+            revision={revision}
+            loop={strip.element.kind === 'tape' ? strip.element.loop : undefined}
+            missing={Boolean(missing)}
+            hint={tape === null ? 'press REC to give this strip material' : undefined}
+            onLoopDrag={(start, end) =>
+              updateStrip(strip.key, (s) =>
+                s.element.kind === 'tape'
+                  ? { ...s, element: { ...s.element, loop: { enabled: true, start, end } } }
+                  : s,
+              )
+            }
+          />
+        )}
+        <StripMeter link={link} channel={strip.channel} />
       </div>
 
-      {/* The LoopbackBus costs exactly one engine block. playback-composer.md §2
-          calls that "the honest price, stated in the UI, not hidden" — so it is
-          stated here, in ms at the real device rate. */}
-      {channel.source.kind === 'busTap' && (
-        <div
-          className="plane-strip-loopback"
-          title="a loopback reads the bus one block behind — that delay is what makes the cycle legal and the schedule acyclic"
-        >
-          ↺ {blockMs ? `+${blockMs} ms` : 'one block'}
-        </div>
-      )}
-
-      {showWave && deck && (
-        <DeckWaveform
-          link={link}
-          deck={deck.id}
-          channelCount={channelCount}
-          revision={deckRevision}
-          // The ENGINE's reported length first. A loaded FILE is not a take, so
-          // the take lookup missed and this fell back to max(loopEnd,1) = 1 —
-          // one frame — which drew a flat line and scaled the playhead off
-          // screen, making playback look dead when it was fine.
-          frames={
-            deckFrames ||
-            takes.filter((t) => t.path === deck.sourcePath)[0]?.frames ||
-            Math.max(deck.loopEndSample, 1)
-          }
-          loopStart={deck.loopStartSample}
-          loopEnd={deck.loopEndSample}
-          onSetLoop={(a, b) => actions.setDeckLoop(deck.id, a, b)}
-          // Scrubbing ARMS a cue (D-WZ-SCRUBCUE-01): the next ⟳ fires from
-          // here. Mirrored in the UI rather than published from the engine —
-          // the UI is what issued the seek, so it already knows, and a new
-          // HotFrame field for something the UI can derive would be waste.
-          onScrub={(frame) => {
-            setCue(frame)
-            actions.deckSeek(deck.id, frame)
-          }}
-          onTapeScrub={(phase, frame) => {
-            if (phase !== 'begin') setCue(frame)
-            actions.deckScrub(deck.id, phase, frame)
-          }}
-          cue={cue}
-          scale={scale}
-          sampleRate={sampleRate}
-          width={waveWidth}
-          height={44}
-          recording={recording}
-        />
-      )}
-      <div className="plane-strip-file dim" title={deck?.sourcePath || 'no material yet'}>
-        {materialName}
-      </div>
-      {unresolved && (
-        <div
-          className="deck-unresolved"
-          title="this strip's audio could not be found — kept and marked; restore the file to bring it back"
-        >
-          audio missing
-        </div>
-      )}
-      {capped && (
-        <div
-          className="deck-cap"
-          title="256 MB deck memory cap reached — recording stopped; the take is on disk and still loops"
-        >
-          cap
-        </div>
-      )}
-      {deckLoading && (
-        <div
-          className="deck-loading"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={1}
-          aria-valuenow={loadProgress}
-          title="decoding on a background thread — the rest of the app stays live"
-        >
-          <div className="deck-loading-bar" style={{ width: `${loadProgress * 100}%` }} />
-          <span className="deck-loading-label">decoding… {Math.round(loadProgress * 100)}%</span>
-        </div>
-      )}
-
-      <div className="plane-strip-transport">
-        {/* RECORD IS ON EVERY STRIP (D-WZ-RECMODEL-01 step A): recording is the
-            verb that gives a Strip material, so it cannot be a privilege of
-            Strips that already have some. Where the engine cannot capture the
-            source, it is disabled WITH the reason — never silently inert. */}
+      {/* THE TRANSPORT ROW has a rhythm — record · verbs · switches — and that
+          rhythm is its only structure. REC is 56 px with a text label and a
+          lamp; the verbs are 26 px glyphs; the switches sit in a right group.
+          Seven identically-sized buttons is what makes an object read as a
+          form, and it is what this row exists not to be. */}
+      <div className="strip-transport" data-no-drag>
         <button
           type="button"
-          className={recording ? 'latched-rec' : ''}
-          disabled={!canRecord && !recording}
+          className={`strip-rec${recording ? ' latched' : ''}`}
+          disabled={!can.record}
+          onClick={() => void onRecord()}
           title={
             recording
-              ? 'stop — the take loops instantly (Law C-3)'
-              : canRecord
-                ? `record ${channel.source.name} into this strip`
-                : `this strip cannot be recorded: the engine captures input channels, and “${channel.source.kind}” names none`
+              ? 'stop — loops instantly (Law C-3)'
+              : tape === null
+                ? 'record — captures this strip’s own output into a new tape'
+                : 'record — replaces this tape’s material'
           }
-          onClick={() => {
-            if (recording && deck) return void actions.deckRecordStop(deck.id)
-            setCue(null) // new material: whatever you cued no longer exists
-            if (rec) void actions.recordIntoStrip(index, rec.chan0, rec.chan1, channel.source.name)
-          }}
         >
-          {recording ? '■' : '●'}
+          {recording ? '■ STOP' : '● REC'}
         </button>
-        {/* Transport is ALWAYS present, disabled until there is material to
-            play. A Strip is a player whose material may not exist yet — growing
-            the controls in later would make it two different objects, which is
-            exactly what this phase exists to abolish. */}
-        <button
-          type="button"
-          disabled={!hasMaterial}
-          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'loop'))}
-          title={hasMaterial ? 'loop' : 'loop — nothing recorded or loaded yet'}
-        >
-          ⟳
-        </button>
-        <button
-          type="button"
-          disabled={!hasMaterial}
-          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'oneShot'))}
-          title={hasMaterial ? 'one-shot' : 'one-shot — nothing recorded or loaded yet'}
-        >
-          ▸
-        </button>
-        <button
-          type="button"
-          disabled={!hasMaterial}
-          onClick={() => deck && (setCue(null), actions.deckTrigger(deck.id, 'retrigger'))}
-          title="retrigger — seek to the region start, keep playing"
-        >
-          ⟲
-        </button>
-        <button
-          type="button"
-          disabled={!hasMaterial}
-          onClick={() => deck && actions.deckTrigger(deck.id, 'stop')}
-          title="stop"
-        >
-          ◼
-        </button>
-        <StripLoad index={index} link={link} onMaterialChanged={() => setCue(null)} />
-        {/* PUNCH — available on ANY strip with material and a capturable source:
-            a loaded file layers exactly like a recorded take, because a strip is
-            a strip. OVR sums on top, RPL erases and writes; the small button
-            switches between them. You hear yourself against the loop because the
-            DECK's output carries material + live input while punching — routing
-            the strip to the input instead would un-route the loop you are
-            playing along to. */}
-        {hasMaterial && canRecord && deck && (
-          <>
-          <button
-            type="button"
-            className={overdubbing ? 'latched-rec' : ''}
+        <span className="strip-verbs">
+          <Button
+            label="⟳"
+            disabled={!can.play}
+            active={live.tapeState === SL_TAPE_STATE.loop}
+            onClick={() => trigger(0)}
+            title="loop — plays the region between the braces, forever"
+          />
+          <Button
+            label="▸"
+            disabled={!can.play}
+            active={live.tapeState === SL_TAPE_STATE.oneShot}
+            onClick={() => trigger(1)}
+            title="one-shot — plays through once and stops"
+          />
+          <Button
+            label="↻"
+            disabled={!can.play}
+            onClick={() => trigger(3)}
+            title="retrigger — jumps back to the start without stopping"
+          />
+          <Button
+            label="◼"
+            disabled={!can.stop}
+            onClick={() => trigger(2)}
+            title="stop — leaves the playhead where it is"
+          />
+        </span>
+        {/* TWO switches, and keeping them separate is the whole of the fix.
+            MON is the strip's INPUT (does what you are recording also reach the
+            channel); M is the strip's OUTPUT (does the strip reach the mix at
+            all). They were conflated: `M` was the only way to stop an input
+            feeding back, and it silenced the tape along with it. */}
+        <span className="strip-switches">
+          {/* MON is wider than the 22px switch square because it is a WORD.
+              "M" and a glyph would fit the square and would also be the two
+              controls this fix exists to stop people confusing — the label
+              earns its pixels. */}
+          <span className="strip-mon">
+          <Button
+            label="MON"
+            active={live.monitor}
+            onClick={() => setMonitor(link, strip, !live.monitor)}
             title={
-              overdubbing
-                ? 'overdubbing — layering into the loop; click to stop'
-                : `overdub ${channel.source.name} into this loop (sound-on-sound)`
+              live.monitor
+                ? 'monitor ON — you hear this strip’s input. Click to silence it without affecting what REC captures'
+                : 'monitor OFF — the input is silent but still recorded. REC opens this by itself'
             }
-            onClick={() => {
-              const next = !overdubbing
-              setOverdubbing(next)
-              actions.setOverdub(deck.id, next, punchMode)
-            }}
-          >
-            {punchMode === 'replace' ? 'RPL' : 'OVR'}
-          </button>
-          <button
-            type="button"
-            disabled={overdubbing}
-            title={
-              punchMode === 'sum'
-                ? 'punch mode: SUM — layer on top of what is there. Click for REPLACE.'
-                : 'punch mode: REPLACE — erase what is there and write. Click for SUM.'
-            }
-            onClick={() => setPunchMode(punchMode === 'sum' ? 'replace' : 'sum')}
-          >
-            {punchMode === 'sum' ? '+' : '↹'}
-          </button>
-          </>
-        )}
-        {/* IN — listen to the source instead of the material. Only meaningful
-            when the Strip has BOTH: without material there is nothing else to
-            hear, and without a capturable source there is nothing to switch to.
-            Before this, a mic strip that had recorded once could never be
-            monitored again — material won permanently. */}
-        {hasMaterial && canRecord && (
-          <button
-            type="button"
-            className={channel.monitorSwitch ? 'latched-signal' : ''}
-            title={
-              channel.monitorSwitch
-                ? `listening to ${channel.source.name} — click to hear the recorded material instead`
-                : `listening to the recorded material — click to hear ${channel.source.name} instead`
-            }
-            onClick={() => actions.setMonitorSwitch(index, !channel.monitorSwitch)}
-          >
-            IN
-          </button>
-        )}
-        <span className="plane-strip-switches">
-          <button
-            type="button"
-            className={channel.mute ? 'latched-hot' : ''}
-            title="mute"
-            onClick={() => actions.setMute(index, !channel.mute)}
-          >
-            M
-          </button>
-          <button
-            type="button"
-            className={channel.solo ? 'latched-accent' : ''}
-            title="solo"
-            onClick={() => actions.setSolo(index, !channel.solo)}
-          >
-            S
-          </button>
-          <button
-            type="button"
-            className={channel.toMonitor ? 'latched-signal' : ''}
-            title="cue (monitor bus)"
-            onClick={() => actions.setToMonitor(index, !channel.toMonitor)}
-          >
-            C
-          </button>
+          />
+          </span>
+          <Button
+            label="M"
+            active={strip.mute}
+            onClick={() => setMute(link, strip, !strip.mute)}
+            title="mute — silences this strip's OUTPUT, and everything routed from it"
+          />
         </span>
       </div>
 
-      <ParamRow
-        label="level"
-        value={channel.gain}
-        display={faderLabel(channel.gain)}
-        min={0}
-        max={1}
-        step={0.001}
-        onChange={(v) => actions.setFader(index, v)}
-        onDoubleClick={() => actions.setFader(index, FADER_UNITY_POSITION)}
-        title="double-click for unity"
-      />
-      <ParamRow
-        label="pan"
-        value={channel.pan}
-        display={panLabel(channel.pan)}
-        min={-1}
-        max={1}
-        step={0.01}
-        origin="center"
-        onChange={(v) => actions.setPan(index, v)}
-        onDoubleClick={() => actions.setPan(index, 0)}
-        title="double-click to centre"
-      />
-      {deck && hasMaterial && (
-        <ParamRow
-          label="speed"
-          value={rateToPosition(deck.rate)}
-          display={formatRate(deck.rate)}
-          min={-1}
-          max={1}
-          step={0.001}
-          origin="center"
-          // snapUnity keeps the engine's bit-exact identity path reachable by
-          // DRAGGING — without it you can never quite land on exactly 1.0.
-          onChange={(p) => actions.setDeckRate(deck.id, snapUnity(positionToRate(p)))}
-          onDoubleClick={() => actions.setDeckRate(deck.id, 1)}
-          title="signed varispeed — left of centre is reverse; double-click for 1.00×"
-        />
-      )}
-    </div>
+      {/* L3: ONE line, always present, chosen by the priority ladder. Reserved
+          even when there is nothing to say. */}
+      <div className={`strip-status mono ${status.tone}`} title={status.text}>
+        {status.text}
+      </div>
+
+      <div className="strip-params">
+        <div className="ds-row strip-row">
+          <span className="ds-label mono">level</span>
+          <GeoRange
+            value={strip.level}
+            min={0}
+            max={1.5}
+            step={0.01}
+            onChange={(v) => liveSetLevel(link, strip, v)}
+            onDoubleClick={() => {
+              liveSetLevel(link, strip, 1)
+              flushLiveEdits()
+            }}
+            title="level — double-click for unity"
+          />
+          <span className="ds-value mono">{formatGain(strip.level)}</span>
+        </div>
+
+        {/* The four sends. One row of micro-faders rather than four rows: the
+            channel owns the send LEVEL, and where each send GOES is a route in
+            the document — so this is four values, not four decisions. */}
+        <div className="ds-row strip-row strip-sends" role="group" aria-label="FX sends">
+          <span className="ds-label mono">send</span>
+          {strip.sends.map((value, i) => (
+            <span
+              key={i}
+              className="strip-micro sem sem-fill"
+              style={{ ['--sem-color' as string]: semanticColor('send', i) }}
+            >
+              <input
+                className="ch-micro"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={value}
+                aria-label={`send ${i + 1}`}
+                title={`send ${i + 1}`}
+                style={{
+                  background: `linear-gradient(to top, var(--fill) ${value * 100}%, var(--bg-raised) ${value * 100}%)`,
+                }}
+                onChange={(e) => liveSetSend(link, strip, i, Number(e.target.value))}
+                onDoubleClick={() => {
+                  liveSetSend(link, strip, i, 0)
+                  flushLiveEdits()
+                }}
+              />
+            </span>
+          ))}
+        </div>
+
+        {/* The LAST PARAM ROW. Varispeed on a tape, sync/tempo/compose on a
+            grid — the same 18 px slot either way. PRESENT AND INERT when there
+            is no material (L2) rather than conditionally rendered: this row
+            appearing would move nothing above it but WOULD change the object's
+            height, and the box is authoritative. */}
+        {isGrid ? (
+          <GridControls
+            strip={strip}
+            onSetBpm={(bpm) =>
+              updateStrip(strip.key, (x) =>
+                x.element.kind === 'grid' ? { ...x, element: { ...x.element, bpm } } : x,
+              )
+            }
+            onToggleSync={() =>
+              updateStrip(strip.key, (x) =>
+                x.element.kind === 'grid'
+                  ? { ...x, element: { ...x.element, syncToMaster: !x.element.syncToMaster } }
+                  : x,
+              )
+            }
+            onCompose={() => onCompose?.()}
+          />
+        ) : (
+        <div className={`ds-row strip-row${can.rate ? '' : ' ds-row-disabled'}`}>
+          <span className="ds-label mono">rate</span>
+          <GeoRange
+            value={strip.element.kind === 'tape' ? strip.element.rate : 1}
+            min={RATE_MIN}
+            max={RATE_MAX}
+            step={0.01}
+            origin="center"
+            disabled={!can.rate}
+            onChange={(v) => liveSetRate(link, strip, snapUnity(v))}
+            onDoubleClick={() => {
+              liveSetRate(link, strip, 1)
+              flushLiveEdits()
+            }}
+            title="rate — negative runs it backwards; double-click for 1.00×"
+          />
+          <span
+            className={`ds-value mono${
+              strip.element.kind === 'tape' && strip.element.rate < 0 ? ' warn' : ''
+            }`}
+          >
+            {formatRate(strip.element.kind === 'tape' ? strip.element.rate : 1)}
+          </span>
+        </div>
+        )}
+      </div>
+    </section>
   )
+}
+
+/** Linear gain as dB, in a fixed-width field. `−∞` at silence, because "−60.0"
+    would suggest the fader still passes something. */
+export function formatGain(level: number): string {
+  if (level <= 0.0001) return '  −∞ '
+  const db = 20 * Math.log10(level)
+  return `${db >= 0 ? '+' : '−'}${Math.abs(db).toFixed(1)}`
+}
+
+/**
+ * What REC would capture, in words. The strip must be able to answer "what am I
+ * listening to?" in every state — a player that cannot state its provenance
+ * becomes an anonymous buffer the moment it has material.
+ */
+function recordSourceLabel(strip: StripDoc): string | null {
+  switch (strip.element.kind) {
+    case 'none':
+      return 'this strip’s input'
+    case 'tape':
+      return `tape ${strip.element.index}`
+    case 'grid':
+      return `deck ${strip.element.deck}`
+  }
 }

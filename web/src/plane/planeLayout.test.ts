@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import { autoLayout, fitToContent, zoomAbout, LAYOUT } from './planeLayout'
-import type { Cell } from '../../protocol/schema'
+import { autoLayout, fitToContent, zoomAbout, LAYOUT } from './planeLayout.ts'
+import type { Cell } from './planeLayout.ts'
 
 test('autoLayout is empty for zero cells and never divides', () => {
   expect(autoLayout(0)).toEqual([])

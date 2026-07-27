@@ -1,0 +1,34 @@
+/* Spectral panel specifics — shared idiom lives in design/controls.css. */
+.spectral {
+  max-width: 380px;
+}
+
+.deck-picker {
+  display: flex;
+  border: var(--hairline) solid var(--line);
+}
+
+.deck-picker button {
+  background: var(--bg);
+  color: var(--text-dim);
+  border: none;
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  font-weight: 600;
+  padding: var(--cell) calc(var(--cell) * 3);
+  cursor: pointer;
+}
+
+.deck-picker button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.preset-row {
+  display: flex;
+  gap: var(--cell);
+}
+
+.preset-row > * {
+  flex: 1;
+}

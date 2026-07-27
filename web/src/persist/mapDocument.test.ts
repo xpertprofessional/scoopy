@@ -1,0 +1,343 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  LANE_BUDGET,
+  MAP_SCHEMA_VERSION,
+  elementLanes,
+  emptyMap,
+  lanesUsed,
+  loadMap,
+  saveMap,
+  defaultGridPerf,
+  perfFor,
+  rememberPerf,
+  type GridPerf,
+  type PlaneMap,
+  type Strip,
+} from './mapDocument'
+
+function strip(over: Partial<Strip> = {}): Strip {
+  return {
+    key: 'a',
+    name: 'A',
+    cell: { x: 0, y: 0, w: 340, h: 196 },
+    channel: 0,
+    element: { kind: 'none' },
+    level: 1,
+    mute: false,
+    sends: [0, 0, 0, 0],
+    recordArm: false,
+    monitor: false,
+    recordTap: null,
+    sessionPerf: {},
+    ...over,
+  }
+}
+
+const tape = (stereo: boolean, takeRef: string | null = null) => ({
+  kind: 'tape' as const,
+  index: 0,
+  takeRef,
+  stereo,
+  loop: { enabled: true, start: 0, end: 48000 },
+  rate: 1,
+})
+
+const grid = () => ({
+  kind: 'grid' as const,
+  deck: 0,
+  sessionId: 's1',
+  bpm: 128,
+  syncToMaster: true,
+})
+
+describe('map document', () => {
+  it('round-trips a populated map unchanged', () => {
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [
+        strip({ key: 'a', channel: 0, element: tape(true, 'take_0003') }),
+        strip({ key: 'b', channel: 1, element: grid(), sends: [0.5, 0, 0, 0] }),
+      ],
+      routes: [
+        {
+          src: { kind: 'channelOut', index: 0, sub: null },
+          dst: { kind: 'main', index: 0 },
+          gain: 1,
+          feedback: false,
+        },
+        // A send re-pointed at another strip's input — decision 5's whole point.
+        {
+          src: { kind: 'channelSend', index: 1, sub: 2 },
+          dst: { kind: 'channelIn', index: 0 },
+          gain: 1,
+          feedback: false,
+        },
+        // A consented feedback edge.
+        {
+          src: { kind: 'channelOut', index: 1, sub: null },
+          dst: { kind: 'channelIn', index: 0 },
+          gain: 0.5,
+          feedback: true,
+        },
+      ],
+      transport: { masterBpm: 174, masterLevel: 0.8 },
+    }
+
+    const doc = saveMap(map)
+    expect(doc.schemaVersion).toBe(MAP_SCHEMA_VERSION)
+
+    const back = loadMap(JSON.parse(JSON.stringify(doc)))
+    expect(back.ok).toBe(true)
+    if (!back.ok) return
+    // Deep equality is the assertion that matters: a save/load which quietly
+    // drops one cable or one flag is the failure that only shows up on stage.
+    expect(back.map).toEqual(map)
+    expect(back.migratedFrom).toBeUndefined()
+  })
+
+  it('refuses a document from a newer build rather than partially loading it', () => {
+    const doc = saveMap(emptyMap()) as Record<string, unknown>
+    doc.schemaVersion = MAP_SCHEMA_VERSION + 1
+    const r = loadMap(doc)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('tooNew')
+    // Partially loading and re-saving would destroy whatever the newer version
+    // knew about, so the refusal has to say so rather than look like a bug.
+    expect(r.message).toMatch(/newer/i)
+  })
+
+  describe('the v2 → v3 migration (the split tap)', () => {
+    /** A v2 document: a strip with neither `monitor` nor `recordTap`. Built by
+        hand rather than by saveMap, which now emits v3. */
+    const v2Doc = () => {
+      const doc = saveMap({ ...emptyMap(), strips: [strip()] }) as unknown as {
+        schemaVersion: number
+        map: { strips: Record<string, unknown>[] }
+      }
+      doc.schemaVersion = 2
+      for (const s of doc.map.strips) {
+        delete s.monitor
+        delete s.recordTap
+      }
+      return doc
+    }
+
+    it('opens a v2 map with the monitor CLOSED', () => {
+      const r = loadMap(v2Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(2)
+      // ⚠️ This migration deliberately does NOT preserve how a v2 map sounded,
+      // which is the opposite of the masterLevel migration's rule. A v2 map
+      // sounded like every input strip monitoring permanently with no way to
+      // stop it — that is the bug v3 exists to fix, and restoring it faithfully
+      // would reopen every saved map straight back into the feedback loop.
+      expect(r.map.strips[0]?.monitor).toBe(false)
+    })
+
+    it('leaves the record tap on the RULE rather than pinning it', () => {
+      const r = loadMap(v2Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      // null = "the rule decides", which reproduces v2 behaviour exactly for a
+      // strip with no live input (it still records its own channel bus) and
+      // gives the input case the split tap. Writing 'bus' here would freeze
+      // every migrated strip out of the fix.
+      expect(r.map.strips[0]?.recordTap).toBeNull()
+    })
+
+    it('round-trips a v3 map without migrating it', () => {
+      const saved = saveMap({ ...emptyMap(), strips: [strip({ monitor: true, recordTap: 'bus' })] })
+      const r = loadMap(JSON.parse(JSON.stringify(saved)))
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBeUndefined()
+      // The switch is a performance decision about a SET — restoring a map into
+      // silence (or feedback) because it was not saved is the failure here.
+      expect(r.map.strips[0]?.monitor).toBe(true)
+      expect(r.map.strips[0]?.recordTap).toBe('bus')
+    })
+  })
+
+  it('treats an unknown key as a loud failure, never a silent coercion', () => {
+    const doc = saveMap(emptyMap()) as unknown as { map: Record<string, unknown> }
+    doc.map.mysteryField = 1
+    expect(loadMap(doc).ok).toBe(false)
+  })
+
+  it.each([
+    ['not an object', 42],
+    ['no version', { map: emptyMap() }],
+    ['bad version', { schemaVersion: 0, savedAt: '', app: 'x', map: emptyMap() }],
+  ])('rejects %s as corrupt', (_label, input) => {
+    const r = loadMap(input)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('corrupt')
+  })
+
+  describe('the lane budget', () => {
+    it('counts a grid as stereo, a tape by its own width, an empty strip as nothing', () => {
+      expect(elementLanes({ kind: 'none' })).toBe(0)
+      expect(elementLanes(grid())).toBe(2)
+      expect(elementLanes(tape(true))).toBe(2)
+      expect(elementLanes(tape(false))).toBe(1)
+    })
+
+    it('admits the combinations the budget is meant to allow', () => {
+      // 4 stereo decks exactly fills it...
+      const four: PlaneMap = {
+        ...emptyMap(),
+        strips: [0, 1, 2, 3].map((i) => strip({ key: `s${i}`, channel: i, element: tape(true) })),
+      }
+      expect(lanesUsed(four)).toBe(LANE_BUDGET)
+      expect(loadMap(saveMap(four)).ok).toBe(true)
+
+      // ...and so does 3 stereo grids + 2 mono tapes, which is the mixed case
+      // the budget exists to make expressible.
+      const mixed: PlaneMap = {
+        ...emptyMap(),
+        strips: [
+          strip({ key: 'g0', channel: 0, element: { ...grid(), deck: 0 } }),
+          strip({ key: 'g1', channel: 1, element: { ...grid(), deck: 1 } }),
+          strip({ key: 'g2', channel: 2, element: { ...grid(), deck: 2 } }),
+          strip({ key: 't0', channel: 3, element: { ...tape(false), index: 0 } }),
+          strip({ key: 't1', channel: 4, element: { ...tape(false), index: 1 } }),
+        ],
+      }
+      expect(lanesUsed(mixed)).toBe(LANE_BUDGET)
+      expect(loadMap(saveMap(mixed)).ok).toBe(true)
+    })
+
+    it('refuses an overspent map with the count, rather than loading a strip that cannot sound', () => {
+      const over: PlaneMap = {
+        ...emptyMap(),
+        strips: [0, 1, 2, 3, 4].map((i) =>
+          strip({ key: `s${i}`, channel: i, element: tape(true) }),
+        ),
+      }
+      expect(lanesUsed(over)).toBe(10)
+      const r = loadMap(saveMap(over))
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      expect(r.reason).toBe('laneBudget')
+      expect(r.message).toContain('10')
+    })
+  })
+
+  it('keeps the feedback flag distinct from an ordinary cable', () => {
+    // These two routes differ ONLY in `feedback`, and that single bit is the
+    // difference between zero added latency and one block of delay. A loader
+    // that defaulted it would silently change how a patch sounds.
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [strip({ key: 'a', channel: 0 }), strip({ key: 'b', channel: 1 })],
+      routes: [
+        {
+          src: { kind: 'channelOut', index: 0, sub: null },
+          dst: { kind: 'channelIn', index: 1 },
+          gain: 1,
+          feedback: false,
+        },
+        {
+          src: { kind: 'channelOut', index: 1, sub: null },
+          dst: { kind: 'channelIn', index: 0 },
+          gain: 1,
+          feedback: true,
+        },
+      ],
+    }
+    const back = loadMap(saveMap(map))
+    expect(back.ok).toBe(true)
+    if (!back.ok) return
+    expect(back.map.routes[0]!.feedback).toBe(false)
+    expect(back.map.routes[1]!.feedback).toBe(true)
+  })
+})
+
+describe('the performance layer', () => {
+  const perf = (over: Partial<GridPerf> = {}): GridPerf => ({
+    ...defaultGridPerf(),
+    ...over,
+  })
+
+  it('defaults a session this strip has never hosted', () => {
+    // Not undefined: a fresh pairing starts at scene A, scheduled, empty queue.
+    expect(perfFor(strip(), 'never-seen')).toEqual({
+      currentScene: 'A',
+      switchMode: 'scheduled',
+      queuedScenes: [],
+      queueLoop: false,
+    })
+  })
+
+  it('remembers per (strip, SESSION) so a swap away and back restores it', () => {
+    // The user's point: a strip is a SLOT, not a container. Swap A -> B -> A and
+    // the scene state for A must come back, while B never inherits A's.
+    let s = strip({ key: 'deck1' })
+    s = rememberPerf(s, 'session-A', perf({ currentScene: 'C', queueLoop: true }))
+    s = rememberPerf(s, 'session-B', perf({ currentScene: 'F' }))
+
+    expect(perfFor(s, 'session-A').currentScene).toBe('C')
+    expect(perfFor(s, 'session-A').queueLoop).toBe(true)
+    expect(perfFor(s, 'session-B').currentScene).toBe('F')
+    expect(perfFor(s, 'session-B').queueLoop).toBe(false) // NOT inherited from A
+  })
+
+  it('survives the round trip', () => {
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [
+        rememberPerf(
+          strip({ element: grid() }),
+          's1',
+          perf({ currentScene: 'D', switchMode: 'restartImmediate', queuedScenes: ['E', 'F'], queueLoop: true }),
+        ),
+      ],
+    }
+    const back = loadMap(saveMap(map))
+    expect(back.ok).toBe(true)
+    if (!back.ok) return
+    expect(back.map).toEqual(map)
+    expect(perfFor(back.map.strips[0]!, 's1').queuedScenes).toEqual(['E', 'F'])
+  })
+
+  it('refuses a switchMode the engine does not have', () => {
+    // These three strings are scoopy's SceneUiState.switchMode. A typo here
+    // would be a map that cannot be applied.
+    const bad = saveMap({
+      ...emptyMap(),
+      strips: [rememberPerf(strip(), 's1', perf())],
+    }) as unknown as { map: { strips: { sessionPerf: Record<string, GridPerf> }[] } }
+    bad.map.strips[0]!.sessionPerf['s1']!.switchMode = 'teleport' as GridPerf['switchMode']
+    expect(loadMap(bad).ok).toBe(false)
+  })
+})
+
+describe('the v1 → v2 migration (masterLevel)', () => {
+  it('defaults an old map to UNITY, because that is what it sounded like', () => {
+    // v1 had no master fader, so its output was unattenuated. Defaulting to
+    // anything else would change how an existing map plays the first time it
+    // is opened — a migration that alters the sound is not a migration.
+    const v1 = {
+      schemaVersion: 1,
+      savedAt: new Date().toISOString(),
+      app: 'scoopy',
+      map: {
+        plane: { scale: 1, panX: 0, panY: 0 },
+        strips: [],
+        routes: [],
+        transport: { masterBpm: 128 },
+      },
+    }
+    const loaded = loadMap(v1)
+    expect(loaded.ok).toBe(true)
+    if (loaded.ok) {
+      expect(loaded.map.transport.masterLevel).toBe(1)
+      expect(loaded.map.transport.masterBpm).toBe(128)
+      expect(loaded.migratedFrom).toBe(1)
+    }
+  })
+})

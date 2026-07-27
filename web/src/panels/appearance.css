@@ -1,0 +1,95 @@
+/* Appearance pane specifics. */
+.appearance {
+  max-width: 460px;
+  background-blend-mode: normal;
+}
+
+.role-hint {
+  font-family: var(--type-caption-family);
+  font-size: var(--type-caption-size);
+  margin-right: calc(var(--cell) * 2);
+}
+
+.color-swatch {
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  border: var(--hairline) solid var(--line);
+  background: none;
+  cursor: pointer;
+}
+
+/* TOOL-LOOKS — the "save as look" name field, dressed as a value box. */
+.look-name-input {
+  width: 110px;
+  height: var(--control-h);
+  padding: 0 var(--cell);
+  border: var(--hairline) solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: var(--type-value-size);
+}
+
+/* Semantic palette editor — one labelled swatch per family member, so the row
+   reads S1 S2 S3 S4 / M1 M2 M3 M4 / A B C exactly as the app does. */
+.sem-palette {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  flex-wrap: wrap;
+}
+
+.sem-swatch {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sem-swatch .color-swatch {
+  width: 34px;
+}
+
+.sem-swatch-name {
+  font-family: var(--type-label-family);
+  font-size: var(--type-caption-size);
+  letter-spacing: var(--type-label-tracking);
+}
+
+/* The whole section recedes while the system is off — the palettes stay
+   editable (tune first, then flip on), but they clearly are not in play. */
+.sem-off {
+  opacity: 0.45;
+}
+
+.font-input {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  font-family: var(--type-value-family);
+  font-size: var(--type-value-size);
+  padding: var(--cell) calc(var(--cell) * 2);
+  width: 24ch;
+}
+
+.font-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 2);
+}
+
+/* Waveform Studio preview — the grid's own renderer, on the app background
+   (the grid field is never a raised surface: DESIGN-SYSTEM §2). Full width so
+   the three cell widths sit side by side at real geometry. */
+.wave-preview {
+  display: block;
+  width: 100%;
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  margin: var(--cell) 0 calc(var(--cell) * 2);
+}

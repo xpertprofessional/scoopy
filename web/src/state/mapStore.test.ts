@@ -1,0 +1,490 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyMap,
+  bootMap,
+  captureMap,
+  checkBudget,
+  flushLiveEdits,
+  getMap,
+  liveSetLevel,
+  reapplyAfterPublish,
+  liveSetSend,
+  setMap,
+  setMute,
+  updateStrip,
+  useMapStore,
+} from "./mapStore.ts";
+import {
+  LANE_BUDGET,
+  emptyMap,
+  loadMap,
+  saveMap,
+  type PlaneMap,
+  type Strip,
+} from "../persist/mapDocument.ts";
+import type { EngineLink } from "../engineLink.ts";
+
+/** Records every command, so a test can assert on ORDER as well as content —
+    the ordering rules are the load-bearing half of applying a map. */
+function fakeLink(overrides: Record<string, unknown> = {}) {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const link = {
+    command: (method: string, params: unknown) => {
+      calls.push({ method, params: params as Record<string, unknown> });
+      return Promise.resolve(overrides[method] ?? {});
+    },
+    paramWrite: () => {},
+    onHotFrame: () => () => {},
+    onEvent: () => () => {},
+    onUiState: () => () => {},
+  } as unknown as EngineLink;
+  return { link, calls };
+}
+
+function strip(over: Partial<Strip> = {}): Strip {
+  return {
+    key: "s1",
+    name: "TAPE 1",
+    cell: { x: 0, y: 0, w: 340, h: 196 },
+    channel: 0,
+    element: {
+      kind: "tape",
+      index: 0,
+      takeRef: null,
+      stereo: false,
+      loop: { enabled: true, start: 0, end: 1000 },
+      rate: 1,
+    },
+    level: 1,
+    mute: false,
+    sends: [0, 0, 0, 0],
+    recordArm: false,
+    monitor: false,
+    recordTap: null,
+    sessionPerf: {},
+    ...over,
+  };
+}
+
+function mapWith(strips: Strip[], routes: PlaneMap["routes"] = []): PlaneMap {
+  return { ...emptyMap(), strips, routes };
+}
+
+beforeEach(() => {
+  useMapStore.setState({ map: emptyMap(), selectedKey: null, dirty: false });
+});
+
+describe("applyMap", () => {
+  it("clears the patchbay FIRST, even for an empty map", async () => {
+    // Otherwise "load an empty map" silently means "keep whatever was patched",
+    // and the boot defaults survive every load, getting louder each time.
+    const { link, calls } = fakeLink();
+    await applyMap(link, emptyMap());
+    // FIRST is the whole claim — not "only".
+    expect(calls[0]).toEqual({ method: "slRoute", params: { action: "clearAll" } });
+    // The master goes LAST, with the rest of the output section: it is
+    // transport state rather than a strip's, so planApply has no op for it and
+    // adding one would create a second place that decides load order.
+    expect(calls[calls.length - 1]).toEqual({
+      method: "slMaster",
+      params: { action: "setLevel", level: 1 },
+    });
+  });
+
+  it("binds the channel source before writing its level", async () => {
+    // Binding to a grid deck PROJECTS level/sends onto the core's per-deck
+    // controls, so a level written first lands on the previous deck.
+    const { link, calls } = fakeLink();
+    await applyMap(link, mapWith([strip()]));
+    const actions = calls
+      .filter((c) => c.method === "slChannel")
+      .map((c) => c.params.action);
+    expect(actions[0]).toBe("setSource");
+    expect(actions).toContain("setLevel");
+    expect(actions.indexOf("setSource")).toBeLessThan(actions.indexOf("setLevel"));
+  });
+
+  it("issues routes LAST, after all channel state", async () => {
+    const { link, calls } = fakeLink();
+    await applyMap(
+      link,
+      mapWith(
+        [strip()],
+        [
+          {
+            src: { kind: "channelOut", index: 0, sub: null },
+            dst: { kind: "main", index: 0 },
+            gain: 1,
+            feedback: false,
+          },
+        ],
+      ),
+    );
+    const lastChannel = calls.map((c) => c.method).lastIndexOf("slChannel");
+    const routeAdd = calls.findIndex((c) => c.params.action === "add");
+    expect(routeAdd).toBeGreaterThan(lastChannel);
+  });
+
+  it("carries the feedback flag through to the wire", async () => {
+    // Two routes differing only in this bit differ by a whole block of latency;
+    // a loader that dropped it would silently change how a patch sounds.
+    const { link, calls } = fakeLink();
+    await applyMap(
+      link,
+      mapWith(
+        [strip()],
+        [
+          {
+            src: { kind: "channelOut", index: 1, sub: null },
+            dst: { kind: "channelIn", index: 0 },
+            gain: 0.5,
+            feedback: true,
+          },
+        ],
+      ),
+    );
+    const add = calls.find((c) => c.params.action === "add");
+    expect(add?.params.feedback).toBe(true);
+    expect(add?.params.gain).toBe(0.5);
+  });
+
+  it("encodes a null send sub as the sentinel, never 0", async () => {
+    // 0 is a real send index and a real input channel.
+    const { link, calls } = fakeLink();
+    await applyMap(
+      link,
+      mapWith(
+        [],
+        [
+          {
+            src: { kind: "channelOut", index: 0, sub: null },
+            dst: { kind: "main", index: 0 },
+            gain: 1,
+            feedback: false,
+          },
+        ],
+      ),
+    );
+    const add = calls.find((c) => c.params.action === "add");
+    expect(add?.params.srcSub).toBe(0xffffffff);
+  });
+
+  it("still loads tapes and routing when a grid strip is present", async () => {
+    // The grid ops have no ABI behind them yet (there is no scene API in
+    // sl_deck_*), so they are skipped — but skipping must not abort the rest of
+    // the map.
+    const { link, calls } = fakeLink();
+    await applyMap(
+      link,
+      mapWith([
+        strip(),
+        strip({
+          key: "s2",
+          channel: 1,
+          element: { kind: "grid", deck: 0, sessionId: "x", bpm: 120, syncToMaster: true },
+        }),
+      ]),
+    );
+    expect(calls.some((c) => c.method === "slTape")).toBe(true);
+    // Both strips got their channel bound.
+    const sources = calls.filter((c) => c.params.action === "setSource");
+    expect(sources).toHaveLength(2);
+  });
+
+  it("does nothing without a link rather than throwing", async () => {
+    await expect(applyMap(null, mapWith([strip()]))).resolves.toBeUndefined();
+  });
+});
+
+describe("reapplyAfterPublish", () => {
+  it("re-asserts tempo sync for every grid strip", () => {
+    // `sl_snapshot_begin` resets tempoSyncRatio to 1.0, and every world publish
+    // commits a snapshot — so editing anything in the grid silently un-syncs
+    // every synced deck. The sync intent belongs to the MAP, not the session,
+    // so the map has to put it back. Pinned in C++ by plane_audio_test; pinned
+    // here so the TS side keeps issuing it.
+    setMap(
+      mapWith([
+        strip({
+          key: "g",
+          channel: 0,
+          element: { kind: "grid", deck: 1, sessionId: "s", bpm: 60, syncToMaster: true },
+        }),
+      ]),
+    );
+    const { link, calls } = fakeLink();
+    return reapplyAfterPublish(link).then(() => {
+      expect(calls).toHaveLength(1);
+      // master 120 ÷ deck 60 = 2.0
+      expect(calls[0]?.params).toMatchObject({ action: "setTempoSync", deck: 1, ratio: 2 });
+    });
+  });
+
+  it("sends ratio 1.0 for an UNSYNCED deck rather than omitting it", () => {
+    // Omitting would leave the deck carrying whatever ratio the last publish or
+    // the previous map left behind — stretched, with nothing explaining it.
+    setMap(
+      mapWith([
+        strip({
+          key: "g",
+          channel: 0,
+          element: { kind: "grid", deck: 0, sessionId: "s", bpm: 90, syncToMaster: false },
+        }),
+      ]),
+    );
+    const { link, calls } = fakeLink();
+    return reapplyAfterPublish(link).then(() => {
+      expect(calls[0]?.params).toMatchObject({ ratio: 1 });
+    });
+  });
+
+  it("does nothing for a map with no grid strips", () => {
+    setMap(mapWith([strip()]));
+    const { link, calls } = fakeLink();
+    return reapplyAfterPublish(link).then(() => expect(calls).toHaveLength(0));
+  });
+});
+
+describe("bootMap", () => {
+  it("installs the engine DEFAULTS for a map that has never been saved", async () => {
+    // The bug this exists to prevent: planApply on a fresh map is just
+    // routeClearAll, which wipes the 40 boot routes and installs nothing. The
+    // plane would look entirely normal and make no sound, with no cable
+    // anywhere explaining it.
+    const { link, calls } = fakeLink({
+      slRouteList: {
+        routes: [
+          {
+            active: true,
+            srcKind: 0,
+            srcIndex: 0,
+            srcSub: 0xffffffff,
+            dstKind: 2,
+            dstIndex: 0,
+            gain: 1,
+            feedback: false,
+            isDefault: true,
+          },
+        ],
+      },
+    });
+    await bootMap(link);
+    const actions = calls.filter((c) => c.method === "slRoute").map((c) => c.params.action);
+    expect(actions).toEqual(["clearAll", "installDefaults"]);
+    // …and they are CAPTURED into the document, so from now on the map carries
+    // every cable as an ordinary route.
+    expect(getMap().routes).toHaveLength(1);
+    expect(useMapStore.getState().dirty).toBe(false); // booting is not an edit
+  });
+
+  it("applies the document normally when the map is NOT fresh", async () => {
+    setMap(mapWith([strip()]));
+    const { link, calls } = fakeLink();
+    await bootMap(link);
+    const actions = calls.filter((c) => c.method === "slRoute").map((c) => c.params.action);
+    // clearAll, and NO installDefaults — a saved patch must not gain the boot
+    // wiring on top of what it recorded.
+    expect(actions).toEqual(["clearAll"]);
+    expect(calls.some((c) => c.method === "slChannel")).toBe(true);
+  });
+});
+
+describe("captureMap", () => {
+  it("replaces the document's routes with what the ENGINE reports", async () => {
+    // A save must record the graph that exists, not the one the UI believes it
+    // issued — those drift the moment anything patches outside this store.
+    setMap(
+      mapWith(
+        [strip()],
+        [
+          {
+            src: { kind: "channelOut", index: 7, sub: null },
+            dst: { kind: "main", index: 0 },
+            gain: 1,
+            feedback: false,
+          },
+        ],
+      ),
+    );
+    const { link } = fakeLink({
+      slRouteList: {
+        routes: [
+          {
+            active: true,
+            srcKind: 0,
+            srcIndex: 2,
+            srcSub: 0xffffffff,
+            dstKind: 2,
+            dstIndex: 0,
+            gain: 0.75,
+            feedback: false,
+            isDefault: false,
+          },
+          // An inactive slot is not a cable.
+          {
+            active: false,
+            srcKind: 0,
+            srcIndex: 3,
+            srcSub: 0xffffffff,
+            dstKind: 2,
+            dstIndex: 0,
+            gain: 1,
+            feedback: false,
+            isDefault: false,
+          },
+        ],
+      },
+    });
+    const captured = await captureMap(link);
+    expect(captured.routes).toHaveLength(1);
+    expect(captured.routes[0]?.src.index).toBe(2);
+    expect(captured.routes[0]?.gain).toBe(0.75);
+    // Everything else is the store's document, untouched.
+    expect(captured.strips).toEqual(getMap().strips);
+  });
+
+  it("KEEPS the document's routes when the engine read fails", async () => {
+    // Writing an empty list because one command timed out would destroy the
+    // patch the save was meant to preserve.
+    const routes: PlaneMap["routes"] = [
+      {
+        src: { kind: "channelOut", index: 1, sub: null },
+        dst: { kind: "main", index: 0 },
+        gain: 1,
+        feedback: false,
+      },
+    ];
+    setMap(mapWith([strip()], routes));
+    const link = {
+      command: () => Promise.reject(new Error("no host")),
+      paramWrite: () => {},
+      onHotFrame: () => () => {},
+      onEvent: () => () => {},
+      onUiState: () => () => {},
+    } as unknown as EngineLink;
+    expect((await captureMap(link)).routes).toEqual(routes);
+  });
+
+  it("round-trips deep-equal through save/load", async () => {
+    // The failure that only shows up on stage is a save/load that quietly drops
+    // one cable.
+    setMap(
+      mapWith([strip()], [
+        {
+          src: { kind: "channelSend", index: 0, sub: 3 },
+          dst: { kind: "channelIn", index: 1 },
+          gain: 0.9,
+          feedback: true,
+        },
+      ]),
+    );
+    const captured = await captureMap(null);
+    const loaded = loadMap(saveMap(captured));
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) expect(loaded.map).toEqual(captured);
+  });
+});
+
+describe("the lane budget", () => {
+  it("refuses an element that would overspend, with the count", () => {
+    // Building an overspent map would create a document loadMap then refuses —
+    // the worst moment to find out is the next time you open it.
+    const strips = [0, 1, 2].map((i) =>
+      strip({
+        key: `g${i}`,
+        channel: i,
+        element: { kind: "grid", deck: 0, sessionId: "s", bpm: 120, syncToMaster: false },
+      }),
+    ); // 3 grids = 6 lanes
+    setMap(mapWith(strips));
+    const stereoTape = {
+      kind: "tape" as const,
+      index: 0,
+      takeRef: null,
+      stereo: true,
+      loop: { enabled: false, start: 0, end: 0 },
+      rate: 1,
+    };
+    // 6 + 2 = 8 fits exactly.
+    expect(checkBudget("new", stereoTape).ok).toBe(true);
+    // 6 + 2 + 2 does not.
+    setMap(mapWith([...strips, strip({ key: "t1", channel: 3, element: stereoTape })]));
+    const over = checkBudget("new", stereoTape);
+    expect(over.ok).toBe(false);
+    if (!over.ok) {
+      expect(over.wanted).toBe(10);
+      expect(over.budget).toBe(LANE_BUDGET);
+    }
+  });
+
+  it("does not count the strip's OWN current element when replacing it", () => {
+    // Swapping a stereo tape for another stereo tape is always legal; counting
+    // the outgoing element would refuse it at the budget edge.
+    const stereoTape = {
+      kind: "tape" as const,
+      index: 0,
+      takeRef: null,
+      stereo: true,
+      loop: { enabled: false, start: 0, end: 0 },
+      rate: 1,
+    };
+    setMap(
+      mapWith([
+        strip({ key: "a", channel: 0, element: stereoTape }),
+        strip({ key: "b", channel: 1, element: stereoTape }),
+        strip({ key: "c", channel: 2, element: stereoTape }),
+        strip({ key: "d", channel: 3, element: stereoTape }),
+      ]),
+    ); // 8 lanes — full
+    expect(checkBudget("d", stereoTape).ok).toBe(true); // replace d: still 8
+    expect(checkBudget("new", stereoTape).ok).toBe(false); // add a 5th: 10
+  });
+});
+
+describe("live edits", () => {
+  it("updates the store immediately and coalesces the engine call", () => {
+    // The UI must track the finger with no round trip; the wire gets one write
+    // per frame carrying the LATEST value.
+    const s = strip();
+    setMap(mapWith([s]));
+    const { link, calls } = fakeLink();
+    liveSetLevel(link, s, 0.5);
+    liveSetLevel(link, s, 0.25);
+    liveSetLevel(link, s, 0.1);
+    expect(getMap().strips[0]?.level).toBe(0.1); // store is current already
+    expect(calls).toHaveLength(0); // nothing sent yet
+    flushLiveEdits();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.params.level).toBe(0.1); // only the latest matters
+  });
+
+  it("keeps separate targets separate", () => {
+    const s = strip();
+    setMap(mapWith([s]));
+    const { link, calls } = fakeLink();
+    liveSetSend(link, s, 0, 0.5);
+    liveSetSend(link, s, 1, 0.7);
+    liveSetLevel(link, s, 0.3);
+    flushLiveEdits();
+    expect(calls).toHaveLength(3);
+    expect(getMap().strips[0]?.sends).toEqual([0.5, 0.7, 0, 0]);
+  });
+
+  it("sends mute immediately — a click must not wait a frame", () => {
+    const s = strip();
+    setMap(mapWith([s]));
+    const { link, calls } = fakeLink();
+    setMute(link, s, true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.params).toMatchObject({ action: "setMute", muted: true });
+    expect(getMap().strips[0]?.mute).toBe(true);
+  });
+
+  it("marks the document dirty on an edit but NOT on a pan", () => {
+    const s = strip();
+    setMap(mapWith([s]));
+    expect(useMapStore.getState().dirty).toBe(false);
+    updateStrip("s1", (x) => ({ ...x, name: "renamed" }));
+    expect(useMapStore.getState().dirty).toBe(true);
+  });
+});

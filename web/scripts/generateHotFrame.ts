@@ -25,7 +25,11 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const schemaPath = resolve(appRoot, 'vendor/scoopy/web-protocol/schema.ts')
+// THE SCHEMA IS IN-TREE NOW (P3-0 step 2). It was
+// `vendor/scoopy/web-protocol/schema.ts` — a hash-pinned mirror — until scoopy's
+// web became first-class source here. One copy, no lock, no sync step that can
+// be forgotten.
+const schemaPath = resolve(appRoot, 'web/protocol/schema.ts')
 const outPath = resolve(appRoot, 'slengine/generated/sl_hotframe.inc')
 
 class GenerationRefused extends Error {}

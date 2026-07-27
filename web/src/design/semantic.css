@@ -1,0 +1,105 @@
+/* Semantic (assignment) colors — DESIGN-SYSTEM.md §2b.
+
+   Chrome says what KIND of thing a control is. A semantic color says WHICH ONE
+   of a numbered set it belongs to, so two controls far apart on screen read as
+   connected: a track's send 3 and the mixer's FX3 return; an M2 sweep band and
+   the M2 lane; a deck's transport block and its mixer output box.
+
+   HOW A SURFACE OPTS IN: set `--sem-color` inline from `semanticColor()` /
+   `muteGroupColor()` (design/tokens.ts) and add one class below. Nothing here
+   hardcodes a color — `--sem-color` is the identity, `--sem-mix` is the
+   strength, and both are tokens the Appearance pane edits live.
+
+   THE OFF SWITCH is not a branch anywhere. Disabled → applyTokens writes
+   `--sem-mix: 0%`, so every mix below resolves to pure chrome; and
+   semanticColor() returns the chrome color each family used before this system
+   existed, so the solid surfaces fall back too. One switch, no conditionals. */
+
+/* `.sem` CARRIES an identity and nothing else: it declares no properties, it
+   just marks the element whose inline --sem-color the rules below (and panel
+   CSS) hang off. Kept deliberately inert so it is safe to put on a big
+   container — `.dj-deck` wraps an entire GridPanel, and a container that also
+   restyled its subtree would repaint every track in the deck's color. */
+.sem {
+  /* marker only — see .sem-fill for the tint */
+}
+
+/* Tint the filled controls in this subtree. The controls are untouched: their
+   gradients ALREADY say `var(--fill)` (controls.tsx GeoRange, ChannelStrip
+   MicroSend), so re-pointing --fill here reaches all of them at once. At
+   strength 0 this collapses back to --fill-neutral.
+
+   Apply it ONLY where every fader below really belongs to the identity (a
+   channel strip, one send slider) — never on a container that merely knows
+   which deck it is. */
+.sem-fill {
+  --fill: color-mix(in srgb, var(--sem-color) var(--sem-mix), var(--fill-neutral));
+}
+
+/* The paired DragBox beside a tinted slider takes the identity on its edge, so
+   the code survives at value 0 — where there is no fill left to read. */
+.sem-fill > .ds-dragbox {
+  border-color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--line));
+}
+
+/* The control's own EDGE carries the identity too. This is what makes the code
+   readable on a control whose fill is near-empty — a send at 0 is the common
+   case, and an empty trough has no fill to tint. */
+.sem-edge {
+  border-color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--line));
+}
+
+/* Solid identity — a surface that IS the thing it names (deck A's badge, the
+   latched MUTE button). Full color on purpose: `strength` governs how far an
+   identity bleeds into neutral CHROME, not the color of an object whose whole
+   job is to name its channel. */
+.sem-solid {
+  background: var(--sem-color);
+  border-color: var(--sem-color);
+  color: var(--bg);
+}
+
+/* Identity ink — a label naming its channel (FX3, DECK B). */
+.sem-ink {
+  color: var(--sem-color);
+}
+
+/* Identity edge at full strength — for a picker/box that is ROUTED somewhere
+   (a deck's output box), where the routing is the point and a whisper is not
+   enough to spot it across the mixer. */
+.sem-edge-solid {
+  border-color: var(--sem-color);
+}
+
+/* A LATCH whose active state IS its identity — the mute group's MUTE button,
+   which owns a set of tracks and must look like the thing ringing them. Scoped
+   to `.sem-latch` on purpose: plenty of buttons sit inside a `.sem` subtree (a
+   channel strip's M/S) and their `active` is a plain toggle, not an identity. */
+.sem-latch > .ds-button.active,
+.ds-button.sem-latch.active {
+  background: var(--sem-color);
+  border-color: var(--sem-color);
+  color: var(--bg);
+}
+
+/* A wrapper that exists only to carry --sem-color must not disturb layout. */
+.sem-latch {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Membership halo — "this control belongs to that group" (a mute-group member).
+   box-shadow, never outline: outline belongs to the focus ring, and the two must
+   be able to co-exist on one button (grid.css). `.sem-ring-live` = the group is
+   currently latched, so membership is not just a fact but an active one. */
+.sem-ring {
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px color-mix(in srgb, var(--sem-color) 55%, transparent);
+}
+
+.sem-ring.sem-ring-live {
+  box-shadow:
+    0 0 0 1px var(--bg),
+    0 0 0 2px var(--sem-color);
+}

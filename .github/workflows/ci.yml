@@ -34,11 +34,22 @@ jobs:
       # Gates run against the COMMITTED artifacts (no regeneration first), so a
       # stale generated header / ABI drift / stale bundle / hardcoded color fails
       # the build.
-      - run: npm run protocol:check
+      # protocol:check RETIRED at the P3-0 flip, and its debt is recorded here
+      # rather than hidden. It emitted `shell/generated/WZProtocol.h` from
+      # WIZARD's schema, using exports (CHANNEL_BLOCK_FIELDS, DECK_BLOCK_FIELDS)
+      # that scoopy's schema does not have — so with wizard's web deleted the
+      # generator cannot run at all.
+      #
+      # ⚠️ WZProtocol.h is therefore FROZEN as committed, and its only consumers
+      # — `wz_command` (CommandDispatch.cpp), `src/Main.cpp` and
+      # `command_dispatch_test` — are ORPHANED: nothing links them but that test,
+      # and they belonged to the `Wizard` app this flip removed. They should be
+      # retired together, deliberately, rather than deleted in passing here.
       - run: npm run shared:check
-      # The engine lock: scoopy's portable core is vendored under vendor/scoopy,
-      # hash-pinned. apps/scoopy stays the ONLY writable home until the P3 flip;
-      # this check makes local edits to the vendored copy loud, not forbidden.
+      # The engine lock: scoopy's portable CORE is still vendored under
+      # vendor/scoopy, hash-pinned (the web half moved in-tree at the P3-0 flip;
+      # the core follows in step 2). Makes local edits to the vendored copy
+      # loud, not forbidden.
       - run: npm run engine:check
       # The SL v3 track-param mapping is DERIVED from the pinned v2 ABI. This
       # fails if the vendored source moved and the mapping was not regenerated —
@@ -52,7 +63,14 @@ jobs:
       # The WorldTrack->engine-param rename is DERIVED from scoopy's worklet
       # field tables; fails if the worklet moved and the map was not regenerated.
       - run: npm run worldmap:check
-      - run: npm run abi:check
+      # abi:check RETIRED at the P3-0 flip. It asked "does wizard's engine carry
+      # every param the schema declares?" — coherent while both were wizard's.
+      # The schema is now SCOOPY's and `wz_engine` is the DONOR (SL-ABI-V3: "a
+      # donor, not a survivor") that the merged app does not link, so the
+      # question became a category error: all 29 params failed it. Twenty-nine
+      # identical waivers would have been bookkeeping, not coverage.
+      # The equivalent gate for the engine that ships is tape:check + the
+      # hotframe/trackparams/worldmap codegen checks, which all still run.
       # The SL-ABI-V3 §5 tape transplant is CARRIED OR WAIVED, both directions:
       # fails if a wz_deck_* entry point was dropped without a reason, or an
       # sl_tape_* one was invented without one. A 21-function rename is exactly
@@ -60,13 +78,11 @@ jobs:
       - run: npm run tape:check
       - run: npm run check:tokens
       - run: npm run webdist:check
-      # The bundle the MERGED APP actually serves. Two tiers by design: here it
-      # can only prove `vendor/scoopy/webdist` EXISTS (this repo is checked out
-      # alone, so there is no shipping tree to compare against and it says so and
-      # skips). On a developer machine it proves the whole chain. Both halves
-      # matter — a session's UI work was already lost once to a stale vendored
-      # bundle, and the empty-bundle case is provable everywhere.
-      - run: npm run scoopydist:check
+      # scoopydist:check is GONE with the thing it policed. It existed to prove
+      # `vendor/scoopy/webdist` — a vendored BUILD of another repo's UI — was
+      # current, after a session's work was lost to a stale one. The web now
+      # builds in-tree from `web/`, so `webdist:check` above covers it and there
+      # is no second bundle to fall behind.
 
   native:
     name: native (${{ matrix.os }})

@@ -1,0 +1,802 @@
+/* ---- Unified mixer: two-tier channel strips (MIXER-CONCEPT.md P4-09a) ----
+   Mixer overhaul (2026-07-14): TWO ROWS, NO horizontal scroll. The channel row
+   fits a MacBook window and every channel flexes to ONE equal width — equal
+   fader travel is what makes levels comparable across channels — growing with
+   the window (longer sliders, longer meters). The XFADE/X·MIX row sits
+   full-width below (it was the rightmost strip, permanently off-screen). */
+
+.mixer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  padding: var(--cell) calc(var(--cell) * 2);
+  /* min-height, NOT height: the stack must be free to grow past the host frame
+     so its scrollHeight reports the real content (the host follows via
+     setPanelHeight — the transport-strip pattern). */
+  min-height: 100%;
+}
+
+/* `stretch` (not flex-start) so every block is the same height as the tallest.
+   Channels differ in tier count — and top-aligning them left the console
+   ragged with routing pickers at three different heights. */
+.mixer {
+  display: flex;
+  align-items: stretch;
+  gap: calc(var(--cell) * 2);
+}
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  /* Pins the bottom row to the bottom: every channel's routing picker then
+     lands on ONE baseline regardless of how many tiers sit above it. */
+  justify-content: space-between;
+  gap: var(--cell);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  /* A channel strip is THE raised surface of the mixer — if depth means anything
+     in this app, it means this block sits above the console. */
+  box-shadow: var(--elev-1);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+  /* EQUAL flexed widths for every channel (decks, INPUT, FX): `1 1 0` makes the
+     free space split evenly regardless of content; min-width keeps a usable
+     fader when the window squeezes. Plugin names ellipsize (.ch-source). */
+  flex: 1 1 0;
+  min-width: 96px;
+}
+
+/* SOLO on the console. A solo silences every peer, and a mixer that has quietly
+   collapsed to one channel is exactly the case the user asked to make legible.
+   The silenced peers recede as a group (matching the track-band .soloed-out
+   recede on the grid); the soloed channel keeps full presence and gains an
+   accent edge so the one channel you ARE hearing is unmistakable. Transition on
+   opacity so an accidental solo reads as the mix visibly dimming, not snapping. */
+.channel {
+  transition: opacity var(--dur-latch) var(--ease);
+}
+
+.channel.solo-dimmed {
+  opacity: 0.42;
+}
+
+/* The soloed channel — the one you ARE hearing. An accent ring (outline, so it
+   neither shifts the flex layout nor fights the strip's elevation box-shadow —
+   which resolves to `none` on a flat theme and can't be safely concatenated). */
+.channel.solo-on {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+
+/* Global blocks (the MIXER utility block and CAPTURE): fixed-narrow. They are
+   not level channels — a button block and a sink — so they must not eat the
+   channels' shared equal width (equal fader travel is the row's whole point). */
+.channel.channel-utility,
+.channel.channel-capture {
+  flex: 0 0 auto;
+  width: 96px;
+  min-width: 0;
+}
+
+/* The CPU caption doubles as the meter's hide/show toggle (persisted). */
+.cpu-toggle {
+  cursor: pointer;
+}
+
+.ch-top {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.ch-top .ds-geo {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The learn wrapper around a fader (CM-6). A bare wrapper would collapse the
+   fader: `.ds-geo` is flex:1 *inside* this span, but the span itself is the
+   flex item of .ch-top and would size to content (the P4-08b trap). */
+.ch-level {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Armed / bound, same language as a box (controls.css `.ds-dragbox.learning`).
+   The fader has no border of its own, so the state rides an outline. */
+.ch-level.learning {
+  outline: 1px solid var(--warn);
+}
+
+.ch-level.mapped {
+  outline: 1px solid var(--signal);
+}
+
+.ch-top .ds-button {
+  padding: 0 calc(var(--cell) * 1.5);
+  flex: 0 0 auto;
+}
+
+/* XFADE while disengaged: the fader is genuinely inert (decks play at their own
+   volume), so it must not look live. Native dims it the same way. */
+.ch-level-inert .ds-geo {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ch-label-only {
+  flex: 1 1 auto;
+  font-family: var(--type-label-family);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+  text-transform: var(--type-label-transform);
+  color: var(--text-dim);
+  height: var(--slider-bar-h);
+  display: flex;
+  align-items: center;
+}
+
+.ch-bottom {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  min-height: var(--slider-bar-h);
+}
+
+/* The .ch-side / .ch-carve rules LEFT with the per-channel X picker and the carve
+   meter (mixer overhaul): sides are fixed policy until the X-MIX matrix. */
+
+.ch-bottom .ds-button,
+.ch-source {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+
+/* ---- FX channel (mixer overhaul): all controls inline, in rows ----
+     top: volume · M · S   mid: HOST/EXT · PRE/POST, plugin · VIEW   bottom: OUT
+   The mode rows share the bottom row's anatomy; the buttons split the width so
+   the rows never reflow when the mode or plugin name changes. */
+
+.ch-mode,
+.ch-plugin {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  min-height: var(--slider-bar-h);
+}
+
+.ch-mode .ds-button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* The plugin name is the one element allowed to ellipsize; VIEW holds its size
+   so the row never reflows when a plugin name changes ("the row bounces" bug). */
+.ch-plugin .ch-source {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ch-plugin > .ds-button:last-child {
+  flex: 0 0 auto;
+  padding: 0 var(--cell);
+  justify-content: center;
+}
+
+.ch-out {
+  font-size: var(--type-caption-size);
+}
+
+/* ---- Semantic identity on a channel (DESIGN-SYSTEM §2b) ----
+   The strip sets --sem-color (deck A/B/C, or the send color its FX return
+   shares with that send). These rules spend it on the two things that have to
+   be readable across the console: the ROUTING BOX in the bottom row — "where
+   does deck B go?" is a question you ask from the other side of the mixer — and
+   the channel's name when it has no fader to tint. Both fall back to plain
+   chrome on their own when the system is off (--sem-mix drops to 0%). */
+
+.channel.sem .ch-bottom .ds-select {
+  border-color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--line));
+}
+
+.channel.sem .ch-label-only {
+  color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--text));
+}
+
+/* Input meter: a full-width strip under the fader, NOT a sliver beside it.
+   As a flex item it stole width from the fader (the scarce axis) to show a
+   5px bar that reads as empty at rest. */
+.ch-meter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.channel .mic-meter {
+  width: 100%;
+  height: 4px;
+  flex: 1 1 auto;
+  border: var(--hairline) solid var(--line);
+}
+
+/* The output meter on the CAPTURE strip (TB-1). Full bar height, not the 4px
+   sliver the old capture meter used: it now carries a dB scale, a peak-hold
+   tick and a clip latch, and none of those read at 4px. */
+.channel .ch-output-meter {
+  width: 100%;
+  height: var(--slider-bar-h);
+  flex: 1 1 auto;
+}
+
+/* CPU load, in the console's global block (TB-1 — a provisional home). */
+.channel-utility .cpu-meter {
+  height: var(--slider-bar-h);
+  flex: 1 1 auto;
+  min-width: 0;
+  border: var(--hairline) solid var(--line);
+}
+
+/* ---- FX slot window (MIX-R8): plugin scanner + return settings ---- */
+
+.fxslot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  padding: calc(var(--cell) * 2);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  flex-wrap: wrap;
+}
+
+/* ---- Legacy toolbar rows (transport still uses these) ---- */
+
+/* Toolbar rows (Deck Mixer / FX slots / Transport). Shared idiom:
+   bordered strips, uniform control height, text labels only. */
+
+.deckmixer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  padding: var(--cell) calc(var(--cell) * 2);
+  overflow: visible;
+}
+
+.deckmixer-stack .deckmixer {
+  padding: 0;
+}
+
+.deckmixer {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 2);
+  padding: var(--cell) calc(var(--cell) * 2);
+  overflow-x: auto;
+}
+
+.deckmixer .strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--cell);
+  border: var(--hairline) solid var(--line);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+  /* Same fixed inner height as .fxslot so both console lines share one
+     baseline grid. */
+  min-height: calc(var(--slider-bar-h) + var(--cell) * 2);
+  flex: 0 0 auto;
+}
+
+.deckmixer .strip-label {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.deckmixer .ds-geo {
+  width: 110px;
+  flex: 0 0 auto;
+}
+
+.deckmixer .xfader-strip .ds-geo {
+  width: 180px;
+}
+
+.deckmixer .mic-send {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+}
+
+.deckmixer .mic-send .ds-geo {
+  width: 56px;
+}
+
+.deckmixer .send-label,
+.mini-label {
+  font-size: var(--type-caption-size);
+  color: var(--text-dim);
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.deckmixer .mic-meter {
+  width: 6px;
+  height: var(--slider-bar-h);
+}
+
+/* ---- Transport row: deck blocks (2 control rows + LCM), native parity ---- */
+
+/* ---- Transport strip (P6-07): DJ MASTER BOX on top, deck boxes below ----
+   The DJ box used to be a deck-width COLUMN in the deck strip, which starved
+   the deck boxes and made it impossible to line them up with the DJ view's
+   decks. Now it is a full-width horizontal box above them, and the deck boxes
+   share the width equally — so each sits directly above the deck it drives
+   (djmode.md §4C). */
+
+.transport-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  padding: var(--cell) calc(var(--cell) * 2);
+  /* min-height, NOT height: the strip must be free to grow past the host frame
+     so its scrollHeight reports the real content (the host follows via
+     setPanelHeight). A hard height:100% clips added rows silently. */
+  min-height: 100%;
+}
+
+.dj-master-box {
+  /* Taller controls (user, 2026-07-14): the master box is the set's primary
+     performance surface, so its controls get 1.5× the bar height. Scoped
+     override — --slider-bar-h keeps its :root value, so referencing it here is
+     non-circular, and every control in the box (buttons, boxes, selects, the
+     slider) rescales together. */
+  --control-h: calc(var(--slider-bar-h) * 1.5);
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  border: var(--hairline) solid var(--line);
+  padding: calc(var(--cell) / 2) calc(var(--cell) * 1.5);
+  flex: 0 0 auto;
+  flex-wrap: wrap; /* narrow-window safety — the TEMPO flex absorbs slack first */
+}
+
+.dj-master-box .vsep {
+  height: var(--control-h);
+}
+
+/* The TEMPO slider STRETCHES across whatever width the row has left (user,
+   2026-07-14) — it was a fixed 160px, which wasted the master row's width and
+   made the wrap kick in early. min-width keeps it usable when the row is
+   genuinely starved. */
+.dj-master-box .ds-geo {
+  flex: 1 1 160px;
+  width: auto;
+  min-width: 120px;
+}
+
+.dmb-label {
+  letter-spacing: 0.06em;
+}
+
+/* NK-3 — the note keyboard's TARGET readout. It answers "what will the keys
+   play?", so an unpinned target reads as quiet prose ("selection", dimmed) and a
+   PIN reads as a commitment: --signal, the same colour the grid gives the
+   playhead, because both mean "this is the live one". */
+.note-target {
+  max-width: calc(var(--cell) * 18);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-target.pinned {
+  color: var(--signal);
+}
+
+/* Deck boxes: EQUAL columns, so they align 1:1 with the DJ view's deck slots
+   (which are also equal halves). Aligning is the whole point of the split. */
+.deck-blocks {
+  display: flex;
+  align-items: stretch;
+  gap: calc(var(--cell) * 2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.deck-blocks > .deck-block {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.deck-block {
+  /* Heavy-traffic surface (user, 2026-07-17): the deck transport rows are
+     performance controls — A/B/C, play, NUDGE, SYNC, the scene pads — so the
+     whole box takes the hot control height, same scoped-override pattern as
+     .dj-master-box's 1.5×. Scoping the SURFACE, not the buttons, is what keeps
+     every control in these rows the same height as its neighbours. */
+  --control-h: var(--control-h-hot);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  border: var(--hairline) solid var(--line);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+  flex: 0 0 auto;
+}
+
+.block-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.vsep {
+  width: 1px;
+  height: var(--slider-bar-h);
+  background: var(--line);
+  flex: 0 0 auto;
+}
+
+.deck-select {
+  font-weight: 700;
+  min-width: 3ch;
+}
+
+/* The deck's identity color (DESIGN-SYSTEM §2b) — the same one its mixer strip,
+   its output box and its DJ badge wear, so a deck reads as ONE object across
+   three panels. The A/B/C button is where it is loudest: it is the deck's name. */
+.deck-block.sem {
+  border-top-color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--line));
+}
+
+.deck-block.sem .deck-select {
+  border-color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--line));
+  color: color-mix(in srgb, var(--sem-color) var(--sem-mix-strong), var(--text));
+}
+
+/* The deck the COMPOSE grid is currently showing. Deliberately NOT `.active`
+   (a full accent fill): that reads as an engaged toggle, and this sits inches
+   from the play button, which IS one. Selection is an identity state, so it
+   gets identity ink on an identity wash — unmistakably lit, unmistakably not a
+   transport control. With semantic colors off, --sem-color IS --accent (the
+   chrome fallback), so this is exactly the rule it has always been. */
+.deck-block.sem .deck-select.editing,
+.deck-select.editing {
+  background: color-mix(in srgb, var(--sem-color, var(--accent)) 18%, var(--bg-raised));
+  border-color: var(--sem-color, var(--accent));
+  color: var(--sem-color, var(--accent));
+}
+
+/* Compose-focus ring (2026-07-14): the WHOLE block wears the deck's identity
+   color while that deck is the compose target — the same 1px inset idiom as
+   `.dj-deck.active`, and the same ring the compose grid window wears
+   (`.grid-panel.deck-focus`), so "which deck am I composing" is one fact read
+   twice. It replaces the deleted DJ deck header's letter badge. Identity ink,
+   NOT the accent: an accent fill next to the play button would read as an
+   engaged toggle (see .deck-select.editing above). Compose-only by
+   construction — editingDeckIndex is nil in DJ mode. */
+.deck-block.sem.editing {
+  box-shadow: inset 0 0 0 1px var(--sem-color, var(--accent));
+}
+
+.ds-button.chev {
+  padding: 0 var(--cell);
+  color: var(--text-dim);
+  min-width: 0;
+}
+
+.ds-button.pending {
+  background: var(--warn);
+  color: var(--bg);
+  border-color: var(--warn);
+}
+
+.deck-block .ds-geo {
+  width: 120px;
+  flex: 0 0 auto;
+}
+
+.dj-block .ds-geo {
+  width: 160px;
+}
+
+.pulse,
+.tr {
+  min-width: 3ch;
+  text-align: center;
+}
+
+/* The beat-repeat length readout. 4ch, not 3: the micro half of the scale reads "1/32".
+ *
+ * ⚠️ CLASS IS `br-len`, NEVER `br` — and this is the SECOND time the two-letter `.br` bit. Every
+ * panel's CSS is bundled into every page (App.tsx imports all of them statically), so the bare
+ * `.br` in `browser.css:27` (the file-browser rail, `<aside className="br">`: `width: 190px;
+ * display: flex`) and this readout's class are in the SAME cascade. The collision runs BOTH ways:
+ * P8-7 caught `.br { text-align:center }` centring every filename in the browser and scoped this
+ * rule to `.ds-value.br` — but scoping only stops MY rule reaching THEIR element. It does nothing
+ * about the reverse: `browser.css .br` still matched `class="ds-value br"`, and since this rule set
+ * neither `width` nor `display`, the browser's `width: 190px` won — the length readout ballooned to
+ * 190px and CRUSHED the BR buttons beside it to unclickable 4px slivers (so BR only responded to the
+ * keyboard). A shared classname is a shared element; renamed out of the collision entirely.
+ * Two-letter class names are how this happens; do not add more.
+ */
+.ds-value.br-len {
+  min-width: 4ch;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+/* Lit while the repeat is engaged — the same --signal the grid washes the region in, so the
+   number in the toolbar and the highlighted steps in the grid are visibly the same fact. */
+.ds-value.br-len.active {
+  color: var(--signal);
+}
+
+/* Readability over a background image. The transport's performance-row readouts
+   (SYNC ‹pulse›, TR ‹±n›, BR ‹len›) and their chevrons are transparent text with
+   NO ground of their own — fine on the opaque app ground, but directly over a
+   photo the digits can wash out. While an image is live (`body.bg-image-live`,
+   set at the App root) give them a frosted plate: a partial ground for contrast
+   plus a backdrop blur where the compositor can sample it. The class is absent
+   with no image, so the default look is untouched. Scoped to `.block-row` so it
+   only reaches the toolbar readouts, never the same classes inside opaque panels. */
+body.bg-image-live .block-row .ds-value.pulse,
+body.bg-image-live .block-row .ds-value.tr,
+body.bg-image-live .block-row .ds-value.br-len,
+body.bg-image-live .block-row .ds-button.chev {
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border-radius: var(--radius-sm);
+  padding-left: calc(var(--cell) * 0.75);
+  padding-right: calc(var(--cell) * 0.75);
+}
+
+/* The readouts are bare <span>s sized to their text — half the height of the
+   .chev BUTTONS beside them, so the plates looked like undersized chips in a
+   button-height row. Give the value plates the control height and flex-center
+   their text so the whole cluster (‹ value ›) reads as ONE button-sized plate.
+   The chevrons already carry --control-h (they ARE .ds-buttons), so this only
+   lifts the spans up to match. Vertical padding is zeroed here because the fixed
+   height + centering now own the vertical metrics. */
+body.bg-image-live .block-row .ds-value.pulse,
+body.bg-image-live .block-row .ds-value.tr,
+body.bg-image-live .block-row .ds-value.br-len {
+  height: var(--control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.win-val {
+  min-width: 6ch;
+}
+
+.session-name {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.lcm-bar-wide {
+  width: 100%;
+  height: 8px;
+  border: var(--hairline) solid var(--line);
+}
+
+/* ---- FX slots row (aligned with the mixer strips above) ---- */
+
+.fxslot-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 2);
+}
+
+/* Same strip anatomy as the Deck Mixer line: one row, centered, fixed
+   inner height — nothing may wrap or float off the shared baseline. */
+.fxslot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--cell);
+  border: var(--hairline) solid var(--line);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+  min-height: calc(var(--slider-bar-h) + var(--cell) * 2);
+  flex: 0 0 auto;
+}
+
+.fxslot .fx-name {
+  /* FIXED width: HOST↔EXT / plugin-name changes must never resize the
+     row (user: "the entire row bounces"). Ellipsize inside. */
+  width: 16ch;
+  max-width: 16ch;
+  min-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+
+/* CRITICAL: kill the base .ds-range `flex: 1 / basis 0%` — without the
+   flex override the width is ignored in flex layout and the sliders
+   grow/shrink off-grid (the exact bug behind the misaligned FX row;
+   the mixer row worked because it always had `flex: 0 0 auto`). */
+.fxslot .ds-geo,
+.fxslot-row .ds-geo {
+  width: 84px;
+  flex: 0 0 auto;
+}
+
+.fx-popover {
+  position: absolute;
+  top: calc(100% + var(--cell));
+  left: 0;
+  z-index: var(--z-overlay);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  padding: calc(var(--cell) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+  min-width: 280px;
+}
+
+.fx-popover-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
+.fx-popover-row .ds-label {
+  width: 9ch;
+}
+
+.fx-plugin-name {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fx-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell);
+}
+
+.fx-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.fx-picker-item {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+.picker-manufacturer {
+  font-size: var(--type-caption-size);
+  margin-left: var(--cell);
+}
+
+/* ---- Inline micro-sends: the MID row of a SOURCE channel strip ----
+   Replaces the standalone send matrix, which added a header + one row per
+   source and blew the toolbar row's vertical budget. Here each source
+   channel carries its own sends, so the console grows horizontally (where
+   it already scrolls) instead of vertically (where it can't).
+
+   Bus identity is POSITIONAL (left→right = FX1..FXn) and carried in the
+   aria-label/title — a per-cell column header would double the row height
+   for no information the tooltip can't give. */
+
+.ch-sends {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+}
+
+.ch-send-label {
+  flex: 0 0 auto;
+  width: 4ch;
+  font-size: var(--type-caption-size);
+}
+
+.ch-micro-cell {
+  /* Fixed box: the strip must not resize when bus count or values change. */
+  width: 18px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.ch-micro-empty {
+  border: var(--hairline) solid var(--line);
+  opacity: 0.3;
+}
+
+.ch-micro {
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 100%;
+  height: 100%;
+  border: var(--hairline) solid var(--line);
+  cursor: pointer;
+  margin: 0;
+}
+
+.ch-micro::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  width: 100%;
+  background: var(--text);
+}
+
+/* ---- XFADE / X·MIX row (mixer overhaul) ----
+   One full-width horizontal row BELOW the channel row: label · the crossfader
+   (the row's flexing element — the long fader IS the point of giving it a
+   row) · ENGAGE · the X·MIX character controls. Same strip shell as a channel
+   so the console reads as one instrument. */
+
+.xfade-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 1.5);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--elev-1);
+  padding: var(--cell) calc(var(--cell) * 1.5);
+}
+
+.xfade-row .ch-label-only {
+  flex: 0 0 auto;
+}
+
+.xfade-row .xf-fader {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+
+/* ---- X·MIX (P6-10): the crossfader's character, on the crossfader's row ---
+   X·MIX *is* the crossfader — the carve is what separates the two decks, so
+   these controls belong to the fader they shape, not to a second bar in the DJ
+   view (djmode.md §4C). Dim while off rather than let them imply the fader is
+   doing something it isn't. */
+
+.xmix-controls {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+  flex: 0 0 auto;
+}
+
+.xmix-controls.off > :not(:first-child) {
+  opacity: 0.4;
+}
+
+.xmix-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

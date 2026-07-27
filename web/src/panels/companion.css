@@ -1,0 +1,411 @@
+/*
+ * P8-7 — the companion shell.
+ *
+ * Uses the app's own token vocabulary (--cell, --line, --text, --accent, --signal) rather than a
+ * second palette: this is the SAME app on a different host, and it should not look like a port of
+ * itself. The one structural difference is that here the web owns the WHOLE window — on macOS every
+ * panel is a WKWebView whose frame SwiftUI sizes, so nothing has ever had to lay out a full page.
+ */
+
+.cmp-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh; /* iOS toolbar-collapse; engines without dvh keep vh */
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.cmp-head {
+  padding: var(--cell) var(--cell) calc(var(--cell) / 2);
+  border-bottom: var(--hairline) solid var(--line);
+  flex: 0 0 auto;
+}
+
+.cmp-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0; /* or the rail's scroll container grows the page instead of scrolling */
+}
+
+/* ── the rail: session library + the sample browser ───────────────────────── */
+
+.cmp-rail {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: var(--hairline) solid var(--line);
+  padding: calc(var(--cell) / 2);
+  gap: calc(var(--cell) / 2);
+}
+
+.cmp-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.cmp-session {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.cmp-session:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.cmp-session.on {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+.cmp-rail-actions {
+  display: flex;
+  gap: calc(var(--cell) / 3);
+}
+
+/* The file picker is the real control; the <input> is only its plumbing. */
+.cmp-import {
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 8px;
+}
+
+.cmp-import:hover {
+  color: var(--text);
+}
+
+.cmp-import input {
+  display: none;
+}
+
+/* The browser is a whole panel that expects to BE the viewport (.fb-root is 100vh), so it is given
+   a bounded box to live inside rather than being allowed to stretch the rail. */
+.cmp-browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: var(--hairline) solid var(--line);
+  overflow: hidden;
+}
+
+.cmp-browser .fb-root {
+  height: 100%;
+}
+
+/* ── the main column ──────────────────────────────────────────────────────── */
+
+.cmp-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--cell);
+  overflow-y: auto;
+}
+
+.cmp-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  padding-bottom: var(--cell);
+  border-bottom: var(--hairline) solid var(--line);
+  margin-bottom: var(--cell);
+}
+
+.cmp-play {
+  width: 34px;
+  height: 34px;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: calc(var(--type-caption-size) * 1.4);
+}
+
+.cmp-play.on {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+.cmp-play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cmp-bpm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: var(--type-caption-size);
+}
+
+.cmp-bpm input {
+  width: 64px;
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-mono);
+  padding: 3px 4px;
+}
+
+/* Scene pads in the companion transport — the pads themselves are the shared
+   .scene-pad language (scenes.css); this only places the row on the strip. */
+.cmp-scenes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cmp-status {
+  margin-left: auto;
+  font-size: var(--type-caption-size);
+}
+
+.cmp-meta {
+  margin: 0 0 var(--cell);
+  font-size: var(--type-caption-size);
+}
+
+.cmp-kit {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cmp-kit li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cell);
+  padding: 3px 0;
+  border-bottom: var(--hairline) solid var(--line);
+  font-size: var(--type-caption-size);
+}
+
+.cmp-kit-name {
+  flex: 0 0 auto;
+}
+
+/* min-width:0 or the flex item refuses to shrink below its content and the path runs off the right
+   edge of the page instead of ellipsing — which is exactly what it did.
+ *
+ * No `direction: rtl` here, tempting as it is for keeping the filename visible on a truncated path:
+ * it moves the LEADING slash to the end, so "/samples/x/blip.wav" renders as "samples/x/blip.wav/".
+ * The filename already has its own column; the path may ellipse normally. */
+.cmp-kit-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.cmp-empty,
+.cmp-note {
+  color: var(--text-dim);
+  font-size: var(--type-caption-size);
+}
+
+.cmp-note {
+  margin-top: var(--cell);
+  padding-top: calc(var(--cell) / 2);
+  border-top: var(--hairline) solid var(--line);
+}
+
+.cmp-warn,
+.cmp-error {
+  margin-top: var(--cell);
+  color: var(--signal);
+  font-size: var(--type-caption-size);
+}
+
+.cmp-notice {
+  margin-top: var(--cell);
+  color: var(--accent);
+  font-size: var(--type-caption-size);
+}
+
+/* The output meter. Not decoration: "the engine is running" and "the engine is running and
+   producing silence" are indistinguishable without it — a dead worklet outputs zeros forever and
+   says nothing. */
+.cmp-meter {
+  display: block;
+  width: 90px;
+  height: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.cmp-meter-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--signal);
+}
+
+/* The LCM cycle bar — same footprint language as the meter, accent because it is
+   TIMING (the surface scheduled scene switches land on), not signal. */
+.cmp-lcm {
+  display: block;
+  width: 90px;
+  height: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.cmp-lcm-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+}
+
+.cmp-lcm-text {
+  min-width: 5ch;
+  font-size: var(--type-nano-size);
+}
+
+/* The grid area inside the companion. GridPanel expects to fill its host (it is a whole webview on
+   the desktop), so it is given a bounded, scrollable box rather than being allowed to stretch the
+   page. */
+.cmp-grid {
+  margin-top: var(--cell);
+  border-top: var(--hairline) solid var(--line);
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── mobile (scoped: host-browser / touch-capable — pointerCapability.ts).
+   The cascade is shared with the narrow mac WKWebView panels, so nothing
+   below may fire without the body class. ───────────────────────────────── */
+
+/* Drawer + browser-fold toggles: off by default, shown only in the
+   touch/drawer layout below. */
+.cmp-rail-toggle,
+.cmp-browser-toggle {
+  display: none;
+}
+
+/* Transport wraps instead of overflowing a narrow viewport; .cmp-status
+   keeps its margin-left:auto and right-aligns on the last line. */
+body.host-browser .cmp-transport {
+  flex-wrap: wrap;
+  row-gap: calc(var(--cell) / 2);
+}
+
+/* Fingertip-sized primary controls (44px Apple minimum for PLAY; the pads
+   and rows land ≥40px). Desktop keeps its density — class absent. */
+body.host-browser.touch-capable .cmp-play {
+  width: 44px;
+  height: 44px;
+}
+
+body.host-browser.touch-capable .cmp-session {
+  padding: 10px 8px;
+}
+
+body.host-browser.touch-capable .cmp-import {
+  padding: 8px 10px;
+}
+
+body.host-browser.touch-capable .cmp-scenes .scene-pad {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+/* ── LANDSCAPE-FIRST TOUCH LAYOUT ────────────────────────────────────────
+   On ANY touch device (a landscape tablet is wide but still wants every
+   pixel for the grid + track rows), the rail leaves the flow and becomes an
+   overlay drawer. `.cmp-main` then spans the FULL viewport width — the
+   composing surface the device is held landscape to use. Its contents never
+   move (one control, one home); only the rail's visibility changes. */
+body.host-browser.touch-capable .cmp-main {
+  padding: calc(var(--cell) / 2);
+}
+
+body.host-browser.touch-capable .cmp-head {
+  position: relative;
+  /* clear the absolutely-positioned toggle so the title/caption never run
+     under it */
+  padding-right: 96px;
+}
+
+body.host-browser.touch-capable .cmp-rail-toggle {
+  display: inline-block;
+  position: absolute;
+  top: var(--cell);
+  right: var(--cell);
+  z-index: calc(var(--z-overlay) + 1);
+  padding: 8px 12px;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+}
+
+body.host-browser.touch-capable .cmp-body {
+  position: relative;
+}
+
+body.host-browser.touch-capable .cmp-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(340px, 85vw);
+  z-index: var(--z-overlay);
+  background: var(--bg);
+  box-shadow: var(--elev-2);
+  transform: translateX(-100%);
+  transition: transform var(--dur-panel) var(--ease-out);
+  overflow-y: auto;
+}
+
+body.host-browser.touch-capable .cmp-root.rail-open .cmp-rail {
+  transform: none;
+}
+
+/* The sample browser + folder import fold away inside the drawer: opening
+   FILES shows SESSIONS + New/Import/Export first, and the browser is a
+   collapsed section you expand on demand (default folded on touch — the
+   `folded` class comes off when expanded). Kept MOUNTED (display:none, not
+   unmounted) so expanding it never re-fetches the library. */
+body.host-browser.touch-capable .cmp-browser-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 8px;
+  margin-top: calc(var(--cell) / 2);
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+}
+
+body.host-browser.touch-capable .cmp-browser.folded {
+  display: none;
+}
+
+/* Expanded in the drawer, the browser needs a floor: the rail scrolls, so a
+   flex:1 child could otherwise collapse to nothing behind the sessions list. */
+body.host-browser.touch-capable .cmp-browser:not(.folded) {
+  min-height: 260px;
+}

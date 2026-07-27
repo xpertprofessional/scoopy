@@ -1,0 +1,440 @@
+/**
+ * The plane's decisions, as pure functions.
+ *
+ * Everything here is logic a component would otherwise bury in JSX: which
+ * engine slot a new strip gets, what one line of status to show, whether the
+ * transport is live. Extracted so it can be tested exhaustively with no DOM and
+ * no engine — the same split `djProjection.ts` and `gridOps.ts` already use,
+ * and the reason `Strip.tsx` can stay a rendering of state rather than a place
+ * where state is decided.
+ */
+import { SL_TAPE_STATE } from '../../protocol/schema.ts'
+import { DEFAULT_CELL, type Cell } from './planeLayout.ts'
+import type { Element, PlaneMap, Route, Strip } from '../persist/mapDocument.ts'
+
+/** Engine capacities. The document already bounds these (channel 0..7, tape
+    0..7); named here so the allocators read as intent rather than magic. */
+export const MAX_CHANNELS = 8
+export const MAX_TAPES = 8
+/** Grid decks the pinned core can hold at once (`sl_deck_count()` = kMaxDecks).
+    Smaller than the tape and channel spaces, and not a preference — it is a
+    property of the core the merge vendors. */
+export const MAX_DECKS = 3
+
+/* ── allocation ───────────────────────────────────────────────────────────── */
+
+/**
+ * The lowest engine channel no strip is using, or null when the mixer is full.
+ *
+ * LOWEST-FREE rather than next-highest: channels are a fixed set of eight
+ * mixer lanes, not a growing list, so a plane that has had strips come and go
+ * must reuse the holes or it runs out at eight lifetime strips instead of eight
+ * simultaneous ones.
+ */
+export function freeChannel(map: PlaneMap): number | null {
+  const used = new Set(map.strips.map((s) => s.channel))
+  for (let c = 0; c < MAX_CHANNELS; c++) if (!used.has(c)) return c
+  return null
+}
+
+/** The lowest tape index no strip's element occupies, or null when all eight
+    are taken. Tapes are their OWN index space, independent of grid decks. */
+export function freeTape(map: PlaneMap): number | null {
+  const used = new Set(
+    map.strips.flatMap((s) => (s.element.kind === 'tape' ? [s.element.index] : [])),
+  )
+  for (let t = 0; t < MAX_TAPES; t++) if (!used.has(t)) return t
+  return null
+}
+
+/**
+ * The lowest GRID DECK no strip holds, or null when all three are taken.
+ *
+ * A third index space, and a much smaller one: the pinned core holds three deck
+ * worlds (`sl_deck_count()`), against eight tapes and eight channels. Lowest-free
+ * for the same reason as the others — decks are a fixed set of engine slots, not
+ * a growing list, so a plane that has had grid strips come and go must reuse the
+ * holes or it runs out at three lifetime grid strips instead of three
+ * simultaneous ones.
+ */
+export function freeDeck(map: PlaneMap): number | null {
+  const used = new Set(
+    map.strips.flatMap((s) => (s.element.kind === 'grid' ? [s.element.deck] : [])),
+  )
+  for (let d = 0; d < MAX_DECKS; d++) if (!used.has(d)) return d
+  return null
+}
+
+let keySeq = 0
+/** A stable, unique strip key. Keys must survive an element changing under a
+    strip — that is what stops a strip remounting when it gains material, which
+    is what makes the record→loop transition a repaint rather than a new object
+    appearing. */
+export function newStripKey(): string {
+  keySeq += 1
+  return `strip-${Date.now().toString(36)}-${keySeq}`
+}
+
+/**
+ * A fresh, EMPTY strip at `at`.
+ *
+ * Empty is the correct resting state, not a half-built one: the strip model is
+ * "a uniform channel with elements added on demand", and REC on an empty strip
+ * is what gives it a tape. A strip that arrived with a dead tape element would
+ * be the "form to fill in" the plane exists to avoid.
+ */
+export function newStrip(channel: number, at: { x: number; y: number }): Strip {
+  return {
+    key: newStripKey(),
+    name: `STRIP ${channel + 1}`,
+    cell: { ...DEFAULT_CELL, x: at.x, y: at.y },
+    channel,
+    element: { kind: 'none' },
+    // Unity, unmuted, audible the moment it exists (R-CREATE-2): a strip you
+    // have to un-mute before it makes a sound teaches that the plane is a place
+    // where you configure things.
+    level: 1,
+    mute: false,
+    sends: [0, 0, 0, 0],
+    recordArm: false,
+    // ⚠️ NOT LISTENING YET, and this is the one place R-CREATE-2's "audible the
+    // moment it exists" is deliberately not applied.
+    //
+    // A strip arrives with its device input patched (inputRoute below), because
+    // otherwise REC captures silence. It used to arrive MONITORING that input
+    // too — so a strip created next to a live mic fed back instantly, and the
+    // only control that stopped it (`M`) muted the whole channel and took the
+    // tape with it. A strip that arrives listening is a strip that arrives
+    // feeding back. REC opens the monitor by itself (D-WZ-MON-01), so the
+    // first gesture still works with nothing to configure.
+    monitor: false,
+    recordTap: null,
+    sessionPerf: {},
+  }
+}
+
+/* ── what REC captures ────────────────────────────────────────────────────── */
+
+/** The engine's record-source kinds (sl_tape_set_record_source). */
+export const RECORD_SOURCE = { deviceInput: 0, mainMix: 1, channelBus: 2 } as const
+
+export type RecordTap = { kind: number; chan0: number; chan1: number; label: string }
+
+/**
+ * WHERE THIS STRIP'S REC READS FROM.
+ *
+ * The default is a RULE, not a setting: a strip with a live input records that
+ * INPUT, and a strip without one records its own CHANNEL BUS.
+ *
+ * ⚠️ THE INPUT CASE IS THE SPLIT TAP, and it costs the purity of "one tap, one
+ * code path, every source" on purpose. Capturing the bus meant capture and
+ * monitoring were the same signal path, so silencing an input to stop feedback
+ * made REC record silence — record-without-hearing was impossible by
+ * construction. Reading the input directly separates them, and the take is then
+ * identical whether or not you were listening.
+ *
+ * `strip.recordTap` overrides the rule, because the rule alone silently deletes
+ * a capability: a strip fed by another strip AND carrying an input would only
+ * ever capture the input, with nothing saying where the chain went.
+ */
+export function recordTapFor(
+  strip: Strip,
+  input: { left: number; right: number | null } | null,
+  inputLabel?: string | null,
+): RecordTap {
+  const bus: RecordTap = {
+    kind: RECORD_SOURCE.channelBus,
+    chan0: strip.channel,
+    chan1: -1,
+    label: 'this strip’s bus',
+  }
+  const mainMix: RecordTap = {
+    kind: RECORD_SOURCE.mainMix,
+    chan0: 0,
+    chan1: 1,
+    label: 'the main mix',
+  }
+  const fromInput = (): RecordTap | null =>
+    input === null
+      ? null
+      : {
+          kind: RECORD_SOURCE.deviceInput,
+          chan0: input.left,
+          chan1: input.right ?? -1,
+          label: inputLabel ?? 'this strip’s input',
+        }
+
+  switch (strip.recordTap) {
+    case 'input':
+      // An explicit choice that is no longer possible falls back to the bus
+      // rather than refusing: the input was unplugged, and a strip that cannot
+      // record at all is worse than one that records what it still has.
+      return fromInput() ?? bus
+    case 'bus':
+      return bus
+    case 'mainMix':
+      return mainMix
+    default:
+      return fromInput() ?? bus
+  }
+}
+
+/** A tape element, narrowed. The return type is the tape MEMBER rather than the
+    `Element` union so callers can spread it (`{...newTapeElement(0,false),
+    rate: -1}`) without the union collapsing to its common fields. */
+export type TapeElement = Extract<Element, { kind: 'tape' }>
+
+/** The tape element a strip gets when REC gives it material. Loop ENABLED, so
+    stopping a recording plays it back immediately — Law C-3, and the single
+    strongest antidote to "I couldn't figure out how to make it loop". */
+export function newTapeElement(index: number, stereo: boolean): TapeElement {
+  return {
+    kind: 'tape',
+    index,
+    takeRef: null,
+    stereo,
+    loop: { enabled: true, start: 0, end: 0 },
+    rate: 1,
+  }
+}
+
+/** A grid element, narrowed — same reason as `TapeElement`. */
+export type GridElement = Extract<Element, { kind: 'grid' }>
+
+/**
+ * The grid element a strip gets when a session is loaded into it.
+ *
+ * UNSYNCED, at the session's own tempo. "Decks load into strips, each with its
+ * own BPM" is the mission sentence, so a session arriving locked to the plane's
+ * master would be the opposite of it — sync is a thing you ask for, per strip,
+ * and the SYNC control on the strip is where you ask.
+ */
+export function newGridElement(deck: number, sessionId: string, bpm: number): GridElement {
+  return { kind: 'grid', deck, sessionId, bpm, syncToMaster: false }
+}
+
+/* ── what the engine says this strip is doing ─────────────────────────────── */
+
+/** The live, per-frame truth about a strip, read from the HotFrame. Never from
+    the document: the ENGINE owns what is playing, and a document that thinks a
+    tape is looping while it stopped is exactly the drift the record→material
+    transition produces. */
+export type Live = {
+  /** sl_tape_state: idle · loop · oneShot · recording. */
+  tapeState: number
+  /** Playhead in frames; fractional while varispeeding. */
+  playhead: number
+  /** The 256 MB record cap stopped this tape by itself. */
+  capReached: boolean
+  peakL: number
+  peakR: number
+  /** Is this strip's monitor open, ACCORDING TO THE ENGINE? Here rather than
+      read from the document because the engine moves it itself at record-start
+      and at the Law C-3 handoff — the same reason `tapeState` is here. */
+  monitor: boolean
+}
+
+export const IDLE_LIVE: Live = {
+  tapeState: SL_TAPE_STATE.idle,
+  playhead: 0,
+  capReached: false,
+  peakL: 0,
+  peakR: 0,
+  monitor: false,
+}
+
+export const isRecording = (live: Live): boolean =>
+  live.tapeState === SL_TAPE_STATE.recording
+
+export const isPlaying = (live: Live): boolean =>
+  live.tapeState === SL_TAPE_STATE.loop || live.tapeState === SL_TAPE_STATE.oneShot
+
+/** The one word in the strip head. Fixed vocabulary, fixed width band — never a
+    sentence, because the head must not reflow (layout law L4). */
+export function stateWord(strip: Strip, live: Live): string {
+  if (isRecording(live)) return 'rec'
+  switch (live.tapeState) {
+    case SL_TAPE_STATE.loop:
+      return 'loop'
+    case SL_TAPE_STATE.oneShot:
+      return 'shot'
+    default:
+      return strip.element.kind === 'none' ? '----' : 'idle'
+  }
+}
+
+/* ── the status line ──────────────────────────────────────────────────────── */
+
+export type StatusTone = 'normal' | 'warn' | 'hot'
+export type Status = { text: string; tone: StatusTone }
+
+/** Seconds as `m:ss`, in a FIXED-WIDTH shape so a counter ticking past 0:59
+    cannot widen the head. */
+export function mmss(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * THE PRIORITY LADDER (pd-strip-anatomy L3). Exactly ONE message renders, and
+ * it is a LADDER rather than a stack because a stack of messages changes the
+ * strip's height, which changes `cell.h`, which corrupts every saved
+ * arrangement. Ordered most-urgent first:
+ *
+ *   audio missing > cap reached > decoding > feedback > recording > take > records
+ *
+ * "Audio missing" outranks everything because it is the only one that says the
+ * strip cannot make the sound you are expecting.
+ */
+export function statusLine(
+  strip: Strip,
+  live: Live,
+  ctx: {
+    /** The take this strip references could not be found in the library. */
+    unresolvedRef?: string | null
+    /** 0..1 while a take is decoding into the tape. */
+    decoding?: number | null
+    /** This strip is fed by a consented feedback edge, and what it costs. */
+    feedbackMs?: number | null
+    /** Nothing carries this strip's output anywhere. */
+    noOutput?: boolean
+    /** What REC would capture — a device name, another strip, the mix. */
+    recordSource?: string | null
+    /** The resolved take's display name and length, once it has material. */
+    takeName?: string | null
+    takeSeconds?: number | null
+    /** Elapsed recording time, seconds. */
+    recSeconds?: number | null
+  } = {},
+): Status {
+  if (ctx.unresolvedRef)
+    return { text: `audio missing — ${ctx.unresolvedRef}`, tone: 'hot' }
+  // SILENT FOR A ROUTING REASON. pd-strip-anatomy state 15: a strip whose
+  // output goes nowhere is inaudible, and the console said so while the plane
+  // dropped it (defect D7). Ranked just under "audio missing" because it is the
+  // same class of fault — the strip cannot make the sound you are expecting —
+  // and it is the one a person is least likely to guess at.
+  if (ctx.noOutput) return { text: 'no output — this strip goes nowhere', tone: 'warn' }
+  if (live.capReached)
+    return { text: 'cap — 256 MB, take is on disk', tone: 'warn' }
+  if (ctx.decoding != null && ctx.decoding < 1)
+    return { text: `decoding ${Math.round(ctx.decoding * 100)}%`, tone: 'normal' }
+  if (ctx.feedbackMs != null)
+    return { text: `↺ +${ctx.feedbackMs.toFixed(1)} ms (one block)`, tone: 'warn' }
+  if (isRecording(live)) {
+    const tape = strip.element.kind === 'tape' ? strip.element.index : 0
+    const elapsed = ctx.recSeconds != null ? ` · ${mmss(ctx.recSeconds)}` : ''
+    return {
+      text: `recording ${ctx.recordSource ?? 'input'} → tape ${tape}${elapsed}`,
+      tone: 'normal',
+    }
+  }
+  if (ctx.takeName)
+    return {
+      text:
+        ctx.takeSeconds != null
+          ? `${ctx.takeName} · ${mmss(ctx.takeSeconds)}`
+          : ctx.takeName,
+      tone: 'normal',
+    }
+  if (ctx.recordSource) return { text: `records: ${ctx.recordSource}`, tone: 'normal' }
+  // NEVER an empty string: the line is reserved whether or not it has something
+  // to say (layout law L2), and a non-breaking space keeps its box.
+  return { text: ' ', tone: 'normal' }
+}
+
+/* ── which controls are live ──────────────────────────────────────────────── */
+
+/**
+ * What this strip can do right now. Every transport control is RENDERED in
+ * every state and merely disabled here — presence never changes, only fill
+ * (layout law L2), so no control ever migrates to a different pixel.
+ */
+export type Enabled = {
+  record: boolean
+  play: boolean
+  stop: boolean
+  rate: boolean
+  scrub: boolean
+}
+
+export function enabledControls(
+  strip: Strip,
+  live: Live,
+  ctx: { unresolvedRef?: string | null; decoding?: number | null } = {},
+): Enabled {
+  const decoding = ctx.decoding != null && ctx.decoding < 1
+  const hasMaterial = strip.element.kind === 'tape' && !ctx.unresolvedRef && !decoding
+  const recording = isRecording(live)
+  return {
+    // REC IS ALMOST ALWAYS LIVE — including on an unresolved strip, where
+    // recording over a dead reference is a REPAIR rather than a loss. It goes
+    // inert only while a decode is in flight, which is the one moment the tape
+    // is genuinely not ready to be written.
+    record: !decoding,
+    play: hasMaterial && !recording,
+    stop: hasMaterial && !recording,
+    rate: hasMaterial && !recording,
+    scrub: hasMaterial && !recording,
+  }
+}
+
+/* ── placement ────────────────────────────────────────────────────────────── */
+
+/** Where a newly-created strip lands: the centre of what you are looking at,
+    converted screen → plane (plane = screen/scale − pan), nudged by a small
+    cascade so successive additions do not stack exactly on top of each other. */
+export function spawnPoint(
+  viewport: { width: number; height: number },
+  plane: PlaneMap['plane'],
+  existing: number,
+): { x: number; y: number } {
+  const cascade = (existing % 6) * 24
+  return {
+    x: Math.round(viewport.width / 2 / plane.scale - plane.panX - DEFAULT_CELL.w / 2 + cascade),
+    y: Math.round(viewport.height / 2 / plane.scale - plane.panY - DEFAULT_CELL.h / 2 + cascade),
+  }
+}
+
+/** Strip cells, for fitToContent. */
+export const cellsOf = (map: PlaneMap): Cell[] => map.strips.map((s) => s.cell)
+
+/* ── the input route ──────────────────────────────────────────────────────── */
+
+/**
+ * A device input, patched into a strip.
+ *
+ * ⚠️ THIS IS WHAT MAKES REC WORK AT ALL, and its absence is the defect
+ * `plane_audio_test` was written to catch. A strip records its own CHANNEL BUS
+ * — one tap, one code path, every source — and a channel carries its element
+ * plus everything ROUTED INTO IT. So a strip with no element and no input route
+ * carries silence, and pressing REC on it records silence perfectly, forever,
+ * with nothing anywhere saying why.
+ *
+ * "A device input is just a route into a strip" is what lets an input element
+ * need no special case. It is also what makes an input strip IMPOSSIBLE until
+ * something creates the route — and nothing did.
+ *
+ * A fresh strip therefore arrives WITH its input patched: audible the moment it
+ * exists, and recordable the moment you press the one enabled verb. That is the
+ * plane's stated antidote to "I couldn't figure out how to make it work"
+ * applied to the very first gesture.
+ */
+export function inputRoute(channel: number, left = 0, right = 1): Route {
+  return {
+    src: { kind: 'deviceInput', index: left, sub: right },
+    dst: { kind: 'channelIn', index: channel },
+    gain: 1,
+    feedback: false,
+  }
+}
+
+/** The device input feeding this strip, if any — what REC will capture, and
+    what the status line names before you press it. */
+export function inputFor(map: PlaneMap, strip: Strip): Route | null {
+  return (
+    map.routes.find(
+      (r) => r.src.kind === 'deviceInput' && r.dst.kind === 'channelIn' && r.dst.index === strip.channel,
+    ) ?? null
+  )
+}

@@ -1,0 +1,20 @@
+{
+  "id" : "11111111-2222-3333-4444-555555555555",
+  "name" : "Golden Kit",
+  "samples" : [
+    {
+      "defaultPan" : -0.25,
+      "defaultVolume" : 0.33333334,
+      "filePath" : "Samples\/kick.wav",
+      "id" : "AAAAAAAA-0000-0000-0000-000000000001",
+      "name" : "kick"
+    },
+    {
+      "defaultPan" : 0.5,
+      "defaultVolume" : 0.8,
+      "filePath" : "Samples\/snare.wav",
+      "id" : "AAAAAAAA-0000-0000-0000-000000000002",
+      "name" : "snare"
+    }
+  ]
+}

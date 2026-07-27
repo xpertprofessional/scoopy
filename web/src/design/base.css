@@ -1,76 +1,201 @@
-/**
- * base.css — the token-consuming foundation. Every visual value here reads a
- * custom property emitted by tokens.ts (tokenVars); no literal color/font/radius
- * appears outside the token system (check:tokens enforces it).
- *
- * Vendored as the shared identity's base layer (D-WZ-DESIGN-01). App-local
- * panel CSS for the console/strip surface layers on top in P1+.
- */
+/* Reset + panel scaffold. All values are token vars (set by tokens.ts
+   applyTokens before first render). No literal colors/fonts here. */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/* A custom property CANNOT be transitioned unless it is registered — an
+   unregistered var flips discretely, so `transition: --fill` is silently a
+   no-op. Registering these is what makes latchSweep (and any smooth
+   semantic-strength change) possible at all; it is the single missing CSS
+   primitive the whole motion layer was blocked on. */
+@property --fill {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
 }
 
-html,
-body,
-#root {
+@property --sem-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+* {
+  box-sizing: border-box;
   margin: 0;
-  height: 100%;
+}
+
+/* SHAPE — every control follows --radius.
+
+   LOOK-1 shipped the token but only rewrote radii that ALREADY EXISTED. Buttons,
+   drag boxes, sliders and selects never declared one, so the corner slider could
+   not reach them and the app stayed sharp no matter what you set. Element
+   selectors are deliberate here: they catch every control in every panel,
+   including ones no class list would remember. */
+button,
+select,
+input,
+textarea {
+  border-radius: var(--radius);
+}
+
+/* The slider thumb is a 2px marker, not a box — rounding it would only blur the
+   one edge you read a value off. It stays square at every radius. */
+
+/* THE motion lever. Every --dur-* is emitted as calc(<n>ms * var(--motion-scale)),
+   so forcing the scale to 0 here makes every transition in the app resolve to 0ms
+   — the entire reduced-motion contract in one declaration, with no rule anywhere
+   needing a variant of its own.
+
+   !important because applyTokens writes --motion-scale as an INLINE style on
+   :root, and an inline declaration beats a stylesheet one unless it is flagged.
+
+   State pulses (armed launch, scheduled scene) are NOT covered: they use the
+   unscaled --dur-pulse and keep their own reduced-motion blocks, which swap in a
+   STATIC mark rather than deleting the information. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scale: 0 !important;
+  }
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: var(--type-value-size);
-  -webkit-font-smoothing: antialiased;
+  font-size: 12px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* The motion lever honoured in one place: reduced-motion collapses --motion-scale
-   to 0, so every calc(<n>ms * var(--motion-scale)) duration becomes instant with
-   no per-rule override. */
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion-scale: 0;
-  }
+/* MOBILE (companion only — the mac WKWebViews never carry host-browser).
+   touch-action: manipulation kills double-tap zoom without user-scalable=no
+   (which iOS ignores); the grid canvas tightens to `none` in grid.css.
+   -webkit-touch-callout suppresses the iOS long-press save-sheet so our own
+   long-press → context menu can own the gesture. overscroll-behavior stops
+   pull-to-refresh from eating a downward drag. */
+body.host-browser {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
 }
 
-h1 {
-  font-family: var(--type-display-family);
-  font-size: var(--type-display-size);
-  font-weight: var(--type-display-weight);
-  letter-spacing: var(--type-display-tracking);
-  text-transform: var(--type-display-transform);
-  color: var(--text);
-  margin: 0 0 0.5rem;
+/* Touch sizing: ONE declaration rescales every DOM control coherently — the
+   band chips, sliders and toggles all consume --control-h / --hit-slop
+   (tokens.ts §7; the vars are inline on :root, so a body-scoped override
+   wins for the whole subtree). Canvas cell metrics scale separately
+   (GridPanel gridMetrics). */
+body.host-browser.touch-capable {
+  --control-h: max(30px, calc(var(--slider-bar-h) * 1.5));
+  --hit-slop: calc(var(--cell) * 2);
 }
 
-dt {
-  font-family: var(--type-label-family);
-  font-size: var(--type-label-size);
-  font-weight: var(--type-label-weight);
-  letter-spacing: var(--type-label-tracking);
-  text-transform: var(--type-label-transform);
+/* BG-FIX — a background image is live (class set at the App root from the
+   "background" UiState topic). The webviews are non-opaque; the NATIVE window
+   layer paints ground + image×opacity behind them, so the page goes fully
+   transparent. No veil here: the native layer's opacity IS the veil, and a
+   second one would dim the image twice. With no image the class is absent and
+   the opaque var(--bg) above keeps the look bit-identical. */
+body.bg-image-live {
+  background: transparent;
+}
+
+/* GRAIN — a static noise layer over the app ground (--grain-alpha).
+   A near-black ground bands visibly on an 8-bit panel, and a flat #141414 reads
+   as a void rather than a surface. This gives it tooth: the app becomes a
+   material you are looking AT, not a hole you are looking INTO.
+
+   ⚠️ NOT `mix-blend-mode: overlay`. Overlay MULTIPLIES wherever the base is
+   darker than 50% grey, so on #141414 the grain crushed itself to nothing and
+   the slider did visibly nothing — which is exactly what it appeared to do. A
+   plain composite works on both polarities: the noise is desaturated
+   (feColorMatrix), so it lifts and darkens pixels equally instead of tinting
+   them, and feTurbulence's own alpha channel keeps it sparse rather than a flat
+   grey wash.
+
+   Static — it never animates. One composited layer, no repaint, and it is
+   pointer-transparent so it cannot eat a click. The SVG is inlined (the webview
+   is offline; a CSP blocks every external host) and the ground shows through
+   untouched at alpha 0, so the default look pays nothing. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-entry);
+  opacity: var(--grain-alpha);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.dim {
   color: var(--text-dim);
 }
 
-dd {
-  font-family: var(--type-value-family);
-  font-size: var(--type-value-size);
-  color: var(--text);
-  margin: 0 0 0.5rem;
+html,
+body {
+  height: 100%;
 }
 
-main {
-  padding: 1rem;
+body {
+  overflow-y: auto; /* panels scroll when tokens scale content up */
 }
 
-/* A raised surface uses the token depth level + hairline border + derived
-   radius, so the whole app softens/sharpens from shape.radiusPx alone. */
-.raised {
-  background: var(--bg-raised);
-  border: var(--hairline) solid var(--line);
-  border-radius: var(--radius);
+/* panelEntry — a panel fades up instead of flashing. Each panel is its own
+   webview, so on open the host shows an unpainted surface for a frame or two
+   before tokens land; a fade covers that seam rather than strobing the user.
+   0ms when the trick is off. */
+@keyframes ds-panel-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.panel {
+  padding: calc(var(--cell) * 3);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 2);
+  /* Scalability rule (DESIGN-SYSTEM.md §4b): fluid width, no hard clip. */
+  width: 100%;
+  min-height: 100%;
+  animation: ds-panel-in var(--dur-panel) var(--ease-out);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Crash-path display (main.tsx error overlay/boundary). Deliberately uses
+   literals, not tokens — the token system may be the thing that failed.
+
+   AN ERROR OVERLAYS THE PANEL, IT DOES NOT DISPLACE IT. These blocks used to be
+   prepended straight into the body flow, which pushed the panel below them —
+   and a panel sized to the window then left the screen entirely. The app
+   vanishing is a far worse failure than the one being reported, and it made a
+   single missing method look like a total collapse. Fixed and on top keeps the
+   message unmissable (the rule this exists for) while the app stays put
+   underneath it. */
+#fatal-errors {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2147483647; /* above everything, including any panel's own stack */
+  max-height: 45vh;
+  overflow: auto;
+  pointer-events: auto;
+}
+
+.fatal-error {
+  color: #e05c5c;
+  background: #111;
+  font: 11px monospace;
+  padding: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  border-bottom: 1px solid #331;
 }

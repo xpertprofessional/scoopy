@@ -1,0 +1,2590 @@
+[
+  {
+    "name": "toggle-enable-soft-accent",
+    "description": "Manually drawing a note activates it AND stamps a SOFT accent (BeatSequencer.toggleStep :4131 \u2014 drawn notes get the x1.25 boost).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "toggleStep",
+        "step": 4
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "toggle-disable-resets-length-and-accent",
+    "description": "Disabling an extended owner resets its length to 1 and clears the accent \u2014 but FLAM SURVIVES the toggle (:4311\u20134356).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        2
+      ],
+      "cellLengths": {
+        "2": 4
+      },
+      "accentLevels": {
+        "2": 2
+      },
+      "flamCounts": {
+        "2": 3
+      }
+    },
+    "ops": [
+      {
+        "op": "toggleStep",
+        "step": 2
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "toggle-covered-shortens-only",
+    "description": "REG: clicking an empty step covered by an extended cell SHORTENS the covering cell to just before it \u2014 the note does NOT appear (:4120 'Don't enable the step - just shorten').",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        1
+      ],
+      "cellLengths": {
+        "1": 5
+      },
+      "accentLevels": {
+        "1": 1
+      }
+    },
+    "ops": [
+      {
+        "op": "toggleStep",
+        "step": 3
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "toggle-own-mode-independent",
+    "description": "OWN mode skips ALL extension logic: enabling a step covered by a long cell just activates it (soft accent) and the covering length is untouched (:3983).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "owner",
+      "activeSteps": [
+        1
+      ],
+      "cellLengths": {
+        "1": 5
+      }
+    },
+    "ops": [
+      {
+        "op": "toggleStep",
+        "step": 3
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        5,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "setlength-basic-extend",
+    "description": "Extending an owner over empty steps stores the length at the owner; nothing else moves (updateCellLength :1418).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        2
+      ],
+      "accentLevels": {
+        "2": 1
+      }
+    },
+    "ops": [
+      {
+        "op": "setCellLength",
+        "step": 2,
+        "length": 4
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "setlength-truncates-at-neighbour",
+    "description": "Extension TRUNCATES at the first active step \u2014 the neighbour note survives, it is never absorbed (:1389\u20131402).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        2,
+        5
+      ],
+      "accentLevels": {
+        "2": 1,
+        "5": 1
+      }
+    },
+    "ops": [
+      {
+        "op": "setCellLength",
+        "step": 2,
+        "length": 5
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "setlength-wrap-encoding",
+    "description": "Wrap ENCODING pin: owner keeps the IN-PATTERN length only; the continuation is a real cell at step 0 (steps[0]=1, cellLengths[0]=wrapLen) + wrapSourceStep (:1455ff).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        6
+      ],
+      "accentLevels": {
+        "6": 1
+      }
+    },
+    "ops": [
+      {
+        "op": "setCellLength",
+        "step": 6,
+        "length": 2,
+        "wrapLength": 3
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "cellLengths": [
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": 6
+    }
+  },
+  {
+    "name": "setlength-wrap-removal",
+    "description": "Re-sending the same in-pattern length with wrapLength 0 removes the continuation entirely (steps[0] off, cellLengths[0] reset, wrapSourceStep nil).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        6
+      ],
+      "cellLengths": {
+        "0": 3,
+        "6": 2
+      },
+      "accentLevels": {
+        "6": 1
+      },
+      "wrapSourceStep": 6
+    },
+    "ops": [
+      {
+        "op": "setCellLength",
+        "step": 6,
+        "length": 2,
+        "wrapLength": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "accent-cycle-activates",
+    "description": "cycleAccent off\u2192soft\u2192hard, activating the step on the first cycle (cycleAccentLevel :1215\u20131239).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "cycleAccent",
+        "step": 3
+      },
+      {
+        "op": "cycleAccent",
+        "step": 3
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "accent-set-hard-activates",
+    "description": "setAccent writes the absolute level and activates the step (activate-on-accent, P5-PCE-4 setAccentLevel).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "setAccent",
+        "step": 5,
+        "level": 2
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "flam-cycle-wraps-and-set-clamps",
+    "description": "cycleFlam wraps 16\u21921 (kMaxFlam, cycleStepFlam :12005); setFlam clamps any count into 1\u202616.",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        2
+      ],
+      "flamCounts": {
+        "2": 16
+      }
+    },
+    "ops": [
+      {
+        "op": "cycleFlam",
+        "step": 2
+      },
+      {
+        "op": "setFlam",
+        "step": 0,
+        "count": 99
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        16,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "glide-legacy-materializes-all-true",
+    "description": "LEGACY session (empty glideSteps + glidePercent>0 = engine glides every transition): the first per-cell write materializes ALL-TRUE, then toggles \u2014 preserving how the session sounds.",
+    "deviatesFromSwift": "Native adjustStepParameter .glide false-fills the empty array (BeatSequencer :15621ff), silently muting every other legacy glide. setStepGlide deliberately materializes ALL-TRUE instead (user CONFIRM 2026-07-12).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        2
+      ],
+      "glidePercent": 50,
+      "legacyEmptyGlide": true
+    },
+    "ops": [
+      {
+        "op": "setGlide",
+        "step": 2,
+        "on": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        1,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "glide-modern-sets-single-flag",
+    "description": "A modern track (materialized glideSteps) just sets the one flag.",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        4
+      ],
+      "glidePercent": 50
+    },
+    "ops": [
+      {
+        "op": "setGlide",
+        "step": 4,
+        "on": 1
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "reverse-set-flag",
+    "description": "setReverse writes the per-step flag; the engine composes it as an XOR chain (NativeAudioEngineCore :4443).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        1
+      ]
+    },
+    "ops": [
+      {
+        "op": "setReverse",
+        "step": 1,
+        "on": 1
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "presilence-absolute-to-offset",
+    "description": "setPreSilenceCell stores the ABSOLUTE ms as an offset from the track base (setPreSilencePerCell: offset = clamp(abs,0,1000) \u2212 base).",
+    "initial": {
+      "stepCount": 8,
+      "playbackMode": "regular",
+      "activeSteps": [
+        2
+      ],
+      "preSilenceMs": 20
+    },
+    "ops": [
+      {
+        "op": "setPreSilenceCell",
+        "step": 2,
+        "ms": 60
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        40,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "clear-grid-keeps-cell-lengths-and-flams",
+    "description": "Pattern \u25b8 Clear \u25b8 Grid. Clears steps, PITCH and accents \u2014 but NOT cellLengths, wrapSourceStep or flamCounts. This is the native behaviour and it is counterintuitive: re-lighting a cleared step RESURRECTS its old multi-step cell.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        4,
+        8,
+        12
+      ],
+      "pitchOffsets": {
+        "0": 6,
+        "4": -2
+      },
+      "cellLengths": {
+        "0": 4
+      },
+      "accentLevels": {
+        "4": 2
+      },
+      "flamCounts": {
+        "8": 3
+      }
+    },
+    "ops": [
+      {
+        "op": "clearGrid"
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "generate-interval-every-4th",
+    "description": "Pattern \u25b8 Generate \u25b8 Step Patterns \u25b8 Every 4th Step. Clears ONLY steps/pitch/accents, so the pre-existing 3-step cell at step 2 survives the generate.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular",
+      "activeSteps": [
+        1,
+        2,
+        3
+      ],
+      "pitchOffsets": {
+        "1": 4
+      },
+      "cellLengths": {
+        "2": 3
+      }
+    },
+    "ops": [
+      {
+        "op": "generateInterval",
+        "interval": 4,
+        "startStep": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "generate-interval-offbeat",
+    "description": "Pattern \u25b8 Generate \u25b8 Step Patterns \u25b8 Off-beat (4th Step) \u2014 startStep 1.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "generateInterval",
+        "interval": 4,
+        "startStep": 1
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "euclid-subsumes-every-4th",
+    "description": "MB-1f. E(4,16) is EXACTLY the old 'Every 4th Step' item \u2014 pulses = stepCount / N. This fixture is the proof that Euclid subsumes the seven items it replaces.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular",
+      "activeSteps": [
+        1,
+        2,
+        3
+      ],
+      "pitchOffsets": {
+        "1": 4
+      },
+      "cellLengths": {
+        "2": 3
+      }
+    },
+    "ops": [
+      {
+        "op": "generateEuclidean",
+        "pulses": 4,
+        "rotation": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "euclid-rotation-is-the-offbeat-item",
+    "description": "MB-1f. E(4,16) rotated by 1 is EXACTLY the old 'Off-beat (4th Step)' item (onsets 1/5/9/13). Rotation shifts the pattern LATER.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "generateEuclidean",
+        "pulses": 4,
+        "rotation": 1
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "euclid-5-in-16-the-thing-every-Nth-cannot-express",
+    "description": "MB-1f. E(5,16) \u2014 the whole reason for the change. No 'every Nth' setting can produce it, because 5 does not divide 16. This is what the generator is FOR.",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular"
+    },
+    "ops": [
+      {
+        "op": "generateEuclidean",
+        "pulses": 5,
+        "rotation": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  },
+  {
+    "name": "euclid-zero-pulses-clears",
+    "description": "MB-1f. pulses 0 = an empty pattern (and clamps: pulses > stepCount saturates at stepCount).",
+    "initial": {
+      "stepCount": 16,
+      "playbackMode": "regular",
+      "activeSteps": [
+        0,
+        4,
+        8
+      ]
+    },
+    "ops": [
+      {
+        "op": "generateEuclidean",
+        "pulses": 0,
+        "rotation": 0
+      }
+    ],
+    "expected": {
+      "steps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cellLengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accentLevels": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "flamCounts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "glideSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pitchOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reverseSteps": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "preSilenceMsOffsets": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "wrapSourceStep": null
+    }
+  }
+]

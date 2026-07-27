@@ -1,0 +1,904 @@
+{
+  "crossfade": [
+    {
+      "name": "not-engaged-passthrough",
+      "description": "Crossfader NOT engaged (persisted opt-in, default off): every deck plays at its own volume regardless of position/side; carve amounts stay 0 — but shimmer is still resolved and pushed (republishNow pushes it unconditionally).",
+      "input": {
+        "position": 0.9,
+        "engaged": false,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          0.8,
+          1,
+          0.5
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.8,
+          1,
+          0.5
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "engaged-mid-classic",
+      "description": "Classic constant-power at centre: both curve sides at cos(45deg) = -3 dB, riding ON TOP of each deck's own volume; own-side deck C unaffected.",
+      "input": {
+        "position": 0.5,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          0.8,
+          1,
+          0.5
+        ],
+        "xmixEnabled": false,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.565685,
+          0.707107,
+          0.5
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "engaged-full-a",
+      "description": "Fader hard at A (position 0): A-side full (cos 0 = 1), B-side silent (sin 0 = 0).",
+      "input": {
+        "position": 0,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": false,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          1,
+          0,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "engaged-full-b",
+      "description": "Fader hard at B (position 1): A-side silent, B-side full.",
+      "input": {
+        "position": 1,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          0.8,
+          0.9,
+          1
+        ],
+        "xmixEnabled": false,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0,
+          0.9,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "engaged-quarter-asymmetric-volumes",
+      "description": "Position 0.25 with asymmetric deck volumes: gain = deckVolume x curve (the crossfader never replaces the deck fader).",
+      "input": {
+        "position": 0.25,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          0.6,
+          1,
+          0.3
+        ],
+        "xmixEnabled": false,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.554328,
+          0.382683,
+          0.3
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "xmix-fuller-curve-mid",
+      "description": "X-MIX on with fuller curve: gamma = 0.5 root of constant-power ~ -1.5 dB at mid; carve amounts = strength x pow(pos, 0.6) per side, each deck carved by the OPPOSITE side's mask.",
+      "input": {
+        "position": 0.5,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.840896,
+          0.840896,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0.494815,
+            "mask": 2,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.494815,
+            "mask": 1,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "xmix-fuller-curve-off",
+      "description": "X-MIX on but fuller curve OFF: classic constant-power gains (gamma 1) while the carve still runs.",
+      "input": {
+        "position": 0.5,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": false,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.707107,
+          0.707107,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0.494815,
+            "mask": 2,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.494815,
+            "mask": 1,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "xmix-front-loaded-carve-quarter",
+      "description": "pow(pos, 0.6) front-loads the carve: at position 0.25 the A-side is already carved to strength x 0.435 while the volume curve barely moved.",
+      "input": {
+        "position": 0.25,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.961187,
+          0.618614,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0.326456,
+            "mask": 2,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.6311,
+            "mask": 1,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "xmix-extreme-a-no-self-carve",
+      "description": "Fader hard at A with X-MIX: carvePosA = pow(0, 0.6) = 0 (A uncarved), carvePosB = 1 (B carved at full strength by A's mask).",
+      "input": {
+        "position": 0,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          1,
+          0,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 2,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.75,
+            "mask": 1,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "deck-c-rides-a-side",
+      "description": "Deck C assigned to the A side (third deck rides the 2-way fader): C follows the A curve; masks include C in the A-side bitmask (A|C = 0b101), so the B deck is carved by BOTH.",
+      "input": {
+        "position": 0.75,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "a"
+        ],
+        "deckVolumes": [
+          0.8,
+          0.8,
+          0.8
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.494891,
+          0.768949,
+          0.494891
+        ],
+        "carve": [
+          {
+            "amount": 0.6311,
+            "mask": 2,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.326456,
+            "mask": 5,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0.6311,
+            "mask": 2,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "all-own-engaged",
+      "description": "Engaged but every deck on 'own': gains ignore the fader entirely and no deck is carved (own never participates in X-MIX).",
+      "input": {
+        "position": 0.1,
+        "engaged": true,
+        "sides": [
+          "own",
+          "own",
+          "own"
+        ],
+        "deckVolumes": [
+          0.7,
+          0.8,
+          0.9
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": true,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.7,
+          0.8,
+          0.9
+        ],
+        "carve": [
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "name": "xmix-shimmer-off-pure-duck",
+      "description": "Shimmer toggle off: shimmer amount resolves to 0 (pure duck) while carve amounts are unchanged.",
+      "input": {
+        "position": 0.5,
+        "engaged": true,
+        "sides": [
+          "a",
+          "b",
+          "own"
+        ],
+        "deckVolumes": [
+          1,
+          1,
+          1
+        ],
+        "xmixEnabled": true,
+        "xmixStrength": 0.75,
+        "xmixFullerCurve": true,
+        "xmixShimmer": false,
+        "xmixShimmerAmount": 0.7
+      },
+      "expected": {
+        "gains": [
+          0.840896,
+          0.840896,
+          1
+        ],
+        "carve": [
+          {
+            "amount": 0.494815,
+            "mask": 2,
+            "shimmer": 0
+          },
+          {
+            "amount": 0.494815,
+            "mask": 1,
+            "shimmer": 0
+          },
+          {
+            "amount": 0,
+            "mask": 0,
+            "shimmer": 0
+          }
+        ]
+      }
+    }
+  ],
+  "tempo": [
+    {
+      "name": "sync-off-neutral",
+      "description": "Sync off, no TP transpose: everything neutral (rate 1.0, varispeed off, bus passthrough), syncedBpm cleared to null.",
+      "input": {
+        "masterBpm": 140,
+        "tempoMode": "timeStretch",
+        "syncEnabled": false,
+        "originalBpm": 96,
+        "pulseRelation": "auto"
+      },
+      "expected": {
+        "syncRatio": 1,
+        "syncedBpm": null,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "sync-off-tp-transpose-up7",
+      "description": "Sync off, TP mode, TR transpose +7 st: manual turntable pitch — varispeed = 2^(7/12) as Float32, mutually exclusive with sync (syncedBpm null).",
+      "input": {
+        "masterBpm": 120,
+        "tempoMode": "timePitch",
+        "syncEnabled": false,
+        "originalBpm": 120,
+        "pulseRelation": "1:1",
+        "transposeEnabled": true,
+        "transposeSemitones": 7
+      },
+      "expected": {
+        "syncRatio": 1.498307,
+        "syncedBpm": null,
+        "busRatio": 1,
+        "deckVarispeed": 1.498307,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "sync-off-tp-transpose-down-octave",
+      "description": "Sync off, TP transpose -12 st: exact 0.5 varispeed.",
+      "input": {
+        "masterBpm": 120,
+        "tempoMode": "timePitch",
+        "syncEnabled": false,
+        "originalBpm": 120,
+        "pulseRelation": "1:1",
+        "transposeEnabled": true,
+        "transposeSemitones": -12
+      },
+      "expected": {
+        "syncRatio": 0.5,
+        "syncedBpm": null,
+        "busRatio": 1,
+        "deckVarispeed": 0.5,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "sync-off-ts-transpose-stays-neutral",
+      "description": "Sync off, TS mode with TR engaged: the sync law stays neutral — TS transpose rides the realtime per-deck BUS path (refreshDeckTranspose), never the varispeed.",
+      "input": {
+        "masterBpm": 120,
+        "tempoMode": "timeStretch",
+        "syncEnabled": false,
+        "originalBpm": 120,
+        "pulseRelation": "1:1",
+        "transposeEnabled": true,
+        "transposeSemitones": 7
+      },
+      "expected": {
+        "syncRatio": 1,
+        "syncedBpm": null,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "tp-sync-speedup",
+      "description": "TP synced 96 -> 128 BPM at 1:1: rate 4/3 in Float32; varispeed carries it, bus stays 1.0.",
+      "input": {
+        "masterBpm": 128,
+        "tempoMode": "timePitch",
+        "originalBpm": 96,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 1.333333,
+        "syncedBpm": 128.000004,
+        "busRatio": 1,
+        "deckVarispeed": 1.333333,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "ts-sync-slowdown",
+      "description": "TS synced 96 -> 66 BPM: rate 0.6875; busRatio = 1/rate (OUTPUT/INPUT duration — the exact inversion P6-01 exists to guard, see busStretchRatio), varispeed and masterSpeed neutral.",
+      "input": {
+        "masterBpm": 66,
+        "tempoMode": "timeStretch",
+        "originalBpm": 96,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 0.6875,
+        "syncedBpm": 66,
+        "busRatio": 1.454545,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "tempo-only-basic",
+      "description": "tempoOnly synced 120 -> 140: only the step clock scales (masterSpeed = rate); no bus stretch, no varispeed — samples keep native speed/pitch.",
+      "input": {
+        "masterBpm": 140,
+        "tempoMode": "tempoOnly",
+        "originalBpm": 120,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 1.166667,
+        "syncedBpm": 139.999995,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1.166667
+      }
+    },
+    {
+      "name": "auto-pulse-picks-2to1",
+      "description": "Auto pulse, master 70 vs deck 150: nearest log-distance target is 2:1 (140), not 1:1 (70) or 3:1 (210) — deck runs at 140/150.",
+      "input": {
+        "masterBpm": 70,
+        "tempoMode": "timeStretch",
+        "originalBpm": 150,
+        "syncEnabled": true,
+        "pulseRelation": "auto"
+      },
+      "expected": {
+        "syncRatio": 0.933333,
+        "syncedBpm": 140.000001,
+        "busRatio": 1.071429,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "auto-pulse-picks-1to2",
+      "description": "Auto pulse, master 200 vs deck 110: 1:2 target (100) beats 2:3 (133.3) in log distance.",
+      "input": {
+        "masterBpm": 200,
+        "tempoMode": "timePitch",
+        "originalBpm": 110,
+        "syncEnabled": true,
+        "pulseRelation": "auto"
+      },
+      "expected": {
+        "syncRatio": 0.909091,
+        "syncedBpm": 100.000003,
+        "busRatio": 1,
+        "deckVarispeed": 0.909091,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "explicit-pulse-3to2",
+      "description": "Explicit 3:2 pulse, master 80 vs deck 120: target 120 = deck tempo, rate exactly 1.0.",
+      "input": {
+        "masterBpm": 80,
+        "tempoMode": "timeStretch",
+        "originalBpm": 120,
+        "syncEnabled": true,
+        "pulseRelation": "3:2"
+      },
+      "expected": {
+        "syncRatio": 1,
+        "syncedBpm": 120,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "nudge-rides-on-target",
+      "description": "Nudge +2.5 BPM on a locked 128/128 sync: rate = 130.5/128 without touching bpm/originalBpm (the transient-delta design).",
+      "input": {
+        "masterBpm": 128,
+        "tempoMode": "timePitch",
+        "originalBpm": 128,
+        "syncEnabled": true,
+        "pulseRelation": "1:1",
+        "nudgeBpmDelta": 2.5
+      },
+      "expected": {
+        "syncRatio": 1.019531,
+        "syncedBpm": 130.5,
+        "busRatio": 1,
+        "deckVarispeed": 1.019531,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "rate-ceiling-600bpm",
+      "description": "Master 400 with 2:1 pulse on a 50 BPM deck wants 800 BPM; the 600 BPM engine floor clamps rate to maxRate = 600/50 = 12.",
+      "input": {
+        "masterBpm": 400,
+        "tempoMode": "timeStretch",
+        "originalBpm": 50,
+        "syncEnabled": true,
+        "pulseRelation": "2:1"
+      },
+      "expected": {
+        "syncRatio": 12,
+        "syncedBpm": 600,
+        "busRatio": 0.083333,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "tp-tape-stop-master-0",
+      "description": "TP master 0 BPM (tape stop): sub-20 master forces 1:1, target 0 floors to 0.001 BPM -> rate ~ 7.8e-6 (varispeed -> 0, turntable power-off). Exercises the exponent-zone canonical formatting.",
+      "input": {
+        "masterBpm": 0,
+        "tempoMode": "timePitch",
+        "originalBpm": 128,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 0.000008,
+        "syncedBpm": 0.001,
+        "busRatio": 1,
+        "deckVarispeed": 0.000008,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "ts-freeze-master-0",
+      "description": "TS master 0 BPM: the ~0 rate must yield a HUGE busRatio (no snap-to-neutral) so the engine clamps to the spectral freeze ceiling instead of playing full speed.",
+      "input": {
+        "masterBpm": 0,
+        "tempoMode": "timeStretch",
+        "originalBpm": 128,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 0.000008,
+        "syncedBpm": 0.001,
+        "busRatio": 127999.99392,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "tp-below-20-forces-1to1",
+      "description": "TP master 12 BPM with AUTO pulse: below 20 the resolver is bypassed (it would re-multiply toward the session tempo, defeating the deliberate extreme slow-down) — literal 1:1, rate 0.1.",
+      "input": {
+        "masterBpm": 12,
+        "tempoMode": "timePitch",
+        "originalBpm": 120,
+        "syncEnabled": true,
+        "pulseRelation": "auto"
+      },
+      "expected": {
+        "syncRatio": 0.1,
+        "syncedBpm": 12,
+        "busRatio": 1,
+        "deckVarispeed": 0.1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "tempo-only-clamps-master-to-20",
+      "description": "tempoOnly master 5 BPM: the step clock has a hard 0.1x engine floor and cannot freeze, so the master clamps to 20 -> masterSpeed = 20/120.",
+      "input": {
+        "masterBpm": 5,
+        "tempoMode": "tempoOnly",
+        "originalBpm": 120,
+        "syncEnabled": true,
+        "pulseRelation": "1:1"
+      },
+      "expected": {
+        "syncRatio": 0.166667,
+        "syncedBpm": 20.000001,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 0.166667
+      }
+    },
+    {
+      "name": "tempo-only-nudge-floor-fallback",
+      "description": "tempoOnly with a nudge that drags the target to the 0.001 floor: rate falls below the 0.0001 masterSpeed guard -> masterSpeed snaps to 1.0 (the deck must not stall).",
+      "input": {
+        "masterBpm": 20,
+        "tempoMode": "tempoOnly",
+        "originalBpm": 120,
+        "syncEnabled": true,
+        "pulseRelation": "1:1",
+        "nudgeBpmDelta": -19.9999
+      },
+      "expected": {
+        "syncRatio": 0.000008,
+        "syncedBpm": 0.001,
+        "busRatio": 1,
+        "deckVarispeed": 1,
+        "deckMasterSpeed": 1
+      }
+    },
+    {
+      "name": "synced-tp-transpose-does-not-touch-rate",
+      "description": "TP SYNCED with TR +5 engaged: transpose is the sync-OFF branch only (mutually exclusive with sync); the synced rate is pure tempo math.",
+      "input": {
+        "masterBpm": 128,
+        "tempoMode": "timePitch",
+        "originalBpm": 96,
+        "syncEnabled": true,
+        "pulseRelation": "1:1",
+        "transposeEnabled": true,
+        "transposeSemitones": 5
+      },
+      "expected": {
+        "syncRatio": 1.333333,
+        "syncedBpm": 128.000004,
+        "busRatio": 1,
+        "deckVarispeed": 1.333333,
+        "deckMasterSpeed": 1
+      }
+    }
+  ]
+}

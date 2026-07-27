@@ -2,110 +2,6 @@
   "sharedCommit": "ec01e16521c38e656b94c6d887b81d3e542c3dc2",
   "sharedRoot": "../scoopyloops",
   "files": {
-    "vendor/scoopy/ScoopyLoops/NativeAudioEngineCore.cpp": {
-      "from": "ScoopyLoops/NativeAudioEngineCore.cpp",
-      "sha256": "f656619dd40ffa10788fa2b2f8f0ba07961736cf8768293858f7d2ddb7d58d4d"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeAudioEngineCore.hpp": {
-      "from": "ScoopyLoops/NativeAudioEngineCore.hpp",
-      "sha256": "fc3e0ed6057d29f678be9c8768fd7c4449ecf6104f15049db0d182be41dc3a67"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeBusStretcher.cpp": {
-      "from": "ScoopyLoops/NativeBusStretcher.cpp",
-      "sha256": "bc36cb1f106dcb9109291ad5f56a650c250afa376ed624fc3ba89af6975c8827"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeBusStretcher.hpp": {
-      "from": "ScoopyLoops/NativeBusStretcher.hpp",
-      "sha256": "cf74180696961ef27401341608728ed34694bb8cf22a659179b7ac561967dcb7"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeDenormal.hpp": {
-      "from": "ScoopyLoops/NativeDenormal.hpp",
-      "sha256": "2df750dbaf74c24abca21a3756ac7c7782ee8fa477361a687b8220fbc9e6e300"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeDigitalDelay.cpp": {
-      "from": "ScoopyLoops/NativeDigitalDelay.cpp",
-      "sha256": "03591ae250f8355e656ea0074e81e18d30fe59a2a2cfe0d19d496a056cb89720"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeDigitalDelay.hpp": {
-      "from": "ScoopyLoops/NativeDigitalDelay.hpp",
-      "sha256": "e87a70621884a7f7a2f54c4acab92c3194a4f568b6cc8f8b845e16c79f21977f"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterClipper.cpp": {
-      "from": "ScoopyLoops/NativeMasterClipper.cpp",
-      "sha256": "bf0767919d68762cddfa878c114cc089cf35d50cf7cf9ad7fca2f673b3ff1113"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterClipper.hpp": {
-      "from": "ScoopyLoops/NativeMasterClipper.hpp",
-      "sha256": "c58736f9b78c6c31a80ad2b125549a9b8dd8d326571e98b0a4ec05f35596a84b"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterDrive.cpp": {
-      "from": "ScoopyLoops/NativeMasterDrive.cpp",
-      "sha256": "b14f6d4b5eb938ddcd8364b14b91b5b43f7f8fcc4c20b7f09b271fecc9051779"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterDrive.hpp": {
-      "from": "ScoopyLoops/NativeMasterDrive.hpp",
-      "sha256": "ea33f32914c1d3aa3afb89b049cb3b64bbb7270fde82ebbe7d92421c138cda3b"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterSaturation.cpp": {
-      "from": "ScoopyLoops/NativeMasterSaturation.cpp",
-      "sha256": "b058834127d6728180fb30fd1e4b6060881402430af64c09257c64a23b03a0db"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMasterSaturation.hpp": {
-      "from": "ScoopyLoops/NativeMasterSaturation.hpp",
-      "sha256": "8f103761c78531dafbb931de572232b93dce94e0e771b0c4a2152a889f1b3422"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMidiClockOut.hpp": {
-      "from": "ScoopyLoops/NativeMidiClockOut.hpp",
-      "sha256": "eaeb04b7ee0a3be4d021176df4fe645c049e2427fca618f042c22f52b9308e6b"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeMidiNoteOut.hpp": {
-      "from": "ScoopyLoops/NativeMidiNoteOut.hpp",
-      "sha256": "010311b2204cc554c15d90dbd094334673a8c8a5b3ab0f9e7b7a349fed66e80a"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeOversampler.hpp": {
-      "from": "ScoopyLoops/NativeOversampler.hpp",
-      "sha256": "9c67f4ef814cffd003cd6026f5f66ab251e537d87c1e3e55369b8652c034af2a"
-    },
-    "vendor/scoopy/ScoopyLoops/NativePluginHost.hpp": {
-      "from": "ScoopyLoops/NativePluginHost.hpp",
-      "sha256": "dbbb7b602a51a2f30a131e9741af455537098acd7088b083d0438b1a03dda2cd"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeResamplerConfig.hpp": {
-      "from": "ScoopyLoops/NativeResamplerConfig.hpp",
-      "sha256": "10ee288481db1795f6bc0c443b097537313df55d5d2b86dcf1575271c11f3d1f"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeSincResampler.hpp": {
-      "from": "ScoopyLoops/NativeSincResampler.hpp",
-      "sha256": "90bcb026c34fba9d94a6795228a16af8f1c5e954d90b31f20de0ca7c7a061b05"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeToneFilter.cpp": {
-      "from": "ScoopyLoops/NativeToneFilter.cpp",
-      "sha256": "7f835aab90ac26bc472a48428ef3db55adfe26a1b0bcd69c1f0b9b0db01ae1fe"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeToneFilter.hpp": {
-      "from": "ScoopyLoops/NativeToneFilter.hpp",
-      "sha256": "984ad5eb268bf51397e9830ece83fbb00b7d0a4a421989fe100bcdb6ff2542cc"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeTrackClipper.cpp": {
-      "from": "ScoopyLoops/NativeTrackClipper.cpp",
-      "sha256": "bf21bf7230d06c8cc42cd3c793678ec8aa6aef67f28b53f49805941557041ece"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeTrackClipper.hpp": {
-      "from": "ScoopyLoops/NativeTrackClipper.hpp",
-      "sha256": "93b639a61d4fcfbd634071e2eab924c1fbeee910743b2c128302e981b0192e4b"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeTuning.hpp": {
-      "from": "ScoopyLoops/NativeTuning.hpp",
-      "sha256": "84320ce098a1fa1a8c8bbc1bfc434d483a6dbd043682498b092da02e174f29c4"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeVoiceStretchPool.cpp": {
-      "from": "ScoopyLoops/NativeVoiceStretchPool.cpp",
-      "sha256": "53431392fc915a2d69a9ba56c815f12eaddb8398bee915ccb90ef38302b12e69"
-    },
-    "vendor/scoopy/ScoopyLoops/NativeVoiceStretchPool.hpp": {
-      "from": "ScoopyLoops/NativeVoiceStretchPool.hpp",
-      "sha256": "d971fe62f35f101b6e293f0533bdd40ae3e16c3415da46fdd9d0188cd0dafe90"
-    },
     "vendor/scoopy/engine/CMakeLists.txt": {
       "from": "engine/CMakeLists.txt",
       "sha256": "1ca5cd0af93079b03c9bc2265be1fef380abd45cf7d7ea1f7622bd97df8c2340"
@@ -129,21 +25,7 @@
     "vendor/scoopy/ThirdParty/pffft": {
       "from": "ThirdParty/pffft",
       "sha256": "668b34399a46ec9b84090e6f4ff8b970040f63067b335b5e875ce97daec21872"
-    },
-    "vendor/scoopy/web-protocol/schema.ts": {
-      "from": "web/protocol/schema.ts",
-      "sha256": "bccbd1e29222acf106b4783fe9fb41146420261675e3f2ced128e7c890c28128"
-    },
-    "vendor/scoopy/webdist": {
-      "from": "webdist",
-      "exclude": [
-        ".map"
-      ],
-      "sha256": "6efb3f3c7b0841291668105e6221f758baabfe3de30889c60290d3f499c5fc85"
-    },
-    "vendor/scoopy/web-protocol/scoopy-worklet.js": {
-      "from": "web/src/audio/scoopy-worklet.js",
-      "sha256": "15271234ff11153bbbc042f5b088eeb3661570d7f4e0f8574dfe9ed826e843df"
     }
-  }
+  },
+  "_doc": "What REMAINS vendored from the shipping app. The CORE (ScoopyLoops/) and the WEB moved in-tree at the P3-0 flip and are no longer pinned \u2014 this tree is their writable home. Only scoopy's engine wrapper and ThirdParty are still mirrored; they follow, and this file goes with them."
 }

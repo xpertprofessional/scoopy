@@ -37,7 +37,11 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ScoopyLoops)
+# THE CORE IS IN-TREE NOW (P3-0 step 2, 2026-07-27) — it was a sibling of this
+# directory under vendor/scoopy while hash-pinned. This tree is its writable
+# home; scoopy's own tests read ScoopyLoops/* from the repo root and were the
+# thing that said so out loud.
+set(SRC ${CMAKE_SOURCE_DIR}/ScoopyLoops)
 
 # The core + every DSP block. Each of these compiles with no platform headers at all — verified by
 # this build existing. The HOST layer (NativeJuceDeviceHost, NativeMidiHost, NativeAudioEngineBridge,

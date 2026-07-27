@@ -24,7 +24,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const workletPath = resolve(appRoot, 'vendor/scoopy/web-protocol/scoopy-worklet.js')
+const workletPath = resolve(appRoot, 'web/src/audio/scoopy-worklet.js')
 const outPath = resolve(appRoot, 'slengine/generated/sl_worldmap.inc')
 
 class GenerationRefused extends Error {}

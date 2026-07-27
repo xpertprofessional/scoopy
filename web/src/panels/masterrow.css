@@ -1,0 +1,83 @@
+/* ---- Master track row (P6-08) -----------------------------------------
+   One row, two mounts: above the compose grid and above each DJ deck's rows.
+   Owns the session BPM, master volume and (compose only) the clipper drive.
+   The pattern-scene cluster is NOT here — snapshot switching is a transport act,
+   so it lives in the deck's transport box (djmode.md §4C). */
+
+.master-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  /* No vertical padding: the row's height is the shared control-row token so the
+     deck header stands exactly as tall as one track-row control line
+     (grid.css .trk-ctrl-row uses the same expression). One line, never wrapped —
+     the sliders flex to fill instead of spilling onto a second row. */
+  padding: 0 var(--cell);
+  min-height: calc(var(--slider-bar-h, 18px) + 6px);
+  border-bottom: var(--hairline) solid var(--line);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.mr-field {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--cell) / 2);
+  /* BPM, VOL and DRV are value boxes — natural width. Only the sends carry a
+     slider, so only they opt into growth below. */
+  flex: 0 0 auto;
+}
+
+/* Each send FILLS the row: the geometric bars share every pixel the value boxes
+   leave, instead of the old fixed 72px that forced the row to wrap. */
+.mr-send {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mr-send .ds-geo {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 40px; /* floor so a squeezed bar stays grabbable (trk-paired parity) */
+}
+
+/* Sync has taken this deck over: the session tempo is NOT what you are
+   hearing, so it reads as struck-through with the resolved tempo beside it
+   (native MasterTrackRowView showStrikethrough). */
+.mr-struck {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.mr-synced {
+  color: var(--signal);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The deck's MASTER sends (mixer overhaul): regular horizontal sends wearing
+   the send identity color — same signal path as the track rows' S<n> and the
+   mixer's FX<n> return. They are the row's only faders, so they split all the
+   leftover width equally (the flex rule above) for comparable travel. */
+
+/* `+` (add track) sits at the FAR right of the row: it is the only control here
+   that changes the pattern's shape rather than a value, so it keeps its
+   distance from the BPM/VOL/DRV cluster instead of reading as a fourth field. */
+.mr-add {
+  margin-left: auto;
+  display: inline-flex;
+}
+
+.mr-add .ds-button {
+  min-width: 24px;
+  padding: 2px 8px;
+}
+
+/* DJ density: the row is chrome above two decks sharing one window. Font shrinks
+   to match the deck's track strips (djmode.css .track-strips.density-dj), but the
+   height stays on the shared --slider-bar-h token so the deck header still lines
+   up with one track-row control line. No extra vertical padding — that would make
+   the header taller than the rows it sits above. */
+.dj .master-row {
+  font-size: 0.85em;
+  padding: 0 var(--cell);
+}

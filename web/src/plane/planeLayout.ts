@@ -1,17 +1,33 @@
 /**
- * Plane geometry (PD-CANVAS-02, D-WZ-PDCANVAS-01).
+ * Plane geometry (merge P2 step 4).
  *
- * Pure functions the boundless-plane UI is built on: where auto-placed Cells go,
- * and how to frame all of them ("fit to content" — GRM has no overview aid, so
- * this is our answer, pd-canvas.md §4.1). Kept pure and separate from any React
- * so it is exhaustively testable without a DOM, and so the SAME auto-layout
- * serves both the v15→v16 session migration and a future "arrange" command —
- * one source of truth for the grid, never two that drift.
+ * Pure functions the boundless-plane UI is built on: where auto-placed strips
+ * go, and how to frame all of them ("fit to content" — GRM has no overview aid,
+ * so this is our answer, pd-canvas.md §4.1). Kept pure and separate from any
+ * React so it is exhaustively testable without a DOM, and so the SAME
+ * auto-layout serves placement, a load carrying no geometry, and a future
+ * "arrange" command — one source of truth for the grid, never two that drift.
+ *
+ * PORTED VERBATIM from wizard's `web/src/plane/planeLayout.ts`, tests included:
+ * the geometry was already right and already covered, and re-deriving it would
+ * only have risked losing the zoom-about invariant. The only change is where
+ * `Cell` and `Plane` come from — the `.scoopyMap` document rather than wizard's
+ * schema. They are structurally identical.
  */
-import { DEFAULT_CELL, type Cell, type Plane } from '../../protocol/schema'
+import type { PlaneMap, Strip } from '../persist/mapDocument.ts'
 
-/** Grid spacing for auto-placement. The Cell's own default size drives it, so a
-    change to DEFAULT_CELL moves the grid with it. */
+/** A strip's box on the plane, and the plane's own viewport transform. Aliased
+    off the document so there is never a second definition of either. */
+export type Cell = Strip['cell']
+export type Plane = PlaneMap['plane']
+
+/** The strip's default box. A BUDGET, not a placeholder: the strip anatomy
+    (wizard `docs/specs/pd-strip-anatomy.md` §4.1) closes to the pixel at this
+    size, so changing it means re-deriving the interior. */
+export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 196 }
+
+/** Grid spacing for auto-placement. The strip's own default size drives it, so
+    a change to DEFAULT_CELL moves the grid with it. */
 export const LAYOUT = {
   w: DEFAULT_CELL.w,
   h: DEFAULT_CELL.h,

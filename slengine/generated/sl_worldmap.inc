@@ -2,7 +2,7 @@
 //
 // scoopy WorldTrack field -> engine param NAME, from the worklet's
 // SCALAR_FIELDS / ARRAY_FIELDS (scoopy-worklet.js, vendored hash-pinned
-// @ f18f042bb092). The names resolve to ids through the ABI at
+// @ ec01e16521c3). The names resolve to ids through the ABI at
 // runtime, so no integer is encoded here. Regenerate: npm run worldmap:generate
 
 static const struct { const char* field; const char* param; } kWorldScalarMap[] = {
