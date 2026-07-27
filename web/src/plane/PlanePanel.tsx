@@ -449,6 +449,32 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         >
           open
         </button>
+        {/* THE SESSION LIBRARY'S DOOR — and without it the merged app is a dead
+            end, which is how this button was found.
+
+            A scoopy session can only be CREATED or IMPORTED in the companion
+            panel, and that panel had no way to be opened here: `openPanelWindow`
+            lost its last caller when compose moved in-window (see the note
+            below). So `WizardMerged` could not make a session, therefore could
+            not put a deck in a strip, therefore could not reach the grid
+            transport or the tempo controls AT ALL — every one of them lives on a
+            grid strip. The whole of P3-1 and P3-2 was unreachable from a clean
+            install, and the strip's "load a session" menu section renders only
+            when the library is non-empty, so it said nothing either.
+
+            This is the first of the P3-4 doors ("every scoopy panel reachable"),
+            pulled forward because the tempo domain cannot be verified without
+            it. A SEPARATE WINDOW is right here, unlike compose: the library is
+            not per-strip, it holds no deck, and it publishes no world — none of
+            the reasons compose had to come in-window apply. */}
+        <button
+          type="button"
+          className="plane-compose"
+          onClick={() => send(link, 'openPanelWindow', { panel: 'companion' })}
+          title="the session library — create, import and manage sessions"
+        >
+          sessions ⇱
+        </button>
         {/* COMPOSE-BESIDE-THE-MAP. The plane is the PERFORMATIVE surface; a
             session is COMPOSED in the grid, which is a different job. Without
             this affordance, booting into the plane simply takes the composer

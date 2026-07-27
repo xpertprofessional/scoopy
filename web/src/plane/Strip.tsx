@@ -401,9 +401,19 @@ export function Strip({
     // sessions is not something you do one-handed with sound running. What
     // stays on the object is the RESULT — the scene pads, the tempo, and the
     // status line naming the session.
-    if (onLoadSession && sessions.length > 0) {
+    // ⚠️ THE SECTION IS ALWAYS RENDERED, and the empty case is the reason. It
+    // used to be gated on `sessions.length > 0`, so an empty library made the
+    // whole thing VANISH — no heading, no hint, nothing naming what was
+    // missing. Combined with the merged app having had no door to the session
+    // library at all, that made a grid deck (and therefore the entire grid
+    // transport and tempo surface) unreachable, with the UI silent about why.
+    // A control that is absent teaches nothing; one that says what it needs
+    // teaches the next step.
+    if (onLoadSession) {
       items.push({ kind: 'sep' })
       items.push({ kind: 'info', label: 'load a session' })
+      if (sessions.length === 0)
+        items.push({ kind: 'info', label: 'none yet — make one in "sessions ⇱"' })
       for (const s of sessions) {
         items.push({
           kind: 'item',

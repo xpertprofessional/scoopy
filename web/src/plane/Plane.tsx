@@ -512,7 +512,15 @@ export function Plane({
         // across the top, and it costs nothing after minute one because it
         // vanishes permanently once one strip exists.
         <p className="plane-empty mono dim">
-          nothing here yet — add a strip, then press REC to give it material
+          {/* BOTH KINDS OF MATERIAL, because this line is the only instruction
+              on an empty plane and it named only one. "Press REC" gets you a
+              TAPE; every grid control — the scene pads, the transport, the whole
+              tempo surface — lives on a strip holding a SESSION, and nothing
+              anywhere said how one gets there (right-click the strip's header).
+              A hint that teaches half the app is how the other half stays
+              undiscovered. */}
+          nothing here yet — add a strip, then press REC to record into it, or
+          right-click its header to load a session
         </p>
       )}
 
