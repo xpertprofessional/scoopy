@@ -1,0 +1,8 @@
+{
+  "_doc": "Engine deck-scope params (SL-ABI-V3 §3, kDeckParamNames in slengine/src/sl_engine.cpp) that the merged shell's slParam lane does NOT map a scoopy PARAM_ID onto. Every entry is a REAL statement about how the param is reached instead — not a shrug. A param that is neither mapped nor listed here is built, reachable from C, and unreachable from the app. Enforced by web/scripts/checkParamMap.ts. Format: engine param name -> reason.",
+  "notWired": {
+    "syncRatio": "Reached by COMMAND (slDeck/setTempoSync), not by the param lane. It is document state resolved through scoopy's tempo law — the plane awaits it as part of applying a map, and a refusal has to be visible. The param lane is fire-and-forget and would hide one.",
+    "tempoMode": "Reached by COMMAND (slDeck/setTempoMode). Same reason as syncRatio: it is a document field, and the command path reports the engine's read-back so a REFUSED mode is visible rather than looking applied.",
+    "rate": "Declared in SL-ABI-V3 §3 and implemented, with NO UI yet. A grid deck's tempo is its bpm field and its sync ratio; a second speed control in different units would be two ways to do one thing (the same call P3-1 made about varispeed on a grid strip). Kept because §3 names it and the engine honours it; it becomes wired if a deck ever gets a pitch-fader distinct from transpose."
+  }
+}

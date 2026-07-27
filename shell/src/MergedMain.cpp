@@ -193,7 +193,20 @@ private:
      *
      * An unmapped name is REFUSED IN THE LOG, once per name — loudly enough to
      * find, quietly enough that a per-rAF drag does not become a console storm.
-     * Silence is what cost this shell a session already. */
+     * Silence is what cost this shell a session already.
+     *
+     * ⚠️ THIS TABLE IS THE SEAM, AND IT IS GATED. Both sides are strings that
+     * nothing type-checks: a typo on the left never matches a param the UI
+     * sends, a typo on the right resolves to SL_PARAM_UNKNOWN, and BOTH fail
+     * silently — a control that moves on screen and reaches nothing, which is
+     * the defect this phase keeps paying for. `npm run params:check` parses this
+     * table and refuses either. Keep it parseable: one `{"scoopy", "engine"}`
+     * pair per line. */
+    struct ParamMapping { const char* scoopyName; const char* engineName; };
+    static constexpr ParamMapping kParamMap[] = {
+        {"deckTranspose", "transpose"},
+    };
+
     void handleParam(const juce::var& v) {
         auto* obj = v.getDynamicObject();
         if (obj == nullptr) return;
@@ -201,9 +214,11 @@ private:
         const auto deck = (int) obj->getProperty("deck");
         const double value = (double) obj->getProperty("v");
 
-        // scoopy name → engine deck-param name. Resolved to ids on first use;
-        // the ABI's rule is resolve-once-by-name, not hardcode-the-int.
-        const char* engineName = name == "deckTranspose" ? "transpose" : nullptr;
+        // scoopy name → engine deck-param name. Resolved to ids on use; the
+        // ABI's rule is resolve-by-name, not hardcode-the-int.
+        const char* engineName = nullptr;
+        for (const auto& m : kParamMap)
+            if (name == m.scoopyName) { engineName = m.engineName; break; }
 
         if (engineName == nullptr) {
             if (!warnedParams.contains(name)) {

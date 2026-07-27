@@ -13,6 +13,7 @@
     "engine:sync": "node --experimental-strip-types scripts/sharedSync.ts --write --lock engine.lock.json",
     "hotframe:check": "node --experimental-strip-types scripts/generateHotFrame.ts --check",
     "hotframe:generate": "node --experimental-strip-types scripts/generateHotFrame.ts",
+    "params:check": "node --experimental-strip-types scripts/checkParamMap.ts",
     "preview:lan": "SL_LAN=1 vite build && SL_LAN=1 vite preview --host",
     "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
     "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write",

@@ -350,6 +350,43 @@ strips only.
 - **Tape sync (P3-2b)** — the payoff sentence above is still only half true. A
   tape has no stretcher and no tempo, so "every element" currently means every
   DECK. That is the next step, and it is new engine DSP.
-- **`checkAbiCoverage` was already failing on `main`** before this work (it
-  measures against a stale WASM build with `kHotFrameLength=8`) and is not
-  wired into CI. Untouched here; it needs its own look.
+### The ABI gate — a third casualty of the collapse, and its replacement
+
+`checkAbiCoverage` was failing on `main` before any of this work, and the reason
+turned out to be structural rather than stale. It compared **scoopy's schema**
+(311 HotFrame slots, 29 param ids) against **`engine/src/wz_engine.cpp`** —
+wizard's legacy ABI v1 donor, `kHotFrameLength = 8`, which the merged app does
+not run. Pre-collapse that pairing was coherent, because `apps/wizard/web/` held
+wizard's own schema. P3-0 step 2 replaced `web/` with scoopy's tree, so the gate
+was left holding one half of a boundary that no longer exists — the same species
+of breakage as `bundle:mac`.
+
+It could not be repaired in place, and re-pointing it at the v3 engine would not
+have worked either. Its model does not fit v3:
+
+1. It requires `engine index == schema index`, which was the right safety
+   property for v1 (a positional, SHARED `ParamId` enum). v3 resolves **by name**
+   at boot — ABI.md's keyed-params rule — so the engine's index is deliberately
+   private.
+2. **The two vocabularies do not overlap.** scoopy's `PARAM_IDS` are Swift-era
+   (`deckTranspose`, `deckVolume`, `masterTempo`); the engine's deck params are
+   engine-domain (`transpose`, `syncRatio`, `tempoMode`). The shell TRANSLATES,
+   so the seam is the translation, not either list.
+3. v3's HotFrame length is GENERATED from the schema, so checking it against the
+   schema proves nothing — the exact trap `abiCoverage.ts`'s own header warns
+   about. `hotframe:check` covers that surface honestly.
+
+**Retired** (`web/scripts/checkAbiCoverage.ts`, `engine/tools/abi-not-carried.json`)
+and **replaced by `npm run params:check`** (`web/scripts/checkParamMap.ts`),
+which follows the boundary to where it actually moved: `MergedMain::kParamMap`,
+the shell's scoopy-name → engine-name table. Both sides are strings nothing
+type-checks, and both failure modes are silent — a typo on the left never
+matches what the UI sends, a typo on the right resolves to `SL_PARAM_UNKNOWN`.
+That is the defect class this phase keeps paying for. Three checks, each
+mutation-tested: a mapping target the engine lacks, a mapping source the schema
+lacks, and an engine param nothing maps to (waived in
+`slengine/param-map-not-wired.json` with a reason, or wired).
+
+The shared `web/scripts/abiCoverage.ts` is untouched — it is vendored via
+`shared.lock.json` and belongs to the real wizard repo, where the pairing it
+assumes still holds.

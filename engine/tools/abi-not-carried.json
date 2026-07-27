@@ -1,5 +1,0 @@
-{
-  "_doc": "Boundary fields declared in web/protocol/schema.ts that the engine does NOT yet carry. Every entry is a REAL gap (the field is inert in the running app until carried), not a shrug. Enforced by web/scripts/checkAbiCoverage.ts. Format: name -> reason.",
-  "params": {},
-  "hotframe": {}
-}
