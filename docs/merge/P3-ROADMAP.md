@@ -126,8 +126,51 @@ The collapse is therefore not "build a new repo"; it is:
 Step 2 is the substantive one and the only one carrying risk; steps 1 and 3 are
 mechanical and reversible.
 
-⚠️ **Push before moving.** Thirteen commits of merged work exist only on this
-machine. A filesystem restructure is the wrong moment to be the sole copy.
+Steps 1 and 3 are **DONE** (commit `3d6fa22`); step 2 is below and is now the
+gate on everything else.
+
+### ⚠️ Step 2 BLOCKS P3-1 — and this is the folder confusion, exactly
+
+Found 2026-07-27 while starting P3-1. **There are TWO plane implementations, and
+the merged tree holds the wrong one.**
+
+| tree | web sources | what it is |
+|---|---|---|
+| `apps/scoopy` (merged) | `web/src`, **49 files** — `AddStrip.tsx`, `StripLoad.tsx`, `stripSource.test.ts` | wizard's ORIGINAL plane, the one the merge exists to replace |
+| `apps/scoopyloops` (shipping) | `web/src`, **220 files** — `Strip.tsx`, `GridElement.tsx`, `Composer.tsx`, `Master.tsx` | THE MERGED PLANE — all of P2, P2-5 and this session |
+
+Two app targets consume them:
+
+- `Wizard` → `WIZARD_WEBDIST_DIR` = `webdist/` — wizard's legacy UI
+- `WizardMerged` → `MERGED_WEBDIST_DIR` = `vendor/scoopy/webdist` — a **build**
+  of the shipping tree's UI
+
+So **every line of the plane lives in the shipping app's repo** and the merged
+tree holds only a compiled copy. Any UI step — P3-1 included — would have to be
+edited in `apps/scoopyloops`, the repo just declared untouched, then bundled and
+vendored back. That is precisely the pattern the collapse exists to end, and it
+is why the folder question was the right question to ask.
+
+**P3-1 therefore waits on step 2.** Doing it first would put another session's
+work in the wrong repo.
+
+### Decisions step 2 needs — architectural, not mechanical
+
+1. **Wizard's legacy `web/` and the `Wizard` app target.** Deleted, kept
+   building, or archived? The merge's direction is "web UI → scoopy's", which
+   implies the legacy plane goes — but `Wizard` is a working app today, and
+   deleting an app is not a refactor.
+2. **Where scoopy's web lands.** Replacing `web/` outright is cleanest to reason
+   about and re-points every path in the build, the gates and CI. A second tree
+   (`scoopy-web/`) is safer and leaves two directories that both look like "the
+   web UI" — the confusion being removed.
+3. **The native core.** `vendor/scoopy/ScoopyLoops/*.{cpp,hpp}` becomes real
+   source here, which makes this tree the core's writable home and completes the
+   **P3 flip** the dual-home law was holding open. A real architectural
+   commitment, not a file move.
+
+⚠️ **Push before going further.** Sixteen commits of merged work exist only on
+this machine.
 
 ## Sequence
 
