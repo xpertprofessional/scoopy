@@ -33,7 +33,13 @@ target_compile_definitions(ScoopySpike PRIVATE
     JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ScoopySpike,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ScoopySpike,JUCE_VERSION>"
-    SCOOPY_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/../scoopy/webdist")
+    # The P1 spike loads scoopy's built web UI from the SHIPPING app's tree.
+    # After the P3-0 collapse this repo IS `apps/scoopy` (the merged tree), and
+    # the live ScoopyLoops working copy moved to `apps/scoopyloops` — so the old
+    # `../scoopy` now pointed this repo at ITSELF. The spike is a P1 artifact
+    # kept for reference; the merged app serves `vendor/scoopy/webdist` and
+    # eventually its own `web/` build, not this.
+    SCOOPY_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/../scoopyloops/webdist")
 
 # Same JUCE 8 gap the shell works around: juce_gui_extra declares no
 # linuxPackages, so nothing supplies the GTK/WebKit headers its Linux

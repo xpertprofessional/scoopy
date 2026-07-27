@@ -1,6 +1,6 @@
 {
   "sharedCommit": "ec01e16521c38e656b94c6d887b81d3e542c3dc2",
-  "sharedRoot": "../scoopy",
+  "sharedRoot": "../scoopyloops",
   "files": {
     "vendor/scoopy/ScoopyLoops/NativeAudioEngineCore.cpp": {
       "from": "ScoopyLoops/NativeAudioEngineCore.cpp",
