@@ -34,6 +34,7 @@ import {
   type Strip,
 } from "../persist/mapDocument.ts";
 import { TEMPO_MODE_ID, mapTempoIntents } from "../persist/tempo.ts";
+import { setTempoOverride } from "../store/companionEngine.ts";
 
 /* ── the store ────────────────────────────────────────────────────────────── */
 
@@ -346,6 +347,21 @@ export function updateGridTempo(
   updateStrip(key, (s) =>
     s.element.kind === 'grid' ? { ...s, element: { ...s.element, ...patch } } : s,
   )
+  // ⚠️ THE STRIP'S BPM HAS TO REACH THE ENGINE TOO, and it is not the sync path
+  // that carries it. `element.bpm` is what the SYNC RATIO is computed against;
+  // what the deck actually PLAYS at is the bpm in its published world. Those
+  // were two different numbers — the box moved, the deck did not, and the ratio
+  // was resolved against a tempo the deck was not running at.
+  //
+  // It goes through the performance OVERRIDE rather than writing the session,
+  // and that is the design rather than the cheap option: `GridElement.tsx`'s
+  // header scopes the strip to the performance layer precisely so a knob touched
+  // from the map cannot bleed into every other map using that session. The
+  // override wins on every publish and never reaches the Autosaver.
+  if (patch.bpm !== undefined) {
+    const el = getMap().strips.find((s) => s.key === key)?.element
+    if (el?.kind === 'grid') setTempoOverride(patch.bpm, el.deck)
+  }
   void applyTempo(link)
 }
 

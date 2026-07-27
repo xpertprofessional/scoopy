@@ -279,12 +279,24 @@ export function deckOf(state: CompanionState, deck: number): DeckState {
 }
 
 /**
- * A live performance tempo (DJ-mixer sync/nudge, via the bridge). NOT store state and NOT a
- * document edit: it wins over the document bpm on every publish but never reaches the Autosaver —
- * riding a sync fader must not rewrite the session 10×/s, and closing the mixer must leave the
- * document exactly as it was.
+ * A live performance tempo (DJ-mixer sync/nudge, via the bridge; the PLANE's per-strip bpm since
+ * P3-2). NOT store state and NOT a document edit: it wins over the document bpm on every publish
+ * but never reaches the Autosaver — riding a sync fader must not rewrite the session 10×/s, and
+ * closing the mixer must leave the document exactly as it was.
+ *
+ * ⚠️ PER DECK, and it had to become so. It was a single global, which was fine while one mixer
+ * drove one tempo — but the plane gives every grid strip its own bpm box, and "decks load into
+ * strips, EACH WITH ITS OWN BPM" is the mission sentence. A global override meant strip B's tempo
+ * silently became strip A's.
+ *
+ * And the plane's box reached nothing at all before this: it wrote `element.bpm` in the MAP while
+ * the engine kept publishing the session's `pattern.bpm`. So the number moved on screen, the deck
+ * did not, and — worse — the sync ratio was computed against a tempo the deck was not running at.
+ * Writing the SESSION instead would have been the wrong fix: `GridElement.tsx`'s header is explicit
+ * that the strip is scoped to the PERFORMANCE layer precisely so a knob touched from the map cannot
+ * bleed into every other map using that session.
  */
-let tempoOverrideBpm: number | null = null;
+const tempoOverrideBpm: (number | null)[] = Array.from({ length: MAX_DECKS }, () => null);
 
 /** The bpm the ENGINE hears: the performance override when one is active, else the document. */
 export function resolveWorldBpm(documentBpm: number, override: number | null): number {
@@ -306,7 +318,7 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
   // projection) > document bpm.
   const pattern = projectScene(d.session.pattern, d.scene);
   const { world, missingSamples } = worldFromSession(
-    { ...pattern, bpm: resolveWorldBpm(pattern.bpm as number, tempoOverrideBpm) },
+    { ...pattern, bpm: resolveWorldBpm(pattern.bpm as number, tempoOverrideBpm[deck] ?? null) },
     d.session.kit,
     {
       isPlaying: playing,
@@ -422,6 +434,12 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     set((s) => patchDeck(s, deck, { playing: false }));
     publish(get(), deck, false);
     set((s) => patchDeck(s, deck, idleDeck()));
+    // The performance tempo goes with the deck. It is module state, not deck
+    // state, so `idleDeck()` does not touch it — and a slot is REUSED, so
+    // without this the next session loaded here would start at the tempo the
+    // last one was overridden to. Exactly the shape of the sync ratio that
+    // outlived its deck (see PlanePanel's dropElement / `slDeck clear`).
+    tempoOverrideBpm[deck] = null;
   },
 
   async importFile(file) {
@@ -768,18 +786,22 @@ export function flushAutosave(): Promise<void> {
 // and the bridge is the one other caller allowed to reach it.
 
 /**
- * Engage / release the performance tempo. Republishes immediately — mid-play this re-latches at
- * the next step boundary (phase-continuous), it does not restart the pattern.
+ * Engage / release ONE DECK's performance tempo. Republishes that deck immediately — mid-play this
+ * re-latches at the next step boundary (phase-continuous), it does not restart the pattern.
+ *
+ * `deck` defaults to 0 for the DJ-mixer bridge, whose single-deck call site predates the axis.
  */
-export function setTempoOverride(bpm: number | null): void {
-  tempoOverrideBpm = bpm;
-  // Every loaded deck: the override is the DJ mixer's performance tempo and it
-  // wins over the document bpm wherever one is published.
-  publishAll(useCompanion.getState());
+export function setTempoOverride(bpm: number | null, deck = 0): void {
+  if (deck < 0 || deck >= MAX_DECKS) return;
+  tempoOverrideBpm[deck] = bpm;
+  // Only this deck republishes. The old global republished ALL of them, which
+  // was harmless when there was one tempo and is wrong now: republishing a deck
+  // whose tempo did not change is a world swap for nothing.
+  publish(useCompanion.getState(), deck, deckOf(useCompanion.getState(), deck).playing);
 }
 
-export function getTempoOverride(): number | null {
-  return tempoOverrideBpm;
+export function getTempoOverride(deck = 0): number | null {
+  return tempoOverrideBpm[deck] ?? null;
 }
 
 /** Per-window master fader — `sl_engine_set_main_gain`, downstream of the whole session mix.

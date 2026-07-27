@@ -211,6 +211,41 @@ describe("store-side tempo laws", () => {
     expect(getTempoOverride()).toBeNull();
   });
 
+  it("the override is PER DECK — one strip's tempo is not another's", () => {
+    // It was a single global, which was fine while one DJ mixer drove one tempo.
+    // The plane gives every grid strip its own bpm box, and "decks load into
+    // strips, EACH WITH ITS OWN BPM" is the mission sentence — so a global here
+    // meant strip B silently inheriting strip A's tempo. Collapsing the axis
+    // back to a global passes every OTHER assertion in this file.
+    setTempoOverride(140, 0);
+    setTempoOverride(90, 1);
+    expect(getTempoOverride(0)).toBe(140);
+    expect(getTempoOverride(1)).toBe(90);
+    expect(getTempoOverride(2)).toBeNull(); // untouched decks stay on their own tempo
+
+    // Releasing one leaves the others standing.
+    setTempoOverride(null, 0);
+    expect(getTempoOverride(0)).toBeNull();
+    expect(getTempoOverride(1)).toBe(90);
+    setTempoOverride(null, 1);
+
+    // Out-of-range is ignored rather than aliased onto deck 0 — quietly
+    // retempoing the wrong deck is worse than declining.
+    setTempoOverride(200, 99);
+    expect(getTempoOverride(0)).toBeNull();
+  });
+
+  it("closing a deck releases its override — a slot is REUSED", () => {
+    // Module state, so `idleDeck()` does not clear it. Without this the next
+    // session loaded into the slot starts at the tempo the last one was
+    // overridden to — the same shape as the sync ratio that outlived its deck.
+    setDeck0({ session: fakeSession });
+    setTempoOverride(140, 0);
+    expect(getTempoOverride(0)).toBe(140);
+    useCompanion.getState().closeDeck(0);
+    expect(getTempoOverride(0)).toBeNull();
+  });
+
   it("setTempoOverride never schedules an autosave; setBpm (a document edit) does", () => {
     vi.useFakeTimers();
     setDeck0({ session: fakeSession });
