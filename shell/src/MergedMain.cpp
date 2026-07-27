@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr int kScoopySchemaVersion = 87; // must equal scoopy schema.ts SCHEMA_VERSION
+constexpr int kScoopySchemaVersion = 88; // must equal scoopy schema.ts SCHEMA_VERSION
 
 std::optional<juce::WebBrowserComponent::Resource>
 provideResource(const juce::String& path) {

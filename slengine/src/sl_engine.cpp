@@ -239,6 +239,30 @@ void renderInto(sl_engine* e,
         e->engineTimeSamples.load(std::memory_order_relaxed);
 
     e->tapes.beginBlock(blockStartSample);
+
+    // D-WZ-MON-02, HONOURED IN THE SAME BLOCK AS THE HANDOFF. A tape that just
+    // became a loop has replaced the live input it was capturing, so the strip
+    // carrying it stops monitoring — otherwise input + loop play together and
+    // the first thing you hear after closing a loop is a doubled beat.
+    //
+    // It sits between phase 1 (which performs the handoff) and phase 5 (which
+    // applies the gate) because that is the only point where both banks are
+    // visible AND the block has not been mixed yet. Doing it on the message
+    // thread from the record-stop reply would be a frame or two late — audible,
+    // and at the exact instant the ear is listening for the loop.
+    //
+    // Overdub is untouched by construction: it never passes through the C-3
+    // handoff, so it sets no bit here and the switch stays open, which is the
+    // half of D-WZ-MON-02 that exists because hearing the input against the loop
+    // IS the point of overdubbing.
+    if (const uint32_t handed = e->tapes.consumeLoopHandoffs(); handed != 0u) {
+        for (std::uint32_t ti = 0; ti < sl::TapeBank::count(); ++ti) {
+            if ((handed & (1u << ti)) == 0u) continue;
+            const int32_t ch = e->channels.channelForTape(ti);
+            if (ch >= 0) e->channels.setMonitor(static_cast<uint32_t>(ch), 0u);
+        }
+    }
+
     e->tapes.captureInputs(in_bus, in_count, frames, e->sampleRate, blockStartSample);
     e->tapes.renderPlayback(in_bus, in_count, frames, e->sampleRate, blockStartSample);
 
@@ -482,7 +506,22 @@ int32_t sl_tape_set_record_source(sl_engine* e, uint32_t tape, uint32_t kind,
 }
 
 void sl_tape_record_start(sl_engine* e, uint32_t tape) {
-    if (e != nullptr) e->tapes.recordStart(tape);
+    if (e == nullptr) return;
+    // D-WZ-MON-01: armed to record means you HEAR what you are capturing. The
+    // strip arrives with the monitor closed (that is the feedback fix), so REC
+    // is what opens it, and the C-3 handoff in renderInto is what closes it
+    // again — the gesture opens and completes on the same object.
+    //
+    // Scoped to a DEVICE INPUT deliberately. A `mainMix` or `channelBus` capture
+    // is audible already by definition; opening the input monitor for one would
+    // add a signal the user did not ask to hear, and on a mic it would be the
+    // feedback loop this whole split exists to break.
+    if (e->tapes.recordSourceKind(tape) ==
+        static_cast<uint32_t>(sl::RecordSourceKind::deviceInput)) {
+        const int32_t ch = e->channels.channelForTape(tape);
+        if (ch >= 0) e->channels.setMonitor(static_cast<uint32_t>(ch), 1u);
+    }
+    e->tapes.recordStart(tape);
 }
 
 uint64_t sl_tape_record_stop(sl_engine* e, uint32_t tape) {
@@ -595,6 +634,14 @@ void sl_channel_set_mute(sl_engine* e, uint32_t channel, uint32_t muted) {
 
 uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel) {
     return e == nullptr ? 0u : e->channels.muted(channel);
+}
+
+void sl_channel_set_monitor(sl_engine* e, uint32_t channel, uint32_t on) {
+    if (e != nullptr) e->channels.setMonitor(channel, on);
+}
+
+uint32_t sl_channel_monitor(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0u : e->channels.monitorOn(channel);
 }
 
 // Non-const `e` on purpose, unlike every other getter here: these CONSUME the
@@ -873,6 +920,21 @@ uint32_t sl_hotframe(sl_engine* e, double* out, uint32_t capacity) {
     }
     out[SL_HF_slWatchdogEngaged] = e->watchdog.engaged() != 0 ? 1.0 : 0.0;
     out[SL_HF_slWatchdogGain] = e->watchdog.gain();
+
+    // THE MONITOR SWITCHES, as a bitmask (bit c = channel c's input reaches its
+    // channel). One scalar rather than eight: eight booleans are eight bits and
+    // a double carries them exactly.
+    //
+    // ⚠️ IT HAS TO BE REPORTED, not inferred from the document, because the
+    // ENGINE moves these switches itself — `sl_tape_record_start` opens one and
+    // the Law C-3 handoff closes it in the same render block (D-WZ-MON-01/02).
+    // A strip drawing MON from what it last asked for would show it lit over a
+    // closed gate the instant a loop closed, which is the exact drift
+    // `sl_deck_tempo_sync` was added to end for tempo sync.
+    uint32_t monitorMask = 0;
+    for (uint32_t c = 0; c < sl::kMaxChannels; ++c)
+        if (e->channels.monitorOn(c) != 0) monitorMask |= (1u << c);
+    out[SL_HF_slChanMonitorMask] = static_cast<double>(monitorMask);
 
     // Per-track step/pos/level and the carve blocks stay 0 (idle meters) until
     // v3 exposes the sequencer detail behind them — zero-filled, never faked.

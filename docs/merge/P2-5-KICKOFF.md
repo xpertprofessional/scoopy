@@ -118,6 +118,72 @@ sink — the one that, unexamined, meant nothing worked at all.
 Once it lands: the grid strip's creation gesture (pick a session for a strip),
 and carve's session half, both become buildable.
 
+### 3. THE COMPOSER WINDOW OPENS EMPTY — found at planning, 2026-07-27
+
+Not in the user's list because nothing has been able to reach it yet. Found by
+reading rather than by running, and it is the phase's THIRD missing-infrastructure
+line — the shape P2-STATUS says to check for before treating a plan line as UI
+work.
+
+`compose ⇱` sends `openPanelWindow {panel: 'grid', arg: deck}`. Two things go
+wrong on the way:
+
+- **The arg is dropped.** `MergedMain.cpp:191` calls `openPanelFn(panel)` and
+  nothing else; the spawned window gets `window.__slPanel` and never
+  `window.__slPanelArg`. `InstrumentPanel` and `FxSlotPanel` read that global;
+  `GridPanel` does not read it at all. So the window cannot be told which deck it
+  is for.
+- **Nothing loads a session into it.** `App.tsx:155` renders `<GridPanel>` bare.
+  The composer is served by `BrowserLink`'s `GridBackend`, and the ONLY caller of
+  `gridBackend.load()` is `CompanionPanel.tsx:85`. On the desktop this was
+  Swift's job (`WebGridBinding` served `gridMeta` / `gridPattern/<i>` /
+  `gridRuntime/<i>`), and Swift is carved off.
+
+Underneath both: **every panel window is a separate WebView with its own
+`companionEngine` store.** So even once the arg arrives, two windows holding the
+same deck would each publish their own world for it, and the stale one wins
+whenever it publishes last.
+
+**DECISION (user, 2026-07-27): COMPOSE LIVES INSIDE THE PLANE WINDOW** — a route
+or overlay beside the map, not a separate OS window. One store owns all N
+sessions and is the only publisher. This DELETES the cross-window document-relay
+problem rather than solving it, and it is what makes the per-deck session map
+sufficient on its own. `GridPanel` is still reused unmodified; what it needs is
+the `load` / `setPlaying` / `updateRuntime` wiring `CompanionPanel.tsx:69-95`
+already does, lifted so both panels share it instead of copying it.
+
+## Three more decisions, taken at planning 2026-07-27
+
+The three above were taken closing the build session. These were taken opening
+this one, after reading the code the brief describes. Settled, not proposals.
+
+**RECORD SOURCE = the rule PLUS an explicit override.** Splitting the tap makes
+a strip with a live input record `deviceInput`, and the strict form of that rule
+silently deletes a capability: today, routing strip A → strip B and pressing REC
+on B captures A. So the rule is the DEFAULT (input present → `deviceInput`, else
+`channelBus`) and the strip's EXISTING right-click source menu gains a "record
+from" section — *input · this strip's bus · main mix* — persisted on the strip.
+The status line already names the tap, so the choice is visible on the object
+rather than inferred from whether a cable happens to exist.
+
+**MON DEFAULTS OFF, AND THE AUTOMATION IS ENGINE-EXACT.** REC opens it; the Law
+C-3 record→loop handoff closes it in the SAME RENDER BLOCK; overdub keeps it
+open. That is D-WZ-MON-01 and D-WZ-MON-02 honoured rather than reinterpreted —
+neither anticipated a strip that *arrives* listening, which is the whole of the
+feedback bug. Doing the auto-close in TS off the record-stop reply would land a
+frame or two late and flam input over the loop at the one moment the ear is
+listening for the loop, so it belongs in the render. Costs new ABI
+(`sl_channel_set_monitor` / `sl_channel_monitor`) and one appended HotFrame
+scalar so the strip can show what is TRUE rather than what it last asked for —
+the same reason `sl_deck_tempo_sync` exists. Schema 87 → 88.
+
+**THE TOKEN GATE GOES GREEN THIS PHASE.** The narrow, commented exemption for
+`panels/trackControls.ts`'s named track palette is taken: a track a user called
+"Red" must not change meaning when the theme does, so this is a gap in the RULE
+and not in the code. The four real grid-UI violations get fixed. A red gate
+protects nothing, and this phase adds a schema bump and an ABI — it needs the
+gate to be able to fail.
+
 ## Definition of done — a usable set, verified twice
 
 **DECISION (user, 2026-07-27).** Nothing is called finished until this runs, in
@@ -170,6 +236,36 @@ Two failure shapes to watch for, both seen repeatedly last session:
   null-checks, so the window is survivable but not absent. A design change, not
   done unattended.
 - The strip's **`recordArm`** field has no engine call behind it.
+
+## Baseline, measured 2026-07-27 before a line was changed
+
+Run first, so nothing later has to argue about whether it was already broken.
+
+| gate | result |
+|---|---|
+| wizard `ctest` | **64/64** |
+| scoopy `vitest` | **1295/1295**, 88 files |
+| scoopy `typecheck` | clean |
+| `browser_plane_test.mjs` | **OK** — tape and grid strips both close to 340 × 196 |
+| `check:tokens` | **RED at 12**, exactly the documented split (8 palette + 4 real) |
+| `browser_grid_test.mjs` | **RED — pre-existing, and NOT a code fault** |
+| `browser_companion_audio_test.mjs` | **RED — same cause** |
+
+**The two red browser gates are one cause, and it is a stale local build
+artifact.** Both fail inside the WASM worklet with `Aborted(Assertion failed:
+shell environment detected but not enabled at build time)`.
+`web/src/audio/scoopy-engine.js` is **gitignored** (`web/src/audio/.gitignore`) —
+a build product, not source — and the copy in this checkout is from **2026-07-24**,
+older than everything P2 has done to the ABI. `engine/CMakeLists.txt:248` builds
+it with `-sENVIRONMENT=web,worker,node`, which does not cover an
+`AudioWorkletGlobalScope`. `emsdk` is present at `~/emsdk` but not on `PATH`.
+
+Scope note: this is the BROWSER companion's own WASM audio path. The merged
+desktop app does not use it — it publishes through `NativeWorldSink` into the
+real engine — so it does not block any increment below. It does mean the
+companion's regression gate for increment 2 is `vitest` + `typecheck`, and that
+`browser_grid_test` cannot be the proof it was meant to be until the artifact is
+rebuilt. **Rebuilding it is a decision, not a step taken unattended.**
 
 ## Repo state
 

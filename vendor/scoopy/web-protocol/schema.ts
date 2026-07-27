@@ -12,7 +12,7 @@ import type { MethodOf, ParamsOf, ResultOf } from "./types.ts";
  * Bump SCHEMA_VERSION on any breaking change and update both sides in the
  * same increment. Publishes across mismatched versions are refused.
  */
-export const SCHEMA_VERSION = 87; // v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
+export const SCHEMA_VERSION = 88; // v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
 
 // ---------------------------------------------------------------------------
 // ParamWrite — fine-grained live controls (audio-thread atomics on the
@@ -275,7 +275,26 @@ export const HOT_FRAME_SCALARS = [
   // the gain it is applying (1.0 = not limiting). Global, not per strip — the
   // RMS limiter is on the main pair.
   "slWatchdogEngaged", "slWatchdogGain",
+  // ── THE MONITOR SWITCHES (merge P2-5 increment 1) ────────────────────────
+  //
+  // All eight channels' monitor state as a BITMASK: bit c = channel c's input
+  // reaches its channel. One scalar rather than eight, because eight booleans
+  // are eight bits and a float64 carries them exactly — and appending eight
+  // near-empty scalars to carry one bit each would cost more to read than the
+  // mask does to decode.
+  //
+  // ⚠️ IT HAS TO BE HERE RATHER THAN INFERRED FROM THE DOCUMENT, because the
+  // ENGINE moves these switches by itself: record-start opens one
+  // (D-WZ-MON-01), the Law C-3 record→loop handoff closes it in the same render
+  // block (D-WZ-MON-02). A strip drawing MON from what it last asked for would
+  // show it lit over a closed gate the moment a loop closed — the exact drift
+  // `sl_deck_tempo_sync` was added to end for tempo sync.
+  "slChanMonitorMask",
 ] as const;
+
+/** Is channel `channel`'s monitor open, decoded from `slChanMonitorMask`? */
+export const slChannelMonitorOn = (mask: number, channel: number): boolean =>
+  (Math.round(mask) & (1 << channel)) !== 0;
 
 /** X-MIX carve: 8 nodes (decks A/B/C · FX returns 1–4 · input) × 6 bands. */
 export const CARVE_NODES = 8;
@@ -1520,7 +1539,7 @@ export const COMMANDS = {
   // required field is a loud refusal there, not a silent default here.
   slChannel: {
     params: z.object({
-      action: z.enum(["setSource", "setLevel", "setMute", "setSend"]),
+      action: z.enum(["setSource", "setLevel", "setMute", "setSend", "setMonitor"]),
       channel: z.number().int().min(0).max(7),
       /** setSource: 0 none · 1 tape · 2 gridDeck (sl_channel_set_source). */
       kind: z.number().int().min(0).max(2).optional(),
@@ -1532,8 +1551,23 @@ export const COMMANDS = {
       send: z.number().int().min(0).max(3).optional(),
       /** setMute. */
       muted: z.boolean().optional(),
+      /** setMonitor: does this strip's DEVICE INPUT reach the channel?
+          NOT a second mute — `muted` is the channel's OUTPUT (it silences the
+          strip and everything routed from it, including a tape playing back),
+          while this gates only the input's path IN. The record path is
+          untouched either way, so a take captured with the monitor closed holds
+          the same audio as one captured with it open — which is what makes
+          recording a mic without hearing it possible at all, and what lets a
+          feedback loop be broken without losing the take. */
+      on: z.boolean().optional(),
     }).strict(),
-    result: z.object({ ok: z.boolean() }).strict(),
+    /** `monitor` comes back on setMonitor, and it is THE ENGINE'S state rather
+        than an echo of the request. The engine moves that switch itself —
+        record-start opens it, the Law C-3 record→loop handoff closes it in the
+        same render block (D-WZ-MON-01/02) — so a UI drawing what it last asked
+        for would show a lit MON over a closed gate. Same discipline that
+        `sl_deck_tempo_sync` exists for: display what is TRUE. */
+    result: z.object({ ok: z.boolean(), monitor: z.boolean().optional() }).strict(),
   },
   slTape: {
     params: z.object({

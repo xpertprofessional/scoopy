@@ -1,5 +1,5 @@
 {
-  "sharedCommit": "fdae657d243db9c7af27b2f9139738ffc2566574",
+  "sharedCommit": "ec01e16521c38e656b94c6d887b81d3e542c3dc2",
   "sharedRoot": "../scoopy",
   "files": {
     "vendor/scoopy/ScoopyLoops/NativeAudioEngineCore.cpp": {
@@ -132,14 +132,14 @@
     },
     "vendor/scoopy/web-protocol/schema.ts": {
       "from": "web/protocol/schema.ts",
-      "sha256": "c911a2a2b3a7a8b8002948d24fa66f6dfb2734510fa2a5d77a1db65f7ffcdf42"
+      "sha256": "bccbd1e29222acf106b4783fe9fb41146420261675e3f2ced128e7c890c28128"
     },
     "vendor/scoopy/webdist": {
       "from": "webdist",
       "exclude": [
         ".map"
       ],
-      "sha256": "acc96559660c6a8db9547d2b9e7d9c287ba0ba70e05cc081abae29a73c96e468"
+      "sha256": "6efb3f3c7b0841291668105e6221f758baabfe3de30889c60290d3f499c5fc85"
     },
     "vendor/scoopy/web-protocol/scoopy-worklet.js": {
       "from": "web/src/audio/scoopy-worklet.js",

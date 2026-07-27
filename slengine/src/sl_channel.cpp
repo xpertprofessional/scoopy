@@ -75,6 +75,7 @@ void ChannelBank::configure(double sampleRate, uint32_t maxBlockFrames) {
         prevR_[c].assign(maxBlockFrames, 0.0f);
         inL_[c].assign(maxBlockFrames, 0.0f);
         inR_[c].assign(maxBlockFrames, 0.0f);
+        mon_[c].assign(maxBlockFrames, 0.0f);
     }
     // ROUTES ARE NOT TOUCHED HERE, and that is the whole point of this comment.
     //
@@ -394,6 +395,15 @@ uint32_t ChannelBank::muted(uint32_t ch) const {
     return ch >= kMaxChannels ? 0u : channels_[ch].mute.load(std::memory_order_relaxed);
 }
 
+void ChannelBank::setMonitor(uint32_t ch, uint32_t on) {
+    if (ch >= kMaxChannels) return;
+    channels_[ch].monitor.store(on != 0 ? 1u : 0u, std::memory_order_relaxed);
+}
+
+uint32_t ChannelBank::monitorOn(uint32_t ch) const {
+    return ch >= kMaxChannels ? 0u : channels_[ch].monitor.load(std::memory_order_relaxed);
+}
+
 double ChannelBank::consumePeakL(uint32_t ch) {
     if (ch >= kMaxChannels) return 0.0;
     return channels_[ch].peakL.exchange(0.0, std::memory_order_relaxed);
@@ -443,6 +453,19 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
         std::copy_n(outR_[c].data(), frames, prevR_[c].data());
         std::fill_n(inL_[c].data(), frames, 0.0f);
         std::fill_n(inR_[c].data(), frames, 0.0f);
+
+        // THE MONITOR GATE for this block, materialised once per channel.
+        // Advanced HERE and not inside pour() because a channel can be fed by
+        // more than one device-input cable, and gliding a shared scalar per
+        // route would run the ramp once per cable — two inputs would fade in at
+        // twice the speed of one. See Channel::monitor.
+        Channel& mc = channels_[c];
+        const double tgtMon = mc.monitor.load(std::memory_order_relaxed) != 0 ? 1.0 : 0.0;
+        float* mg = mon_[c].data();
+        for (uint32_t i = 0; i < frames; ++i) {
+            glide(mc.smMonitor, tgtMon, alpha);
+            mg[i] = static_cast<float>(mc.smMonitor);
+        }
     }
 
     /** Pour one route's source into its destination. ONE dispatch for every
@@ -499,11 +522,18 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
         float* dLf = nullptr;
         float* dRf = nullptr;
         bool mono = false;
+        // The destination strip's MONITOR curve, when this cable is that
+        // strip's device input. Null for every other cable: MON is the strip's
+        // own listening switch, not a second mute — a signal arriving from
+        // another strip, an FX return or a send tap is not this strip's
+        // monitoring and must be unaffected.
+        const float* gate = nullptr;
         switch (dk) {
             case DestEndpoint::channelIn:
                 if (di >= kMaxChannels) return;
                 dLf = inL_[di].data();
                 dRf = inR_[di].data();
+                if (sk == SourceEndpoint::deviceInput) gate = mon_[di].data();
                 break;
             case DestEndpoint::sendBus:
                 if (di >= kNumSends) return;
@@ -527,7 +557,7 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
         double sm = rt.smGain.load(std::memory_order_relaxed);
         for (uint32_t i = 0; i < frames; ++i) {
             glide(sm, tgt, alpha);
-            const double g = sm * extra;
+            const double g = sm * extra * (gate != nullptr ? gate[i] : 1.0);
             if (mono) {
                 dLf[i] += static_cast<float>(0.5 * (sL[i] + sR[i]) * g);
             } else {

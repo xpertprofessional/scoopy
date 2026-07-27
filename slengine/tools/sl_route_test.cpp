@@ -285,12 +285,35 @@ int main() {
     CHECK(sl_route_add_ex(e, 2 /* deviceInput */, 2, 3, 0 /* channelIn */, 0, 1.0, 0) >= 0);
     std::vector<float> zero(kQ, 0.0f), inA(kQ, 0.5f), inB(kQ, -0.25f);
     const float* ins[4] = {zero.data(), zero.data(), inA.data(), inB.data()};
-    for (int b = 0; b < 300; ++b) {
-        for (auto& l : lane) std::fill(l.begin(), l.end(), 0.0f);
-        sl_render_io(e, ins, 4, lanes.data(), kLanes, kQ);
-    }
+    const auto renderIn = [&] {
+        for (int b = 0; b < 300; ++b) {
+            for (auto& l : lane) std::fill(l.begin(), l.end(), 0.0f);
+            sl_render_io(e, ins, 4, lanes.data(), kLanes, kQ);
+        }
+    };
+
+    // …BUT THE STRIP DOES NOT HEAR IT UNTIL THE MONITOR IS OPEN. The cable is
+    // patched and REC would capture through it; the monitor decides whether it
+    // is also audible. Closed is the default because a strip that arrives
+    // listening is a strip that arrives feeding back — see Channel::monitor.
+    CHECK(sl_channel_monitor(e, 0) == 0u);
+    renderIn();
+    CHECK(std::abs(lane[0][0]) < 1e-3f);
+    CHECK(std::abs(lane[1][0]) < 1e-3f);
+
+    sl_channel_set_monitor(e, 0, 1u);
+    CHECK(sl_channel_monitor(e, 0) == 1u);
+    renderIn();
     CHECK(std::abs(lane[0][0] - 0.5f) < 1e-3f);  // L from input 2
     CHECK(std::abs(lane[1][0] + 0.25f) < 1e-3f); // R from input 3
+
+    // The gate is a GAIN, not a disconnection: it glides on the same 10 ms
+    // constant as everything else, so flipping it under a live signal is a fade
+    // rather than a click, and it lands exactly on 0 and 1 rather than near them.
+    sl_channel_set_monitor(e, 0, 0u);
+    renderIn();
+    CHECK(std::abs(lane[0][0]) < 1e-3f);
+    sl_channel_set_monitor(e, 0, 1u);
 
     // --- A RATE CHANGE MUST NOT EAT THE PATCH -------------------------------
     // SlRenderSink::setSampleRate does a stop → set → start rebuild on EVERY

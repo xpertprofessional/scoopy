@@ -36,7 +36,8 @@ constexpr int kTapeState0 = 292;
 constexpr int kTapeCap0 = 300;
 constexpr int kWatchdogEngaged = 308;
 constexpr int kWatchdogGain = 309;
-constexpr int kLength = 326;
+constexpr int kMonitorMask = 310;
+constexpr int kLength = 327;
 } // namespace
 
 int main() {
@@ -148,6 +149,21 @@ int main() {
         // rather than guess a threshold.
         CHECK(frame[kWatchdogEngaged] == 0.0);
         CHECK(std::abs(frame[kWatchdogGain] - 1.0) < 1e-9);
+
+        // THE MONITOR MASK — one bit per channel, and the frame is the ONLY way
+        // a strip can know: the engine opens the switch at record-start and
+        // closes it at the Law C-3 handoff, so the document's intent and the
+        // engine's state are routinely different on purpose.
+        CHECK(frame[kMonitorMask] == 0.0); // every monitor closed by default
+        sl_channel_set_monitor(e, 2, 1u);
+        sl_channel_set_monitor(e, 5, 1u);
+        sl_render(e, buses, 2, 512);
+        sl_hotframe(e, frame.data(), (uint32_t) frame.size());
+        // Bits 2 and 5 → 4 + 32. Asserted as the exact number rather than a
+        // bit test, so a mask emitted with the wrong SHIFT cannot pass.
+        CHECK(frame[kMonitorMask] == 36.0);
+        sl_channel_set_monitor(e, 2, 0u);
+        sl_channel_set_monitor(e, 5, 0u);
 
         // Still no NaNs anywhere now that the whole frame has real sources.
         for (int i = 0; i < kLength; ++i) CHECK(std::isfinite(frame[i]));

@@ -20,10 +20,14 @@ namespace {
     } while (0)
 
 int main() {
-    // Length and the spectrum split (schema.ts: 310 scalars + 16 bins = 326).
-    // Was 268/284 before the plane's 42 scalars were APPENDED (merge P2 step 4).
-    CHECK(SL_HOTFRAME_LENGTH == 326);
-    CHECK(SL_HOTFRAME_SCALAR_COUNT == 310);
+    // Length and the spectrum split (schema.ts: 311 scalars + 16 bins = 327).
+    // Was 268/284 before the plane's 42 scalars were APPENDED (merge P2 step 4),
+    // and 310/326 before the monitor mask joined them (merge P2-5).
+    //
+    // RESTATED BY HAND on purpose: if the emitter and schema.ts ever disagree
+    // this has to FAIL rather than move in lockstep with a regenerated header.
+    CHECK(SL_HOTFRAME_LENGTH == 327);
+    CHECK(SL_HOTFRAME_SCALAR_COUNT == 311);
     CHECK(SL_HOTFRAME_SPECTRUM_COUNT == 16);
     CHECK(SL_HOTFRAME_SPECTRUM_BASE == SL_HOTFRAME_SCALAR_COUNT);
     CHECK(SL_HOTFRAME_SPECTRUM_BASE + SL_HOTFRAME_SPECTRUM_COUNT == SL_HOTFRAME_LENGTH);
@@ -50,6 +54,8 @@ int main() {
     CHECK(SL_HF_slTapeCap0 == 300);
     CHECK(SL_HF_slWatchdogEngaged == 308);
     CHECK(SL_HF_slWatchdogGain == 309);
+    // The split tap's one scalar, APPENDED after the watchdog (merge P2-5).
+    CHECK(SL_HF_slChanMonitorMask == 310);
 
     // The emitter indexes these blocks as `base + i` over 8 channels/tapes, so
     // they must be CONTIGUOUS and in order. If a future schema edit interleaved

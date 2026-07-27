@@ -308,6 +308,36 @@ double sl_channel_send(const sl_engine* e, uint32_t channel, uint32_t send);
 void sl_channel_set_mute(sl_engine* e, uint32_t channel, uint32_t muted);
 uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel);
 
+/** THE MONITOR SWITCH — whether this strip's DEVICE INPUT reaches the channel.
+    Default 0. Ramped like every other gain, so flipping it live is a 10 ms fade.
+
+    IT IS NOT A SECOND MUTE, and the difference is the whole point. `mute` is the
+    channel's OUTPUT: it silences the strip and everything routed from it,
+    including a tape playing back. This gates only the input's path INTO the
+    channel, and it does not touch the record path at all:
+
+        input ──┬─▶ REC                        always captured
+                └─▶ [monitor] ─▶ channel ─▶ main
+
+    So a take recorded with the monitor CLOSED contains exactly the same audio as
+    one recorded with it open — which is what makes recording a mic without
+    hearing it possible, and what lets a feedback loop be broken without losing
+    the take. Before the split those were the same signal path and neither was
+    possible (see sl_channel.h's Channel::monitor for the collision it resolves).
+
+    Cables from other strips, FX returns and send taps are UNAFFECTED: monitoring
+    is about this strip's own input, and gating everything would just be `mute`
+    spelled differently.
+
+    THE ENGINE MOVES THIS SWITCH ITSELF at exactly two instants, per the signed
+    monitor decisions — `sl_tape_record_start` opens it when the tape's source is
+    a device input (D-WZ-MON-01), and the Law C-3 record→loop handoff closes it
+    in the SAME render block (D-WZ-MON-02; overdub never does, so layering keeps
+    the input live). A UI must therefore display `sl_channel_monitor()`, not what
+    it last asked for — the same discipline `sl_deck_tempo_sync` exists for. */
+void sl_channel_set_monitor(sl_engine* e, uint32_t channel, uint32_t on);
+uint32_t sl_channel_monitor(const sl_engine* e, uint32_t channel);
+
 /** This channel's OUTPUT peak since the last call — the strip meter's source.
 
     READ-AND-RESET, mirroring the core's own output peak, so the caller's 30 Hz

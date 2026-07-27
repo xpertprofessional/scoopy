@@ -397,6 +397,7 @@ std::vector<std::unique_ptr<TapeChunk>>& TapeBank::retireSink() {
 
 void TapeBank::beginBlock(uint64_t blockStartSample) {
     renderBlock_.fetch_add(1, std::memory_order_release);
+    uint32_t handoffs = 0;
     for (uint32_t ti = 0; ti < kMaxTapes; ++ti) {
         Tape& d = tapes_[ti];
         const uint32_t arm = recArm_[ti].exchange(0, std::memory_order_acq_rel);
@@ -422,6 +423,11 @@ void TapeBank::beginBlock(uint64_t blockStartSample) {
                     d.pendingReset.store(0, std::memory_order_relaxed);
                     d.state.store(static_cast<uint32_t>(TapeState::looping),
                                   std::memory_order_release);
+                    // D-WZ-MON-02: the loop has replaced the live input, so the
+                    // strip carrying this tape should stop monitoring — in THIS
+                    // block, before anything is mixed. The tape cannot reach a
+                    // channel; the engine does it one phase later, off this bit.
+                    handoffs |= (1u << ti);
                 } else {
                     d.state.store(static_cast<uint32_t>(TapeState::idle),
                                   std::memory_order_release);
@@ -429,6 +435,16 @@ void TapeBank::beginBlock(uint64_t blockStartSample) {
             }
         }
     }
+    loopHandoffs_.store(handoffs, std::memory_order_release);
+}
+
+uint32_t TapeBank::consumeLoopHandoffs() {
+    return loopHandoffs_.exchange(0u, std::memory_order_acq_rel);
+}
+
+uint32_t TapeBank::recordSourceKind(uint32_t tape) const {
+    if (tape >= kMaxTapes) return 0u;
+    return static_cast<uint32_t>(tapes_[tape].recSrcKind);
 }
 
 void TapeBank::captureFrom(uint32_t tapeIndex, const float* srcL, const float* srcR,

@@ -413,6 +413,28 @@ public:
 
     // --- render phases (audio thread) ----------------------------------------
     void beginBlock(uint64_t blockStartSample);
+
+    /** Which tapes completed the Law C-3 record→loop handoff in the block
+        beginBlock() just opened, as a bitmask, CONSUMED by the read.
+
+        Exists so D-WZ-MON-02 can be honoured exactly: at the handoff the deck's
+        own monitor switch closes, because input + loop together the instant a
+        loop closes is doubling rather than information. The tape cannot do that
+        itself — it knows nothing about channels — so the ENGINE reads this
+        between phase 1 and phase 5 and closes the monitor of whichever channel
+        carries the tape, which lands the close in the SAME BLOCK the loop starts.
+
+        Only the record-stop→looping transition sets a bit. Overdub never does,
+        and that is not an oversight: overdub layers onto an already-looping tape
+        without passing through this handoff, so "overdub keeps the switch open"
+        falls out of the structure instead of needing a flag to remember. */
+    uint32_t consumeLoopHandoffs();
+
+    /** What this tape would capture. The engine needs it to decide whether a
+        record-start should open the monitor — you monitor an INPUT you are
+        capturing, not the main mix (which is already audible by definition, and
+        monitoring it would be a loop). */
+    uint32_t recordSourceKind(uint32_t tape) const;
     void captureInputs(const float* const* inBus, uint32_t inCount, uint32_t frames,
                        double sampleRate, uint64_t blockStartSample);
     void renderPlayback(const float* const* inBus, uint32_t inCount, uint32_t frames,
@@ -469,6 +491,12 @@ private:
     // Counts render blocks, so the control thread can tell that the audio
     // thread has moved on since a retirement.
     std::atomic<uint64_t> renderBlock_{0};
+
+    /** Tapes that handed off to looping in the current block (see
+        consumeLoopHandoffs). Written by the render, read and cleared by the
+        render one phase later — atomic only because it crosses the phase
+        boundary through a public getter. */
+    std::atomic<uint32_t> loopHandoffs_{0};
     std::vector<float> outL_[kMaxTapes];
     std::vector<float> outR_[kMaxTapes];
     SourceRing drain_[kMaxTapes];

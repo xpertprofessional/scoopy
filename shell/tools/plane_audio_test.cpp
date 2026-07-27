@@ -155,9 +155,25 @@ int main() {
     CHECK(replyOk(patched));
     CHECK((bool) patched.getProperty("result", juce::var()).getProperty("ok", false));
 
-    // With the input patched, the strip is audible on main BEFORE anything is
-    // recorded — a live-input strip is just a strip whose element is absent.
-    for (int b = 0; b < 8; ++b) render(0.5); // let the route's ramp settle
+    // ⚠️ AND IT ARRIVES SILENT, WHICH IS THE FIX FOR THE FEEDBACK BUG.
+    //
+    // This assertion used to read `peak > 0.05` — a strip arrived with its input
+    // patched AND audible, and nothing could turn it off: `M` mutes the channel
+    // OUTPUT, so the only control that stopped the feedback also killed the tape.
+    // With a mic on the input that is a loop you cannot break without deleting
+    // the strip.
+    //
+    // The monitor now defaults CLOSED (sl_channel.h, Channel::monitor). The
+    // cable is still there and REC still captures through it; what changed is
+    // that hearing it is a decision.
+    for (int b = 0; b < 16; ++b) render(0.5); // more than the ramp needs
+    CHECK(peak(lane[0]) < 1e-3);
+    CHECK(peak(lane[1]) < 1e-3);
+
+    // Open the monitor and the SAME cable is audible, with nothing else touched.
+    CHECK(replyOk(cmd("slChannel", R"({"action":"setMonitor","channel":0,"on":true})")));
+    CHECK(sl_channel_monitor(e, 0) == 1u);
+    for (int b = 0; b < 8; ++b) render(0.5); // let the monitor's ramp settle
     CHECK(peak(lane[0]) > 0.05);
     CHECK(peak(lane[1]) > 0.05);
 
@@ -226,12 +242,20 @@ int main() {
     // FIRST matters: the record source is the channel bus, and a channel bound
     // to nothing has no bus to capture.
     CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":0,"kind":1,"index":0})")));
-    // sourceKind 2 = channelBus, chan0 = the CHANNEL index (not an input). ONE
-    // command does the whole order-critical sequence — set source, pre-allocate,
-    // arm, open the file — which is why it is one command.
+    // sourceKind 0 = deviceInput, chan0 = the INPUT channel.
+    //
+    // ⚠️ THIS USED TO BE channelBus (kind 2), and the change is the split tap.
+    // A strip with a live input now records the input DIRECTLY, so the take no
+    // longer depends on whether the user happens to be monitoring: capture and
+    // monitoring stopped being the same signal path. A strip with no live input
+    // still records its channel bus, which is where the "one tap" argument
+    // still holds and where routed material is captured from.
+    //
+    // ONE command does the whole order-critical sequence — set source,
+    // pre-allocate, arm, open the file — which is why it is one command.
     const auto started = cmd(
         "slRecord",
-        R"({"action":"start","tape":0,"sourceKind":2,"chan0":0,"chan1":-1,"sourceDesc":"test input"})");
+        R"({"action":"start","tape":0,"sourceKind":0,"chan0":0,"chan1":-1,"sourceDesc":"test input"})");
     CHECK(replyOk(started));
     CHECK((bool) started.getProperty("result", juce::var()).getProperty("ok", false));
 
@@ -845,6 +869,178 @@ int main() {
         }
 
         std::filesystem::remove_all(mapsDir);
+    }
+
+    // ── 15. THE SPLIT TAP (P2-5 increment 1) ─────────────────────────────────
+    //
+    // THE ASSERTION THIS SECTION EXISTS FOR: a take recorded with the monitor
+    // CLOSED contains the same audio as one recorded with it open.
+    //
+    // That single equality is what "record without hearing" means, and before
+    // the split it was impossible by construction — the record tap WAS the
+    // channel bus, so silencing the input to stop a feedback loop made REC
+    // capture silence. Everything else here is scaffolding for that comparison.
+    //
+    // A fresh strip on channel 3 / tape 3, so none of the state above matters.
+    {
+        // Fresh ground, for the same reason §11 needs it: §13 left a GRID DECK
+        // playing, and the core mixes a deck into main ITSELF — muting the
+        // strip channels would not touch it, because the channel projects onto
+        // the core rather than routing it. Anything audible below has to be
+        // attributable to this one strip.
+        for (int d = 0; d < static_cast<int>(sl_deck_count()); ++d) {
+            const auto stop = juce::String(R"({"action":"publish","world":{"deck":)") +
+                              juce::String(d) +
+                              R"(,"bpm":120,"isPlaying":false,"startStep":0,
+                    "tracks":[{"sampleId":"tone","steps":[0,0,0,0],"volume":0.0}]}})";
+            dispatch("slWorld", juce::JSON::parse(stop), settings, e, &services);
+        }
+        for (uint32_t id = 0; id < sl_route_capacity(); ++id)
+            if (sl_route_active(e, id) != 0) sl_route_remove(e, id);
+        // Tape 0 is still looping from §6/§7 and would sum in through channel 0.
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":2})")));
+        for (int b = 0; b < 32; ++b) render(0.0); // let every ramp reach zero
+        CHECK(peak(lane[0]) < 1e-3);              // the ground really is clear
+
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":3,"kind":1,"index":3})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setLevel","channel":3,"level":1.0})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":3,"muted":false})")));
+        CHECK(replyOk(cmd(
+            "slRoute",
+            R"({"action":"add","srcKind":2,"srcIndex":0,"srcSub":1,"dstKind":0,"dstIndex":3,"gain":1.0})")));
+        CHECK(replyOk(cmd(
+            "slRoute", R"({"action":"add","srcKind":0,"srcIndex":3,"dstKind":2,"dstIndex":0,"gain":1.0})")));
+        // Small cap so the two takes below are short and quick to compare.
+        sl_tape_set_record_cap_frames(e, 3, static_cast<uint64_t>(kQ) * 32);
+
+        // A monitor is CLOSED on a fresh channel — the same arrival state §3
+        // pins, checked here on a channel that was never touched by the UI.
+        CHECK(sl_channel_monitor(e, 3) == 0u);
+        for (int b = 0; b < 16; ++b) render(0.5);
+        CHECK(peak(lane[0]) < 1e-3);
+
+        /** Record `blocks` blocks into tape 3 and return the take's peak — 0 if
+            any step of the sequence was refused, which the caller's `> 0.05`
+            already catches. (CHECK returns an int and would not compile inside a
+            double-returning lambda; making it compile by widening the return
+            type would let a refused command pass as a peak of 1.0, so the
+            refusals are folded into `ok` and checked outside instead.)
+
+            Read back from the ENGINE's own buffer rather than from the file:
+            this compares what was CAPTURED, and a file round trip would drag WAV
+            quantisation into an equality that is about the signal path. */
+        bool recOk = true;
+        const auto recordTake = [&](int blocks) -> double {
+            recOk = recOk && replyOk(cmd("slRecord",
+                                         R"({"action":"start","tape":3,"sourceKind":0,)"
+                                         R"("chan0":0,"chan1":-1,"sourceDesc":"split tap"})"));
+            for (int b = 0; b < blocks; ++b) render(0.5);
+            recOk = recOk && replyOk(cmd("slRecord", R"({"action":"stop","tape":3})"));
+            render(0.0); // the stop lands at the next block boundary
+            const auto n = sl_tape_frames(e, 3);
+            if (n == 0) return 0.0;
+            std::vector<float> mn(64, 0.0f), mx(64, 0.0f);
+            const auto cols = sl_tape_waveform(e, 3, 0, 0, n, 64, mn.data(), mx.data());
+            double p = 0.0;
+            for (uint32_t i = 0; i < cols; ++i)
+                p = std::max(p, std::max(std::abs((double) mn[i]), std::abs((double) mx[i])));
+            return p;
+        };
+
+        // (a) MONITOR CLOSED — silent out, and REC still captures.
+        const double takeClosed = recordTake(20);
+        CHECK(recOk);
+        CHECK(takeClosed > 0.05);
+
+        // ⚠️ AND THE ARMING OPENED IT. D-WZ-MON-01: armed to record means you
+        // hear what you are capturing, and the engine does that itself rather
+        // than relying on a UI to remember. Read from the ENGINE, because after
+        // this the switch is no longer where the document last put it.
+        CHECK(sl_channel_monitor(e, 3) == 1u);
+
+        // (b) MONITOR OPEN — audible, and the take is the SAME.
+        for (int b = 0; b < 8; ++b) render(0.5);
+        double heard = 0.0;
+        for (int b = 0; b < 8; ++b) { render(0.5); heard = std::max(heard, peak(lane[0])); }
+        CHECK(heard > 0.05);
+
+        const double takeOpen = recordTake(20);
+        // THE EQUALITY. Same source, same level, same length — so the two takes
+        // must agree to well within the tolerance of where the sine happened to
+        // be when each capture started.
+        CHECK(std::abs(takeOpen - takeClosed) < 0.02);
+
+        // (c) THE LAW C-3 HANDOFF CLOSES IT, IN THE SAME BLOCK (D-WZ-MON-02).
+        //
+        // Input + loop together the instant a loop closes is doubling, not
+        // information. `render(0.0)` below feeds SILENCE, so the only thing that
+        // could still be heard is the loop itself — and the monitor must
+        // already be shut when the first post-handoff block is mixed, not a
+        // frame or two later off a reply.
+        sl_tape_set_loop(e, 3, 1u, 0, 0);
+        CHECK(replyOk(cmd("slRecord",
+                          R"({"action":"start","tape":3,"sourceKind":0,"chan0":0,"chan1":-1,)"
+                          R"("sourceDesc":"handoff"})")));
+        for (int b = 0; b < 20; ++b) render(0.5);
+        CHECK(sl_channel_monitor(e, 3) == 1u); // open while capturing
+        CHECK(replyOk(cmd("slRecord", R"({"action":"stop","tape":3})")));
+        render(0.5); // THE handoff block — the input is still hot on the wire
+        CHECK(sl_tape_state(e, 3) == 1u);       // looping: the handoff happened
+        CHECK(sl_channel_monitor(e, 3) == 0u);  // …and the switch is already shut
+
+        // (d) OVERDUB KEEPS IT OPEN — the other half of D-WZ-MON-02, and the
+        // reason the close is scoped to the handoff rather than to "recording
+        // stopped": hearing the input against the loop IS overdubbing.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMonitor","channel":3,"on":true})")));
+        sl_tape_overdub_start(e, 3, 0);
+        for (int b = 0; b < 8; ++b) render(0.5);
+        sl_tape_overdub_stop(e, 3);
+        for (int b = 0; b < 4; ++b) render(0.5);
+        CHECK(sl_channel_monitor(e, 3) == 1u);
+
+        // (e) MUTE AND MONITOR ARE DIFFERENT CONTROLS. The bug that started
+        // this: `M` was the only way to stop the feedback, and it killed the
+        // tape too. Muting the strip must silence the OUTPUT while the monitor
+        // switch keeps its own state — the tape below is still looping.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":3,"muted":true})")));
+        for (int b = 0; b < 40; ++b) render(0.5);
+        double mutedOut = 0.0;
+        for (int b = 0; b < 10; ++b) { render(0.5); mutedOut = std::max(mutedOut, peak(lane[0])); }
+        CHECK(mutedOut < 1e-3);
+        CHECK(sl_channel_monitor(e, 3) == 1u);  // untouched by the mute
+        CHECK(sl_tape_state(e, 3) == 1u);       // and the tape never stopped
+
+        // …and closing the monitor while UNMUTED silences the input without
+        // stopping the tape, which is the whole point of having both.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":3,"muted":false})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMonitor","channel":3,"on":false})")));
+        for (int b = 0; b < 40; ++b) render(0.5);
+        double loopOnly = 0.0;
+        for (int b = 0; b < 10; ++b) { render(0.5); loopOnly = std::max(loopOnly, peak(lane[0])); }
+        CHECK(loopOnly > 0.05); // the tape, still audible, with the input shut
+
+        // (f) A CABLE FROM ANOTHER STRIP IS NOT MONITORING. MON must gate this
+        // strip's own input and nothing else, or it is just `mute` again under
+        // a second name. Channel 4 takes the input (monitor open) and feeds
+        // channel 3, whose own monitor is CLOSED — and channel 3 must still
+        // pass it.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":3,"muted":true})")));
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":3,"mode":2})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":4,"kind":0,"index":0})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMonitor","channel":4,"on":true})")));
+        CHECK(replyOk(cmd(
+            "slRoute",
+            R"({"action":"add","srcKind":2,"srcIndex":0,"srcSub":1,"dstKind":0,"dstIndex":4,"gain":1.0})")));
+        // Channel 4 has no path to main of its own, so anything heard travelled
+        // the chain 4 → 3 → main.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":3,"muted":false})")));
+        CHECK(replyOk(cmd(
+            "slRoute", R"({"action":"add","srcKind":0,"srcIndex":4,"dstKind":0,"dstIndex":3,"gain":1.0})")));
+        CHECK(sl_channel_monitor(e, 3) == 0u); // still closed, deliberately
+        for (int b = 0; b < 40; ++b) render(0.5);
+        double chained = 0.0;
+        for (int b = 0; b < 10; ++b) { render(0.5); chained = std::max(chained, peak(lane[0])); }
+        CHECK(chained > 0.05);
     }
 
     // The take is enumerable, which is what makes it reloadable tomorrow.

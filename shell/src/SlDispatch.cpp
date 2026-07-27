@@ -65,7 +65,7 @@ juce::var capabilities() {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 87);
+    obj->setProperty("schemaVersion", 88);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -182,6 +182,22 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         if (action == "setMute") {
             sl_channel_set_mute(engine, ch, boolProp(params, "muted") ? 1u : 0u);
             return ok(okFlag());
+        }
+        // THE MONITOR SWITCH — whether this strip's device input reaches the
+        // channel. Distinct from mute, which is the channel's OUTPUT: the two
+        // were conflated and `M` was the only way to stop an input feeding back,
+        // which also killed the tape. See sl_engine.h's sl_channel_set_monitor.
+        //
+        // The reply carries the state the ENGINE ended up in, not the request,
+        // because the engine moves this switch itself at record-start and at the
+        // Law C-3 handoff — a caller that assumed its own value would draw a lit
+        // MON over a closed gate.
+        if (action == "setMonitor") {
+            sl_channel_set_monitor(engine, ch, boolProp(params, "on") ? 1u : 0u);
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ok", true);
+            o->setProperty("monitor", sl_channel_monitor(engine, ch) != 0);
+            return ok(juce::var(o));
         }
         if (action == "setSend") {
             sl_channel_set_send(engine, ch, static_cast<uint32_t>(intProp(params, "send")),

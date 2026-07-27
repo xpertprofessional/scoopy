@@ -159,6 +159,40 @@ struct Channel {
     std::atomic<double> send[kNumSends];
     std::atomic<uint32_t> mute{0};
 
+    /** THE MONITOR SWITCH — whether this strip's DEVICE INPUT reaches the
+        channel. Default 0, and that default is the fix for a real bug.
+
+        THE COLLISION IT RESOLVES. STRIP-MODEL's closing argument is that
+        recording is always "capture this strip's channel bus" — one tap, one
+        code path, every source. But a live input is modelled as a route INTO the
+        channel, so monitoring and recording shared one path: silencing the input
+        to stop a feedback loop also made REC capture silence, and `mute` (which
+        is the channel OUTPUT) silenced the tape along with it. Record-without-
+        hearing was impossible by construction, and a strip arrived with a mic
+        permanently patched and no way to turn it off.
+
+        So the tap is SPLIT. The input still reaches REC directly (a `deviceInput`
+        record source is captured before anything renders — TapeBank phase 2),
+        while this gate decides whether it also reaches the channel:
+
+            input ──┬─▶ REC                     always captured
+                    └─▶ [monitor] ─▶ channel ─▶ main
+
+        It gates ONLY `deviceInput → channelIn` pours. A cable from another
+        strip, an FX return or a send tap is not this strip's monitoring and is
+        untouched — otherwise MON would be a second mute with a different name.
+        The cable itself keeps its gain and stays visible in the ledger: the
+        monitor is a property of the STRIP, not of the patch.
+
+        Costs the purity of "one tap" for input strips specifically, and buys the
+        normal studio case plus a way to kill feedback that does not kill the
+        take. D-WZ-MON-01/02 are honoured by the ENGINE (sl_engine.cpp's render):
+        record-start opens it, the Law C-3 handoff closes it in the SAME block,
+        overdub keeps it open. Doing that close on the message thread off a
+        record-stop reply would land a frame or two late and flam the input over
+        the loop at the exact moment the ear is listening for the loop. */
+    std::atomic<uint32_t> monitor{0};
+
     /** Peak magnitude of this channel's OUTPUT since the last read — the strip
         meter's source, and the only thing the plane's UI reads at frame rate
         that the document does not already know.
@@ -182,6 +216,7 @@ struct Channel {
     double smLevel = -1.0;
     double smSend[kNumSends] = {-1.0, -1.0, -1.0, -1.0};
     double smMute = -1.0;
+    double smMonitor = -1.0;
 
     Channel() {
         for (auto& s : send) s.store(0.0, std::memory_order_relaxed);
@@ -207,6 +242,10 @@ public:
     double sendLevel(uint32_t ch, uint32_t send) const;
     void setMute(uint32_t ch, uint32_t muted);
     uint32_t muted(uint32_t ch) const;
+    /** The monitor switch (see Channel::monitor). Ramped like every other gain,
+        so flipping it mid-performance is a 10 ms fade rather than a click. */
+    void setMonitor(uint32_t ch, uint32_t on);
+    uint32_t monitorOn(uint32_t ch) const;
 
     /** Read AND RESET this channel's output peak (see Channel::peakL). 0 for an
         out-of-range channel.
@@ -322,6 +361,13 @@ private:
     // channel is processed (which is what the render order guarantees).
     std::vector<float> inL_[kMaxChannels];
     std::vector<float> inR_[kMaxChannels];
+    /** The monitor gate's per-sample gain for this block, one curve per channel.
+        Materialised ONCE at the top of the block rather than glided inside
+        pour(): a channel can be fed by more than one device-input cable, and
+        gliding a shared scalar per route would advance the ramp once per cable —
+        so two inputs would fade in at twice the speed of one, which is a
+        difference you can hear and nothing would explain. */
+    std::vector<float> mon_[kMaxChannels];
 
     Route routes_[kMaxRoutes];
 
