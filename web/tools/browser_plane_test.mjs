@@ -227,6 +227,18 @@ check('grid content fits the box', g.contentBottom !== null && g.contentBottom <
 // P3-2 built lives on a grid strip. This one line of missing button-guard made
 // two phases of work unreachable.
 {
+  // THE VISIBLE DOOR FIRST. Right-click is the fast path, but it is a gesture a
+  // HOST CAN SWALLOW — the JUCE WKWebView did, which made the session-load menu
+  // (and therefore every grid control) unreachable in the shipped app while
+  // every gate here stayed green. The only route to a feature may not depend on
+  // it, so the `⋯` button is what this checks first.
+  await page.click('.strip-menu')
+  await page.waitForTimeout(250)
+  const byButton = await page.evaluate(() => document.querySelector('[role="menu"]')?.textContent ?? null)
+  check('the ⋯ button opens the strip menu', byButton !== null, 'no [role=menu] after clicking .strip-menu')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(150)
+
   const head = await page.locator('.strip-head').first().boundingBox()
   await page.mouse.click(head.x + head.width / 2, head.y + head.height / 2, { button: 'right' })
   await page.waitForTimeout(250)

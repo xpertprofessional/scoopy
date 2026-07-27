@@ -79,6 +79,36 @@ if (isBrowserHost) {
   installLongPressContextMenu();
 }
 
+/**
+ * THE HOST'S OWN CONTEXT MENU IS SUPPRESSED, APP-WIDE.
+ *
+ * ⚠️ THIS IS THE FIX FOR "right click does not work at all" IN THE DESKTOP APP.
+ * The plane's menus are React `onContextMenu` handlers that call
+ * `preventDefault()` themselves — which works in Chromium and did NOT work in
+ * the JUCE WKWebView host, where the user got WebKit's own "Reload" menu and
+ * never the app's. Rather than keep chasing why the synthetic path and the real
+ * one differ per host, the default is refused HERE, once, in the capture phase
+ * before any handler runs. A shipped desktop app has no use for
+ * Reload/Back/Forward on right-click in any case.
+ *
+ * Capture phase, and `preventDefault` WITHOUT `stopPropagation`: the event still
+ * bubbles normally, so every React `onContextMenu` in the app runs exactly as
+ * before and opens the app's own menu. Only the browser's default is cancelled.
+ *
+ * TEXT FIELDS ARE EXEMPT, deliberately. Right-click → copy/paste is the only way
+ * to paste into the map-name field in a shell that has no Edit menu, so killing
+ * it there would trade one dead gesture for another.
+ */
+window.addEventListener(
+  "contextmenu",
+  (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest("input, textarea, [contenteditable='true']")) return;
+    e.preventDefault();
+  },
+  true,
+);
+
 // Mobile scoping classes (host-browser / touch-capable) — stamped before first
 // render so every scoped CSS rule is decided by first paint.
 installCapabilityClasses(isBrowserHost);

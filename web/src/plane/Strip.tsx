@@ -535,11 +535,34 @@ export function Strip({
       <span className="strip-kindbar" aria-hidden />
 
       <header className="strip-head" onContextMenu={onPickInput || onLoadSession ? openSourceMenu : undefined}>
+        {/* ⚠️ A VISIBLE DOOR TO THE STRIP'S MENU, and it is not a convenience.
+            This menu is the ONLY route to loading a scoopy session, a session is
+            the only route to a grid deck, and every control P3-1 and P3-2 built
+            lives on a grid strip. All of that hung on RIGHT-CLICK — an invisible
+            gesture that turned out not to reach the page at all in the JUCE
+            WKWebView host, which made two phases of work unreachable in the
+            shipped app while every gate stayed green.
+
+            Right-click still works (and is still the fast path for anyone who
+            knows it). But the only route to a feature must not be a gesture that
+            a host can silently swallow, and "you cannot discover it" and "your
+            host does not deliver it" have exactly the same symptom. */}
+        {(onPickInput || onLoadSession) && (
+          <button
+            type="button"
+            className="strip-menu"
+            aria-label="strip menu"
+            title="this strip’s source, session and record tap"
+            onClick={openSourceMenu}
+          >
+            ⋯
+          </button>
+        )}
         <span
           className="strip-name mono"
           title={
             onPickInput
-              ? `${strip.name} — right-click to choose the input this strip records`
+              ? `${strip.name} — ⋯ or right-click to choose the input this strip records`
               : strip.name
           }
         >

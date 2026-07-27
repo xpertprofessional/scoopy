@@ -319,6 +319,28 @@
   flex: 0 0 16px;
 }
 
+/* The strip menu's visible door. Sized to the 16 px header and given a fixed
+   basis with `padding: 0` / `min-width: 0` for the same reason the tempo-mode
+   button is — a flex item defaults to `min-width: auto`, so its min-content
+   width would beat the basis and eat the name's space. */
+.strip-menu {
+  flex: 0 0 14px;
+  padding: 0;
+  min-width: 0;
+  height: 14px;
+  line-height: 1;
+  background: transparent;
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-menu:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
 .strip-name {
   flex: 1 1 auto;
   min-width: 0;
