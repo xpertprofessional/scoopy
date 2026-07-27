@@ -3,10 +3,15 @@
 // apps/scoopy is the only writable home until the P3 flip).
 #include "sl_engine.h"
 
+#include "sl_channel.h"
+#include "sl_tape.h"
+#include "sl_watchdog.h"
+
 #include "NativeAudioEngineCore.hpp"
 #include "NativeToneFilter.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <array>
@@ -81,10 +86,35 @@ struct sl_engine {
     bool trackOpen = false;
     MixerState mixer;                    // held so commit can hand it to publishDJWorld
 
+    // The tape bank (SL-ABI-V3 §5): 8 continuous record/scrub/loop buffers,
+    // an index space independent of the grid decks above.
+    sl::TapeBank tapes;
+    // The uniform strip channel. Owns the gain stage for TAPE sources; for
+    // grid-deck sources it projects onto the core's own per-deck controls, so
+    // there is never a second gain stage in front of a deck the core already
+    // mixed (sl_channel.h has the full reasoning).
+    sl::ChannelBank channels;
+    // Guard G1. The channel sum lands AFTER the core's master clipper, so
+    // without this the strips — and any regenerating feedback route between
+    // them — reach the device with nothing in the way.
+    sl::Watchdog watchdog;
+
     std::vector<float> silenceIn;
     std::uint32_t blockFrames = 0;
     double sampleRate = 0.0;
     std::int32_t schemaVersion = 0;
+
+    // LAW C-2 — the monotonic engine clock. Advanced by exactly `frames` on
+    // every render that happens, regardless of transport, so realigning two
+    // takes recorded at different moments is a pure subtraction. Take stamps,
+    // the record→loop handoff ordering and the §7 transport all root here.
+    std::atomic<std::uint64_t> engineTimeSamples{0};
+
+    // The plane's front-of-house level. Control-thread target, render-owned
+    // smoothed value; negative means "not seeded yet" so the first block after
+    // a rate change takes the target outright rather than fading in.
+    std::atomic<double> masterLevel{1.0};
+    double masterSmoothed = -1.0;
 
     // HotFrame telemetry. The counter is monotonic per emitted frame (the UI
     // detects dropped frames from its gaps); `created` anchors hostTimeMs, which
@@ -106,6 +136,13 @@ struct sl_engine {
             lanePtrs[i] = lanes[i].data();
         }
         silenceIn.assign(block, 0.0f);
+        // Tape scratch/drains are sized here so no render phase allocates. Tape
+        // MATERIAL is deliberately untouched: a rate change must not silently
+        // discard a take. (The clock is untouched too — it is monotonic, and a
+        // rate change is the host's teardown/rebuild, D-WZ-RATE-01.)
+        tapes.configure(rate, block);
+        channels.configure(rate, block);
+        watchdog.configure(rate);
 
         mixer = MixerState{};
         mixer.mainGain = 1.0f;
@@ -129,6 +166,24 @@ namespace {
 // scoopy's HOT_FRAME_SCALARS. Same rule: never hand-count these.
 #include "sl_hotframe.inc"
 
+/** Where the channel mixer puts things, DERIVED from the core's lane enum
+    rather than transcribed. The four send buses are consecutive MONO lanes, not
+    stereo pairs — writing that assumption down as `send2` rather than
+    `send1 + 1` is what stops a future reorder from routing a channel's right
+    side into the next send. */
+constexpr sl::LaneMap kLaneMap = {
+    static_cast<std::uint32_t>(AudioLane::mainLeft),
+    static_cast<std::uint32_t>(AudioLane::mainRight),
+    {static_cast<std::uint32_t>(AudioLane::send1), static_cast<std::uint32_t>(AudioLane::send2),
+     static_cast<std::uint32_t>(AudioLane::send3), static_cast<std::uint32_t>(AudioLane::send4)},
+    // The return WET lanes (stereo pairs), so a return can be patched back into
+    // a strip — the resampling/feedback want ROUTING-MATRIX calls first-class.
+    {static_cast<std::uint32_t>(AudioLane::returnWet1L),
+     static_cast<std::uint32_t>(AudioLane::returnWet2L),
+     static_cast<std::uint32_t>(AudioLane::returnWet3L),
+     static_cast<std::uint32_t>(AudioLane::returnWet4L)},
+};
+
 int lookupName(const char* const* table, uint32_t count, const char* name) {
     if (name == nullptr) return SL_PARAM_UNKNOWN;
     for (uint32_t k = 0; k < count; ++k)
@@ -137,9 +192,33 @@ int lookupName(const char* const* table, uint32_t count, const char* name) {
 }
 
 /** The one render path; sl_render is sl_render_io with no inputs. Kept single
-    so the input-carrying and silent cases can never diverge in lane handling. */
+    so the input-carrying and silent cases can never diverge in lane handling.
+    Takes the raw input array rather than a resolved pair, because the tapes
+    address device input channels BY INDEX and a pre-resolved L/R would have
+    thrown that away.
+
+    BLOCK ORDER (the tape phases sit at the points where their signals actually
+    exist — see sl::TapeBank's header comment for why that is five calls and not
+    one):
+
+      1. tape arm + Law C-3 handoff   — before any playback, so a tape that
+                                        stopped-with-loop plays what it just
+                                        captured in THIS block
+      2. tape capture (device inputs) — the input exists before anything renders
+      3. tape playback                — into per-tape scratch
+      4. core render                  — the grid decks' sequenced world, which
+                                        the core mixes itself (so a grid-deck
+                                        channel adds nothing here — it projected
+                                        its controls onto the core instead)
+      5. channels mix                 — each tape-sourced channel: level/mute
+                                        glided, dry into main, post-fader into
+                                        the send lanes, and its own output kept
+                                        as that strip's record tap
+      6. tape capture (channel bus)   — this block's channel output
+      7. tape capture (main mix)      — this block's mix, this block's stamp
+      8. copy lanes out, advance the clock */
 void renderInto(sl_engine* e,
-                const float* inL, const float* inR,
+                const float* const* in_bus, std::uint32_t in_count,
                 float* const* bus_out, std::uint32_t bus_count,
                 std::uint32_t frames) {
     if (e == nullptr || bus_out == nullptr) return;
@@ -147,8 +226,69 @@ void renderInto(sl_engine* e,
 
     const ScopedFlushDenormals noDenormals;
 
+    // The core takes two input channels. A mono input feeds both sides rather
+    // than leaving one silent; no input at all feeds the pre-allocated silence.
+    const float* inL = e->silenceIn.data();
+    const float* inR = e->silenceIn.data();
+    if (in_bus != nullptr && in_count >= 1 && in_bus[0] != nullptr) {
+        inL = in_bus[0];
+        inR = (in_count >= 2 && in_bus[1] != nullptr) ? in_bus[1] : in_bus[0];
+    }
+
+    const std::uint64_t blockStartSample =
+        e->engineTimeSamples.load(std::memory_order_relaxed);
+
+    e->tapes.beginBlock(blockStartSample);
+    e->tapes.captureInputs(in_bus, in_count, frames, e->sampleRate, blockStartSample);
+    e->tapes.renderPlayback(in_bus, in_count, frames, e->sampleRate, blockStartSample);
+
     for (auto& lane : e->lanes) std::fill_n(lane.begin(), frames, 0.0f);
     e->core.render(inL, inR, e->lanePtrs, frames);
+
+    const auto laneCount = static_cast<std::uint32_t>(NativeAudioEngineCore::laneCount);
+    e->channels.mixInto(e->lanePtrs.data(), laneCount, frames, e->tapes, e->sampleRate,
+                        kLaneMap, in_bus, in_count);
+    // Guard G1, applied to the main pair once every contributor is in — the
+    // core's mix, the strips, and any regenerating feedback path between them.
+    // A channel-bus tap is deliberately taken BEFORE this (a strip's own
+    // contribution is not the limited master), while the mainMix tap below is
+    // taken after, so "what left the app" stays literally true.
+    // THE MASTER FADER, applied HERE and not through the core's mixer state.
+    //
+    // ⚠️ `MixerState::mainGain` is applied INSIDE core.render — and the strip
+    // channels sum in AFTER that (phase 5). So a master routed through the
+    // mixer state would move the grid decks and leave every tape, input and
+    // routed strip untouched: a master fader that only works on half the mixer,
+    // which is worse than none. It is the same finding the WATCHDOG produced —
+    // "the strip channels sum in after core.render, so scoopy's master clipper
+    // is already behind them" — and it applies to level for the same reason.
+    //
+    // Placed BEFORE the watchdog so the guard still protects what actually
+    // leaves, and so the `mainMix` capture below stays literally "what left the
+    // app". Ramped on the same 10 ms constant as every other gain
+    // (D-WZ-RAMP-01) and SNAPPED at the target, so a master parked at unity
+    // multiplies by exactly 1.0 and the bit-exact paths survive it.
+    {
+        const double target = e->masterLevel.load(std::memory_order_relaxed);
+        const double alpha = 1.0 - std::exp(-1.0 / (0.010 * e->sampleRate));
+        float* mL = e->lanes[kLaneMap.mainL].data();
+        float* mR = e->lanes[kLaneMap.mainR].data();
+        double sm = e->masterSmoothed;
+        if (sm < 0.0) sm = target; // seed, so the first block does not fade in
+        for (std::uint32_t i = 0; i < frames; ++i) {
+            sm += alpha * (target - sm);
+            if (std::abs(target - sm) < 1e-9) sm = target;
+            mL[i] = static_cast<float>(mL[i] * sm);
+            mR[i] = static_cast<float>(mR[i] * sm);
+        }
+        e->masterSmoothed = sm;
+    }
+
+    e->watchdog.process(e->lanes[kLaneMap.mainL].data(), e->lanes[kLaneMap.mainR].data(),
+                        frames, e->sampleRate);
+    e->tapes.captureChannels(frames, e->sampleRate, blockStartSample, e->channels);
+    e->tapes.captureMix(e->lanes[0].data(), e->lanes[1].data(), frames,
+                        e->sampleRate, blockStartSample);
 
     // Buses the engine has no lane for are left ALONE — the caller owns those
     // buffers and may be summing something else into them. Zeroing here would
@@ -157,6 +297,32 @@ void renderInto(sl_engine* e,
     for (std::size_t i = 0; i < n; ++i)
         if (bus_out[i] != nullptr)
             std::copy_n(e->lanes[i].data(), frames, bus_out[i]);
+
+    // Law C-2: exactly `frames`, and only for a render that actually happened —
+    // a refused block above advanced nothing because it rendered nothing.
+    e->engineTimeSamples.fetch_add(frames, std::memory_order_relaxed);
+}
+
+/** THE PROJECTION. A grid deck's gain stage lives in the core, so a channel
+    bound to one forwards its controls there instead of building a second one.
+    These are the core's LIVE setters (one atomic store each, no republish), so
+    a fader drag is heard on already-ringing voices — the same analog-desk
+    immediacy the core's own per-track overrides exist for.
+
+    Called after every channel control write. A no-op for tape channels, which
+    this tier mixes itself. */
+void projectToCore(sl_engine* e, std::uint32_t channel) {
+    if (e->channels.sourceKind(channel) !=
+        static_cast<std::uint32_t>(sl::ChannelSourceKind::gridDeck))
+        return;
+    const auto deck = static_cast<int>(e->channels.sourceIndex(channel));
+    // Mute is folded into the projected level: the core has no per-deck mute,
+    // and a muted strip must be silent whichever engine is carrying it.
+    const double lvl = e->channels.muted(channel) != 0 ? 0.0 : e->channels.level(channel);
+    e->core.setDeckGainOverride(deck, static_cast<float>(lvl));
+    for (std::uint32_t s = 0; s < sl::kNumSends; ++s)
+        e->core.setDeckMasterSend(deck, static_cast<int>(s) + 1,
+                                  static_cast<float>(e->channels.sendLevel(channel, s)));
 }
 
 } // namespace
@@ -180,6 +346,11 @@ sl_engine* sl_engine_create(double sample_rate,
         return nullptr;
     }
     e->schemaVersion = schema_version;
+    // The boot wiring, installed ONCE — here, not in configure(), which also
+    // runs on every rate change. A fresh engine is wired straight through so a
+    // new strip is audible without ceremony; a reconfigure keeps whatever the
+    // user has patched since.
+    e->channels.installDefaultRoutes();
     return e;
 }
 
@@ -207,22 +378,132 @@ void sl_render_io(sl_engine* e,
                   float* const* bus_out, uint32_t bus_count,
                   uint32_t frames) {
     if (e == nullptr) return;
-    // The core takes two input channels. A mono input feeds both sides rather
-    // than leaving one silent; no input at all feeds the pre-allocated silence.
-    const float* inL = e->silenceIn.data();
-    const float* inR = e->silenceIn.data();
-    if (in_bus != nullptr && in_count >= 1 && in_bus[0] != nullptr) {
-        inL = in_bus[0];
-        inR = (in_count >= 2 && in_bus[1] != nullptr) ? in_bus[1] : in_bus[0];
-    }
-    renderInto(e, inL, inR, bus_out, bus_count, frames);
+    renderInto(e, in_bus, in_count, bus_out, bus_count, frames);
 }
 
 void sl_render(sl_engine* e,
                float* const* bus_out, uint32_t bus_count,
                uint32_t frames) {
     if (e == nullptr) return;
-    renderInto(e, e->silenceIn.data(), e->silenceIn.data(), bus_out, bus_count, frames);
+    renderInto(e, nullptr, 0, bus_out, bus_count, frames);
+}
+
+uint64_t sl_engine_time_samples(const sl_engine* e) {
+    return e == nullptr ? 0ull : e->engineTimeSamples.load(std::memory_order_relaxed);
+}
+
+/* ── Tape decks (§5) ────────────────────────────────────────────────────────
+ *
+ * Thin forwarders by design: every range check, every semantic and every
+ * comment-of-record lives in sl::TapeBank (src/sl_tape.{h,cpp}), so this file
+ * stays what it says it is — an ABI surface, not a second place to look for
+ * behaviour. Null engine is the only check that belongs here. */
+
+uint32_t sl_tape_count(void) { return sl::TapeBank::count(); }
+
+int32_t sl_tape_load(sl_engine* e, uint32_t tape, uint32_t channels,
+                     uint64_t frames, const float* const* data, double rate) {
+    return e == nullptr ? 0 : e->tapes.load(tape, channels, frames, data, rate);
+}
+
+uint64_t sl_tape_frames(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0ull : e->tapes.frames(tape);
+}
+
+uint32_t sl_tape_channels(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0u : e->tapes.channels(tape);
+}
+
+void sl_tape_trigger(sl_engine* e, uint32_t tape, uint32_t mode) {
+    if (e != nullptr) e->tapes.trigger(tape, mode);
+}
+
+void sl_tape_seek(sl_engine* e, uint32_t tape, uint64_t frame) {
+    if (e != nullptr) e->tapes.seek(tape, frame);
+}
+
+double sl_tape_playhead(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0.0 : e->tapes.playhead(tape);
+}
+
+uint32_t sl_tape_state(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0u : e->tapes.state(tape);
+}
+
+int32_t sl_tape_insert(sl_engine* e, uint32_t tape, uint64_t at, uint32_t channels,
+                       uint64_t frames, const float* const* planar) {
+    return e == nullptr ? 0 : e->tapes.insert(tape, at, channels, frames, planar, e->sampleRate);
+}
+
+void sl_tape_overdub_start(sl_engine* e, uint32_t tape, uint32_t mode) {
+    if (e != nullptr) e->tapes.overdubStart(tape, mode);
+}
+
+void sl_tape_overdub_stop(sl_engine* e, uint32_t tape) {
+    if (e != nullptr) e->tapes.overdubStop(tape);
+}
+
+void sl_tape_scrub_begin(sl_engine* e, uint32_t tape) {
+    if (e != nullptr) e->tapes.scrubBegin(tape);
+}
+
+void sl_tape_scrub_to(sl_engine* e, uint32_t tape, double frame) {
+    if (e != nullptr) e->tapes.scrubTo(tape, frame);
+}
+
+void sl_tape_scrub_end(sl_engine* e, uint32_t tape) {
+    if (e != nullptr) e->tapes.scrubEnd(tape);
+}
+
+void sl_tape_set_loop(sl_engine* e, uint32_t tape, uint32_t enabled,
+                      uint64_t start, uint64_t end) {
+    if (e != nullptr) e->tapes.setLoop(tape, enabled, start, end);
+}
+
+uint32_t sl_tape_waveform(const sl_engine* e, uint32_t tape, uint32_t channel,
+                          uint64_t start_frame, uint64_t end_frame,
+                          uint32_t columns, float* out_min, float* out_max) {
+    return e == nullptr ? 0u
+                        : e->tapes.waveform(tape, channel, start_frame, end_frame,
+                                            columns, out_min, out_max);
+}
+
+void sl_tape_set_rate(sl_engine* e, uint32_t tape, double rate) {
+    if (e != nullptr) e->tapes.setRate(tape, rate);
+}
+
+double sl_tape_rate(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0.0 : e->tapes.rate(tape);
+}
+
+int32_t sl_tape_set_record_source(sl_engine* e, uint32_t tape, uint32_t kind,
+                                  int32_t chan0, int32_t chan1) {
+    return e == nullptr ? 0 : e->tapes.setRecordSource(tape, kind, chan0, chan1);
+}
+
+void sl_tape_record_start(sl_engine* e, uint32_t tape) {
+    if (e != nullptr) e->tapes.recordStart(tape);
+}
+
+uint64_t sl_tape_record_stop(sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0ull : e->tapes.recordStop(tape);
+}
+
+void sl_tape_record_service(sl_engine* e) {
+    if (e != nullptr) e->tapes.recordService();
+}
+
+void sl_tape_set_record_cap_frames(sl_engine* e, uint32_t tape, uint64_t cap_frames) {
+    if (e != nullptr) e->tapes.setRecordCapFrames(tape, cap_frames);
+}
+
+uint32_t sl_tape_record_cap_reached(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0u : e->tapes.capReached(tape);
+}
+
+uint32_t sl_tape_drain(sl_engine* e, uint32_t tape, float* out,
+                       uint32_t capacity_frames, uint64_t* out_start_sample) {
+    return e == nullptr ? 0u : e->tapes.drain(tape, out, capacity_frames, out_start_sample);
 }
 
 int sl_engine_register_sample(sl_engine* e, const char* sample_id,
@@ -239,6 +520,199 @@ int sl_engine_register_sample(sl_engine* e, const char* sample_id,
     return e->core.registerSample(std::move(s)) ? 1 : 0;
 }
 
+/* ── The uniform strip channel ────────────────────────────────────────────── */
+
+uint32_t sl_channel_count(void) { return sl::ChannelBank::count(); }
+
+int32_t sl_channel_set_source(sl_engine* e, uint32_t channel, uint32_t kind, uint32_t index) {
+    if (e == nullptr) return 0;
+    // A grid-deck binding must name a deck the core actually has — the two
+    // index spaces differ (3 grid decks, 8 tapes) and clamping would silently
+    // point a strip at the wrong deck.
+    if (kind == static_cast<uint32_t>(sl::ChannelSourceKind::gridDeck) && index >= kMaxDecks)
+        return 0;
+
+    // RELEASE THE OLD DECK FIRST. setDeckGainOverride stands until a republished
+    // world supersedes it, so a channel that moves off a grid deck (or onto a
+    // different one) would leave the old deck pinned at this strip's last level
+    // and sends — silently, for the rest of the session. Hand it back to the
+    // world's defaults instead.
+    const bool wasDeck = e->channels.sourceKind(channel) ==
+                         static_cast<std::uint32_t>(sl::ChannelSourceKind::gridDeck);
+    const std::uint32_t oldDeck = e->channels.sourceIndex(channel);
+    const bool staysOnSameDeck =
+        wasDeck && kind == static_cast<uint32_t>(sl::ChannelSourceKind::gridDeck) &&
+        index == oldDeck;
+
+    const int32_t ok = e->channels.setSource(channel, kind, index);
+    if (ok != 1) return ok;
+
+    if (wasDeck && !staysOnSameDeck && oldDeck < kMaxDecks) {
+        e->core.setDeckGainOverride(static_cast<int>(oldDeck), 1.0f); // DeckWorld's default
+        for (std::uint32_t s = 0; s < sl::kNumSends; ++s)
+            e->core.setDeckMasterSend(static_cast<int>(oldDeck), static_cast<int>(s) + 1, 0.0f);
+    }
+    // ...and push this channel's current settings onto the NEW deck, so binding
+    // is what makes the strip's controls take effect rather than the next
+    // incidental fader move.
+    projectToCore(e, channel);
+    return ok;
+}
+
+uint32_t sl_channel_source_kind(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0u : e->channels.sourceKind(channel);
+}
+
+uint32_t sl_channel_source_index(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0u : e->channels.sourceIndex(channel);
+}
+
+void sl_channel_set_level(sl_engine* e, uint32_t channel, double level) {
+    if (e == nullptr) return;
+    e->channels.setLevel(channel, level);
+    projectToCore(e, channel);
+}
+
+double sl_channel_level(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0.0 : e->channels.level(channel);
+}
+
+void sl_channel_set_send(sl_engine* e, uint32_t channel, uint32_t send, double level) {
+    if (e == nullptr) return;
+    e->channels.setSend(channel, send, level);
+    projectToCore(e, channel);
+}
+
+double sl_channel_send(const sl_engine* e, uint32_t channel, uint32_t send) {
+    return e == nullptr ? 0.0 : e->channels.sendLevel(channel, send);
+}
+
+void sl_channel_set_mute(sl_engine* e, uint32_t channel, uint32_t muted) {
+    if (e == nullptr) return;
+    e->channels.setMute(channel, muted);
+    projectToCore(e, channel);
+}
+
+uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0u : e->channels.muted(channel);
+}
+
+// Non-const `e` on purpose, unlike every other getter here: these CONSUME the
+// peak. A const pointer would advertise a pure read and invite a second caller
+// that then silently halves the meter's readings by stealing every other frame.
+double sl_channel_peak_l(sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0.0 : e->channels.consumePeakL(channel);
+}
+
+double sl_channel_peak_r(sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0.0 : e->channels.consumePeakR(channel);
+}
+
+/* ── The master output ───────────────────────────────────────────────────── */
+
+void sl_master_set_level(sl_engine* e, double level) {
+    if (e == nullptr || !std::isfinite(level) || level < 0.0) return;
+    // Just an atomic. No republish of any kind: the gain is applied by the
+    // render on the summed main pair, so the world is not involved — which also
+    // means moving the fader cannot disturb the decks, the way a route through
+    // submitMixerState would have.
+    e->masterLevel.store(level, std::memory_order_relaxed);
+}
+
+double sl_master_level(const sl_engine* e) {
+    return e == nullptr ? 0.0 : e->masterLevel.load(std::memory_order_relaxed);
+}
+
+/* ── The output watchdog (guard G1) ───────────────────────────────────────── */
+
+uint32_t sl_watchdog_engaged(const sl_engine* e) {
+    return e == nullptr ? 0u : e->watchdog.engaged();
+}
+
+double sl_watchdog_gain(const sl_engine* e) {
+    return e == nullptr ? 1.0 : e->watchdog.gain();
+}
+
+void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled) {
+    if (e != nullptr) e->watchdog.setEnabled(enabled);
+}
+
+/* ── Routing (§4) ─────────────────────────────────────────────────────────── */
+
+int32_t sl_route_add(sl_engine* e, uint32_t src, uint32_t dst, double gain, uint32_t feedback) {
+    return e == nullptr ? -1 : e->channels.addRoute(src, dst, gain, feedback);
+}
+
+int32_t sl_route_add_ex(sl_engine* e, uint32_t src_kind, uint32_t src_index, uint32_t src_sub,
+                        uint32_t dst_kind, uint32_t dst_index, double gain, uint32_t feedback) {
+    return e == nullptr ? -1
+                        : e->channels.addRoute(src_kind, src_index, src_sub, dst_kind, dst_index,
+                                               gain, feedback);
+}
+
+void sl_route_clear_all(sl_engine* e) {
+    if (e != nullptr) e->channels.clearRoutes();
+}
+
+void sl_route_install_defaults(sl_engine* e) {
+    if (e != nullptr) e->channels.installDefaultRoutes();
+}
+
+uint32_t sl_route_count_active(const sl_engine* e) {
+    return e == nullptr ? 0u : e->channels.routeCountActive();
+}
+
+uint32_t sl_route_capacity(void) { return sl::ChannelBank::routeCapacity(); }
+
+uint32_t sl_route_source_kind(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeSourceKind(id);
+}
+uint32_t sl_route_source_index(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeSourceIndex(id);
+}
+uint32_t sl_route_source_sub(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0xFFFFFFFFu : e->channels.routeSourceSub(id);
+}
+uint32_t sl_route_dest_kind(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeDestKind(id);
+}
+uint32_t sl_route_dest_index(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeDestIndex(id);
+}
+uint32_t sl_route_feedback(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeFeedback(id);
+}
+uint32_t sl_route_is_default(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeIsDefault(id);
+}
+
+int32_t sl_route_remove(sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0 : e->channels.removeRoute(id);
+}
+
+void sl_route_set_gain(sl_engine* e, uint32_t id, double gain) {
+    if (e != nullptr) e->channels.setRouteGain(id, gain);
+}
+
+double sl_route_gain(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0.0 : e->channels.routeGain(id);
+}
+
+uint32_t sl_route_active(const sl_engine* e, uint32_t id) {
+    return e == nullptr ? 0u : e->channels.routeActive(id);
+}
+
+uint32_t sl_route_would_cycle(const sl_engine* e, uint32_t src, uint32_t dst) {
+    if (e == nullptr) return 0u;
+    // src == dst is a cycle of length one; the graph walk would not report it.
+    if (src == dst) return 1u;
+    return e->channels.reaches(dst, src) ? 1u : 0u;
+}
+
+void sl_route_render_order(const sl_engine* e, uint32_t* out) {
+    if (e != nullptr && out != nullptr) e->channels.renderOrder(out);
+}
+
 uint32_t sl_deck_count(void) { return static_cast<uint32_t>(kMaxDecks); }
 
 void sl_deck_clear(sl_engine* e, uint32_t deck) {
@@ -253,6 +727,10 @@ void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio) {
     // The ratio lives on the published DeckWorld (no live per-deck setter in the
     // core), so republish. Human-rate: a sync toggle, not an audio-thread write.
     e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
+double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck) {
+    return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckWorlds[deck].tempoSyncRatio;
 }
 
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {
@@ -372,6 +850,29 @@ uint32_t sl_hotframe(sl_engine* e, double* out, uint32_t capacity) {
     out[SL_HF_playheadStepDeck0] = static_cast<double>(e->core.deckPlayheadStep(0));
     out[SL_HF_playheadStepDeck1] = static_cast<double>(e->core.deckPlayheadStep(1));
     out[SL_HF_playheadStepDeck2] = static_cast<double>(e->core.deckPlayheadStep(2));
+
+    // ── The plane (merge P2 step 4) ──────────────────────────────────────────
+    // The strip surface's telemetry: what each strip is contributing, what each
+    // tape is doing, and whether the watchdog is holding the output. This is
+    // the ONLY engine state the plane's UI reads at frame rate — everything
+    // else it knows comes from the document it owns.
+    for (uint32_t c = 0; c < sl::kMaxChannels; ++c) {
+        // Consuming reads: peak SINCE THE LAST FRAME, matching the core's own
+        // consumeOutputPeak above. Emitting the frame is what consumes them, so
+        // nothing else may call these.
+        out[SL_HF_slChanPeakL0 + c] = e->channels.consumePeakL(c);
+        out[SL_HF_slChanPeakR0 + c] = e->channels.consumePeakR(c);
+    }
+    for (uint32_t t = 0; t < sl::kMaxTapes; ++t) {
+        out[SL_HF_slTapePlayhead0 + t] = e->tapes.playhead(t);
+        out[SL_HF_slTapeState0 + t] = static_cast<double>(e->tapes.state(t));
+        // Reported every frame rather than latched at the moment it happens: a
+        // cap that fires while the panel is closed would otherwise never be
+        // seen, and the tape it stopped looks like an ordinary looping tape.
+        out[SL_HF_slTapeCap0 + t] = e->tapes.capReached(t) != 0 ? 1.0 : 0.0;
+    }
+    out[SL_HF_slWatchdogEngaged] = e->watchdog.engaged() != 0 ? 1.0 : 0.0;
+    out[SL_HF_slWatchdogGain] = e->watchdog.gain();
 
     // Per-track step/pos/level and the carve blocks stay 0 (idle meters) until
     // v3 exposes the sequencer detail behind them — zero-filled, never faked.

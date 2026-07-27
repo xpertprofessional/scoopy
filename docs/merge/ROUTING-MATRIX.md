@@ -30,15 +30,45 @@ feel intuitive.
 - **Main / cue / hardware outputs.**
 - **A strip's record tap** — record any routed signal (one bus tap, per STRIP-MODEL).
 
-## Feedback is allowed (FX return → strip)
+## Scheduling: ordered by default, delayed only where it must be
 
-Routing an FX return back into a strip is a first-class want. It is **safe by
-construction**: the engine renders lanes in a fixed order per block, so a
-return→strip route is **inherently one block delayed** (the return computed this
-block feeds the strip next block). That is a few-ms feedback delay, not an
-infinite instant loop — musically useful (resampling FX, feedback networks), with
-gain staging the user's responsibility. No cycle detection needed; the block
-boundary breaks the loop.
+> **AMENDED 2026-07-25 (decided with the user at P2 planning).** This section
+> originally said every route is inherently one block delayed and no cycle
+> detection is needed. That is cheap to build and wrong to ship, because it
+> contradicts the analysis already signed in `docs/specs/pd-modular-routing.md`:
+> with strip→strip chaining and sub-mixing — both explicit wants above — a
+> per-hop delay makes latency **accumulate** (one block per hop) and makes two
+> parallel paths of different depth **comb-filter**. §1.3 of that document calls
+> the comb "the failure mode that will actually burn a user": it is not an error,
+> nothing warns, it just sounds hollow. The replacement below keeps the feedback
+> feature and drops the trap.
+
+There are **two kinds of edge**, and conflating them is what caused the problem:
+
+| | **tap-by-order** (the default) | **tap-by-delay** (a feedback edge) |
+|---|---|---|
+| reads | the source's **current** block | the source's **previous** block |
+| latency | **zero** | one block (~10.7 ms @ 512/48k) |
+| used for | strip→strip chains, sub-mixes, sends, inputs | deliberate feedback (FX return → its own feeder) |
+| cycles | impossible — refused at edit time | allowed; the block boundary breaks the loop |
+
+At publish time the control thread **topologically sorts** the strips and the
+render walks them in that order, so an ordinary chain adds no latency at all. A
+route that would **close a cycle** is refused at edit time unless the user
+explicitly confirms it as a feedback edge; those read the previous block's
+snapshot, are **created muted** (the standing precedent — an unmuted unity
+loopback is an instant sustained feedback path), and carry their computed **+ms
+on the object**, because a delay you cannot see is the thing that burns you.
+
+Feedback stays a first-class want — resampling FX and feedback networks are the
+point of the whole feature. It just stops being the accidental default for
+routing that was never meant to be delayed at all.
+
+**Ships with it: a per-hardware-output leaky-RMS detector + ramped limiter.**
+Today the watchdog guards the main bus only, so a runaway living between two
+other outputs is both undetected and unlimited on the way to an amplifier
+(pd-modular-routing §2.1, guard G1). Giving outputs an owner without giving them
+a limiter is worse than doing neither.
 
 ## Real-time, click-free, no hangs — how
 
@@ -78,7 +108,27 @@ including the paths sends can't express (app audio → strip, FX return → stri
 strip → strip). Sends and matrix are the same underlying graph at two levels of
 convenience.
 
-## Open sub-question
-- Send tap point: pre/post the strip's record tap (does a recorded tape include
-  send-returns or just the dry channel) — carried from STRIP-MODEL; settle when
-  wiring the channel bus.
+**Sends are individually routable** (user, 2026-07-25). Each send **defaults** to
+its FX — send *n* → FX *n*, the main use case, and what a new strip arrives with —
+but any send can be re-pointed through the matrix: send 3 into another strip's
+input to feed its looper, for instance. The split is that the **channel owns the
+send's level** and the **routing document owns its destination**; a send tap is an
+ordinary source in the graph, under the same ordering and feedback-edge rules as
+everything else. All of it lives in the map.
+
+## Settled sub-question — the send / record tap point
+
+*Resolved at P2 planning, 2026-07-25 (was: "does a recorded tape include
+send-returns or just the dry channel?").*
+
+A strip's **record tap is its channel output** — post-element, post-DRV,
+post-level: exactly what that strip contributes to the mix. Sends stay
+**post-fader** by default. So a recorded tape is **dry of the global FX
+returns**, because a return is a global lane rather than part of any one strip's
+output; a recording that should carry the wet is made by routing that return into
+a strip explicitly, which the matrix already expresses.
+
+That keeps "record this strip" meaning one unambiguous thing, and leaves "record
+the wet too" reachable without a second tap-point mode to explain. Capturing the
+whole processed sum, returns included, is a *different verb* with its own record
+source kind — `mainMix`, already built and fixtured (SL-ABI-V3 §5).

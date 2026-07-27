@@ -13,9 +13,11 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "AudioIO.h"
+#include "RecordService.h"
 #include "SlDispatch.h"
 #include "SlRenderSink.h"
 #include "SlSettingsStore.h"
+#include "SlTakeDrainSource.h"
 #include "SlWorldApply.h"
 #include "WebResources.h"
 #include "sl_engine.h"
@@ -25,7 +27,7 @@
 
 namespace {
 
-constexpr int kScoopySchemaVersion = 86; // must equal scoopy schema.ts SCHEMA_VERSION
+constexpr int kScoopySchemaVersion = 87; // must equal scoopy schema.ts SCHEMA_VERSION
 
 std::optional<juce::WebBrowserComponent::Resource>
 provideResource(const juce::String& path) {
@@ -59,16 +61,56 @@ struct Backend {
     wizard::sl::FileSettingsStore settings;
     juce::String deviceError;
 
+    // RECORDING. Added with the plane (merge P2 step 4), and it was genuinely
+    // missing rather than merely unwired: only the legacy shell had a
+    // RecordService, so on this host `sl_tape_record_start` filled a drain ring
+    // nobody emptied and allocated no chunks ahead of the render. Pressing REC
+    // would have produced no file and, once the pre-seeded capacity ran out, no
+    // further audio either.
+    //
+    // The drain source is the ENGINE-AGNOSTIC seam (TakeDrainSource): one
+    // take-writing implementation serves wizard's decks and this engine's tapes,
+    // so a take is a take — same crash-safe writer, same sidecar, same Law C-2
+    // stamp handling — regardless of which engine captured it.
+    wizard::record::SlTakeDrainSource drainSource;
+    wizard::record::Service recorder;
+    wizard::sl::HostServices services;
+
     explicit Backend(sl_engine* e)
         : engine(e),
           sink(e),
           audioIO(sink),
           settings(juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                       .getChildFile("WizardMerged/settings.json")) {
+                       .getChildFile("WizardMerged/settings.json")),
+          drainSource(e) {
         // Opening the device starts the engine (SlRenderSink::setSampleRate does
         // the D-WZ-RATE-01 stop→set→start). A failure leaves the app running,
         // silent, rather than refusing to open — the UI still comes up.
         deviceError = audioIO.open(sl_engine_sample_rate(engine));
+
+        // Takes live beside the settings, under the app's own data directory,
+        // unless the user has chosen a folder. Same key the settings quartet
+        // already carries, so the Audio panel's picker points at this without
+        // needing a second setting.
+        const auto stored = settings.get("recordings.dir").toString();
+        const auto takesDir =
+            stored.isNotEmpty()
+                ? juce::File(stored)
+                : juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                      .getChildFile("WizardMerged/Takes");
+        services.takesDir = takesDir.getFullPathName().toStdString();
+        // start() creates the directory and launches the drain thread. If it
+        // fails, `recorder` stays unstarted and the dispatcher's record commands
+        // refuse honestly — the app still runs and still plays.
+        if (recorder.start(drainSource, services.takesDir)) services.recorder = &recorder;
+        services.audio = &audioIO; // the plane's input source picker reads this
+    }
+
+    ~Backend() {
+        // Before the engine goes: the drain thread holds a reference to it, and
+        // finalizes any take still open so a quit mid-record leaves a playable
+        // file rather than a truncated one.
+        recorder.stop();
     }
 };
 
@@ -138,10 +180,17 @@ private:
         // dispatcher. This IS the multi-window model: the UI asks, the shell
         // opens another DocumentWindow.
         if (method == "openInstrumentWindow" || method == "openFxSlotWindow" ||
-            method == "openAudioRoutingWindow") {
-            const auto panel = method == "openFxSlotWindow"        ? "fxslot"
-                               : method == "openAudioRoutingWindow" ? "audio"
-                                                                    : "instrument";
+            method == "openAudioRoutingWindow" || method == "openPanelWindow") {
+            // openPanelWindow is the plane's own spawn verb (merge P2 step 4):
+            // it names the panel rather than encoding it in the method, which is
+            // what "compose beside the map" needs — the plane opens a compose
+            // window per strip and cannot know at schema-writing time which
+            // panels a strip will want.
+            const auto panel = method == "openFxSlotWindow"         ? juce::String("fxslot")
+                               : method == "openAudioRoutingWindow" ? juce::String("audio")
+                               : method == "openPanelWindow"
+                                   ? params.getProperty("panel", "companion").toString()
+                                   : juce::String("instrument");
             openPanelFn(panel);
             auto* env = new juce::DynamicObject();
             env->setProperty("ok", true);
@@ -149,9 +198,10 @@ private:
             return juce::var(env);
         }
 
-        // Everything else (the boot handshake + the worldPublish play path) is
-        // the pure, unit-tested dispatcher.
-        return wizard::sl::dispatch(method, params, backend.settings, backend.engine);
+        // Everything else (the boot handshake, the worldPublish play path and
+        // the plane's strip surface) is the pure, unit-tested dispatcher.
+        return wizard::sl::dispatch(method, params, backend.settings, backend.engine,
+                                    &backend.services);
     }
 
     Backend& backend;
@@ -174,8 +224,11 @@ public:
         jassert(sl_abi_version() == SL_ABI_VERSION);
         backend = std::make_unique<Backend>(engine);
 
-        // The primary window is the companion shell (owns sessions, renders the grid);
-        openPanel("companion", /*isMain*/ true);
+        // The primary window is the PLANE — the merged app's top-level surface
+        // (merge P2 step 4): strips, their elements and the patchbay. The
+        // companion shell stays reachable as a spawned panel; it is where a
+        // session is composed, which is a different job from performing a set.
+        openPanel("plane", /*isMain*/ true);
         startTimerHz(30); // the HotFrame broadcast
     }
 

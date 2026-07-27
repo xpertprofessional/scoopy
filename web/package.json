@@ -24,7 +24,8 @@
     "hotframe:generate": "node --experimental-strip-types scripts/generateHotFrame.ts",
     "hotframe:check": "node --experimental-strip-types scripts/generateHotFrame.ts --check",
     "worldmap:generate": "node --experimental-strip-types scripts/generateWorldMap.ts",
-    "worldmap:check": "node --experimental-strip-types scripts/generateWorldMap.ts --check"
+    "worldmap:check": "node --experimental-strip-types scripts/generateWorldMap.ts --check",
+    "tape:check": "node --experimental-strip-types scripts/checkTapeCoverage.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

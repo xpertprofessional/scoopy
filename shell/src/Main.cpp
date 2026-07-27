@@ -10,6 +10,7 @@
 
 #include "AudioIO.h"
 #include "WzRenderSink.h"
+#include "WzTakeDrainSource.h"
 #include "CommandDispatch.h"
 #include "PackageStore.h"
 #include "SessionStore.h"
@@ -63,7 +64,8 @@ public:
                                juce::DocumentWindow::allButtons),
           engine(engineToUse),
           engineSink(engineToUse),
-          audioIO(engineSink) {
+          audioIO(engineSink),
+          recorderSource(engineToUse) {
         // Open the default duplex device at the engine's rate (D-WZ-RATE-01).
         // A failure (no device / unsupported rate) leaves the app running,
         // silent; the boot tone simply won't be audible until a device opens.
@@ -71,7 +73,7 @@ public:
         // Takes live beside the session; a dedicated dir until P7's package.
         takesRoot = juce::File::getSpecialLocation(juce::File::userMusicDirectory)
                         .getChildFile("Wizard/Takes");
-        recorder.start(engine, takesRoot.getFullPathName().toStdString());
+        recorder.start(recorderSource, takesRoot.getFullPathName().toStdString());
         webView = std::make_unique<GuardedWebView>(
             juce::WebBrowserComponent::Options{}
                 .withNativeIntegrationEnabled()
@@ -607,6 +609,10 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser; // kept alive across async dialog
     wizard::host::AudioIO audioIO;
     juce::File takesRoot;             // P7: only OUR recordings travel in a package
+    // Declared before `recorder` for the same reason engineSink precedes audioIO:
+    // the service holds a REFERENCE to its drain source, and member destruction
+    // runs in reverse.
+    wizard::record::WzTakeDrainSource recorderSource;
     wizard::record::Service recorder;
     // P1-11: deck decode/resample runs here, off the message thread. One worker
     // so loads serialise (a second load waits rather than fighting for cores);

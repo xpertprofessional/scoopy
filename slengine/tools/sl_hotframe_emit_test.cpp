@@ -1,4 +1,4 @@
-// The HotFrame emitter: engine telemetry -> the 284-slot frame, at the indices
+// The HotFrame emitter: engine telemetry -> the 326-slot frame, at the indices
 // scoopy's UI reads. Headless (no WebView, no device).
 //
 // The layout header is covered by sl_hotframe_test; this covers the EMITTER —
@@ -28,7 +28,15 @@ constexpr int kFrameCounter = 0;
 constexpr int kOutputPeakL = 5;
 constexpr int kOutputPeakR = 6;
 constexpr int kCallbackLoad = 9;
-constexpr int kLength = 284;
+// The plane's block (merge P2 step 4), likewise restated by hand.
+constexpr int kChanPeakL0 = 268;
+constexpr int kChanPeakR0 = 276;
+constexpr int kTapePlayhead0 = 284;
+constexpr int kTapeState0 = 292;
+constexpr int kTapeCap0 = 300;
+constexpr int kWatchdogEngaged = 308;
+constexpr int kWatchdogGain = 309;
+constexpr int kLength = 326;
 } // namespace
 
 int main() {
@@ -93,6 +101,56 @@ int main() {
         sl_hotframe(e, frame.data(), (uint32_t) frame.size());
         CHECK(frame[kOutputPeakL] > 0.0001);
         CHECK(frame[kOutputPeakL] == frame[kOutputPeakR]); // mirrored mono peak
+    }
+
+    // --- the plane's block (merge P2 step 4) --------------------------------
+    // A tape on a channel, so there is something real to measure. This is the
+    // strip meter's whole data path, end to end: channel output → peak → frame.
+    {
+        std::vector<float> dc(1024, 0.5f);
+        const float* planar[1] = {dc.data()};
+        CHECK(sl_tape_load(e, 0, 1, 1024, planar, 48000.0) == 1);
+        sl_tape_set_loop(e, 0, 1, 0, 1024);
+        CHECK(sl_channel_set_source(e, 0, 1 /* tape */, 0) == 1);
+
+        // Idle first: the tape is loaded but not triggered.
+        std::vector<float> l(512, 0.0f), r(512, 0.0f);
+        float* buses[2] = {l.data(), r.data()};
+        sl_render(e, buses, 2, 512);
+        sl_hotframe(e, frame.data(), (uint32_t) frame.size());
+        CHECK(frame[kTapeState0] == 0.0); // idle
+        CHECK(frame[kTapeCap0] == 0.0);   // no cap hit
+
+        // Now play it. The channel's meter lights and the tape reports looping.
+        sl_tape_trigger(e, 0, 0 /* loop */);
+        for (int b = 0; b < 20; ++b) sl_render(e, buses, 2, 512);
+        sl_hotframe(e, frame.data(), (uint32_t) frame.size());
+        CHECK(frame[kTapeState0] == 1.0);      // looping
+        CHECK(frame[kChanPeakL0] > 0.4);       // ~0.5 through a unity channel
+        CHECK(frame[kChanPeakR0] > 0.4);
+        CHECK(frame[kTapePlayhead0] >= 0.0);
+
+        // CONSUME-AND-RESET, at the frame level: emitting twice with no render
+        // in between must leave the meter at 0. If the emitter did not consume,
+        // every strip meter would latch at its loudest moment forever.
+        sl_hotframe(e, frame.data(), (uint32_t) frame.size());
+        CHECK(frame[kChanPeakL0] == 0.0);
+        CHECK(frame[kChanPeakR0] == 0.0);
+
+        // An UNBOUND channel is silent on the frame — no stale value from a
+        // previous binding, which is what a plain (non-consuming) read would
+        // leave behind when a strip's element is removed.
+        CHECK(frame[kChanPeakL0 + 7] == 0.0);
+        CHECK(frame[kTapeState0 + 7] == 0.0);
+
+        // The watchdog lamp: not engaged on ordinary material, and its gain is
+        // exactly 1.0 — the "not limiting" value, so the UI can test equality
+        // rather than guess a threshold.
+        CHECK(frame[kWatchdogEngaged] == 0.0);
+        CHECK(std::abs(frame[kWatchdogGain] - 1.0) < 1e-9);
+
+        // Still no NaNs anywhere now that the whole frame has real sources.
+        for (int i = 0; i < kLength; ++i) CHECK(std::isfinite(frame[i]));
     }
 
     sl_engine_stop(e);

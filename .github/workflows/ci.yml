@@ -53,6 +53,11 @@ jobs:
       # field tables; fails if the worklet moved and the map was not regenerated.
       - run: npm run worldmap:check
       - run: npm run abi:check
+      # The SL-ABI-V3 §5 tape transplant is CARRIED OR WAIVED, both directions:
+      # fails if a wz_deck_* entry point was dropped without a reason, or an
+      # sl_tape_* one was invented without one. A 21-function rename is exactly
+      # where something falls off the end quietly.
+      - run: npm run tape:check
       - run: npm run check:tokens
       - run: npm run webdist:check
 

@@ -89,19 +89,62 @@ is the same whether the source is a grid (sequencer output), a live input, or a
 file. "Record the input" and "record the deck output" are literally the same
 operation on the same bus. One tap, one code path, every source.
 
-## Remaining sub-questions (not blocking the model)
-- `LOOPER-DESIGN.md`: overdub semantics (reuse signed D-WZ-OVERDUB-01?), and
-  loop-length↔tempo quantize on capture.
-- Send tap point: are the 4 sends **pre- or post-** the strip's own record tap
-  (i.e. does a recorded tape include the send-return, or just the dry channel)?
-  Follows from the bus layout; settle when wiring the channel.
+## The lane budget — what bounds how many decks there are (user, 2026-07-25)
+
+Rather than an arbitrary deck count, the mixer has a **content budget of 8 mono
+lanes (4 stereo)**, and each element spends from it:
+
+- a **grid** deck is inherently stereo → **2 lanes**
+- a **tape** may be mono → **1 lane**, or stereo → **2**
+
+So a plane holds 4 stereo decks, or 3 stereo grids + 2 mono tapes, or any other
+combination that fits. The limit stops being a number to remember and becomes the
+same thing it is on a hardware mixer: how many channels you have left.
+
+**FX returns sit OUTSIDE the 8**, as fixed infrastructure — the mixer's 4 stereo
+aux returns — because a budget that let an FX silently cost you a deck would
+punish using the effects. Main and cue are the output section, likewise outside.
+
+Enforced at the **document/publish** level (sum of active element widths ≤ 8), not
+in engine array sizes: the engine keeps capacity for 8 tapes regardless, so the
+policy stays a line of validation to tune rather than a rebuild. It also describes
+today's reality for free — the pinned core's 3 grid decks are 6 lanes, leaving 2
+mono tape lanes.
+
+## Resolved sub-questions
+
+- **Overdub:** reuse the signed D-WZ-OVERDUB-01 unchanged — destructive
+  sound-on-sound (SUM/REPLACE) into the buffer at the playhead, with every pass
+  still draining to its own crash-safe stamped take, so the material survives on
+  disk even though the pre-mix buffer does not. **Built** (SL-ABI-V3 §5). One
+  addition the port makes explicit: overdub reads its input during the playback
+  pass, which runs before the mix exists, so a **mix-sourced overdub is refused**
+  rather than silently layering the previous block.
+- **Send tap point:** the strip's record tap is its **channel output** —
+  post-element, post-DRV, post-level — with sends **post-fader** by default. A
+  recorded tape is therefore dry of the global FX returns (a return is a global
+  lane, not part of one strip's output); routing a return into a strip is how you
+  record the wet, and capturing the whole processed sum is the separate `mainMix`
+  record source. Reasoning in `ROUTING-MATRIX.md`.
+- **Loop-length ↔ tempo quantize on capture:** deferred with SL-ABI-V3 §7 (the
+  master transport). P2 ships immediate capture, which is wizard's proven
+  behaviour; bar-exact capture needs a beat clock to be exact against.
 
 ## Engine status against this model
 - **Grid (§6):** built — multi-deck sessions, per-deck BPM, master sync
   (`sl_deck_set_tempo_sync`), add/drop a deck (`sl_deck_clear`).
-- **Tape (§5):** NOT built — the next big engine chunk. Transplants wizard's
-  `wz_deck_*` (record/scrub/varispeed/loop/overdub/takes) into the merged engine
-  under `sl_` names, per SL-ABI-V3 §5. All that machinery is already written and
-  tested in wizard's donor engine.
-- **Channel:** the 4 sends + master drive/clipper already exist in scoopy's core;
-  wiring them as the uniform strip channel is UI + ABI exposure.
+- **Tape (§5):** **BUILT 2026-07-25** as `sl_tape_*` (not `sl_deck_*` — §6 had
+  already spent that name on grid decks). Wizard's `wz_deck_*`
+  (record/scrub/varispeed/loop/overdub/takes) ported into `slengine`, 21/21 entry
+  points carried under a symmetric coverage gate, with the record source
+  generalised from "an input channel" to a KIND — which is what makes "capture
+  this bus" the same operation for every source, as this document argued it must
+  be. 8 tapes, an index space independent of the 3 grid decks.
+- **Channel:** **BUILT 2026-07-25** as `sl_channel_*` — level, 4 sends, mute,
+  and the record tap, all ramped. It turned out to be a **projection rather than
+  a mixer**: a grid deck already has a channel inside the core, a tape had none,
+  so the one surface is implemented here for tapes and forwarded onto the core's
+  per-deck controls for grid decks. That is this document's "identical for every
+  strip, whatever it hosts" made literal without stacking a second gain stage on
+  the engine that already applied one. DRV is deferred (it is already per-deck in
+  the core; tapes gain it later) — see P2-KICKOFF step 2 for the reasoning.

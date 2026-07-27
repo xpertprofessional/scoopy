@@ -9,7 +9,11 @@
 # Target name is wz_sl_engine because the vendored v2 library already owns the
 # CMake target name `sl_engine`. The C symbols are the ones that matter and
 # those are v3's; the target name is just a build-system label.
-add_library(wz_sl_engine STATIC src/sl_engine.cpp)
+# sl_tape.cpp is the §5 transplant of wizard's deck subsystem (a donor, not a
+# survivor). It depends on nothing but libstdc++ — no core headers, no
+# libsamplerate — which is why the port was a lift rather than an extraction.
+add_library(wz_sl_engine STATIC
+    src/sl_engine.cpp src/sl_tape.cpp src/sl_channel.cpp src/sl_watchdog.cpp)
 target_include_directories(wz_sl_engine PUBLIC include)
 # generated/ holds the derived track-param mapping (PRIVATE: an implementation
 # detail, resolved by name across the ABI).
@@ -55,3 +59,27 @@ add_test(NAME sl_hotframe_test COMMAND sl_hotframe_test)
 add_executable(sl_hotframe_emit_test tools/sl_hotframe_emit_test.cpp)
 target_link_libraries(sl_hotframe_emit_test PRIVATE wz_sl_engine)
 add_test(NAME sl_hotframe_emit_test COMMAND sl_hotframe_emit_test)
+
+# §5 TAPE — the acceptance suite for the transplant. These are wizard's own deck
+# fixtures re-pointed at sl_tape_*, which is deliberate: the donor's tests are
+# what pin the semantics the transplant promised to carry, so a behaviour that
+# survived the rename has to prove it against the same assertions it always did.
+# sl_tape_mix_record_test is the one genuinely NEW fixture — it covers the
+# record-source abstraction wizard had no equivalent for.
+foreach(t
+    sl_tape_test              # playback: load, loop wrap, one-shot, retrigger, stop
+    sl_tape_transport_test    # seek + turntable scrub (Law: rate derived from the gap)
+    sl_tape_handoff_test      # LAW C-3 — same-block record→loop handoff
+    sl_tape_record_test       # capture, the 256 MB cap, the drain, LAW C-2 stamps
+    sl_tape_overdub_test      # D-WZ-OVERDUB-01 SUM/REPLACE + refusals + drain regression
+    sl_tape_varispeed_test    # identity bit-exactness at ±1, reverse, wrap
+    sl_tape_insert_test       # control-thread splice
+    sl_tape_mix_record_test   # NEW: record the main mix, same-block, honest stamp
+    sl_channel_test           # the uniform channel + the channel-bus record tap
+    sl_route_test             # ordered routing, feedback edges, click-free re-patch
+    sl_watchdog_test          # guard G1: a runaway feedback loop stays bounded
+)
+    add_executable(${t} tools/${t}.cpp)
+    target_link_libraries(${t} PRIVATE wz_sl_engine)
+    add_test(NAME ${t} COMMAND ${t})
+endforeach()

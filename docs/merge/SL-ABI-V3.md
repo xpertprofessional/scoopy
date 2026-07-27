@@ -109,16 +109,58 @@ refuse at commit, they are not dead ABI.
 
 TS owns the document; builder values ARE the document's values (wz law, unchanged).
 
-## 5. Decks — wizard's surface, 1:1, sl-named
+## 5. Tapes — wizard's deck surface, sl-named
+
+> **AMENDED 2026-07-25 — SIGNED OFF by the user.** This section originally named
+> the transplanted surface `sl_deck_*`. It ships as **`sl_tape_*`**, because §6 had
+> already spent `sl_deck_*` on scoopy's GRID decks — sequenced sampler sessions,
+> a different index space with a different engine behind it. Two objects called
+> "deck" in one ABI is a permanent ambiguity; "tape" is also the word
+> `STRIP-MODEL.md` uses for this object. **Tape and grid-deck indices are
+> independent**: `sl_tape_count()` (8) tapes coexist with `sl_deck_count()` (3)
+> grid decks. Built: `slengine/src/sl_tape.{h,cpp}`, gated by `npm run tape:check`.
 
 Everything from `wz_deck_*` transplants with identical semantics and comments-of-record
 (chunked planar storage, seqlock loop spec, scrub mailbox, overdub SUM/REPLACE,
 control-thread insert splice, record service pre-allocation, 256 MB cap, parallel drain,
 Law C-2 stamps, Law C-3 same-block record→loop handoff):
 
-`sl_deck_load · frames · trigger · seek · scrub_begin/to/end · overdub_start/stop ·
+`sl_tape_load · frames · trigger · seek · scrub_begin/to/end · overdub_start/stop ·
 insert · playhead · set_loop · waveform · set_rate · rate · set_record_source ·
 record_start · record_stop · record_service · set_record_cap_frames · drain`
+
+All 21 carried, none waived (the ledger is `slengine/tape-not-carried.json`, and the
+gate is symmetric — an invented entry point fails it too). Four v3 additions are
+declared there with reasons: `sl_tape_count`, `sl_tape_channels`, `sl_tape_state`,
+`sl_tape_record_cap_reached`.
+
+### The one place the transplant is NOT 1:1 — the record SOURCE
+
+Wizard's deck could only record **device input channels** (`recSrcChan0/1` indexed the
+render's raw `in_bus`). `STRIP-MODEL.md`'s closing argument requires the opposite:
+recording is always "capture this bus", identical whether the sound came from a
+sequencer, a live input or a file. So the source became a KIND:
+
+```c
+/* kind 0 = deviceInput (chan0 = L/mono, chan1 = R or -1) — wizard's behaviour.
+ * kind 1 = mainMix — the engine's main L/R after everything ("what left the app").
+ * An unknown kind is REFUSED, never silently treated as input 0.
+ * `channelBus` joins this list when the strip channel exists (P2 step 2). */
+int32_t sl_tape_set_record_source(sl_engine* e, uint32_t tape, uint32_t kind,
+                                  int32_t chan0, int32_t chan1);
+```
+
+This is why the render is **five phases, not one pass**: a source has to be captured at
+the point where it actually exists. Arm + the Law C-3 handoff run at the top of the
+block (so a stop-with-loop plays in that same block); device-input capture runs before
+anything renders; the mix capture runs *after* the lanes are summed. That last split is
+what makes a mix take stamp honestly — this block's mix under this block's stamp, rather
+than the previous block's audio beside a current stamp, which is the ~10 ms error
+`docs/specs/pd-global-record-as-strip.md` §1 flagged in the loopback approach.
+
+Consequence to know: overdub reads its input during the *playback* pass, which runs
+before the mix exists, so a mix-sourced overdub is **refused** rather than silently
+layering a stale block.
 
 New in v3 (the merge's own additions):
 
@@ -126,8 +168,10 @@ New in v3 (the merge's own additions):
 /* Beat-quantized record start/stop: capture begins/ends at the next boundary of
  * `division` (1 = bar, 4 = beat, …) on the master transport (§7). With the transport
  * stopped it degrades to the immediate wz behavior. Loops recorded this way are
- * bar-exact by construction (plan §sync). */
-void sl_deck_record_start_quantized(sl_engine* e, uint32_t deck, uint32_t division);
+ * bar-exact by construction (plan §sync).
+ * NOT BUILT — deferred with §7 (P2 decision, 2026-07-25). P2 ships immediate
+ * capture, which is wizard's proven behaviour; this arrives with the transport. */
+void sl_tape_record_start_quantized(sl_engine* e, uint32_t tape, uint32_t division);
 
 /* Deck material = a SESSION (scoopy sequencer world) instead of a buffer. The deck's
  * snapshot is built with the v2 builder targeted at the deck (§6); trigger/playhead/

@@ -12,7 +12,7 @@ import type { MethodOf, ParamsOf, ResultOf } from "./types.ts";
  * Bump SCHEMA_VERSION on any breaking change and update both sides in the
  * same increment. Publishes across mismatched versions are refused.
  */
-export const SCHEMA_VERSION = 86; // v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
+export const SCHEMA_VERSION = 87; // v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
 
 // ---------------------------------------------------------------------------
 // ParamWrite — fine-grained live controls (audio-thread atomics on the
@@ -235,6 +235,46 @@ export const HOT_FRAME_SCALARS = [
   "carveN5B0", "carveN5B1", "carveN5B2", "carveN5B3", "carveN5B4", "carveN5B5",
   "carveN6B0", "carveN6B1", "carveN6B2", "carveN6B3", "carveN6B4", "carveN6B5",
   "carveN7B0", "carveN7B1", "carveN7B2", "carveN7B3", "carveN7B4", "carveN7B5",
+  // ── THE PLANE (merge P2 step 4) ──────────────────────────────────────────
+  //
+  // APPENDED, never inserted. Indices are positional (HotFrameLayout derives
+  // them from this array's order), so inserting anywhere above renumbers every
+  // scalar after it and silently re-points every meter in the app. The merged
+  // engine generates its C++ index header from this file
+  // (apps/wizard/web/scripts/generateHotFrame.ts), so a mid-array insert is a
+  // wire break that both sides would have to move together.
+  //
+  // All of it is telemetry the plane's canvases read on their rAF loop — never
+  // through React state. These are the only engine reads the strip does at
+  // frame rate; everything else it knows comes from the document.
+  //
+  // Per-strip-channel peak, post-level and post-mute — the same tap point the
+  // record bus and a route use, so the meter shows what the strip CONTRIBUTES.
+  // A muted strip therefore reads 0, which is correct and worth knowing before
+  // someone files it as a bug.
+  "slChanPeakL0", "slChanPeakL1", "slChanPeakL2", "slChanPeakL3",
+  "slChanPeakL4", "slChanPeakL5", "slChanPeakL6", "slChanPeakL7",
+  "slChanPeakR0", "slChanPeakR1", "slChanPeakR2", "slChanPeakR3",
+  "slChanPeakR4", "slChanPeakR5", "slChanPeakR6", "slChanPeakR7",
+  // Tape playhead in FRAMES (sl_tape_playhead). Fractional while varispeeding.
+  "slTapePlayhead0", "slTapePlayhead1", "slTapePlayhead2", "slTapePlayhead3",
+  "slTapePlayhead4", "slTapePlayhead5", "slTapePlayhead6", "slTapePlayhead7",
+  // Tape state: 0 idle · 1 loop · 2 one-shot · 3 recording (sl_tape_state).
+  // The strip's state word and its whole transport-enablement ladder read this
+  // rather than the document, because the ENGINE owns what is playing — a
+  // document that thinks it is looping while the tape stopped is the drift the
+  // record→material transition (Law C-3) is most likely to produce.
+  "slTapeState0", "slTapeState1", "slTapeState2", "slTapeState3",
+  "slTapeState4", "slTapeState5", "slTapeState6", "slTapeState7",
+  // The 256 MB record cap, reached (sl_tape_record_cap_reached). Its own scalar
+  // because the tape STOPS ITSELF and goes to loop: without this the UI shows a
+  // perfectly ordinary looping tape and never says why recording ended.
+  "slTapeCap0", "slTapeCap1", "slTapeCap2", "slTapeCap3",
+  "slTapeCap4", "slTapeCap5", "slTapeCap6", "slTapeCap7",
+  // The watchdog lamp: engaged (1 while limiting, including the hold tail) and
+  // the gain it is applying (1.0 = not limiting). Global, not per strip — the
+  // RMS limiter is on the main pair.
+  "slWatchdogEngaged", "slWatchdogGain",
 ] as const;
 
 /** X-MIX carve: 8 nodes (decks A/B/C · FX returns 1–4 · input) × 6 bands. */
@@ -274,6 +314,30 @@ export const djTrackLevelIndex = (deck: number, track: number): number =>
   HotFrameLayout[
     `djTrackLevelD${deck}T${track}` as (typeof HOT_FRAME_SCALARS)[number]
   ];
+
+/** Strip channels (sl_channel_count) and tapes (sl_tape_count) on the plane. */
+export const SL_CHANNEL_COUNT = 8;
+export const SL_TAPE_COUNT = 8;
+
+/** HotFrame index of strip channel `channel`'s peak on `side` (the plane). */
+export const slChanPeakIndex = (channel: number, side: "L" | "R"): number =>
+  HotFrameLayout[`slChanPeak${side}${channel}` as (typeof HOT_FRAME_SCALARS)[number]];
+
+/** HotFrame index of tape `tape`'s `field` (the plane). */
+export const slTapeIndex = (
+  tape: number,
+  field: "Playhead" | "State" | "Cap",
+): number =>
+  HotFrameLayout[`slTape${field}${tape}` as (typeof HOT_FRAME_SCALARS)[number]];
+
+/** What `slTapeState<n>` carries. Mirrors sl_tape_state's return, which is the
+    engine's own truth about the tape — not the document's belief about it. */
+export const SL_TAPE_STATE = {
+  idle: 0,
+  loop: 1,
+  oneShot: 2,
+  recording: 3,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Commands — JSON-RPC style, human-rate, async replies.
@@ -1431,6 +1495,401 @@ export const COMMANDS = {
       ]),
       trimStart: z.number().min(0).max(1).optional(),
       trimEnd: z.number().min(0).max(1).optional(),
+    }).strict(),
+    result: z.object({}).strict(),
+  },
+  // ── THE PLANE (merge P2 step 4) ──────────────────────────────────────────
+  //
+  // The merged engine's strip surface — sl_channel_* / sl_tape_* / sl_route_*
+  // (SL-ABI-V3 §4/§5 plus the strip channel), built and sanitizer-clean in
+  // apps/wizard/slengine but until now unreachable from any UI.
+  //
+  // ONLY THE MERGED HOST (WizardMerged) ANSWERS THESE. ScoopyLoops.app links
+  // the pinned core, which has no tapes, no strip channels and no patchbay, so
+  // it refuses them like any unimplemented method. That is deliberate and it is
+  // why the plane is its own panel rather than a change to an existing one.
+  //
+  // Bundled by NOUN with an `action` enum, following gridEdit/fxSlot/capture,
+  // rather than one method per ABI entry point. ~50 one-to-one methods would
+  // make this file a hand-mirror of a C header — the thing the "never
+  // hand-mirror a mapping" law exists to prevent — and 50 more branches in
+  // SlDispatch. The C ABI stays the authority; this is its verb surface.
+  //
+  // Action-specific fields are `.optional()` because one zod object serves
+  // every action. The DISPATCHER validates the combination, so a missing
+  // required field is a loud refusal there, not a silent default here.
+  slChannel: {
+    params: z.object({
+      action: z.enum(["setSource", "setLevel", "setMute", "setSend"]),
+      channel: z.number().int().min(0).max(7),
+      /** setSource: 0 none · 1 tape · 2 gridDeck (sl_channel_set_source). */
+      kind: z.number().int().min(0).max(2).optional(),
+      /** setSource: the tape or grid-deck index within that kind's space. */
+      index: z.number().int().min(0).optional(),
+      /** setLevel/setSend: LINEAR gain, not a fader position. */
+      level: z.number().min(0).optional(),
+      /** setSend: which of the four sends. */
+      send: z.number().int().min(0).max(3).optional(),
+      /** setMute. */
+      muted: z.boolean().optional(),
+    }).strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
+  },
+  slTape: {
+    params: z.object({
+      action: z.enum([
+        "trigger", // 0 loop · 1 one-shot · 2 stop · 3 retrigger
+        "seek",
+        "setLoop",
+        "setRate", // signed; negative is reverse
+        "scrubBegin", "scrubTo", "scrubEnd",
+        "overdubStart", // 0 SUM · 1 REPLACE (D-WZ-OVERDUB-01)
+        "overdubStop",
+        "waveform", // min/max columns for the strip's wave field
+        "info", // frames/channels/rate/state — the post-record pull
+      ]),
+      tape: z.number().int().min(0).max(7),
+      mode: z.number().int().min(0).max(3).optional(), // trigger / overdubStart
+      frame: z.number().min(0).optional(), // seek / scrubTo (fractional: scrub)
+      enabled: z.boolean().optional(), // setLoop
+      start: z.number().min(0).optional(), // setLoop
+      end: z.number().min(0).optional(), // setLoop
+      rate: z.number().optional(), // setRate
+      /** waveform: the span and the column count to reduce it into. */
+      channel: z.number().int().min(0).optional(),
+      startFrame: z.number().min(0).optional(),
+      endFrame: z.number().min(0).optional(),
+      columns: z.number().int().min(1).max(4096).optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      // waveform
+      min: z.array(z.number()).optional(),
+      max: z.array(z.number()).optional(),
+      // info
+      frames: z.number().optional(),
+      channels: z.number().optional(),
+      rate: z.number().optional(),
+      state: z.number().optional(),
+    }).strict(),
+  },
+  slRoute: {
+    params: z.object({
+      action: z.enum([
+        "add", "remove", "setGain",
+        "clearAll", // what a document load issues FIRST (see mapApply)
+        "installDefaults",
+        "wouldCycle", // ask before adding, so a cycle is offered as a feedback
+                      // edge rather than refused with no explanation
+      ]),
+      id: z.number().int().min(0).optional(), // remove / setGain
+      /** add/wouldCycle source: 0 channelOut · 1 channelSend · 2 deviceInput
+          · 3 fxReturn. Encodings are mapApply's, which are sl_engine.h's. */
+      srcKind: z.number().int().min(0).max(3).optional(),
+      srcIndex: z.number().int().min(0).optional(),
+      /** Send 0–3, or the right-hand input channel. 0xFFFFFFFF = none — and
+          NEVER 0, which is a real send index and a real input channel. */
+      srcSub: z.number().int().min(0).optional(),
+      /** add destination: 0 channelIn · 1 sendBus · 2 main. */
+      dstKind: z.number().int().min(0).max(2).optional(),
+      dstIndex: z.number().int().min(0).optional(),
+      gain: z.number().min(0).optional(),
+      /** THE LOAD-BEARING FLAG. false = rendered in dependency order at zero
+          added latency, refused at edit time if it closes a cycle. true = reads
+          the previous block, costs exactly one block, and is the only edge
+          allowed to loop. Two routes differing only in this bit differ by a
+          whole block of latency. */
+      feedback: z.boolean().optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** add: the new route's id. wouldCycle: whether it would. */
+      id: z.number().optional(),
+      wouldCycle: z.boolean().optional(),
+    }).strict(),
+  },
+  /** Read the patchbay back out. The shape is mapApply's `LiveRoute`, one entry
+      per SLOT over 0..sl_route_capacity(), so captureRoutes() consumes it
+      unchanged — a save records the graph that EXISTS rather than the one the
+      UI believes it issued, and those drift the moment anything edits routing
+      outside the document's view. */
+  slRouteList: {
+    params: z.object({}).strict(),
+    result: z.object({
+      routes: z.array(z.object({
+        active: z.boolean(),
+        srcKind: z.number(),
+        srcIndex: z.number(),
+        srcSub: z.number(),
+        dstKind: z.number(),
+        dstIndex: z.number(),
+        gain: z.number(),
+        feedback: z.boolean(),
+        /** Engine-only: installed by sl_route_install_defaults rather than by
+            the user. Not in the document — a default is an ordinary route and
+            is saved like one — but the plane uses it to decide what NOT to draw
+            a cable for, so every cable on screen is one you made. */
+        isDefault: z.boolean(),
+      }).strict()).max(128),
+      /** The published render order (sl_route_render_order), for the routing
+          view's "this strip renders first" explanation. */
+      renderOrder: z.array(z.number().int()).max(8),
+    }).strict(),
+  },
+  /** Recording, as ONE method rather than start/stop pairs on two surfaces.
+      The Law C-2 stamp exists only in the gap between them: sl_tape_record_stop
+      RETURNS the engine sample capture began on, and RecordService::endTake must
+      apply it before closing the file or the take ships TimeReference = 0 — the
+      exact regression recorder_drain_test and sl_take_drain_test were written to
+      catch. Splitting this across two round trips would put a UI thread in the
+      middle of that handoff. */
+  slRecord: {
+    params: z.object({
+      action: z.enum(["start", "stop"]),
+      tape: z.number().int().min(0).max(7),
+      /** start: WHERE the audio comes from — 0 deviceInput · 1 mainMix ·
+          2 channelBus. For channelBus, `chan0` is a CHANNEL index, which is
+          what makes "record the input" and "record the deck output" literally
+          one operation on one code path.
+
+          Carried HERE rather than as a separate arm call because the sequence
+          is order-critical — set source, service (pre-allocate), start, open
+          the file — and a UI that could interleave anything between those steps
+          would be a UI that can arm a tape at the wrong source. The legacy
+          shell's deckRecordStart is the same single atomic call for the same
+          reason. */
+      sourceKind: z.number().int().min(0).max(2).optional(),
+      chan0: z.number().int().optional(),
+      /** -1 = mono. Also decides the take file's channel count. */
+      chan1: z.number().int().optional(),
+      /** start: the human label of what is being captured, stored in the take's
+          sidecar. It is the strip's provenance — the only record of what the
+          material was, once the strip's element is the tape. */
+      sourceDesc: z.string().optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** stop: the take's path and its Law C-2 stamp. */
+      path: z.string().optional(),
+      startEngineSample: z.number().optional(),
+      frames: z.number().optional(),
+    }).strict(),
+  },
+  /** The take library. `list` unions what THIS process recorded with a scan of
+      the takes directory, so reopening tomorrow still finds yesterday's takes.
+      Sidecars are returned RAW: the document layer owns that schema (strict
+      zod, persist/takeLibrary.ts), and a second parser in C++ would be a second
+      definition of a format that is already a hand-mirrored boundary. */
+  slTakes: {
+    params: z.object({
+      action: z.enum(["list", "delete", "reveal"]),
+      path: z.string().optional(), // delete / reveal
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      takes: z.array(z.object({
+        path: z.string(),
+        /** The sidecar's JSON text, or null when there is none. A .wav with no
+            sidecar is STILL a take — a crash between closing the audio and
+            writing the json produces exactly the take a user most wants back. */
+        sidecar: z.string().nullable(),
+      }).strict()).optional(),
+    }).strict(),
+  },
+  /**
+   * The GRID DECKS' engine surface (merge P2 step 4, increment 3).
+   *
+   * Only what the ABI actually has. `sl_deck_*` exposes count · clear ·
+   * set_tempo_sync and NOTHING ELSE — in particular **there is no scene API**,
+   * so scene selection is not here and cannot be: it travels inside the
+   * published world (`slWorld`), because a scene is a projection of the
+   * document, not an engine parameter.
+   *
+   * Declaring only what exists is the point. A `sceneSelect` here would be dead
+   * ABI in the document equivalent — a method the UI could call, that would
+   * return ok, and that would change nothing.
+   */
+  slDeck: {
+    params: z.object({
+      action: z.enum(["setTempoSync", "clear"]),
+      deck: z.number().int().min(0).max(2),
+      /** setTempoSync: master ÷ deck bpm. 1.0 is "run at your own tempo" and
+          must be SENT, not omitted — a deck may be carrying a ratio from a
+          previously loaded map, and silence would leave it stretched with
+          nothing in the document explaining why. */
+      ratio: z.number().positive().optional(),
+    }).strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
+  },
+  /**
+   * THE `.scoopyMap` DOCUMENT ON DISK (merge P2 step 4, increment 6).
+   *
+   * ⚠️ NOTHING COULD SAVE A MAP BEFORE THIS. The wire carried no file read or
+   * write at all — `chooseDirectory` was the only filesystem method, and
+   * `capabilities.fileSystem: true` means "this host owns native dialogs", not
+   * "the web layer can write files". The browser companion persists through
+   * OPFS, which is browser storage and exactly wrong for a native document. So
+   * a whole plane could be built and lost.
+   *
+   * The map is a NATIVE document in a native app, stored beside the takes it
+   * references: a map and its audio travelling together is what makes the
+   * eventual collect-on-export a copy rather than a hunt.
+   *
+   * Deliberately JSON text rather than a path handed to the web layer — the web
+   * layer must never hold a filesystem path it could dereference, and the
+   * document layer already owns the format (strict zod, migrations,
+   * refuse-newer). The shell moves bytes; TS decides what they mean.
+   */
+  slMap: {
+    params: z.object({
+      action: z.enum(["save", "open", "list", "delete", "export"]),
+      /** save/open/delete: the map's name, without extension. */
+      name: z.string().optional(),
+      /** save: the serialised MapDocument. export: the REWRITTEN one, whose
+          take refs already point inside the package. */
+      json: z.string().optional(),
+      /** export: the files to collect and the entry each becomes.
+          ⚠️ NO AUDIO CROSSES THE BRIDGE. A take is capped at 256 MB, so base64
+          would be ~350 MB of string per take — not slow, fatal. TS decides WHAT
+          to collect (it owns the document); the shell moves the BYTES (it owns
+          the files). Neither learns the other's job. */
+      takes: z.array(z.object({ path: z.string(), entry: z.string() }).strict()).optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** open: the file's bytes, for the document layer to parse. */
+      json: z.string().optional(),
+      /** export: where the package was written, and what it could not find.
+          A missing take is REPORTED — a package quietly short one file fails on
+          the other machine, at the worst moment, with no way to know why. */
+      path: z.string().optional(),
+      missing: z.array(z.string()).optional(),
+      /** list: every map this host can open, newest first. */
+      maps: z.array(z.object({
+        name: z.string(),
+        /** Epoch ms, for ordering and for showing "saved 3 minutes ago". */
+        savedAt: z.number(),
+      }).strict()).optional(),
+      error: z.string().nullable().optional(),
+    }).strict(),
+  },
+  /**
+   * THE MASTER OUTPUT (merge P2 step 4, increment 5).
+   *
+   * The plane's front-of-house level. Live, applied once by the core's master
+   * stage, and deliberately NOT reachable any other way: the world sink's
+   * `setMainGain` stays a no-op because a SESSION's master volume must not
+   * move the PLANE's master — loading a session would otherwise change your
+   * front-of-house level, which is the last thing that should happen mid-set.
+   *
+   * The watchdog's lamp needs no method: `slWatchdogEngaged` / `slWatchdogGain`
+   * are already HotFrame scalars, so the master section reads them on the same
+   * rAF loop as every meter.
+   */
+  slMaster: {
+    params: z.object({
+      action: z.enum(["setLevel"]),
+      /** Linear gain. Above 1.0 is allowed — the core's master clipper is
+          behind this, so it is a fader, not a limiter. */
+      level: z.number().min(0),
+    }).strict(),
+    result: z.object({ ok: z.boolean() }).strict(),
+  },
+  /**
+   * THE INPUT SOURCE PICKER's data (merge P2 step 4, increment 2).
+   *
+   * A strip's live input is a ROUTE from a `deviceInput` endpoint — that is what
+   * lets an input element need no special case anywhere. But a route names a
+   * CHANNEL INDEX, and until something can turn indices into names there is
+   * nothing to pick from, which is why every strip was hard-wired to inputs
+   * 0/1 and every strip claimed to record "this strip's input" without being
+   * able to say which.
+   *
+   * `channels` is compacted to ACTIVE inputs, so index i here IS the `srcIndex`
+   * a route wants — no second mapping to keep in step.
+   */
+  slDevices: {
+    params: z.object({
+      action: z.enum(["list", "setInput"]),
+      /** setInput: the device name from `devices`. */
+      name: z.string().optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** The input device in use. */
+      current: z.string().optional(),
+      /** Every input device this host could switch to. */
+      devices: z.array(z.string()).optional(),
+      /** Active input channel names, in route-index order. */
+      channels: z.array(z.string()).optional(),
+      /** setInput failure reason — reported, because a picker that silently
+          fails leaves the user staring at a device that did not change. */
+      error: z.string().nullable().optional(),
+    }).strict(),
+  },
+  /**
+   * THE GRID, PLAYING THROUGH THE NATIVE ENGINE (merge P2 step 4).
+   *
+   * WHY THIS IS SEPARATE FROM `worldPublish`. That method's params are
+   * `{json: <a full PatternFile string>}` — scoopy/Swift's document path. The
+   * merged host deliberately does NOT parse PatternFile in C++: the
+   * document→engine translation is 505 tested lines of TS (`worldFromSession`)
+   * and porting it a third time is exactly what the "never hand-mirror a
+   * mapping" law forbids. So the merged host takes the FLAT `World` that
+   * translation already produces, keyed by engine param NAME, and applies it
+   * generically (`SlWorldApply`) without knowing what any field means.
+   *
+   * Overloading `worldPublish` with an optional `world` would leave one method
+   * whose payload means two different things depending on the host — a
+   * hand-mirror with no gate on it. This is the native path, named as such.
+   *
+   * ⚠️ WITHOUT THIS THE GRID CANNOT PLAY NATIVELY. `SlWorldApply` has been
+   * built and tested since P1 with ZERO callers, because there was no wire
+   * method to reach it: the web layer's world sink was written for the browser
+   * companion and still pointed at the WASM worklet — an Emscripten copy of the
+   * same core, running inside a native app that already has the real one. A
+   * grid deck in a strip is impossible until a world can reach `sl_engine`,
+   * which is why that was never a UI task.
+   */
+  slWorld: {
+    params: z.object({
+      action: z.enum(["registerSample", "publish"]),
+      /** registerSample: the kit's id for this sample — what a world's tracks
+          name. The engine resolves a track to audio through this id alone. */
+      id: z.string().optional(),
+      /** Decoded PCM, -1..1. `right` omitted = mono (the engine duplicates).
+          Sent decoded rather than as a path because the DECODER lives in the
+          web layer — it already decoded this kit — and the native side has no
+          business owning a second one. */
+      left: z.array(z.number()).optional(),
+      right: z.array(z.number()).optional(),
+      sampleRate: z.number().positive().optional(),
+      /** publish: the flat World from `worldFromSession`, sent AS-IS. Typed
+          `unknown` on purpose — restating its ~90 fields here would be a third
+          copy of a shape that already has exactly one authority. */
+      world: z.unknown().optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** publish: whether the snapshot was committed, and why not if not. A
+          refusal is reported, never swallowed — a silent no-op is
+          indistinguishable from a dead wire. */
+      applied: z.boolean().optional(),
+      error: z.string().nullable().optional(),
+    }).strict(),
+  },
+  /** Spawn a named panel in its own window. The plane's own spawn verb: it
+      NAMES the panel rather than encoding it in the method (openFxSlotWindow,
+      openInstrumentWindow, …), because "compose beside the map" means the plane
+      opens a window per strip and cannot know at schema-writing time which
+      panels a strip will want. Host-owned — it needs the window layer, so the
+      shell intercepts it before the pure dispatcher. */
+  openPanelWindow: {
+    params: z.object({
+      panel: z.string(),
+      /** Becomes `window.__slPanelArg` in the new window — a deck index for a
+          compose window, a slot for an FX window. */
+      arg: z.string().optional(),
     }).strict(),
     result: z.object({}).strict(),
   },

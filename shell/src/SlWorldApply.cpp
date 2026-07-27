@@ -54,8 +54,16 @@ juce::var applyWorld(sl_engine* engine, const juce::var& world) {
     const auto startStep = (int32_t) (int) world.getProperty("startStep", 0);
 
     if (sl_snapshot_begin(engine, deck, bpm, isPlaying ? 1 : 0, startStep) != 1)
-        // Deck 0 only today (the ABI refuses >0 rather than aliasing) — report
-        // it as the honest reason instead of a silent empty world.
+        // Out of range is REFUSED rather than aliased onto deck 0 — report the
+        // honest reason instead of committing a world onto the wrong deck.
+        //
+        // (This comment used to say "deck 0 only today". That was never true of
+        // the ABI: `deckWorlds` is a persistent array of kMaxDecks = 3 and each
+        // begin…commit rebuilds ONE deck's slot and republishes all, which is
+        // exactly the per-deck-BPM isolation the merge requires. The single-deck
+        // limitation is in the WEB layer — `companionEngine` holds one session
+        // and `worldFromSession` has no deck axis — not here. Proven by
+        // plane_audio_test, which runs two decks at once.)
         return applied(false, "snapshot_begin refused (deck " + juce::String((int) deck) +
                               " out of range — max is " + juce::String((int) sl_deck_count() - 1) + ")");
 

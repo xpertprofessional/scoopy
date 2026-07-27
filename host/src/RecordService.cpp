@@ -1,7 +1,6 @@
 #include "RecordService.h"
 
 #include "WavWriter.h"
-#include "wz_engine.h"
 
 #include <chrono>
 #include <cstdio>
@@ -40,15 +39,18 @@ std::string Service::takeFileName(uint32_t deck, uint64_t epochMs) {
     return buf;
 }
 
-bool Service::start(wz_engine* engine, const std::string& takesDir) {
-    if (engine == nullptr || running_.load()) return false;
+bool Service::start(TakeDrainSource& source, const std::string& takesDir) {
+    if (running_.load()) return false;
     std::error_code ec;
     std::filesystem::create_directories(takesDir, ec);
     if (ec) return false;
-    engine_ = engine;
+    source_ = &source;
     dir_ = takesDir;
     slots_.clear();
-    for (uint32_t d = 0; d < 8; ++d) slots_.push_back(std::make_unique<DeckSlot>());
+    // One writer per slot the engine actually has — wizard's 8 decks, the merged
+    // engine's tapes. Asking beats assuming: the two counts need not agree.
+    const uint32_t n = source.slotCount();
+    for (uint32_t d = 0; d < n; ++d) slots_.push_back(std::make_unique<DeckSlot>());
     running_.store(true);
     thread_ = std::thread([this] { threadMain(); });
     return true;
@@ -70,7 +72,7 @@ void Service::threadMain() {
     while (running_.load()) {
         // Keep record-buffer chunks allocated ahead of the render's write
         // position — allocation belongs on THIS thread, never the audio one.
-        wz_deck_record_service(engine_);
+        source_->serviceAllocation();
         for (uint32_t d = 0; d < slots_.size(); ++d) drainDeck(d, false);
         std::this_thread::sleep_for(kDrainInterval);
     }
@@ -86,8 +88,8 @@ void Service::drainDeck(uint32_t deck, bool finalDrain) {
     // Pull until the ring is empty (a final drain loops until it truly is).
     for (;;) {
         uint64_t stamp = 0;
-        const uint32_t got = wz_deck_drain(engine_, deck, slot.scratch.data(),
-                                           kDrainChunkFrames, &stamp);
+        const uint32_t got = source_->drain(deck, slot.scratch.data(),
+                                            kDrainChunkFrames, &stamp);
         if (got == 0) break;
         if (!slot.writer.write(slot.scratch.data(), got)) {
             // An IO failure must not stall the engine: count and keep draining.

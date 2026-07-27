@@ -6,6 +6,7 @@
 // the "render" loop here runs at full speed with no synchronisation with the
 // service thread at all.
 #include "RecordService.h"
+#include "WzTakeDrainSource.h"
 
 #include "wz_engine.h"
 
@@ -55,8 +56,9 @@ int main() {
     wz_engine* e = wz_engine_create(kRate, kQ, 7);
     CHECK(e != nullptr);
 
+    wizard::record::WzTakeDrainSource src(e);
     wizard::record::Service svc;
-    CHECK(svc.start(e, dir));
+    CHECK(svc.start(src, dir));
 
     // Let the engine clock ADVANCE before arming. Recording from sample 0 is
     // the one case where a severed stamp is indistinguishable from a correct

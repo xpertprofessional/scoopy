@@ -43,13 +43,27 @@ add_test(NAME sl_settings_store_test COMMAND sl_settings_store_test)
 add_library(wz_sl_command STATIC src/SlDispatch.cpp)
 target_include_directories(wz_sl_command PUBLIC src)
 # wz_sl_world (applyWorld) for the worldPublish play path; it pulls the v3 engine.
+# wz_record for the plane's slRecord/slTakes: recording is half engine and half
+# FILE (the drain thread, the take directory, the crash-safe writer), and the
+# file half is the host's. Reached through HostServices, so a host without a
+# recorder still links and refuses those two commands honestly.
+# wz_sl_engine is PRIVATE: the plane commands call the C ABI directly, but
+# SlDispatch.h only forward-declares sl_engine, so nothing downstream needs it.
 target_link_libraries(wz_sl_command
-    PUBLIC juce::juce_core
-    PRIVATE wz_sl_world juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    PUBLIC juce::juce_core wz_record
+    PRIVATE wz_sl_world wz_sl_engine wz_audio_io
+            juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 add_executable(sl_dispatch_test tools/sl_dispatch_test.cpp)
 target_link_libraries(sl_dispatch_test PRIVATE wz_sl_command wz_sl_world wz_sl_engine)
 add_test(NAME sl_dispatch_test COMMAND sl_dispatch_test)
+
+# THE PLANE MAKES A SOUND. Drives the exact command sequence the plane's UI
+# issues, through the real dispatcher, into a real engine, and asserts on the
+# rendered samples — the check that "tests pass" was standing in for.
+add_executable(plane_audio_test tools/plane_audio_test.cpp)
+target_link_libraries(plane_audio_test PRIVATE wz_sl_command wz_sl_world wz_sl_engine wz_record)
+add_test(NAME plane_audio_test COMMAND plane_audio_test)
 
 # The Option-B play path (native half): a name-keyed World -> v3 snapshot. Links
 # the v3 engine; GUI-free so it is tested headlessly (a World payload -> audio).

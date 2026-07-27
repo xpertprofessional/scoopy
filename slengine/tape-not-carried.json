@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Coverage ledger for the SL-ABI-V3 §5 tape transplant, gated by",
+    "`npm run tape:check` (web/scripts/checkTapeCoverage.ts).",
+    "",
+    "notCarried: a wizard wz_deck_* entry point deliberately NOT carried into",
+    "  sl_tape_*, with the reason. Empty is the good state — it means the",
+    "  transplant is complete.",
+    "additions: an sl_tape_* entry point with no wizard counterpart, with the",
+    "  reason it exists. Both lists are required so neither a dropped function",
+    "  nor an invented one can pass unnoticed."
+  ],
+  "notCarried": [],
+  "additions": [
+    {
+      "name": "sl_tape_count",
+      "reason": "Tapes and grid decks are separate index spaces in the merged engine, so a caller needs to ask how many tapes exist. Wizard had one deck array and a compile-time constant, and no equivalent getter."
+    },
+    {
+      "name": "sl_tape_channels",
+      "reason": "The drain ring is interleaved at the tape's own width, so the host must know it to size a drain buffer and to open the take's WAV. Wizard's host knew the width implicitly because it chose the record channels itself; with a mainMix source the engine picks the width, so it has to be readable."
+    },
+    {
+      "name": "sl_tape_state",
+      "reason": "Wizard published deck state through its HotFrame deck block, which v3 does not have yet (per-deck HotFrame fields are still zero-filled). Until it does, state has to be readable directly or the UI cannot tell recording from looping."
+    },
+    {
+      "name": "sl_tape_record_cap_reached",
+      "reason": "Same as sl_tape_state — wizard surfaced the 256 MB cap flag via its HotFrame deck block. A cap that stops a recording with no way to observe it is the silent-truncation failure D-WZ-DECK-01 exists to make visible."
+    }
+  ]
+}

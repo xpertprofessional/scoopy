@@ -277,10 +277,52 @@ enum {
     SL_HF_carveN7B3 = 265,
     SL_HF_carveN7B4 = 266,
     SL_HF_carveN7B5 = 267,
+    SL_HF_slChanPeakL0 = 268,
+    SL_HF_slChanPeakL1 = 269,
+    SL_HF_slChanPeakL2 = 270,
+    SL_HF_slChanPeakL3 = 271,
+    SL_HF_slChanPeakL4 = 272,
+    SL_HF_slChanPeakL5 = 273,
+    SL_HF_slChanPeakL6 = 274,
+    SL_HF_slChanPeakL7 = 275,
+    SL_HF_slChanPeakR0 = 276,
+    SL_HF_slChanPeakR1 = 277,
+    SL_HF_slChanPeakR2 = 278,
+    SL_HF_slChanPeakR3 = 279,
+    SL_HF_slChanPeakR4 = 280,
+    SL_HF_slChanPeakR5 = 281,
+    SL_HF_slChanPeakR6 = 282,
+    SL_HF_slChanPeakR7 = 283,
+    SL_HF_slTapePlayhead0 = 284,
+    SL_HF_slTapePlayhead1 = 285,
+    SL_HF_slTapePlayhead2 = 286,
+    SL_HF_slTapePlayhead3 = 287,
+    SL_HF_slTapePlayhead4 = 288,
+    SL_HF_slTapePlayhead5 = 289,
+    SL_HF_slTapePlayhead6 = 290,
+    SL_HF_slTapePlayhead7 = 291,
+    SL_HF_slTapeState0 = 292,
+    SL_HF_slTapeState1 = 293,
+    SL_HF_slTapeState2 = 294,
+    SL_HF_slTapeState3 = 295,
+    SL_HF_slTapeState4 = 296,
+    SL_HF_slTapeState5 = 297,
+    SL_HF_slTapeState6 = 298,
+    SL_HF_slTapeState7 = 299,
+    SL_HF_slTapeCap0 = 300,
+    SL_HF_slTapeCap1 = 301,
+    SL_HF_slTapeCap2 = 302,
+    SL_HF_slTapeCap3 = 303,
+    SL_HF_slTapeCap4 = 304,
+    SL_HF_slTapeCap5 = 305,
+    SL_HF_slTapeCap6 = 306,
+    SL_HF_slTapeCap7 = 307,
+    SL_HF_slWatchdogEngaged = 308,
+    SL_HF_slWatchdogGain = 309,
 };
 
 // Scalars, then SPECTRUM_BIN_COUNT spectrum bins appended (HOT_FRAME_LENGTH).
-#define SL_HOTFRAME_SCALAR_COUNT 268
-#define SL_HOTFRAME_SPECTRUM_BASE 268
+#define SL_HOTFRAME_SCALAR_COUNT 310
+#define SL_HOTFRAME_SPECTRUM_BASE 310
 #define SL_HOTFRAME_SPECTRUM_COUNT 16
-#define SL_HOTFRAME_LENGTH 284
+#define SL_HOTFRAME_LENGTH 326

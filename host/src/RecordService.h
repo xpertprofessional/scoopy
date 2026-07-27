@@ -1,15 +1,24 @@
-// RecordService (P3-05): the bridge from the engine's lock-free per-deck drain
+// RecordService (P3-05): the bridge from an engine's lock-free per-slot drain
 // rings to on-disk takes.
 //
-// One background thread pulls every recording deck's drain and feeds a
-// wz_wav::Writer per deck. NOTHING here ever blocks the render thread: the
+// One background thread pulls every recording slot's drain and feeds a
+// wz_wav::Writer per slot. NOTHING here ever blocks the render thread: the
 // engine writes into its ring and moves on; if this thread is late, the ring
 // counts an overrun and the file loses those frames — the take is degraded, the
 // mix is not. (docs/specs/recorder.md §4.)
 //
-// The service also drives wz_deck_record_service() so record-buffer chunks are
-// allocated ahead of the render's write position on a NON-audio thread.
+// The service also drives the source's serviceAllocation() so record-buffer
+// chunks are allocated ahead of the render's write position on a NON-audio
+// thread.
+//
+// ENGINE-AGNOSTIC (merge): the engine is behind TakeDrainSource, so this tier
+// links neither engine and serves wizard's decks and the merged engine's tapes
+// with one implementation. A take is a take — the crash-safe writer, the
+// sidecar, the naming and the Law C-2 stamp handling do not depend on which
+// engine captured the audio.
 #pragma once
+
+#include "TakeDrainSource.h"
 
 #include <atomic>
 #include <memory>
@@ -18,12 +27,10 @@
 #include <thread>
 #include <vector>
 
-struct wz_engine;
-
 namespace wizard::record {
 
 struct TakeInfo {
-    uint32_t deckId = 0;
+    uint32_t deckId = 0;       // the source's slot index (wizard deck / merged tape)
     std::string path;          // the .wav (sidecar is path + ".json")
     uint64_t startEngineSample = 0;
     uint64_t frames = 0;
@@ -39,8 +46,10 @@ public:
     Service(const Service&) = delete;
     Service& operator=(const Service&) = delete;
 
-    // `takesDir` is created if absent. Starts the drain thread.
-    bool start(wz_engine* engine, const std::string& takesDir);
+    /** `takesDir` is created if absent. Starts the drain thread.
+        `source` must outlive the service (it is held by reference, exactly as
+        AudioIO holds a RenderSink). */
+    bool start(TakeDrainSource& source, const std::string& takesDir);
     void stop(); // finalizes any open take
 
     // Called (message thread) right after wz_deck_record_start: opens the take
@@ -72,7 +81,7 @@ private:
     void drainDeck(uint32_t deck, bool finalDrain);
 
     struct DeckSlot;
-    wz_engine* engine_ = nullptr;
+    TakeDrainSource* source_ = nullptr;
     std::string dir_;
     std::vector<std::unique_ptr<DeckSlot>> slots_;
     std::vector<TakeInfo> takes_;

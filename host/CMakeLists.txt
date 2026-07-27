@@ -47,15 +47,33 @@ add_executable(wav_killtest tools/wav_killtest.cpp)
 target_link_libraries(wav_killtest PRIVATE wz_wav)
 add_test(NAME wav_killtest COMMAND wav_killtest)
 
-# RecordService (P3-05): drain thread engine -> WavWriter. Links wz_engine for
-# the drain ABI; no JUCE (this tier stays portable).
-add_library(wz_record STATIC src/RecordService.cpp)
+# RecordService (P3-05): drain thread engine -> WavWriter. No JUCE (this tier
+# stays portable) and, since the merge, NO ENGINE either: the engine sits behind
+# TakeDrainSource, so this one implementation serves wizard's decks and the
+# merged engine's tapes, and a host drags only the engine it constructs.
+add_library(wz_record STATIC src/RecordService.cpp src/TakeScan.cpp)
 target_include_directories(wz_record PUBLIC src)
-target_link_libraries(wz_record PUBLIC wz_wav PRIVATE wz_engine)
+target_link_libraries(wz_record PUBLIC wz_wav)
+
+# The wizard-engine binding of that seam, end to end (deck -> drain -> WAV).
+# Finding takes from PREVIOUS sessions — what makes "reloadable into a tape
+# later" survive a restart. Enumeration only; the document layer parses.
+add_executable(take_scan_test tools/take_scan_test.cpp)
+target_link_libraries(take_scan_test PRIVATE wz_record)
+add_test(NAME take_scan_test COMMAND take_scan_test)
 
 add_executable(recorder_drain_test tools/recorder_drain_test.cpp)
 target_link_libraries(recorder_drain_test PRIVATE wz_record wz_engine)
 add_test(NAME recorder_drain_test COMMAND recorder_drain_test)
+
+# The MERGED-engine binding of the same seam, and the fixture that pins the
+# LAW C-2 STAMP CHAIN end to end: two staggered tape takes, with the delta read
+# back out of the bext TimeReference in the FILES. The engine's stamp is proven
+# by sl_tape_record_test and the writer by wav_killtest; this covers the hop
+# between them, which is exactly where the value has been dropped before.
+add_executable(sl_take_drain_test tools/sl_take_drain_test.cpp)
+target_link_libraries(sl_take_drain_test PRIVATE wz_record wz_sl_engine)
+add_test(NAME sl_take_drain_test COMMAND sl_take_drain_test)
 
 # Session file persistence (P7-06). Extracted from the shell so the ATOMICITY of
 # the write is testable headlessly — a half-written session is the one failure

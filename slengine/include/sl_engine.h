@@ -14,9 +14,9 @@
  * failure for a mistake of that shape.
  *
  * Implemented so far (ABI.md rule: declare only what is implemented) —
- * identity, lifecycle, rate, and planar render. The deck surface (§5), world
- * builder (§4), keyed params (§3), session snapshots (§6), transport (§7) and
- * HotFrame (§8) are NOT declared here until they exist. No dead ABI.
+ * identity, lifecycle, rate, planar render, the tape surface (§5), session
+ * snapshots (§6) and HotFrame (§8). The world builder (§4), keyed params (§3)
+ * and transport (§7) are NOT declared here until they exist. No dead ABI.
  */
 #ifndef SL_ENGINE_V3_H
 #define SL_ENGINE_V3_H
@@ -96,6 +96,403 @@ void sl_render(sl_engine* e,
                float* const* bus_out, uint32_t bus_count,
                uint32_t frames);
 
+/** The monotonic engine clock, in samples (Law C-2).
+ *
+ * Advanced by exactly `frames` on every render that happens, REGARDLESS of
+ * transport state, so realigning two takes recorded at different moments is a
+ * pure subtraction. Every take stamp, the record→loop handoff ordering and
+ * (later) the §7 master transport are rooted here; a render the engine refused
+ * does not advance it, because nothing was rendered. */
+uint64_t sl_engine_time_samples(const sl_engine* e);
+
+/* ── Tape decks (§5) ────────────────────────────────────────────────────────
+ *
+ * A TAPE is a continuous audio buffer with a playhead: record / scrub /
+ * varispeed / loop-region / overdub, draining to crash-safe stamped takes.
+ * It is the looper, the recorder AND the file player — one object, different
+ * fills (docs/merge/STRIP-MODEL.md).
+ *
+ * NAMING — this AMENDS SL-ABI-V3 §5, which listed these as `sl_deck_*`. §6 had
+ * already spent `sl_deck_*` on scoopy's GRID decks (sequenced sampler sessions,
+ * a different index space with a different engine behind it). Two objects
+ * called "deck" in one ABI is a permanent ambiguity, so wizard's deck arrives
+ * as `sl_tape_*` — which is also the word the strip model uses for it. Tape
+ * indices and deck indices are INDEPENDENT: sl_tape_count() tapes and
+ * sl_deck_count() grid decks coexist.
+ *
+ * Transplanted from wizard's wz_deck_* (chunked planar storage, seqlock loop,
+ * scrub mailbox, overdub SUM/REPLACE, insert splice, 256 MB cap, Law C-2
+ * stamps, the Law C-3 same-block record→loop handoff), which is a donor, not a
+ * survivor. Every entry point is null-safe and range-checked.
+ *
+ * THREADING: everything here is control-thread (message thread) except
+ * sl_tape_record_service and sl_tape_drain, which are the host's service
+ * thread. sl_tape_load and sl_tape_insert ALLOCATE and replace storage the
+ * render reads — the host must detach the render callback around them. */
+
+/** How many tapes exist. A tape index must be < this. */
+uint32_t sl_tape_count(void);
+
+/** Fill a tape from planar audio (a file, or a carved region). Rebuilds the
+    tape's storage, so the render must be detached. Returns 1 on success. */
+int32_t sl_tape_load(sl_engine* e, uint32_t tape, uint32_t channels,
+                     uint64_t frames, const float* const* data, double rate);
+
+/** Committed length in frames. Grows while recording; safe to poll. */
+uint64_t sl_tape_frames(const sl_engine* e, uint32_t tape);
+
+/** The tape's channel count (0 = no material yet). Set by whatever gave the
+    tape material — a load, or a record start. The host needs it to size a
+    sl_tape_drain buffer and to open the take's WAV at the right width. */
+uint32_t sl_tape_channels(const sl_engine* e, uint32_t tape);
+
+/** 0 = loop, 1 = one-shot, 2 = stop, 3 = retrigger (from idle: one-shot).
+    A trigger fires from the armed cue point if one was set by a scrub or seek
+    (D-WZ-SCRUBCUE-01), otherwise from the loop region's entry edge. */
+void sl_tape_trigger(sl_engine* e, uint32_t tape, uint32_t mode);
+
+/** Post a playhead target; the render applies it at the top of its next block
+    and arms it as the cue. Jumps at unchanged pitch — the scrub verbs below are
+    the turntable gesture, this is the seek. */
+void sl_tape_seek(sl_engine* e, uint32_t tape, uint64_t frame);
+
+/** The published playhead (frames, fractional at non-unity rates). */
+double sl_tape_playhead(const sl_engine* e, uint32_t tape);
+
+/** 0 = idle, 1 = looping, 2 = one-shot, 3 = recording (schema deck 'state'). */
+uint32_t sl_tape_state(const sl_engine* e, uint32_t tape);
+
+/** Splice `frames` of planar audio in at `at`, lengthening the tape. The one
+    operation that grows a tape outside recording, so it checks the cap itself.
+    Carries the transport, playhead and loop region across the rebuild. Render
+    must be detached. Returns 1 on success. */
+int32_t sl_tape_insert(sl_engine* e, uint32_t tape, uint64_t at, uint32_t channels,
+                       uint64_t frames, const float* const* planar);
+
+/** Sound-on-sound into the material already there (D-WZ-OVERDUB-01), while the
+    tape keeps playing: mode 0 = SUM, 1 = REPLACE. Destructive in RAM — each
+    pass still drains to its OWN stamped take, so the material survives on disk
+    even though the pre-mix buffer does not.
+
+    Refused on an empty tape (that is what record is for), while recording, and
+    for a non-deviceInput record source: overdub reads its input during the
+    playback pass, which runs before the mix exists, so a mix-sourced overdub
+    could only layer the PREVIOUS block — silently early against a take that is
+    sample-exact. Refusing beats faking it. */
+void sl_tape_overdub_start(sl_engine* e, uint32_t tape, uint32_t mode);
+void sl_tape_overdub_stop(sl_engine* e, uint32_t tape);
+
+/** Turntable scrub. begin/end bracket the gesture; `to` posts where the finger
+    is, in frames. RATE IS DERIVED FROM THE GAP between playhead and finger, so
+    a faster hand is a higher rate and therefore a pitch bend — one mechanism,
+    both behaviours, no dependence on pixels or zoom level. A scrubbing tape
+    sounds even when stopped; a RECORDING tape refuses (the write head is not
+    the user's to drag). Release fades on the 10 ms ramp, so it cannot click. */
+void sl_tape_scrub_begin(sl_engine* e, uint32_t tape);
+void sl_tape_scrub_to(sl_engine* e, uint32_t tape, double frame);
+void sl_tape_scrub_end(sl_engine* e, uint32_t tape);
+
+/** Half-open loop region [start, end), published torn-free (seqlock). A region
+    set before recording stops is honored by the Law C-3 handoff if it fits the
+    captured length; otherwise the take itself becomes the loop. */
+void sl_tape_set_loop(sl_engine* e, uint32_t tape, uint32_t enabled,
+                      uint64_t start, uint64_t end);
+
+/** Min/max envelope over [start_frame, end_frame) into `columns` buckets, for
+    drawing. A degenerate range means the whole buffer. Returns columns written.
+    Message-thread: it walks the buffer, so never call it from the render. */
+uint32_t sl_tape_waveform(const sl_engine* e, uint32_t tape, uint32_t channel,
+                          uint64_t start_frame, uint64_t end_frame,
+                          uint32_t columns, float* out_min, float* out_max);
+
+/** Signed varispeed; negative is reverse, |rate| clamped to [1/16, 16]. The
+    rate glides on the one 10 ms ramp, and SNAPS to exactly ±1 once inaudibly
+    close — which is what keeps the bit-exact identity read path reachable by
+    dragging a slider rather than only by typing a number. */
+void sl_tape_set_rate(sl_engine* e, uint32_t tape, double rate);
+double sl_tape_rate(const sl_engine* e, uint32_t tape);
+
+/** Where this tape's recording comes from. THE one place the transplant is not
+    1:1 — wizard's deck could only record device input channels, but the strip
+    model's closing argument is that recording is always "capture this bus",
+    identical for a sequencer output, a live input or a file.
+
+    kind 0 = deviceInput: `chan0` = L/mono, `chan1` = R or -1. Captured before
+             anything renders, so the take is this block's input.
+    kind 1 = mainMix: the engine's main L/R after everything, including the
+             tapes' own playback ("what left the app"). Captured AFTER the mix
+             is summed, so it is this block's mix under this block's stamp — not
+             a borrowed previous block.
+
+    An unknown kind is REFUSED (returns 0) rather than silently treated as
+    input 0. `channelBus` joins this list when the strip channel exists.
+    Returns 1 on success. */
+int32_t sl_tape_set_record_source(sl_engine* e, uint32_t tape, uint32_t kind,
+                                  int32_t chan0, int32_t chan1);
+
+/** Arm capture. Resets the tape, seeds capacity and the drain, then hands the
+    arm to the render, which stamps the exact engine sample capture begins
+    (Law C-2) at the top of its next block. */
+void sl_tape_record_start(sl_engine* e, uint32_t tape);
+
+/** Stop capture; returns the take's start stamp. The render finalizes at its
+    next block: THE LAW C-3 HANDOFF — the record buffer IS the playback buffer
+    (same chunks, no copy, no file round-trip), so with a loop enabled the tape
+    plays what it just captured in that same block. */
+uint64_t sl_tape_record_stop(sl_engine* e, uint32_t tape);
+
+/** Service thread, ~20 ms: keep chunk allocation AHEAD of the render's write
+    head so the RT append never touches an unallocated chunk and never
+    allocates. Cheap and idempotent when nothing is recording. */
+void sl_tape_record_service(sl_engine* e);
+
+/** Test seam only (D-WZ-DECK-01's cap is not a tunable). 0 restores the signed
+    256 MB/tape default for the tape's current channel count. */
+void sl_tape_set_record_cap_frames(sl_engine* e, uint32_t tape, uint64_t cap_frames);
+
+/** 1 once a recording hit the 256 MB cap and stopped itself. The take is fine
+    and already on disk — this is a status, not an error. */
+uint32_t sl_tape_record_cap_reached(const sl_engine* e, uint32_t tape);
+
+/** Pull captured frames (interleaved) out of the tape's crash-safe drain ring
+    for the host to write to a WAV. `out_start_sample` receives the take's Law
+    C-2 stamp. Returns frames read; draining a partially-full ring is normal,
+    not an underrun.
+
+    `out` MUST hold capacity_frames × sl_tape_channels() floats — the ring is
+    interleaved at the tape's width, and a mono tape hands back one float per
+    frame where a stereo tape hands back two. */
+uint32_t sl_tape_drain(sl_engine* e, uint32_t tape, float* out,
+                       uint32_t capacity_frames, uint64_t* out_start_sample);
+
+/* ── The uniform strip channel ──────────────────────────────────────────────
+ *
+ * STRIP-MODEL.md's channel: identical for every strip, whatever it hosts —
+ * level · 4 FX sends · output · record-arm.
+ *
+ * ONE SURFACE, TWO BACKINGS, and the distinction is load-bearing. A grid deck
+ * ALREADY has a channel inside scoopy's core (crossfaderGain/deckGain are its
+ * level, setDeckMasterSend its sends, deckMasterDrive its drive). A tape has
+ * none. So a channel bound to a tape is implemented here, and a channel bound
+ * to a grid deck PROJECTS onto the core's existing per-deck controls. Putting a
+ * fresh gain stage in front of a deck the core already mixed would multiply a
+ * gain twice — a bug that is inaudible until someone moves a fader and the
+ * wrong amount happens.
+ *
+ * The channel's output is the RECORD TAP: post-level, post-mute, exactly what
+ * this strip contributes to the mix (the tap point settled in
+ * ROUTING-MATRIX.md), and what a `channelBus` record source captures. */
+
+/** How many channels exist. A channel index must be < this. */
+uint32_t sl_channel_count(void);
+
+/** Bind a channel to what it carries.
+    kind 0 = none (a fresh strip's resting state — not an error)
+    kind 1 = tape, `index` a tape index
+    kind 2 = gridDeck, `index` a deck index
+    An unknown kind or an out-of-range tape is REFUSED. Returns 1 on success. */
+int32_t sl_channel_set_source(sl_engine* e, uint32_t channel, uint32_t kind, uint32_t index);
+uint32_t sl_channel_source_kind(const sl_engine* e, uint32_t channel);
+uint32_t sl_channel_source_index(const sl_engine* e, uint32_t channel);
+
+/** Level, sends and mute. All glide on the one 10 ms constant (D-WZ-RAMP-01) —
+    no parameter reaches the summing math as a step — and SNAP when inaudibly
+    close, so a channel parked at unity multiplies by exactly 1.0 and a tape's
+    bit-exact identity path survives the channel. Sends are post-fader.
+    A negative or non-finite value is ignored rather than allowed to poison the
+    mix. */
+void sl_channel_set_level(sl_engine* e, uint32_t channel, double level);
+double sl_channel_level(const sl_engine* e, uint32_t channel);
+void sl_channel_set_send(sl_engine* e, uint32_t channel, uint32_t send, double level);
+double sl_channel_send(const sl_engine* e, uint32_t channel, uint32_t send);
+void sl_channel_set_mute(sl_engine* e, uint32_t channel, uint32_t muted);
+uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel);
+
+/** This channel's OUTPUT peak since the last call — the strip meter's source.
+
+    READ-AND-RESET, mirroring the core's own output peak, so the caller's 30 Hz
+    frame reports "peak since the previous frame". Two consecutive calls
+    therefore do NOT return the same number; this is a consuming read and the
+    HotFrame emitter is its one intended caller.
+
+    Measured at the channel output: post-level, post-mute, post-ceiling — the
+    same tap a route and the record bus take. So a muted strip reads 0, which is
+    the truth about what it is contributing.
+
+    ⚠️ A gridDeck-sourced channel reads 0. The core already summed that deck and
+    this tier deliberately mixes nothing for it (the channel is a PROJECTION,
+    not a second mixer — sl_channel.h). A grid strip's meter must come from the
+    core's per-deck telemetry instead. Not a defect to fix here: adding a meter
+    tap would mean adding the gain stage this design exists to avoid.
+
+    Safe off the audio thread; 0 for an out-of-range channel. */
+double sl_channel_peak_l(sl_engine* e, uint32_t channel);
+double sl_channel_peak_r(sl_engine* e, uint32_t channel);
+
+/* ── Routing (§4) — the modular patchbay ────────────────────────────────────
+ *
+ * Any strip's output can feed any other strip's input, re-patchable live.
+ * A strip hears its ELEMENT (tape/grid) plus everything routed into it, which
+ * is why a live "input" element needs no separate code path — it is simply a
+ * route with no element beside it.
+ *
+ * THE SCHEDULING RULE, and the reason this is not just a list of cables:
+ *
+ *   forward route (feedback = 0) — the render visits channels in DEPENDENCY
+ *     ORDER, so the destination reads the source's CURRENT block. ZERO added
+ *     latency. A route that would close a cycle is REFUSED here, at edit time.
+ *
+ *   feedback route (feedback = 1) — reads the source's PREVIOUS block, so the
+ *     block boundary breaks the loop. Costs exactly one block (~10.7 ms at
+ *     512/48k). The only edge allowed to close a cycle, and only on request.
+ *
+ * ROUTING-MATRIX.md originally specified every route as one-block-delayed,
+ * which needs no scheduler. That was amended (2026-07-25) because with strip →
+ * strip chaining the per-hop delay ACCUMULATES and parallel paths of different
+ * depth comb-filter — silent, undiagnosable, and the failure
+ * docs/specs/pd-modular-routing.md §1.3 flags as the one that will actually
+ * burn a user.
+ *
+ * Every route gain is RAMPED: patching fades in, unpatching fades out and is
+ * dropped only once it reaches zero. Re-patching a live signal is a crossfade,
+ * never a click. */
+
+/** ENDPOINT KINDS. A cable's ends are typed, so the matrix is genuinely
+    any-source → any-destination rather than strips-only.
+
+    Source (`src_kind`):
+      0 channelOut  — index = channel. Its post-level, post-mute output.
+      1 channelSend — index = channel, sub = send 0..3. That strip's output at
+                      that send's level. THIS is what makes sends routable
+                      (decision 5): the channel owns the send's LEVEL, this
+                      route owns where it GOES — so send 3 can feed another
+                      strip's input and drive its looper instead of an effect.
+      2 deviceInput — index = input channel (L), sub = input channel (R) or
+                      0xFFFFFFFF for mono. A live input needs no "input
+                      element": it is simply a route into a strip.
+      3 fxReturn    — index = return 0..3. The wet lane, so a return can be
+                      re-used rather than only summed to main.
+
+    Destination (`dst_kind`):
+      0 channelIn   — index = channel.
+      1 sendBus     — index = 0..3 (the core's send buses are MONO; a stereo
+                      source folds rather than losing a side).
+      2 main.
+
+    An out-of-range endpoint is REFUSED, never clamped — clamping would patch a
+    cable somewhere nobody asked for. */
+int32_t sl_route_add_ex(sl_engine* e, uint32_t src_kind, uint32_t src_index, uint32_t src_sub,
+                        uint32_t dst_kind, uint32_t dst_index, double gain, uint32_t feedback);
+
+/** The common case: channel `src`'s output into channel `dst`'s input.
+    Returns a route id (>= 0), or -1 if refused: an out-of-range channel, a
+    channel feeding itself, no free slot, or — the important one — the route
+    would close a cycle and `feedback` was 0. Pass feedback = 1 to consent to
+    the loop and take the one-block delay. */
+int32_t sl_route_add(sl_engine* e, uint32_t src, uint32_t dst, double gain, uint32_t feedback);
+
+/** Drop EVERY route, including the defaults. What a document load calls before
+    installing its own wiring, so a loaded patch is exactly what was saved and
+    not the saved patch layered over the boot defaults. */
+void sl_route_clear_all(sl_engine* e);
+/** Re-install the boot wiring: every channel → main, every send → its matching
+    FX bus. A fresh engine already has these — they are real, visible, removable
+    routes, the way a mixer's channel 1 is wired to jack 1 — so a strip you just
+    made is audible and its sends reach their effects without ceremony. */
+void sl_route_install_defaults(sl_engine* e);
+/** How many routes are currently live. */
+uint32_t sl_route_count_active(const sl_engine* e);
+
+/** How many route SLOTS exist. Iterate 0..this-1 and skip the inactive ones to
+    walk every cable — a patchbay you can only write to is not a patchbay: the
+    matrix has to draw the cables that exist, and a document has to be able to
+    save what it FINDS rather than only what it remembers issuing. */
+uint32_t sl_route_capacity(void);
+uint32_t sl_route_source_kind(const sl_engine* e, uint32_t id);
+uint32_t sl_route_source_index(const sl_engine* e, uint32_t id);
+/** The send index for a `channelSend` source, or the right-hand input channel
+    for a `deviceInput` source; 0xFFFFFFFF when the kind has no sub-index. */
+uint32_t sl_route_source_sub(const sl_engine* e, uint32_t id);
+uint32_t sl_route_dest_kind(const sl_engine* e, uint32_t id);
+uint32_t sl_route_dest_index(const sl_engine* e, uint32_t id);
+/** 1 if this cable is a one-block-delayed feedback edge. */
+uint32_t sl_route_feedback(const sl_engine* e, uint32_t id);
+/** 1 if this cable came from the boot wiring rather than from a user edit — so
+    a UI can show it differently, and a document can decide whether re-saving
+    the defaults is meaningful or just noise. */
+uint32_t sl_route_is_default(const sl_engine* e, uint32_t id);
+/** Unpatch. The cable ramps out first, so this is a fade, not a cut. */
+int32_t sl_route_remove(sl_engine* e, uint32_t id);
+void sl_route_set_gain(sl_engine* e, uint32_t id, double gain);
+double sl_route_gain(const sl_engine* e, uint32_t id);
+/** 1 while the route is live. A route that has been removed reports 0
+    immediately, even though its gain is still ramping out — "is this cable
+    patched?" is a question about the document, not about whether the last few
+    milliseconds of its fade have finished. */
+uint32_t sl_route_active(const sl_engine* e, uint32_t id);
+/** Would a forward route src→dst be refused? True if dst already reaches src
+    over forward routes, i.e. adding it would close a cycle. Exposed so a
+    document layer can explain the refusal instead of just failing. */
+uint32_t sl_route_would_cycle(const sl_engine* e, uint32_t src, uint32_t dst);
+/** The render order — channels sorted so each comes after everything feeding
+    it. `out` must hold sl_channel_count() entries. Mostly a test/diagnostic
+    surface; the render uses it internally. */
+void sl_route_render_order(const sl_engine* e, uint32_t* out);
+
+/* ── The master output ──────────────────────────────────────────────────────
+ *
+ * The plane's front-of-house level: one gain on the main pair, applied ONCE by
+ * the core's own master stage. Live — the caller does not republish per move.
+ *
+ * ⚠️ WHY THIS IS NOT `MixerState::mainGain`. That gain is applied INSIDE
+ * core.render, and the strip channels sum in AFTER it (render phase 5) — so a
+ * master routed through the mixer state moves the GRID DECKS and leaves every
+ * tape, input and routed strip untouched. A fader that works on half the mixer
+ * is worse than none. It is the same finding the watchdog produced ("the strip
+ * channels sum in after core.render, so scoopy's master clipper is already
+ * behind them"), and it applies to level for the same reason.
+ *
+ * So the gain is applied by the render on the SUMMED main pair, before the
+ * watchdog — the guard still protects what actually leaves, and the `mainMix`
+ * record source stays literally "what left the app". Ramped on the one 10 ms
+ * constant and snapped at the target, so a master parked at unity multiplies by
+ * exactly 1.0.
+ *
+ * A second trap avoided on the way: `submitMixerState` publishes through
+ * `buildWorld()`, the SINGLE-DECK path, which sets `djMode = false` — so even
+ * writing the mixer state would have wiped every grid deck the moment anyone
+ * touched the fader. This touches no world at all. Pinned by
+ * plane_audio_test §13.
+ *
+ * A negative or non-finite value is ignored rather than allowed to poison the
+ * mix. Above 1.0 is permitted — the core's master clipper is behind this, which
+ * is what makes it a fader and not a limiter. */
+void sl_master_set_level(sl_engine* e, double level);
+double sl_master_level(const sl_engine* e);
+
+/* ── The output watchdog (guard G1) ─────────────────────────────────────────
+ *
+ * A leaky-RMS detector and ramped limiter on the main pair. It exists because
+ * the strip channels sum in AFTER scoopy's core has rendered — so the core's
+ * master clipper is already behind them, and a regenerating feedback route
+ * would otherwise reach the device with nothing in the way.
+ *
+ * A LIMITER, not a breaker: it clamps and reports. It never mutes the app or
+ * tears a route down, because a performer whose feedback patch runs hot should
+ * hear it held, not hear it stop. RMS rather than peak, so a single transient
+ * never trips it (D-WZ-WATCHDOG-01). */
+
+/** 1 while limiting, including the hold tail — drive a lamp with this; an
+    alarm nobody can see is not one. */
+uint32_t sl_watchdog_engaged(const sl_engine* e);
+/** The gain currently applied (1.0 = not limiting), for metering. */
+double sl_watchdog_gain(const sl_engine* e);
+/** TEST SEAM ONLY. Fixtures that drive deliberately hot synthetic signal need
+    to measure the path under test rather than the safety net. Always enabled in
+    the app; disabling also clears residual limiting so a re-enable starts
+    clean. */
+void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled);
+
 /* ── Session snapshots (§6) ─────────────────────────────────────────────────
  *
  * The world a deck plays: samples, tracks, per-step patterns. Built
@@ -147,6 +544,16 @@ void sl_deck_clear(sl_engine* e, uint32_t deck);
     deck world so it takes effect immediately; safe at human rate. Transport
     play/stop is sl_engine_start / sl_engine_stop. */
 void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
+
+/** This deck's current tempo-sync ratio (1.0 = its own tempo, unstretched).
+
+    ⚠️ READ IT AFTER ANY PUBLISH. `sl_snapshot_begin` RESETS this to 1.0, so
+    committing a snapshot — which every world publish does — silently un-syncs
+    the deck. That is the same "a republish stomps live overrides" hazard the
+    map's performance layer exists for, and it applies to tempo sync too: the
+    owner of the sync intent (the plane's map) must re-apply after a republish.
+    Exposed so the UI can show what is TRUE rather than what it last asked for. */
+double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck);
 
 /** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
 int sl_snapshot_track_begin(sl_engine* e,

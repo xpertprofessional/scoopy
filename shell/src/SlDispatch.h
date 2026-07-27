@@ -22,9 +22,42 @@
 
 #include <juce_core/juce_core.h>
 
+#include <string>
+
 struct sl_engine;
 
+namespace wizard::record {
+class Service;
+}
+
+namespace wizard::host {
+class AudioIO;
+}
+
 namespace wizard::sl {
+
+/** Host-tier services the pure dispatcher cannot own but some commands need.
+    Recording is the case: it is half engine (sl_tape_record_*) and half FILE —
+    the drain thread, the take directory, the crash-safe writer — and the file
+    half lives in the host. Injected as a struct rather than reached through a
+    global so the headless test can pass nothing and prove the refusal path,
+    which is the same thing the merged shell does before its device opens.
+
+    A null `recorder` is a legitimate state, not a bug: the dispatcher then
+    refuses the record commands honestly instead of pretending to capture. */
+struct HostServices {
+    record::Service* recorder = nullptr;
+    /** Where takes live. Enumeration reads this directly rather than asking the
+        recorder, because the point of scanning is to find takes THIS process
+        never made. */
+    std::string takesDir;
+    /** The device layer, for the plane's input SOURCE PICKER.
+        A strip's live input is a route from a deviceInput ENDPOINT, and until
+        something can name the inputs the picker has nothing to offer — which is
+        why every strip was hard-wired to channels 0/1. Nullable: a host with no
+        device still answers every other command. */
+    host::AudioIO* audio = nullptr;
+};
 
 /** Persistence behind getSetting/setSetting/getSettings. Injected so the
     dispatcher is testable with an in-memory fake and the shell can back it with
@@ -47,7 +80,8 @@ public:
     replies. The play path (`worldPublish`) uses it when present, and refuses
     honestly when it is absent — never a fake success. */
 juce::var dispatch(const juce::String& method, const juce::var& params,
-                   SettingsStore& settings, sl_engine* engine);
+                   SettingsStore& settings, sl_engine* engine,
+                   HostServices* services = nullptr);
 
 /** The merged host's capability model, exposed for the test and for Main.cpp to
     reuse. schemaVersion MUST track scoopy's SCHEMA_VERSION or its UI renders a
