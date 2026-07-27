@@ -267,6 +267,37 @@ int main() {
         const int faster = stepCrossings(e, 1, buses, kMeasureBlocks);
         CHECK(faster > base * 3 / 2); // ~2×, generously bounded against jitter
 
+        // ── RE-SENDING AN UNCHANGED PARAM DOES NOT REPUBLISH ────────────────
+        //
+        // The plane pushes a deck's whole tempo axis on every change rather than
+        // diffing locally, so one keystroke in the master tempo box arrives as
+        // 3 sets per grid strip — nearly all of them the value already held.
+        // A publish deep-copies every deck's snapshot and retains the old world
+        // until the audio thread acknowledges, so that churn is not free.
+        //
+        // Counted through the COMMIT GENERATION, which increments once per
+        // publish. No getter for it exists and none is added: an ABI point that
+        // only a test uses is the dead ABI the coverage gate is for.
+        {
+            const uint64_t before = sl_snapshot_commit(e);
+            sl_param_set(e, 1, syncId, sl_param_get(e, 1, syncId));   // same ratio
+            sl_param_set(e, 1, modeId, sl_param_get(e, 1, modeId));   // same mode
+            sl_param_set(e, 1, rateId, sl_param_get(e, 1, rateId));   // same rate
+            const uint64_t after = sl_snapshot_commit(e);
+            // Exactly ONE publish — this commit. Six unchanged sets published
+            // nothing. Remove the `==` guards in sl_param_set and this is 4.
+            CHECK(after == before + 1);
+
+            // A CHANGED value still publishes, or the guard would be a bug that
+            // silently stops sync working rather than an optimisation.
+            const uint64_t base2 = sl_snapshot_commit(e);
+            sl_param_set(e, 1, syncId, 1.75);
+            const uint64_t moved = sl_snapshot_commit(e);
+            CHECK(moved == base2 + 2); // the param's publish, then this commit
+            CHECK(sl_param_get(e, 1, syncId) == 1.75);
+            sl_param_set(e, 1, syncId, 2.0); // back to what the checks below expect
+        }
+
         // THE SURVIVAL CHECK. Republish deck 1's session — the exact gesture a
         // grid edit makes — and the deck must STILL be running at 2×. Before
         // deck scope this is where it silently dropped back to its own tempo.

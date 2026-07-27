@@ -870,12 +870,14 @@ void sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
             // A non-positive ratio is a division by zero downstream, not a slow
             // deck. Refused, exactly as sl_deck_set_tempo_sync always refused it.
             if (!(value > 0.0)) return;
+            if (p.syncRatio == value) return; // see UNCHANGED IS FREE, below
             p.syncRatio = value;
             break;
         case 1: // tempoMode
             if (value != sl::kTempoModeTimePitch && value != sl::kTempoModeTimeStretch &&
                 value != sl::kTempoModeTempoOnly)
                 return; // an unknown mode is refused, never rounded into a real one
+            if (p.tempoMode == value) return;
             p.tempoMode = value;
             break;
         case 2: // rate
@@ -883,6 +885,7 @@ void sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
             // declaring a value the engine cannot honour is the dead ABI the
             // coverage gate exists to prevent.
             if (!(value > 0.0)) return;
+            if (p.rate == value) return;
             p.rate = value;
             break;
         case 3: // transpose
@@ -900,6 +903,28 @@ void sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
             p.transpose = value;
             e->core.setDeckBusTranspose(static_cast<int>(deck), value);
             return;
+        // UNCHANGED IS FREE, and it has to be, because the CALLER DELIBERATELY
+        // RE-SENDS EVERYTHING. The plane pushes all of a deck's tempo params on
+        // every change rather than diffing against a local guess — the engine is
+        // the only thing that knows what it is actually carrying, and a diff
+        // against a stale guess is how a deck ends up stretched with the UI
+        // showing 1:1. That is the right call, and it means one keystroke in the
+        // master tempo box arrives here 3× per grid strip.
+        //
+        // Each publish is NOT cheap: publishDJWorld allocates a RenderWorld and
+        // deep-copies every deck's snapshot, tracks and per-step vectors, and
+        // retains the old world until the audio thread acknowledges it. Six of
+        // those per keystroke, for values that did not move, is churn on the
+        // message thread and a growing retained-world list for nothing.
+        //
+        // So the dedup lives HERE, where the truth is — which is the same
+        // argument that says not to dedup in TS. The guard is sound because the
+        // published world always reflects this param block: every path that
+        // writes the world (this function and sl_snapshot_begin) stamps it from
+        // `deckParams`, and sl_deck_clear resets both together. Exact `==` is
+        // deliberate — these are values echoed straight back from the document,
+        // not accumulated arithmetic, so there is no drift for a tolerance to
+        // absorb, and a tolerance would silently swallow a real small nudge.
         default:
             return; // unknown id IGNORED, never misapplied to a neighbour
     }

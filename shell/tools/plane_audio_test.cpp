@@ -457,7 +457,33 @@ int main() {
         // the deck. Otherwise the next strip to take this slot would inherit the
         // previous one's sync — the "loaded carrying whatever ratio the previous
         // map left" bug, back in a new place.
-        sl_deck_clear(e, 0);
+        //
+        // ⚠️ REACHED THROUGH THE DISPATCHER, not `sl_deck_clear` directly, and
+        // that is the point. Deck slots are REUSED: drop a strip's element and
+        // load another session into it and you are on this path. The engine half
+        // always worked; `slDeck clear` had ZERO CALLERS in the app, so the app
+        // never took it — the plane dropped an element by publishing a stopped
+        // world and clearing the channel, both of which leave the tempo axis
+        // standing. Testing the C function alone would have kept passing while
+        // the product kept inheriting the old sync.
+        CHECK(replyOk(cmd("slDeck", R"({"action":"setTranspose","deck":0,"value":-5})")));
+        CHECK(replyOk(cmd("slDeck", R"({"action":"clear","deck":0})")));
+        CHECK(sl_deck_tempo_sync(e, 0) == 1.0);
+        {
+            const int32_t transposeId = sl_param_id_for_name("transpose");
+            CHECK(transposeId != SL_PARAM_UNKNOWN);
+            CHECK(sl_param_get(e, 0, transposeId) == 0.0);
+        }
+
+        // A STOPPED PUBLISH IS NOT A CLEAR, which is why the plane has to send
+        // the verb. Re-sync, publish a stopped world the way `closeDeck` does,
+        // and the sync is still there — correct (deck scope survives a publish
+        // by design) and exactly why "I published a stopped world" cannot stand
+        // in for "I dropped this deck".
+        CHECK(replyOk(cmd("slDeck", R"({"action":"setTempoSync","deck":0,"ratio":2.0})")));
+        CHECK(replyOk(dispatch("slWorld", world, settings, e, &services)));
+        CHECK(sl_deck_tempo_sync(e, 0) == 2.0);
+        CHECK(replyOk(cmd("slDeck", R"({"action":"clear","deck":0})")));
         CHECK(sl_deck_tempo_sync(e, 0) == 1.0);
         CHECK(replyOk(dispatch("slWorld", world, settings, e, &services))); // restore the deck
     }

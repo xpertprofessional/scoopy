@@ -44,7 +44,7 @@ import {
 } from './stripOps.ts'
 import { useCompanion } from '../store/companionEngine.ts'
 import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
-import { updateStrip } from '../state/mapStore.ts'
+import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import './plane.css'
 
@@ -369,6 +369,14 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     if (!opened) return // open() already reported why
     const bpm = (opened.pattern.bpm as number | undefined) ?? 120
     updateStrip(stripKey, (s) => ({ ...s, element: newGridElement(deck, sessionId, bpm) }))
+    // AND TELL THE ENGINE WHAT THE NEW ELEMENT'S TEMPO IS. A deck SLOT is
+    // reused, so without this the fresh element inherits whatever sync, mode and
+    // transpose the previous occupant left in the engine — the document saying
+    // "free, no transpose" while the deck plays stretched and a fifth down.
+    // (Before P3-2 this was masked: the ratio was reset by every publish, and
+    // `open()` publishes. Deck scope removed that accident, which is what made
+    // this path's missing push visible.)
+    void applyTempo(link)
   }
 
   /** Give up a strip's element and the engine slot behind it. */
@@ -379,6 +387,13 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     // stopped world first, or the deck keeps playing with nothing on screen to
     // stop it.
     useCompanion.getState().closeDeck(strip.element.deck)
+    // THE DECK'S TEMPO AXIS GOES WITH THE DECK. `closeDeck` publishes a stopped
+    // world, which silences the slot but leaves its deck-scope params standing —
+    // they survive a publish by design (SL-ABI-V3 §3). `slDeck clear` is the
+    // verb that actually drops them, and until now NOTHING IN THE APP SENT IT:
+    // the action existed in the ABI and the dispatcher with zero callers, so the
+    // next session loaded into this slot inherited the old sync and transpose.
+    send(link, 'slDeck', { action: 'clear', deck: strip.element.deck })
     updateStrip(stripKey, (s) => ({ ...s, element: { kind: 'none' } }))
     send(link, 'slChannel', { action: 'setSource', channel: strip.channel, kind: 0, index: 0 })
     if (composing === strip.element.deck) setComposing(null)
