@@ -209,6 +209,51 @@ check('grid control row does not overflow its width', g.gridrowOverflow !== null
 check('grid strip keeps every row a tape strip has', g.rows.length === 0, `missing: ${g.rows.join(', ')}`)
 check('grid content fits the box', g.contentBottom !== null && g.contentBottom <= 196 - 8, `bottom=${g.contentBottom}`)
 
+// ── RIGHT-CLICK ON A STRIP OPENS THE STRIP'S MENU ───────────────────────────
+//
+// ⚠️ A REAL BUTTON-2 GESTURE, and it has to be. The plane's `onPointerDown` ran
+// for every button and called `setPointerCapture` on pointer-DOWN, which
+// suppresses the browser's `contextmenu` event — so every right-click on a strip
+// was swallowed before the header's handler could see it, and the desktop app
+// showed the WebView's native "Reload" menu instead.
+//
+// It hid because a SYNTHETIC `dispatchEvent('contextmenu')` opens the menu fine
+// (there is no pointer sequence to capture), so the handler tested as working
+// while the real gesture never fired. Anything less than a true mouse press here
+// re-admits the bug.
+//
+// What it cost: the strip header's menu is the ONLY route to loading a scoopy
+// session, which is the only route to a grid deck — and every control P3-1 and
+// P3-2 built lives on a grid strip. This one line of missing button-guard made
+// two phases of work unreachable.
+{
+  const head = await page.locator('.strip-head').first().boundingBox()
+  await page.mouse.click(head.x + head.width / 2, head.y + head.height / 2, { button: 'right' })
+  await page.waitForTimeout(250)
+  const menu = await page.evaluate(() => document.querySelector('[role="menu"]')?.textContent ?? null)
+  check('right-click on a strip opens the app menu', menu !== null, 'no [role=menu] after button-2')
+  // The section that names the grid gesture must be THERE even with an empty
+  // library — it used to render only when sessions existed, so an empty library
+  // silently removed the only hint that sessions are how a deck arrives.
+  check('the menu names the session gesture', !!menu && /load a session/.test(menu), menu?.slice(0, 120))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(150)
+
+  // And the PRIMARY button must still drag, or the guard traded one bug for another.
+  const before = await page.evaluate(() => document.querySelector('.plane-strip').getBoundingClientRect().left)
+  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(head.x + 200, head.y + 40, { steps: 6 })
+  await page.mouse.up()
+  await page.waitForTimeout(250)
+  const after = await page.evaluate(() => document.querySelector('.plane-strip').getBoundingClientRect().left)
+  // THAT it moved, not how far: the plane snaps placement to a grid, so the
+  // distance is quantised and asserting a magnitude would be asserting the
+  // snap size. Zero movement is the regression (the guard suppressing the drag
+  // it was only supposed to suppress for button 2).
+  check('left-drag still moves a strip', after !== before, `${Math.round(before)} -> ${Math.round(after)}`)
+}
+
 // ── THE CABLE LAYER ─────────────────────────────────────────────────────────
 // A fresh plane draws ZERO cables — the 40 boot routes are all terminal, so
 // every cable you see is one you made. Then one strip→strip route must produce

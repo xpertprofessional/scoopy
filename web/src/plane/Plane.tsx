@@ -297,6 +297,27 @@ export function Plane({
   const onPointerDown = (e: React.PointerEvent) => {
     const el = e.target as HTMLElement
 
+    /* ⚠️ ONLY THE PRIMARY BUTTON DRAGS, AND THIS LINE IS WHY RIGHT-CLICK WAS
+     * DEAD ON THE WHOLE PLANE.
+     *
+     * This handler ran for EVERY button and called `setPointerCapture` on
+     * pointer-DOWN. Capturing the pointer suppresses the browser's subsequent
+     * `contextmenu` event — so every right-click on a strip was swallowed here
+     * before it could reach the strip header's menu, and the user got the
+     * WebView's native "Reload" instead.
+     *
+     * It hid well: a synthetic `dispatchEvent('contextmenu')` opens the menu
+     * fine (no pointer sequence to capture), so the handler tested as working
+     * while the real gesture never fired. The cost was the entire session-load
+     * gesture — the only route to a grid deck, and therefore to every control
+     * P3-1 and P3-2 built.
+     *
+     * `DragBox` had this right from the start (`if (e.button !== 0) return`);
+     * the plane surface never did. Selection still happens on any button — you
+     * right-click a thing to act on it, and the menu should act on what you hit
+     * — but nothing may CAPTURE unless it is the drag button. */
+    const primary = e.button === 0
+
     /* ── PATCHING: shift-drag from one strip to another ────────────────────
      * A separate gesture from moving, and deliberately a modified one. Moving
      * a strip must stay the cheap, thoughtless action — placement is mnemonic
@@ -304,7 +325,7 @@ export function Plane({
      * not be reachable by an accidental 4 px drag. Shift is the modifier the
      * plane already reserves for structural gestures.
      */
-    if (e.shiftKey) {
+    if (e.shiftKey && primary) {
       const stripEl = el.closest('.plane-strip') as HTMLElement | null
       const s = getMap().strips.find((x) => x.key === stripEl?.dataset.key)
       if (s) {
@@ -327,6 +348,8 @@ export function Plane({
       const s = getMap().strips.find((x) => x.key === key)
       if (!s) return
       setSelected(s.key)
+      // Selection above happens on any button; the DRAG below must not.
+      if (!primary) return
       if (el.closest('input, button, select, textarea, [data-no-drag]')) return
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       stripDrag.current = {
@@ -342,6 +365,7 @@ export function Plane({
 
     // Outside a strip, a control still owns its own gesture (the zoom bar).
     if (el.closest('input, button, select, textarea, [data-no-drag]')) return
+    if (!primary) return // never capture on right/middle — see the note above
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 
     // Empty background: clear the selection and start panning.
