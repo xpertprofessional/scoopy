@@ -120,6 +120,8 @@ export function Strip({
   sessions = [],
   onLoadSession,
   onDropElement,
+  gridPlaying = false,
+  onGridTransport,
 }: {
   strip: StripDoc
   link: EngineLink | null
@@ -164,6 +166,12 @@ export function Strip({
   onLoadSession?: (sessionId: string) => void
   /** Give up this strip's element, freeing the deck (or tape) it held. */
   onDropElement?: () => void
+  /** GRID strips: is this strip's DECK running? From the session store, not the
+      HotFrame — a deck's transport is the world's `isPlaying`, which the store
+      owns and publishes; the HotFrame's tape state says nothing about it. */
+  gridPlaying?: boolean
+  /** GRID strips: the transport verbs, in the vocabulary a deck actually has. */
+  onGridTransport?: (action: 'play' | 'stop' | 'restart') => void
 }) {
   const tape = strip.element.kind === 'tape' ? strip.element.index : null
   const channels = useDeviceStore((d) => d.channels)
@@ -265,7 +273,7 @@ export function Strip({
   }
   const status = statusLine(strip, live, ctx)
   const can = enabledControls(strip, live, ctx)
-  const word = stateWord(strip, live)
+  const word = stateWord(strip, live, gridPlaying)
   const w = waveWidth(strip.cell.w)
 
   /* ── transport ───────────────────────────────────────────────────────── */
@@ -445,7 +453,39 @@ export function Strip({
     openMenu(items, ev.clientX, ev.clientY)
   }
 
+  /**
+   * THE TRANSPORT, FOR WHATEVER THIS STRIP HOSTS (P3-1).
+   *
+   * One vocabulary, every element. This used to reach `slTape` unconditionally
+   * and return early without a tape — so a scoopy deck sat in a strip and
+   * IGNORED every verb on it, which is the gap the four-domain goal names as
+   * "deck transport, controlled universally".
+   *
+   * A deck needs no new ABI point: `sl_snapshot_begin(e, deck, bpm, is_playing,
+   * start_step)` already carries the flag per deck, and publishing a world is
+   * how it is set. `companionEngine.play(deck)/stop(deck)` do exactly that.
+   *
+   * ⚠️ The verbs are not all 1:1, and pretending otherwise would be the lie.
+   * A tape has loop / one-shot / retrigger / stop. A sequenced pattern REPEATS
+   * BY NATURE, so ⟳ is simply "play" and ▸ has no meaning — it stays rendered
+   * and inert (layout law L2) rather than being given a fake behaviour.
+   */
   const trigger = (mode: number) => {
+    if (isGrid) {
+      switch (mode) {
+        case 0: // ⟳ — a pattern loops by nature, so this is play
+          onGridTransport?.('play')
+          return
+        case 3: // ↻ — retrigger: back to step 0 without leaving the transport
+          onGridTransport?.('restart')
+          return
+        case 2: // ◼
+          onGridTransport?.('stop')
+          return
+        default: // ▸ one-shot has no sequencer meaning; the button is inert
+          return
+      }
+    }
     if (tape === null) return
     send(link, 'slTape', { action: 'trigger', tape, mode })
   }
@@ -576,14 +616,14 @@ export function Strip({
           <Button
             label="⟳"
             disabled={!can.play}
-            active={live.tapeState === SL_TAPE_STATE.loop}
+            active={isGrid ? gridPlaying : live.tapeState === SL_TAPE_STATE.loop}
             onClick={() => trigger(0)}
             title="loop — plays the region between the braces, forever"
           />
           <Button
             label="▸"
-            disabled={!can.play}
-            active={live.tapeState === SL_TAPE_STATE.oneShot}
+            disabled={!can.oneShot}
+            active={!isGrid && live.tapeState === SL_TAPE_STATE.oneShot}
             onClick={() => trigger(1)}
             title="one-shot — plays through once and stops"
           />

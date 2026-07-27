@@ -251,7 +251,12 @@ export const isPlaying = (live: Live): boolean =>
 
 /** The one word in the strip head. Fixed vocabulary, fixed width band — never a
     sentence, because the head must not reflow (layout law L4). */
-export function stateWord(strip: Strip, live: Live): string {
+export function stateWord(strip: Strip, live: Live, deckPlaying = false): string {
+  // A GRID STRIP READS ITS DECK, not the tape bank. `live.tapeState` describes
+  // tape N, and a grid strip owns no tape — before the deck axis it therefore
+  // showed whatever tape happened to share its index, which was either "idle"
+  // forever or another strip's state.
+  if (strip.element.kind === 'grid') return deckPlaying ? 'play' : 'idle'
   if (isRecording(live)) return 'rec'
   switch (live.tapeState) {
     case SL_TAPE_STATE.loop:
@@ -353,6 +358,11 @@ export function statusLine(
 export type Enabled = {
   record: boolean
   play: boolean
+  /** ▸ one-shot. SEPARATE from `play` because a sequenced pattern has no
+      one-shot: a grid deck runs its pattern, which repeats by nature. Splitting
+      the two is what lets a grid strip light ⟳ ↻ ◼ and leave ▸ inert, rather
+      than either faking a verb or greying out the whole row. */
+  oneShot: boolean
   stop: boolean
   rate: boolean
   scrub: boolean
@@ -366,14 +376,22 @@ export function enabledControls(
   const decoding = ctx.decoding != null && ctx.decoding < 1
   const hasMaterial = strip.element.kind === 'tape' && !ctx.unresolvedRef && !decoding
   const recording = isRecording(live)
+  // A GRID STRIP CAN BE TRANSPORTED — the whole point of P3-1. A deck's
+  // material is its session, which is present the moment the element exists, so
+  // there is no "has material" question to ask of it.
+  const isGrid = strip.element.kind === 'grid'
   return {
     // REC IS ALMOST ALWAYS LIVE — including on an unresolved strip, where
     // recording over a dead reference is a REPAIR rather than a loss. It goes
     // inert only while a decode is in flight, which is the one moment the tape
     // is genuinely not ready to be written.
     record: !decoding,
-    play: hasMaterial && !recording,
-    stop: hasMaterial && !recording,
+    play: (hasMaterial || isGrid) && !recording,
+    oneShot: hasMaterial && !recording,
+    stop: (hasMaterial || isGrid) && !recording,
+    // Varispeed and scrub stay TAPE-ONLY. A deck's rate is its tempo, which is
+    // the bpm field on the strip — a second speed control would be two ways to
+    // do one thing, with different units.
     rate: hasMaterial && !recording,
     scrub: hasMaterial && !recording,
   }

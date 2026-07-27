@@ -80,6 +80,8 @@ export function Plane({
   const decks = useCompanion((c) => c.decks)
   const sessions = useCompanion((c) => c.sessions)
   const selectScene = useCompanion((c) => c.selectScene)
+  const playDeck = useCompanion((c) => c.play)
+  const stopDeck = useCompanion((c) => c.stop)
   const { openMenu } = useContextMenu()
   const selectedKey = useMapStore((s) => s.selectedKey)
 
@@ -461,6 +463,22 @@ export function Plane({
               onSelectScene={(sc, immediate) =>
                 deck >= 0 && selectScene(sc, { immediate, deck })
               }
+              gridPlaying={d?.playing ?? false}
+              // THE TRANSPORT DOMAIN (P3-1). A deck answers the same verbs a
+              // tape does, from the same row — which is the whole of "deck
+              // transport, controlled universally for all elements". Restart is
+              // stop-then-play: a publish is phase-continuous by design (it is
+              // what makes a scene switch seamless), so it cannot double as a
+              // retrigger.
+              onGridTransport={(action) => {
+                if (deck < 0) return
+                if (action === 'play') playDeck(deck)
+                else if (action === 'stop') stopDeck(deck)
+                else {
+                  stopDeck(deck)
+                  playDeck(deck)
+                }
+              }}
               sessions={sessions}
               onLoadSession={(id) => onLoadSession?.(s.key, id)}
               onDropElement={() => onDropElement?.(s.key)}

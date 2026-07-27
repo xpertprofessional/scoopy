@@ -291,6 +291,52 @@ describe('grid decks — the third index space', () => {
   })
 })
 
+describe('universal transport — a deck answers the same verbs (P3-1)', () => {
+  const gridStrip = () => strip({ element: newGridElement(0, 'beach', 120) })
+
+  it('lets a GRID strip be played and stopped', () => {
+    // ⚠️ THE GAP THIS CLOSES. A scoopy deck sat in a strip and ignored every
+    // verb on it: `enabledControls` gated the whole transport on
+    // `element.kind === 'tape'`, so the buttons were permanently inert. "Deck
+    // transport, controlled universally for all elements" starts here.
+    const can = enabledControls(gridStrip(), IDLE_LIVE)
+    expect(can.play).toBe(true)
+    expect(can.stop).toBe(true)
+  })
+
+  it('leaves ONE-SHOT inert on a grid strip — a pattern has no one-shot', () => {
+    // Rendered but disabled (layout law L2), not given a fake behaviour: a
+    // sequenced pattern repeats by nature, so ▸ has no meaning for it. This is
+    // why `oneShot` is split from `play` at all.
+    expect(enabledControls(gridStrip(), IDLE_LIVE).oneShot).toBe(false)
+    expect(enabledControls(strip({ element: tapeEl(0) }), IDLE_LIVE).oneShot).toBe(true)
+  })
+
+  it('keeps varispeed and scrub TAPE-only', () => {
+    // A deck's rate is its tempo, which is the bpm field on the strip. A second
+    // speed control would be two ways to do one thing, in different units.
+    const can = enabledControls(gridStrip(), IDLE_LIVE)
+    expect(can.rate).toBe(false)
+    expect(can.scrub).toBe(false)
+  })
+
+  it('reads the DECK for its state word, not the tape bank', () => {
+    // `live.tapeState` describes tape N and a grid strip owns no tape, so
+    // before the deck axis a grid strip showed either 'idle' forever or
+    // whatever the tape sharing its index was doing.
+    expect(stateWord(gridStrip(), IDLE_LIVE, true)).toBe('play')
+    expect(stateWord(gridStrip(), IDLE_LIVE, false)).toBe('idle')
+    // …and a PLAYING tape is unaffected by the deck flag.
+    const tapeS = strip({ element: tapeEl(0) })
+    expect(stateWord(tapeS, live({ tapeState: SL_TAPE_STATE.loop }), false)).toBe('loop')
+  })
+
+  it('does not let a deck flag leak into a tape strip', () => {
+    const tapeS = strip({ element: tapeEl(0) })
+    expect(stateWord(tapeS, IDLE_LIVE, true)).toBe('idle')
+  })
+})
+
 describe('the record tap (the split tap)', () => {
   const anInput = { left: 2, right: 3 }
 

@@ -142,6 +142,36 @@ describe('the object is a player from the first frame', () => {
   })
 })
 
+describe('a grid strip has a transport (P3-1)', () => {
+  const gridDoc = () =>
+    base({ element: { kind: 'grid', deck: 0, sessionId: 'beach', bpm: 120, syncToMaster: false } })
+
+  it('renders the SAME transport row a tape strip has', () => {
+    // One species, one vocabulary. A grid strip that were missing verbs would
+    // be a different object wearing the same box.
+    const html = render(gridDoc())
+    for (const glyph of ['⟳', '▸', '↻', '◼']) expect(html).toContain(glyph)
+    expect(html).toContain('strip-transport')
+  })
+
+  it('leaves ⟳ ↻ ◼ LIVE and ▸ inert', () => {
+    // A scoopy deck used to ignore every verb on its own strip. One-shot stays
+    // disabled because a sequenced pattern has no one-shot — rendered, not
+    // faked (L2).
+    const html = render(gridDoc())
+    const buttons = html.match(/<button[^>]*>[⟳▸↻◼]<\/button>/g) ?? []
+    expect(buttons).toHaveLength(4)
+    const [loop, shot] = buttons
+    expect(loop).not.toContain('disabled')
+    expect(shot).toContain('disabled')
+  })
+
+  it('shows the DECK\'s state, not a tape\'s', () => {
+    expect(render(gridDoc(), { gridPlaying: true })).toContain('play')
+    expect(render(gridDoc(), { gridPlaying: false })).toContain('idle')
+  })
+})
+
 describe('MON and M are two controls, not one (the split tap)', () => {
   it('renders BOTH switches, always', () => {
     // ⚠️ THE BUG THIS WHOLE INCREMENT IS FOR. A strip arrived with its device
