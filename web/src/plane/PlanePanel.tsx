@@ -358,6 +358,9 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     }
     setNote(null)
     send(link, 'slChannel', { action: 'setSource', channel: strip.channel, kind: 2, index: deck })
+    // Cleared FIRST so the check below reads THIS open's outcome and not a
+    // failure left over from an earlier one.
+    useCompanion.setState({ error: null })
     await useCompanion.getState().open(sessionId, deck)
 
     // The element is written AFTER the open, carrying the session's OWN tempo.
@@ -366,7 +369,20 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     // later — and the strip's tempo field is the mission requirement made
     // visible ("decks load into strips, each with its own BPM").
     const opened = useCompanion.getState().decks[deck]?.session
-    if (!opened) return // open() already reported why
+    if (!opened) {
+      // ⚠️ "open() already reported why" WAS NOT TRUE HERE, and this is the
+      // whole bug behind "clicking a session does nothing". `open()` reports by
+      // setting `error` on the COMPANION store — which the composer panel
+      // renders and the plane does not. So every failure to open a session was
+      // completely silent on the plane: the menu closed, the strip did not
+      // change, and nothing anywhere said why.
+      //
+      // A refusal the user cannot see is indistinguishable from a dead control,
+      // which is the defect this phase keeps paying for. The plane has a note
+      // line; a failure belongs in it.
+      setNote(useCompanion.getState().error ?? `could not open “${sessionId}”`)
+      return
+    }
     const bpm = (opened.pattern.bpm as number | undefined) ?? 120
     updateStrip(stripKey, (s) => ({ ...s, element: newGridElement(deck, sessionId, bpm) }))
     // AND TELL THE ENGINE WHAT THE NEW ELEMENT'S TEMPO IS. A deck SLOT is
