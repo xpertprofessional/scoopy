@@ -28,12 +28,13 @@ import {
 import { useContextMenu } from '../design/ContextMenu.tsx'
 import { attachAutosave, exportMap, listMaps, openMap, saveMapAs } from '../state/mapFiles.ts'
 import { carve } from './carve.ts'
+import { parseSidecar, takeSeconds } from '../persist/takeLibrary.ts'
 import { Inspector } from './Inspector.tsx'
 import { Master } from './Master.tsx'
 import { Matrix } from './Matrix.tsx'
 import { Plane } from './Plane.tsx'
 import { refreshDevices } from './devices.ts'
-import { send } from './send.ts'
+import { ask, send } from './send.ts'
 import {
   freeChannel,
   freeDeck,
@@ -274,6 +275,50 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // performance edits the map continuously, and a timer would write mid-gesture
   // over and over.
   useEffect(() => attachAutosave(link), [link])
+
+  // THE TAKE LIBRARY, INDEXED (P3-U4). What lets a strip's status line say
+  // "audio missing — <ref>" and name a resolved take with its length. `null`
+  // until the first listing answers, so nothing flashes "missing" merely
+  // because the disk has not been asked yet. Re-fetched whenever any strip's
+  // takeRef changes — recording stops and take loads both move that.
+  const [takeIndex, setTakeIndex] = useState<Map<
+    string,
+    { name: string; seconds: number | null }
+  > | null>(null)
+  const takeRefs = strips
+    .map((s) => (s.element.kind === 'tape' ? (s.element.takeRef ?? '') : ''))
+    .join('|')
+  useEffect(() => {
+    if (!link) return
+    // UNKNOWN while the refs just changed and the disk has not answered — a
+    // stale index would call a freshly recorded take "audio missing" for the
+    // gap between record-stop and this listing.
+    setTakeIndex(null)
+    void (async () => {
+      const r = await ask<{
+        ok?: boolean
+        takes?: Array<{ path: string; sidecar: string | null }>
+      }>(link, 'slTakes', { action: 'list' })
+      if (!r?.takes) return
+      const idx = new Map<string, { name: string; seconds: number | null }>()
+      for (const t of r.takes) {
+        // A corrupt or absent sidecar is still a TAKE — named, no length. The
+        // wav with no sidecar is exactly the take a crash leaves behind, and
+        // the one a user most wants back (takeLibrary's own rule).
+        let seconds: number | null = null
+        if (t.sidecar != null) {
+          try {
+            const p = parseSidecar(JSON.parse(t.sidecar))
+            if (p.ok) seconds = takeSeconds(p.sidecar)
+          } catch {
+            /* named take, unknown length */
+          }
+        }
+        idx.set(t.path, { name: t.path.split('/').pop() ?? t.path, seconds })
+      }
+      setTakeIndex(idx)
+    })()
+  }, [link, takeRefs])
 
   // ⌘R summons the ledger. A KEY rather than a docked panel: nobody should need
   // it in a six-strip set, and a permanently docked table would spend screen
@@ -574,6 +619,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onLoadSession={(key, id) => void loadSession(key, id)}
           onDropElement={dropElement}
           onCompose={setComposing}
+          takeIndex={takeIndex}
         />
         <Inspector
           link={link}

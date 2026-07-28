@@ -111,6 +111,9 @@ export function Strip({
   unresolvedRef = null,
   decoding = null,
   feedbackMs = null,
+  noOutput = false,
+  takeName = null,
+  takeSeconds = null,
   input = null,
   onPickInput,
   chips,
@@ -140,6 +143,12 @@ export function Strip({
   decoding?: number | null
   /** This strip is fed by a consented feedback edge, and what it costs in ms. */
   feedbackMs?: number | null
+  /** Nothing carries this strip's output anywhere (P3-U4) — supplied by the
+      plane, which owns the routing graph. */
+  noOutput?: boolean
+  /** The resolved take's display name and length, once it has material. */
+  takeName?: string | null
+  takeSeconds?: number | null
   /** The device input patched into this strip, if any — what REC will capture.
       Supplied by the plane, which owns the map, rather than read here: a strip
       must not go looking through the routing graph for itself. */
@@ -270,6 +279,9 @@ export function Strip({
     unresolvedRef: missing,
     decoding,
     feedbackMs,
+    noOutput,
+    takeName,
+    takeSeconds,
     // NAMES THE ACTUAL INPUT. "records: this strip's input" was true and
     // useless — the strip could not say which input, because nothing could turn
     // a route's channel index into a name. Now it can, so the object answers

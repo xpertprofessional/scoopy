@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyMap, type PlaneMap, type Route, type Strip } from '../persist/mapDocument.ts'
-import { cablePath, cablesOf, chipsOf, feedbackInto, inPoint, outPoint } from './cables.ts'
+import { cablePath, cablesOf, chipsOf, feedbackInto, hasOutput, inPoint, outPoint } from './cables.ts'
 import { newStrip } from './stripOps.ts'
 
 const strip = (key: string, channel: number): Strip => ({
@@ -169,5 +169,37 @@ describe('cable geometry', () => {
     const far = cablePath({ x: 0, y: 0 }, { x: 4000, y: 0 })
     expect(near).toContain('C 40 0')   // floor
     expect(far).toContain('C 160 0')   // ceiling
+  })
+})
+describe('hasOutput (P3-U4)', () => {
+  it('a defaulted strip has output (channelOut → main)', () => {
+    const map = mapWith([strip('a', 0)], [route({ src: chanOut(0), dst: main })])
+    expect(hasOutput(map, map.strips[0]!)).toBe(true)
+  })
+
+  it('a strip CHAINED into another strip counts as routed — the chip alone would lie', () => {
+    // chipsOf only reports terminal facts; a chained strip reads `▸—` while
+    // being perfectly audible through its carrier. "No output" must consult
+    // the whole graph, not the chip.
+    const map = mapWith([strip('a', 0)], [route({ src: chanOut(0), dst: chanIn(3) })])
+    expect(hasOutput(map, map.strips[0]!)).toBe(true)
+  })
+
+  it('a send alone is still an output (it reaches an FX bus)', () => {
+    const map = mapWith(
+      [strip('a', 2)],
+      [route({ src: { kind: 'channelSend', index: 2, sub: 1 }, dst: { kind: 'sendBus', index: 1 } })],
+    )
+    expect(hasOutput(map, map.strips[0]!)).toBe(true)
+  })
+
+  it('a fully unpatched strip has NO output — the state 15 warning is earned', () => {
+    const map = mapWith([strip('a', 0)], [])
+    expect(hasOutput(map, map.strips[0]!)).toBe(false)
+  })
+
+  it("another channel's routes do not count", () => {
+    const map = mapWith([strip('a', 0)], [route({ src: chanOut(5), dst: main })])
+    expect(hasOutput(map, map.strips[0]!)).toBe(false)
   })
 })

@@ -23,7 +23,7 @@ import { useContextMenu } from '../design/ContextMenu.tsx'
 import { useCompanion } from '../store/companionEngine.ts'
 import { fitToContent, zoomAbout, type Viewport } from './planeLayout.ts'
 import { Cables } from './Cables.tsx'
-import { chipsOf, feedbackInto, feedbackMs, type Cable } from './cables.ts'
+import { chipsOf, feedbackInto, feedbackMs, hasOutput, type Cable } from './cables.ts'
 import { cellsOf, inputFor, inputRoute } from './stripOps.ts'
 import { send } from './send.ts'
 import { Strip } from './Strip.tsx'
@@ -54,6 +54,7 @@ export function Plane({
   onLoadSession,
   onDropElement,
   onCompose,
+  takeIndex,
 }: {
   link: EngineLink | null
   onAddStrip: () => void
@@ -64,6 +65,10 @@ export function Plane({
   onDropElement?: (stripKey: string) => void
   /** Open the composer beside the map, bound to a deck. */
   onCompose?: (deck: number) => void
+  /** The take library, path → display facts (P3-U4). `null` until the first
+      listing answers — a strip must not claim "audio missing" merely because
+      nobody has asked the disk yet. */
+  takeIndex?: ReadonlyMap<string, { name: string; seconds: number | null }> | null
 }) {
   const strips = useMapStore((s) => s.map.strips)
   const plane = useMapStore((s) => s.map.plane)
@@ -467,6 +472,12 @@ export function Plane({
           // gets the idle deck and its (unused) scene fields stay inert.
           const deck = s.element.kind === 'grid' ? s.element.deck : -1
           const d = decks[deck] ?? null
+          // THE TAKE, RESOLVED (P3-U4). The ladder's top rung ("audio
+          // missing") and its take line could never render before: nothing
+          // supplied them, so `hasMaterial` could not be falsified by a
+          // missing file and a dead reference looked like a healthy strip.
+          const ref = s.element.kind === 'tape' ? (s.element.takeRef ?? null) : null
+          const resolved = ref != null && takeIndex ? (takeIndex.get(ref) ?? null) : null
           return (
             <Strip
               key={s.key}
@@ -475,6 +486,10 @@ export function Plane({
               selected={s.key === selectedKey}
               chips={chipsOf(map, s)}
               feedbackMs={feedbackInto(map, s)}
+              unresolvedRef={ref != null && takeIndex && !resolved ? ref : null}
+              takeName={resolved?.name ?? null}
+              takeSeconds={resolved?.seconds ?? null}
+              noOutput={s.element.kind !== 'none' && !hasOutput(map, s)}
               input={route ? { left: route.src.index, right: route.src.sub } : null}
               onPickInput={(left, right) => repointInput(s.channel, left, right)}
               gridScene={d?.scene ?? 'A'}

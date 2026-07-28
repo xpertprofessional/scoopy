@@ -116,6 +116,21 @@ export function chipsOf(map: PlaneMap, strip: Strip): Chips {
   return chips
 }
 
+/**
+ * Does ANYTHING carry this strip's output — main, cue, an FX bus, or another
+ * strip's input? (P3-U4.) The chip names only the terminal facts (`toMain`),
+ * so a strip chained into another strip would read `▸—` while being perfectly
+ * audible; "silent for a routing reason" needs the whole answer, and it is the
+ * fault a person is least likely to guess at.
+ */
+export function hasOutput(map: PlaneMap, strip: Strip): boolean {
+  return map.routes.some(
+    (r) =>
+      (r.src.kind === 'channelOut' || r.src.kind === 'channelSend') &&
+      r.src.index === strip.channel,
+  )
+}
+
 /** Does anything feed this strip through a consented feedback edge, and what
     does it cost? Drives the strip's status line, so the price is stated on the
     object rather than discovered. */
