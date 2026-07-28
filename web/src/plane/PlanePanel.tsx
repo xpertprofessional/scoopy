@@ -591,6 +591,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           // companion path a strip's own transport uses (P3-1) — one vocabulary,
           // two scopes. Restart is stop-then-play for the same reason it is on a
           // strip: a publish is phase-continuous by design and cannot retrigger.
+          deckCount={loadedDecks.length}
           onPlay={() => loadedDecks.forEach((d) => companionPlay(d))}
           onStop={() => loadedDecks.forEach((d) => companionStop(d))}
           onRestart={() =>

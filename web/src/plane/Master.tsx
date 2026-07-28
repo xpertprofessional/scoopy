@@ -35,6 +35,7 @@ export function Master({
   onPlay,
   onStop,
   onRestart,
+  deckCount = 0,
 }: {
   link: EngineLink | null
   level: number
@@ -48,6 +49,10 @@ export function Master({
   onPlay: () => void
   onStop: () => void
   onRestart: () => void
+  /** How many grid decks the transport would reach. Zero disables the verbs —
+      three enabled buttons iterating an empty array are silent no-ops, and a
+      control that does nothing teaches that the transport is broken (P3-U5). */
+  deckCount?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const lampRef = useRef<HTMLSpanElement | null>(null)
@@ -159,21 +164,42 @@ export function Master({
           different case from a grid strip, where it is a verb the element
           genuinely lacks and so is rendered disabled. */}
       <span className="master-transport" role="group" aria-label="master transport" data-no-drag>
-        <button type="button" onClick={onPlay} title="play every deck">
+        <button
+          type="button"
+          onClick={onPlay}
+          disabled={deckCount === 0}
+          title={deckCount === 0 ? 'no deck to play — load a session into a strip' : 'play every deck'}
+        >
           ⟳
         </button>
-        <button type="button" onClick={onRestart} title="stop and restart every deck from the top">
+        <button
+          type="button"
+          onClick={onRestart}
+          disabled={deckCount === 0}
+          title={
+            deckCount === 0
+              ? 'no deck to restart — load a session into a strip'
+              : 'stop and restart every deck from the top'
+          }
+        >
           ↻
         </button>
-        <button type="button" onClick={onStop} title="stop every deck">
+        <button
+          type="button"
+          onClick={onStop}
+          disabled={deckCount === 0}
+          title={deckCount === 0 ? 'no deck to stop — load a session into a strip' : 'stop every deck'}
+        >
           ◼
         </button>
       </span>
       <label className="plane-bpm mono">
-        {/* −/+ NUDGE. A transient BPM offset, exactly the gesture a pitch fader
-            is: it changes what the engine hears and never the document, so
-            letting go snaps back to lock and riding it does not mark the map
-            dirty. The law takes it as `nudgeBpmDelta`. */}
+        {/* −/+ STEPPERS on the DOCUMENT tempo — a ±1 the number box also
+            offers, made one-click. This is deliberately NOT the pitch-fader
+            nudge: that gesture is TRANSIENT (never the document, snaps back on
+            release), the law already takes it as `nudgeBpmDelta`, and its
+            feel — hold-to-bend, how it releases — is a D-4 design call. Until
+            that lands, these buttons say what they do and do what they say. */}
         <button
           type="button"
           className="bpm-nudge"

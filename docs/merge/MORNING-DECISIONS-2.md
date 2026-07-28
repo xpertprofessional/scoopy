@@ -70,6 +70,12 @@ was, and it wants your direction before code. Inputs when you return:
 - whether grid + tape in one strip render stacked, tabbed, or morphing (the wave
   and the scene pads competing for the same rectangle is the concrete question);
 - what "playful" means to veto against: color, motion, physicality, sound-reactive?
+- **the master tempo NUDGE gesture** (queued here by P3-U5): the law already
+  takes a transient `nudgeBpmDelta` (a hand on a pitch fader — never the
+  document, snaps back on release) and nothing supplies it. The −/+ buttons
+  are honest document steppers for now. How should the real nudge feel —
+  hold-to-bend on the buttons? a drag on the readout? how fast does it
+  release? That is performance feel, i.e. yours.
 
 ## D-5 · Panel hosting taste calls
 
