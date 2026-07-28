@@ -9,6 +9,11 @@
 
 ## Top-level roadmap (read FIRST every orient — the reflected view; update at phase entry/exit)
 
+> **⚠️ 2026-07-28 — MERGE WORK ORIENTS ELSEWHERE.** This ledger is wizard's
+> pre-merge record. The repo is now the MERGED tree (P3-ROADMAP "the collapse")
+> and the active queue is **`docs/merge/P3-LEDGER.md`** — orient there. Open
+> decisions for the user: `docs/merge/MORNING-DECISIONS-2.md`.
+
 - **P1 mixer slice CLOSED (P1-G1 signed 2026-07-23 — user confirmed mic + deck playback).**
   Same-clock console: hardware inputs + decks summed with real DSP (pan/fader/ramps per
   D-WZ-PAN/FADER/RAMP-01, f64 sum), per-strip + main/cue HotSurface meters, deck v0

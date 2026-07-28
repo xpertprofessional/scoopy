@@ -1,0 +1,73 @@
+# P3 merge ledger — rows for the loop
+
+> Created 2026-07-28 (Fable 5 review session). The merge phases (P3-0..P3-4) were
+> tracked as prose in `P3-ROADMAP.md`; this file gives them the row form the loop
+> protocol (`docs/ARCHITECTURE.md` §11) orients on. **Orient HERE for merge work**,
+> not on `/MIGRATION.md` (wizard's pre-merge ledger, kept for the record).
+>
+> Statuses: `todo` / `in-progress` / `done` / `blocked(<reason>)` /
+> `awaiting-decision` / `awaiting-user` / `awaiting-signoff`.
+>
+> **The four rules** (P3-ROADMAP + memory `verify-in-the-real-host`):
+> tests pass ≠ it works ≠ it shipped ≠ **you can get to it**. Every UI row's
+> handoff note must say what the visible door is and how a person reaches it in
+> the JUCE WKWebView app — synthetic events and Chromium-only checks do not count
+> as reachability evidence.
+>
+> **Decision protocol for this stretch (user, 2026-07-28):** the user is away;
+> decisions queue in `MORNING-DECISIONS-2.md` with options + recommendation and
+> DO NOT block the loop. Rows marked `awaiting-decision` are skipped; rows marked
+> `provisional(D-n)` may build the recommended option, logged, re-tunable on
+> sign-off.
+
+## Done before this ledger existed (for the record)
+
+| id | item | where recorded |
+|---|---|---|
+| P3-0 | The collapse — one tree in scoopy.git, sources not vendored | P3-ROADMAP "Sequence", commits 3d6fa22 · 765aa24 |
+| P3-1 | Universal transport — a grid strip's ⟳ ▸ ↻ ◼ drives the deck | c589211 |
+| P3-2 | Master tempo from scoopy — deck params, three tempo modes, djSyncLaw as authority, four defects fixed | P3-ROADMAP "P3-2 — DONE", dad8341 · 62b5fbd · ee56aef |
+| — | Strip menu (visible door replacing right-click), session-open failure surfaced, OPFS writeFile atomic-ish | 8b0e9dc · 502bc1d · 0cccde4 |
+
+## The queue
+
+**Loop order** (why: broken-build first per §11, then the two rows that make the
+product USABLE at all — audio in the plane, sessions that save — then the honesty
+fixes, then the phase's named domains):
+P3-F1 → P3-U1 → P3-SES-1 → P3-SES-2 → P3-U2 · U4 · U5 · U6 → P3-2b-1..6 →
+P3-U3 → P3-U7 → P3-3-1..2 → P3-4-1..2 → P3-M-1 → P3-F2 → P3-AUDIT.
+Push (P3-PUSH) after every green commit.
+
+| id | type | item | status | handoff note |
+|---|---|---|---|---|
+| P3-F1 | fixture | `recorder_drain_test` intermittent SEGFAULT: passed 15× in isolation, SEGFAULTed once under the full 64-test suite run (2026-07-28). Reproduce under load/full-suite, find the race (suspect: RecordService drain-thread vs teardown), fix, and pin | todo | broken-build class — top priority per §11. Full-suite context: test #54 of 64, ~90s of prior tests had run |
+| P3-F2 | fixture | `browser_prod_test` 4 pre-existing failures — WASM worklet's Emscripten `-sENVIRONMENT` flags (noted in 0cccde4's gate line as pre-existing) | todo | verify they are what the note says, fix the flags or the test, so the gate line stops carrying an asterisk |
+| P3-U1 | build | **The plane never starts the engine sink** — `companionEngine.play/publish` early-return on `!audio.running`; `startEngine()`'s only caller is `CompanionPanel.tsx:316` (a button in a DIFFERENT WebView with its own store). So in the main window, grid transport ⟳ ↻ ◼, scene clicks and every tempo intent are enabled and silently inert. Boot the sink from `PlanePanel`'s boot effect when the native link is present (or auto-start on first grid action), with a visible failure note if start fails | todo | THE top usability defect — P3-1 and P3-2 are wired but unreachable-in-effect. `plane_audio_test` drives raw JSON so it never covered this gate; add a browser/plane test that goes through the store path |
+| P3-SES-1 | build | **Native session store — THE FLIP** (P3-ROADMAP "next session's first job"): `slSession` native methods (list/new/open/save/delete) backed by `host/src/SessionStore.cpp`, dispatched like `slMap`; the plane's session library uses the native store when hosted, OPFS only in the browser companion. Native round-trip test + a corrupt-file case (zero-length file must list as damaged, not detonate as JSON) | provisional(D-1) | evidence: the JUCE WKWebView host can LIST OPFS but not WRITE it (0cccde4); sessions are the strips' content, so this blocks all plane usability. Roadmap argues the flip outright; D-1 records the veto window |
+| P3-SES-2 | build | Session content into strips end-to-end in the REAL host: New → edit → save → reopen → load into strip, through the visible strip menu | blocked(P3-SES-1) | the reachability chain 502bc1d/8b0e9dc built the doors for; this row proves the walk |
+| P3-2b-1 | schema | Tape tempo identity, document side: tape element gains `bpm` / `syncToMaster` / `tempoMode` / `pulseRelation` (grid element parity; map schema migration, existing docs default to sync-off so nothing changes for saved maps); take sidecar gains `bpmAtStart` (MAP-SCHEMA.md:60, spec'd never built) stamped from master BPM at record start | todo | the ratio's missing input — djSyncLaw requires `originalBpm` (djMix.ts:185). Blocks every later 2b row |
+| P3-2b-2 | build | Tape beat length: derive tape `bpm` from loop region + `bpmAtStart` (nearest power-of-two bars heuristic), editable beats/bpm field in the Inspector as the override; loaded-file tapes get manual bpm only | provisional(D-2) | inference is the provisional half (D-2); the editable field is the honest floor and not provisional |
+| P3-2b-3 | build | **Tape sync v1 — timePitch (varispeed), zero new DSP**: `mapTempoIntents` tape branch (persist/tempo.ts:111 is grid-only today) → djSyncLaw → `sl_tape_set_rate(master/tapeBpm)`. A tape follows the master, pitch moves with rate — audible product movement, ships before any stretcher | todo | the whole rate path is already built and wired end-to-end (sl_tape.cpp:636-748, dispatch, document `rate` field); this row only computes the number. Verify by ear-path: sync toggle on a tape strip in the real host |
+| P3-2b-4 | spec | Tape stretch spec: instantiate `NativeBusStretcher` (self-contained, channels=2, already on slengine's link line) per tape for `timeStretch` mode; the engage/declick machinery (busHistory_/crossfade, NativeAudioEngineCore.cpp:912-1002) is core-private and must be ported, not shared; loop-wrap discontinuity handling (wrap-aligned block split); ~5120-frame group delay policy per D-3; per-tape CPU (6 texture nodes ×8 tapes) needs a config choice | todo | spec BEFORE build — the §11 rule. The roadmap's "new engine DSP" overstates DSP novelty and understates the declick/latency design |
+| P3-2b-5 | build | Tape stretch build, per the spec row: tape `tempoMode=timeStretch` stretches to master without pitch change; C-3 handoff NEVER engages the stretcher in its same block (loop closes dry; stretch engages on the next tempo intent with crossfade) | provisional(D-3) | blocked on P3-2b-4's spec landing; D-3's recommended latency policy may build, logged |
+| P3-2b-6 | fixture | `tape_sync_test`: a 2s loop at stamped 120 under a 140 master — timePitch: rate == 140/120 measured at the reader; timeStretch: duration matches master period within tolerance, pitch (zero-crossing rate) unchanged within tolerance; sync survives a session publish (the P3-2 hazard class, for tapes) | todo | the phase centerpiece — "a tape syncs like a deck does" made measurable |
+| P3-U2 | build | A loaded grid strip never shows its session: `loadSession` doesn't rename, `recordSourceLabel` says `deck N`, Inspector says `grid deck N`. Name the strip after the session on load (keep manual rename wins) | todo | small, honest, visible |
+| P3-U3 | build | Scrub + overdub UI on tape strips: `scrubBegin/scrubTo/scrubEnd`, `overdubStart/overdubStop`, `slTape seek` all exist in the dispatcher with engine tests and have ZERO web callers; `enabledControls().scrub` is computed and never consumed. Functional baseline: OVR/RPL toggle + punch button on a tape strip (wizard had this UI pre-merge — see MIGRATION P3-13a), scrub via pointer-drag on the wave per pd-scrub-interaction's core gesture; visual polish stays D-4 | todo | these are THE wizard powers the merge exists to keep; today they are engine-only |
+| P3-U4 | build | Dead status plumbing: `unresolvedRef`/`decoding` never supplied by `Plane.tsx`/`PlanePanel.tsx`; `statusLine` ctx `noOutput`/`takeName`/`takeSeconds` never passed; so "audio missing", "decoding N%", "no output — this strip goes nowhere" can never render and `hasMaterial` can never be falsified by a missing take. Wire the real values (takeRef resolution against `slTakes list`) | todo | honesty rows — the UI currently cannot tell the user what is wrong |
+| P3-U5 | build | Master bar fixes: (a) ±1 bpm buttons claim "transient nudge, never the document" but call `setMasterBpm` → dirty; either wire `nudgeBpmDelta` (has zero callers) or fix the comment + intent; (b) master transport buttons never disabled with zero grid strips (silent no-ops over an empty array) | todo | |
+| P3-U6 | build | Error surface: every `slChannel/slRoute/slTape/slDeck` failure routed through `plane/send.ts` is one `console.error` and invisible; route failures into the plane note line (the mechanism 502bc1d built for session opens) | todo | no silent silence — pd-merge §5 law |
+| P3-U7 | build | Carve lands: take importer for `takeLibrary` (none exists outside its own test) + `doCarve`'s permanent refusal replaced by the real bridge (tape loop region → session grid track referencing the same take, STRIP-MODEL "carve frees the tape") | blocked(P3-SES-1) | the refusal note itself says why: a take lives on disk, a session reads OPFS. Unblocks when the store is native |
+| P3-3-1 | build | FX returns ON in the merged host: `returnFx: true` in `SlDispatch::capabilities`, verify what that unhides on scoopy's surfaces and what the render now does; strip sends 1–4 audibly reach the return section for BOTH element kinds | todo | P3-ROADMAP gap #3 — the "don't lose scoopy's functionality" line being crossed today. Measure first: the roadmap says verify what `returnFx: false` currently costs before changing it |
+| P3-3-2 | fixture | Extend `plane_audio_test`: send level up on a tape strip and a grid strip → return bus energy appears; send at 0 → silence on the return | blocked(P3-3-1) | |
+| P3-4-1 | spec | Panel audit, the list: measured 2026-07-28 — App.tsx routes 19 panels; reachable in the merged app are exactly 3 (plane · companion, which embeds filebrowser + grid · grid via Composer). **15 unreachable**: spectral, paintmode, import, general, template, audio, appearance, midi, perf, deckmixer, fxslot, instrument, transport, djmode, capture. Table each: panel → job → door (hosted in plane / menu / settings / DELIBERATELY retired with the job's new home named) | todo | audit is decision-free; taste calls go to D-5, the rest get doors. `openPanelWindow` already takes any panel name (MergedMain.cpp:256) — the door is one string away |
+| P3-4-2 | build | Doors for every panel the audit marks mechanical (a panels menu on the plane bar or native menu bar — there is no MenuBarModel anywhere in shell/src), each reachable in the real host; inject `__slPanelArg` (read by FxSlotPanel/InstrumentPanel, never injected by MergedMain) | blocked(P3-4-1) | |
+| P3-M-1 | build | Master section fold-in, functional baseline: today `Master.tsx` = level + meter + LIM lamp + ⟳↻◼ fan-out + bpm box. Scoopy's `TransportPanel` (782 lines: beat-repeat w/ length+region, launch-quantize, tempo ramp, musical keyboard, LCM bar, scene pads) is compiled in and unreachable. Fold the verbs into the plane's master section (or give transport a door as an interim), one increment per verb group; playful visual arrangement stays D-4 | todo | P3-2 wired slParam live; verify transportGlobal* in NATIVE_METHODS before building on them |
+| P3-PUSH | gate | Push `main` to the `scoopy` remote after each green commit (repo private; roadmap: "sixteen commits exist only on this machine" — 6 unpushed as of 2026-07-28 session start) | recurring | never push a red tree |
+| P3-AUDIT | spec | Phase audit before offering P3-G1: diff P3-ROADMAP's goal table (four domains × every element kind) + STRIP-MODEL against built rows; materialize gaps as rows | todo | last machine row of the phase |
+| P3-G1 | gate | **Phase gate (human):** on the user's machine — a grid deck and a tape in strips, both answering level/sends/transport/sync identically; sessions save and reopen; nothing of scoopy's unreachable | awaiting-user | offered only after P3-AUDIT |
+
+## Decisions queued (do not block)
+
+See `docs/merge/MORNING-DECISIONS-2.md`: D-1 session store flip (veto window),
+D-2 tape beat inference, D-3 tape stretch latency policy, D-4 the playful strip
+morph / visual direction, D-5 panel hosting taste calls from the audit.
