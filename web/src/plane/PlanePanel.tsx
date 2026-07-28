@@ -38,10 +38,12 @@ import { ask, onRefusal, send } from './send.ts'
 import {
   freeChannel,
   freeDeck,
+  freeTape,
   inputRoute,
   nameAfterSessionLoad,
   newGridElement,
   newStrip,
+  newTapeElement,
   spawnPoint,
 } from './stripOps.ts'
 import { useCompanion } from '../store/companionEngine.ts'
@@ -447,7 +449,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const addStrip = () => {
+  const addStrip = (preset: 'empty' | 'looper' = 'empty') => {
     const map = getMap()
     const channel = freeChannel(map)
     if (channel === null) {
@@ -462,7 +464,20 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       map.plane,
       map.strips.length,
     )
-    const strip = newStrip(channel, at)
+    let strip = newStrip(channel, at)
+    // THE LOOPER PRESET (P3-X3, STRIP-MODEL "presets keep the quick-looper
+    // fast"): channel + tape, one click. The tape element is bound up front so
+    // the strip reads as a looper from its first frame and REC is one press
+    // away — but recording is NOT auto-started: a preset that starts capturing
+    // the room on click is a surprise, not a speed-up.
+    if (preset === 'looper') {
+      const freeT = freeTape(map)
+      if (freeT === null) {
+        setNote('all 8 tapes are in use — drop one first')
+        return
+      }
+      strip = { ...strip, name: `LOOPER ${freeT + 1}`, element: newTapeElement(freeT, false) }
+    }
     const budget = checkBudget(strip.key, strip.element)
     if (!budget.ok) {
       setNote(`no lanes left — ${budget.wanted} of ${budget.budget}`)
@@ -479,9 +494,12 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       map: { ...st.map, strips: [...st.map.strips, strip], routes: [...st.map.routes, route] },
       dirty: true,
     }))
-    // Bind the (empty) channel so the engine and the document agree from the
-    // first frame, rather than only after the first edit.
-    send(link, 'slChannel', { action: 'setSource', channel, kind: 0, index: 0 })
+    // Bind the channel so the engine and the document agree from the first
+    // frame, rather than only after the first edit — to the preset's tape, or
+    // to nothing for an empty strip.
+    if (strip.element.kind === 'tape')
+      send(link, 'slChannel', { action: 'setSource', channel, kind: 1, index: strip.element.index })
+    else send(link, 'slChannel', { action: 'setSource', channel, kind: 0, index: 0 })
     send(link, 'slRoute', {
       action: 'add',
       srcKind: 2, // deviceInput

@@ -57,7 +57,7 @@ export function Plane({
   takeIndex,
 }: {
   link: EngineLink | null
-  onAddStrip: () => void
+  onAddStrip: (preset?: 'empty' | 'looper') => void
   onOpenMatrix: () => void
   /** Load a session into a strip — deck allocation belongs to the panel, which
       owns the map and can refuse when all three decks are taken. */
@@ -564,8 +564,24 @@ export function Plane({
       )}
 
       <div className="plane-controls" data-no-drag>
-        <button type="button" className="plane-add" onClick={onAddStrip} title="add a strip">
+        <button
+          type="button"
+          className="plane-add"
+          onClick={() => onAddStrip('empty')}
+          title="add a strip"
+        >
           + strip
+        </button>
+        {/* THE LOOPER PRESET (P3-X3): channel + tape, one click — the model's
+            "quick looper" kept quick. Same species as + strip, so it lives
+            beside it. */}
+        <button
+          type="button"
+          className="plane-add"
+          onClick={() => onAddStrip('looper')}
+          title="add a looper strip — a tape ready to record, one REC away"
+        >
+          + looper
         </button>
         <button type="button" title="zoom out" onClick={() => zoomAtCentre(1 / 1.2)}>
           −
