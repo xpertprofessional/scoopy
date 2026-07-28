@@ -110,12 +110,25 @@ struct Deck {
     // --- render → UI (HotFrame deck block) ------------------------------------
     std::atomic<double> pubPlayhead{0.0};
 
-    // Read one sample (RT-safe: chunk pointers are stable up to chunkCount).
+    /** Read one sample. RT-safe: chunk pointers are stable up to chunkCount.
+
+        THE NULL CHECK IS LOAD-BEARING, not defensive noise (ported from
+        sl_tape.h, which learned it first). reset() publishes `chunkCount = 0`
+        before it touches the storage, but a render that read the count a moment
+        earlier is still walking the vector — and reset() MOVES each unique_ptr
+        out to the retire list, which leaves NULLS behind. One block of silence
+        is the right answer for a deck whose material is being replaced anyway. */
     float sample(uint32_t ch, uint64_t frame) const {
         const uint64_t ci = frame / kDeckChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return 0.0f;
+        // data(), NOT operator[]/size(): the published bound is chunkCount, and
+        // reading the vector's own size member here would race the control
+        // thread's push_back (whose growth never moves data() — see
+        // ensureCapacity). TSan-verified both ways.
+        const DeckChunk* c = chunks.data()[ci].get();
+        if (c == nullptr) return 0.0f;
         const uint64_t off = frame % kDeckChunkFrames;
-        const auto& p = chunks[ci]->plane;
+        const auto& p = c->plane;
         return ch < p.size() ? p[ch][off] : p[0][off];
     }
 
@@ -137,8 +150,10 @@ struct Deck {
     bool appendFrame(uint64_t frame, const float* chanVals, uint32_t nVals) {
         const uint64_t ci = frame / kDeckChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return false;
+        DeckChunk* chunk = chunks.data()[ci].get(); // see sample()
+        if (chunk == nullptr) return false;
         const uint64_t off = frame % kDeckChunkFrames;
-        auto& p = chunks[ci]->plane;
+        auto& p = chunk->plane;
         for (uint32_t c = 0; c < channels; ++c)
             p[c][off] = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
         return true;
@@ -152,8 +167,10 @@ struct Deck {
     bool mixFrame(uint64_t frame, const float* chanVals, uint32_t nVals) {
         const uint64_t ci = frame / kDeckChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return false;
+        DeckChunk* chunk = chunks.data()[ci].get(); // see sample()
+        if (chunk == nullptr) return false;
         const uint64_t off = frame % kDeckChunkFrames;
-        auto& p = chunks[ci]->plane;
+        auto& p = chunk->plane;
         for (uint32_t c = 0; c < channels; ++c) {
             const float v = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
             p[c][off] += v;
@@ -161,11 +178,29 @@ struct Deck {
         return true;
     }
 
-    // Control thread: ensure at least `neededFrames` of chunk capacity exists
-    // (allocates whole chunks). Call ahead of where the render is writing.
+    /** Grow the chunk list to hold `neededFrames`. Control/service thread, and
+        it runs WHILE the render is reading earlier chunks — that is the whole
+        design (the service thread allocates ahead of the write head so the RT
+        append never allocates).
+
+        WHICH IS WHY IT MUST NEVER REALLOCATE THE VECTOR. The header above says
+        "chunk pointers never move", and that is true of the DeckChunk objects —
+        they are heap-allocated and stable. It is NOT automatically true of the
+        std::vector holding the unique_ptrs: a push_back past capacity moves that
+        array and frees the old one, while the render is dereferencing
+        `chunks[ci]` through exactly that array. That was recorder_drain_test's
+        intermittent SEGFAULT (TSan: this push_back vs wz_engine_render_io).
+        Reserving up front (see reset) is what makes the claim actually hold —
+        the same fix sl_tape.h already carries.
+
+        If the reservation is somehow exhausted this REFUSES to grow rather than
+        reallocating. Recording then stops at the allocated bound, which is the
+        same graceful stop the 256 MB cap produces — a bounded take instead of a
+        crash on the audio thread. */
     void ensureCapacity(uint64_t neededFrames) {
         uint64_t haveFrames = static_cast<uint64_t>(chunks.size()) * kDeckChunkFrames;
         while (haveFrames < neededFrames) {
+            if (chunks.size() >= chunks.capacity()) break; // never reallocate
             auto c = std::make_unique<DeckChunk>();
             c->alloc(channels);
             chunks.push_back(std::move(c));
@@ -174,11 +209,31 @@ struct Deck {
         }
     }
 
-    void reset(uint32_t ch) {
-        chunks.clear();
-        channels = ch;
+    /** Drop this deck's material. Control thread. Ported from sl_tape.h's reset,
+        which fixed both halves of the donor's defect:
+
+        1. PUBLISH "no chunks" BEFORE the storage goes anywhere, so a render
+           mid-walk fails the bounds check instead of reading freed memory.
+        2. RETIRE, do not free: a render already past the check still holds a
+           pointer; `retireSink` keeps that storage alive until the caller frees
+           it after a block boundary has provably passed.
+
+        `reserveFrames` is the most this deck could hold before the next reset —
+        the file's length for a load, the record cap for a capture. Reserving
+        HERE (list empty, chunkCount already 0) is what lets ensureCapacity()
+        append later, concurrently with the render, without ever reallocating
+        the array the render is reading through. */
+    void reset(uint32_t ch, std::vector<std::unique_ptr<DeckChunk>>& retireSink,
+               uint64_t reserveFrames) {
+        chunkCount.store(0, std::memory_order_release); // (1)
         frames.store(0, std::memory_order_relaxed);
-        chunkCount.store(0, std::memory_order_release);
+        for (auto& c : chunks)                          // (2)
+            if (c != nullptr) retireSink.push_back(std::move(c));
+        chunks.clear();
+        // +1 for the partial chunk at the end, +1 of slack so a rounding
+        // disagreement anywhere can never turn into a reallocation.
+        chunks.reserve(static_cast<size_t>(reserveFrames / kDeckChunkFrames) + 2u);
+        channels = ch;
         playhead = 0.0;
         smRate = 0.0;
         cueFrame = -1.0; // new material, no cue

@@ -124,6 +124,12 @@ struct wz_engine {
     // Deck units — stable engine objects (world commits never rebuild them) —
     // plus per-deck preallocated block scratch the deck strips read from.
     wz::Deck decks[wz::kMaxDecks];
+    // Chunk storage retired by Deck::reset (the render may still be reading it
+    // for one block). Freed on a later retire once engineTimeSamples has
+    // provably advanced past the block the batch was retired in — the
+    // TapeBank::retireSink pattern, single control-thread writer.
+    std::vector<std::unique_ptr<wz::DeckChunk>> retiredDeckChunks;
+    uint64_t deckChunksRetiredAtSample = 0;
     std::vector<float> deckOutL[wz::kMaxDecks];
     std::vector<float> deckOutR[wz::kMaxDecks];
     // Per-deck parallel file drain (render writes captured frames, host pulls).
@@ -163,6 +169,19 @@ struct wz_engine {
     uint64_t revisionCounter;
     std::vector<std::unique_ptr<wz::World>> retired;
 };
+
+namespace {
+// Free any retired deck-chunk storage whose block has provably passed, then
+// hand out the sink for the next reset. Control thread only — single writer is
+// what keeps `retiredDeckChunks` free of its own synchronisation.
+std::vector<std::unique_ptr<wz::DeckChunk>>& deckRetireSink(wz_engine* e) {
+    const uint64_t now = e->engineTimeSamples.load(std::memory_order_acquire);
+    if (!e->retiredDeckChunks.empty() && now > e->deckChunksRetiredAtSample)
+        e->retiredDeckChunks.clear();
+    e->deckChunksRetiredAtSample = now;
+    return e->retiredDeckChunks;
+}
+} // namespace
 
 extern "C" {
 
@@ -472,7 +491,7 @@ int32_t wz_deck_load(wz_engine* e, uint32_t deck, uint32_t channels,
     // the same chunked storage a recording uses, so playback has one path and
     // the Law C-3 handoff (P3-03) is a no-op on representation.
     d.state.store(static_cast<uint32_t>(wz::DeckState::idle), std::memory_order_relaxed);
-    d.reset(channels);
+    d.reset(channels, deckRetireSink(e), frames); // reserve for exactly this file
     d.ensureCapacity(frames);
     for (uint64_t f = 0; f < frames; ++f) {
         const uint64_t ci = f / wz::kDeckChunkFrames, off = f % wz::kDeckChunkFrames;
@@ -713,9 +732,13 @@ void wz_deck_record_start(wz_engine* e, uint32_t deck) {
     const uint32_t ch = d.recSrcChan1 >= 0 ? 2u : 1u;
     // Reset + initial capacity are control-thread work (allocation). The host
     // calls wz_deck_record_service before/around this; here we also seed enough
-    // so the first blocks never touch an unallocated chunk.
-    d.reset(ch);
-    d.recCapFrames = (256ull * 1024ull * 1024ull) / (static_cast<uint64_t>(ch) * 4ull); // D-WZ-DECK-01
+    // so the first blocks never touch an unallocated chunk. The cap is computed
+    // BEFORE the reset so the chunk list can be reserved for it — the reserve is
+    // what lets record-time growth never reallocate under the render.
+    const uint64_t capFrames =
+        (256ull * 1024ull * 1024ull) / (static_cast<uint64_t>(ch) * 4ull); // D-WZ-DECK-01
+    d.reset(ch, deckRetireSink(e), capFrames);
+    d.recCapFrames = capFrames;
     d.ensureCapacity(4u * e->maxBlockFrames);
     // Drain ring sized for a comfortable host lag (interleaved).
     e->deckDrain[deck].init("deckdrain", ch, 1u << 18);

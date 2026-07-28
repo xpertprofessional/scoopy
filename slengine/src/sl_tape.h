@@ -182,9 +182,15 @@ struct Tape {
     float sample(uint32_t ch, uint64_t frame) const {
         const uint64_t ci = frame / kTapeChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return 0.0f;
-        if (ci >= chunks.size() || chunks[ci] == nullptr) return 0.0f;
+        // data(), NOT operator[]/size(): the published bound is chunkCount, and
+        // reading the vector's own size member here would race the control
+        // thread's push_back (whose growth never moves data() — reserve in
+        // reset + the never-reallocate guard in ensureCapacity). TSan-verified
+        // on the deck twin (recorder_drain_test).
+        const TapeChunk* c = chunks.data()[ci].get();
+        if (c == nullptr) return 0.0f;
         const uint64_t off = frame % kTapeChunkFrames;
-        const auto& p = chunks[ci]->plane;
+        const auto& p = c->plane;
         return ch < p.size() ? p[ch][off] : p[0][off];
     }
 
@@ -206,9 +212,10 @@ struct Tape {
     bool appendFrame(uint64_t frame, const float* chanVals, uint32_t nVals) {
         const uint64_t ci = frame / kTapeChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return false;
-        if (ci >= chunks.size() || chunks[ci] == nullptr) return false; // see sample()
+        TapeChunk* chunk = chunks.data()[ci].get(); // see sample()
+        if (chunk == nullptr) return false;
         const uint64_t off = frame % kTapeChunkFrames;
-        auto& p = chunks[ci]->plane;
+        auto& p = chunk->plane;
         for (uint32_t c = 0; c < channels; ++c)
             p[c][off] = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
         return true;
@@ -222,9 +229,10 @@ struct Tape {
     bool mixFrame(uint64_t frame, const float* chanVals, uint32_t nVals) {
         const uint64_t ci = frame / kTapeChunkFrames;
         if (ci >= chunkCount.load(std::memory_order_acquire)) return false;
-        if (ci >= chunks.size() || chunks[ci] == nullptr) return false; // see sample()
+        TapeChunk* chunk = chunks.data()[ci].get(); // see sample()
+        if (chunk == nullptr) return false;
         const uint64_t off = frame % kTapeChunkFrames;
-        auto& p = chunks[ci]->plane;
+        auto& p = chunk->plane;
         for (uint32_t c = 0; c < channels; ++c) {
             const float v = c < nVals ? chanVals[c] : (nVals > 0 ? chanVals[0] : 0.0f);
             p[c][off] += v;

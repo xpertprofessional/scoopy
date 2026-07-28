@@ -12,9 +12,11 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #define CHECK(cond)                                                              \
@@ -49,9 +51,11 @@ std::vector<float> readWavAudio(const std::string& path, uint64_t& frames, uint3
 } // namespace
 
 int main() {
-    const std::string dir = "/tmp/wizard_recsvc_test";
-    std::string rm = "rm -rf " + dir;
-    CHECK(std::system(rm.c_str()) == 0);
+    // Unique per process: a fixed path made concurrent invocations (stress runs,
+    // parallel ctest) delete each other's takes mid-test.
+    char dirTemplate[] = "/tmp/wizard_recsvc_test.XXXXXX";
+    CHECK(mkdtemp(dirTemplate) != nullptr);
+    const std::string dir = dirTemplate;
 
     wz_engine* e = wz_engine_create(kRate, kQ, 7);
     CHECK(e != nullptr);
@@ -152,6 +156,8 @@ int main() {
 
     svc.stop();
     wz_engine_destroy(e);
+    std::string rm = "rm -rf " + dir;
+    CHECK(std::system(rm.c_str()) == 0);
     std::printf("recorder_drain_test OK\n");
     return 0;
 }
