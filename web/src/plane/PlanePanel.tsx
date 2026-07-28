@@ -34,7 +34,7 @@ import { Master } from './Master.tsx'
 import { Matrix } from './Matrix.tsx'
 import { Plane } from './Plane.tsx'
 import { refreshDevices } from './devices.ts'
-import { ask, send } from './send.ts'
+import { ask, onRefusal, send } from './send.ts'
 import {
   freeChannel,
   freeDeck,
@@ -275,6 +275,13 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // performance edits the map continuously, and a timer would write mid-gesture
   // over and over.
   useEffect(() => attachAutosave(link), [link])
+
+  // REFUSALS REACH THE NOTE LINE (P3-U6). Every slChannel/slRoute/slTape/…
+  // failure used to be one console.error — invisible in the shipped app, so a
+  // control that the engine refused was indistinguishable from a dead one
+  // (the defect class this phase keeps paying for; 502bc1d built this surface
+  // for session opens, this extends it to every command the plane sends).
+  useEffect(() => onRefusal((method, msg) => setNote(`${method} refused — ${msg}`)), [])
 
   // THE TAKE LIBRARY, INDEXED (P3-U4). What lets a strip's status line say
   // "audio missing — <ref>" and name a resolved take with its length. `null`

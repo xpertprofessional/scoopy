@@ -20,13 +20,31 @@ import type { EngineLink } from '../engineLink.ts'
     host that cannot answer logs once rather than six hundred times. */
 const reported = new Set<string>()
 
+/**
+ * WHO GETS TOLD (P3-U6). A console.error is invisible in the shipped app —
+ * "no silent silence" (pd-merge §5) means a refusal must reach a surface the
+ * user is looking at, and the plane's note line is that surface. Subscribers
+ * get EVERY refusal (a note line is idempotent — the latest news simply
+ * stands), while the console keeps its once-per-method damping.
+ */
+const refusalCbs = new Set<(method: string, message: string) => void>()
+
+export function onRefusal(cb: (method: string, message: string) => void): () => void {
+  refusalCbs.add(cb)
+  return () => refusalCbs.delete(cb)
+}
+
+function report(method: string, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err)
+  refusalCbs.forEach((cb) => cb(method, message))
+  if (reported.has(method)) return
+  reported.add(method)
+  console.error(`plane: ${method} refused —`, message)
+}
+
 export function send(link: EngineLink | null, method: string, params: unknown): void {
   if (!link) return
-  void link.command(method as never, params).catch((err: unknown) => {
-    if (reported.has(method)) return
-    reported.add(method)
-    console.error(`plane: ${method} refused —`, err instanceof Error ? err.message : err)
-  })
+  void link.command(method as never, params).catch((err: unknown) => report(method, err))
 }
 
 /** The awaited form, for sequences whose ORDER matters (record start/stop).
@@ -41,10 +59,7 @@ export async function ask<T = unknown>(
   try {
     return (await link.command(method as never, params)) as T
   } catch (err) {
-    if (!reported.has(method)) {
-      reported.add(method)
-      console.error(`plane: ${method} refused —`, err instanceof Error ? err.message : err)
-    }
+    report(method, err)
     return null
   }
 }
