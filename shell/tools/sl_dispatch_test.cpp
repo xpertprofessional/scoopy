@@ -42,21 +42,21 @@ juce::var result(const juce::var& r) { return r.getProperty("result", juce::var(
 int main() {
     FakeSettings settings;
 
-    // getCapabilities — the handshake. schemaVersion must be scoopy’s (91), or
+    // getCapabilities — the handshake. schemaVersion must be scoopy’s (92), or
     // its UI shows a mismatch banner. The host's real capabilities, not
     // aspirational ones.
     {
         const auto r = dispatch("getCapabilities", juce::var(), settings, nullptr);
         CHECK(replyOk(r));
         const auto caps = result(r);
-        CHECK((int) caps.getProperty("schemaVersion", 0) == 91); // scoopy SCHEMA_VERSION
+        CHECK((int) caps.getProperty("schemaVersion", 0) == 92); // scoopy SCHEMA_VERSION
         CHECK((bool) caps.getProperty("fileSystem", false) == true);
         CHECK((bool) caps.getProperty("audioDeviceSelection", false) == true);
         CHECK((bool) caps.getProperty("pluginHosting", true) == false);
         CHECK((bool) caps.getProperty("midiHardware", true) == false);
         CHECK((bool) caps.getProperty("returnFx", true) == false);
         // The exported helper agrees with the dispatched answer.
-        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 91);
+        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 92);
     }
 
     // An unset key reads as null (value present, null) — NOT absent, NOT a
@@ -447,6 +447,24 @@ int main() {
         CHECK(!replyOk(call(R"({"action":"write","path":"/a/../../x","text":"no"})")));
         CHECK(!replyOk(call(R"({"action":"remove","path":"/.."})")));
         CHECK(!replyOk(call(R"({"action":"remove","path":"/"})"))); // the root itself
+
+        // THE /takes MOUNT (P3-U7): read-only access to the take library, so a
+        // carved grid track's sample can reference the recorder's WAV with no
+        // copy. Reads work; every mutation is refused by name.
+        {
+            const auto takesDirF = scratch.getChildFile("Takes");
+            takesDirF.createDirectory();
+            CHECK(takesDirF.getChildFile("tape1_123.wav").replaceWithText("RIFFfake"));
+            const auto r = call(R"({"action":"read","path":"/takes/tape1_123.wav"})");
+            CHECK(replyOk(r));
+            const auto lst = call(R"({"action":"list","path":"/takes"})");
+            CHECK(replyOk(lst));
+            CHECK(!replyOk(call(R"({"action":"write","path":"/takes/x.wav","text":"no"})")));
+            CHECK(!replyOk(call(R"({"action":"remove","path":"/takes/tape1_123.wav"})")));
+            CHECK(!replyOk(call(R"({"action":"mkdirs","path":"/takes/sub"})")));
+            // Containment holds inside the mount too.
+            CHECK(!replyOk(call(R"({"action":"read","path":"/takes/../Library/secrets"})")));
+        }
 
         // exists / mkdirs / remove.
         {

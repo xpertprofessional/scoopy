@@ -189,18 +189,39 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
    * loudly. Clearing the tape while silently dropping the track would destroy
    * the user's region — the one outcome STRIP-MODEL's "nothing is lost" forbids.
    */
-  const doCarve = (strip: Strip) => {
+  const doCarve = async (strip: Strip) => {
     const r = carve(strip, 48000)
     if (!r.ok) {
       setNote(`cannot carve — ${r.reason}`)
       return
     }
-    // The take survives regardless; the region is reported so it is not lost
-    // from view while the byte path is unbuilt.
-    setNote(
-      `carve cannot land yet — a take lives on disk and a session reads OPFS, ` +
-        `so the bytes need a native import first. Region kept: ${r.track.name}`,
+    // The bridge LANDS (P3-U7): the native store gave sessions a disk and the
+    // /takes mount lets a track reference the recorder's WAV in place. Target:
+    // the first grid strip with an OPEN session — a carve is "make this a
+    // composition element", and the composition is whichever one is up.
+    const gridStrip = getMap().strips.find(
+      (s) =>
+        s.element.kind === 'grid' &&
+        useCompanion.getState().decks[s.element.deck]?.session != null,
     )
+    if (!gridStrip || gridStrip.element.kind !== 'grid') {
+      setNote('carve needs a grid strip with an open session — load one (⋯), then carve')
+      return
+    }
+    const landed = await useCompanion
+      .getState()
+      .carveIntoSession(gridStrip.element.deck, r.track)
+    if (!landed) {
+      setNote(useCompanion.getState().error ?? 'carve failed')
+      return
+    }
+    // CARVE FREES THE TAPE (STRIP-MODEL, decided): the layer clears for the
+    // next capture, the audio survives twice over — the take in the library,
+    // the region in the session. The channel unbinds so the freed strip is
+    // silent, not playing a tape the document no longer shows.
+    updateStrip(strip.key, () => r.strip)
+    send(link, 'slChannel', { action: 'setSource', channel: strip.channel, kind: 0, index: 0 })
+    setNote(`carved → ${r.track.name}, into “${gridStrip.name}” — the tape layer is free again`)
   }
 
   const removeStrip = (strip: Strip) => {

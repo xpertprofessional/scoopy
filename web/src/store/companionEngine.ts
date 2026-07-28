@@ -240,6 +240,15 @@ interface CompanionState {
   newSession(): Promise<void>;
   /** Assign a library sample (OPFS path) to a track — the browser's half of `fileBrowser load`. */
   loadSample(trackIndex: number, path: string, deck?: number): Promise<void>;
+  /** CARVE (P3-U7, STRIP-MODEL's one-way bridge): land a tape's loop region as
+      a grid track. The track references the take IN PLACE via the read-only
+      `/takes` mount — the carve invariant is ONE take shared by the tape and
+      the track, never a copy. Lands on the first EMPTY track; returns false
+      (with `error` set) when there is none, or no session is open. */
+  carveIntoSession(
+    deck: number,
+    carved: { takeRef: string; sampleStartMs: number; sampleEndMs: number; name: string },
+  ): Promise<boolean>;
   exportCurrent(deck?: number): Promise<void>;
   startEngine(): Promise<void>;
   play(deck?: number): void;
@@ -488,6 +497,84 @@ export const useCompanion = create<CompanionState>((set, get) => ({
       set({ notice: `created ${name} — load samples onto tracks from FILES`, error: null });
     } catch (err) {
       set({ error: `new session failed: ${(err as Error).message}` });
+    }
+  },
+
+  async carveIntoSession(deck, carved) {
+    const session = deckOf(get(), deck).session;
+    if (!session) {
+      set({ error: "carve needs an open session on a grid strip — load one first" });
+      return false;
+    }
+    // The take, referenced IN PLACE through the read-only /takes mount — the
+    // carve invariant (carve.ts): a scrubbable tape and a grid track carved
+    // from it share ONE take. No copy, so a session never duplicates audio.
+    const path = `/takes/${carved.takeRef.split("/").pop() ?? carved.takeRef}`;
+    try {
+      const buffer = await samples.decode(path);
+      sampleDurations.set(path, buffer.duration * 1000);
+      // The first EMPTY track — a carve must never overwrite a track someone
+      // sequenced. Section A is the emptiness authority: `loadSample` writes
+      // every section's row together, so the sections agree.
+      const rowsA = (session.pattern as Record<string, unknown>).sectionA;
+      const trackIndex = Array.isArray(rowsA)
+        ? rowsA.findIndex((t) => !(t as { sampleId?: string | null }).sampleId)
+        : -1;
+      if (trackIndex < 0) {
+        set({ error: "no empty track in this session — free one, then carve" });
+        return false;
+      }
+      const kitList = kitSamples(session.kit);
+      let entry = kitList.find((s) => s.filePath === path);
+      let kit = session.kit;
+      if (!entry) {
+        entry = {
+          id: crypto.randomUUID().toUpperCase(),
+          name: carved.name,
+          filePath: path,
+          defaultVolume: 0.8,
+          defaultPan: 0,
+        };
+        kit = { ...session.kit, samples: [...kitList, entry] };
+      }
+      // The region rides as the trim the document already understands — every
+      // section's row, the loadSample rule (a hand-typed subset once skipped
+      // sections silently).
+      const pattern = { ...(session.pattern as Record<string, unknown>) };
+      for (const key of SECTION_KEYS) {
+        const tracks = pattern[key];
+        if (!Array.isArray(tracks) || trackIndex >= tracks.length) continue;
+        const copy = [...tracks];
+        copy[trackIndex] = {
+          ...(copy[trackIndex] as Record<string, unknown>),
+          sampleId: entry.id,
+          sampleStartMs: carved.sampleStartMs,
+          sampleEndMs: carved.sampleEndMs,
+        };
+        pattern[key] = copy;
+      }
+      const next: WorkingSession = {
+        ...session,
+        kit,
+        pattern: pattern as WorkingSession["pattern"],
+      };
+      set((s) => patchDeck(s, deck, { session: next }));
+      if (audio.running) {
+        const { failures, rates } = await samples.registerKit(kit, audio);
+        mergeRates(rates);
+        set((s) => patchDeck(s, deck, { decodeFailures: failures }));
+        set((s) =>
+          patchDeck(s, deck, {
+            missingSamples: publish(get(), deck, deckOf(get(), deck).playing),
+          }),
+        );
+      }
+      autosaver.schedule(next);
+      set({ notice: `${carved.name} → track ${trackIndex + 1}`, error: null });
+      return true;
+    } catch (err) {
+      set({ error: `carve failed: ${(err as Error).message}` });
+      return false;
     }
   },
 

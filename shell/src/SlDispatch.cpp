@@ -65,7 +65,7 @@ juce::var capabilities() {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 91);
+    obj->setProperty("schemaVersion", 92);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -608,19 +608,33 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         // could step outside it. Segment names are kept VERBATIM (a kit's
         // filePath must round-trip exactly), so containment is checks, not
         // renaming.
-        juce::File file = libRoot;
+        //
+        // TWO MOUNTS (P3-U7): "/takes/…" reads the take library — READ-ONLY,
+        // because carve's invariant is that a grid track and a tape reference
+        // the SAME take with no copy, so a kit sample's filePath must be able
+        // to point straight at the WAV the recorder wrote. Everything else
+        // lives under Library/ as before. Writes/removes under /takes are
+        // refused: the take library has its own verbs (slTakes delete → Trash)
+        // and a sample import must never be able to alter a take.
+        juce::StringArray segs;
+        segs.addTokens(rawPath, "/", "");
+        segs.removeEmptyStrings();
+        const bool inTakes = segs.size() > 0 && segs[0] == "takes";
+        if (inTakes && (action == "write" || action == "remove" || action == "mkdirs"))
+            return fail("slFiles: /takes is read-only (the take library has its own verbs)");
+        const juce::File root =
+            inTakes ? juce::File(services->takesDir) : libRoot;
+        juce::File file = root;
         {
-            juce::StringArray segs;
-            segs.addTokens(rawPath, "/", "");
-            for (const auto& seg : segs) {
-                if (seg.isEmpty()) continue;
+            for (int si = inTakes ? 1 : 0; si < segs.size(); ++si) {
+                const auto& seg = segs[si];
                 if (seg == "." || seg == ".." || seg.containsChar('\\') ||
                     seg.containsChar(':'))
                     return fail("slFiles: refused path segment '" + seg + "'");
                 file = file.getChildFile(seg);
             }
             // Belt and braces: whatever the walk produced must still be inside.
-            if (file != libRoot && !file.isAChildOf(libRoot))
+            if (file != root && !file.isAChildOf(root))
                 return fail("slFiles: path escapes the library");
         }
 
