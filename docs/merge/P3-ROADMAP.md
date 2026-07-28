@@ -350,6 +350,39 @@ strips only.
 - **Tape sync (P3-2b)** — the payoff sentence above is still only half true. A
   tape has no stretcher and no tempo, so "every element" currently means every
   DECK. That is the next step, and it is new engine DSP.
+### ⚠️ OPEN, AND THE NEXT SESSION'S FIRST JOB: OPFS cannot be the session store
+
+Found 2026-07-27 trying to do P3-2's listening pass, which could not be done at
+all. The chain, each link verified:
+
+1. Every grid control — P3-1's transport, P3-2's whole tempo surface — lives on
+   a strip holding a SESSION.
+2. `sessions ⇱` → **New** appears to work and the session is LISTED.
+3. Loading it fails: **`cannot open Untitled: JSON Parse error: Unexpected EOF`**.
+4. Because `pattern.json` is ZERO LENGTH. `writeFile` created the file before
+   writing a byte, so a failed write left a corrupt session that lists as normal.
+
+`writeFile` is now atomic-ish (verify the size, remove the file and throw on
+mismatch) with a `createSyncAccessHandle` fallback, so this can no longer
+manufacture a landmine — but **it does not explain why the write fails on the
+JUCE WKWebView host**, and that is unfinished.
+
+Measured, and it is the useful clue: in playwright's WebKit,
+`navigator.storage.getDirectory()` FAILS OUTRIGHT ("UnknownError"). Chromium has
+`createWritable` and no main-thread `createSyncAccessHandle`. The user's host is
+somewhere between — it can LIST a session library but cannot write one.
+
+**So the conclusion to weigh first, before more OPFS debugging: the merged app's
+session library probably should not be OPFS at all.** OPFS is the BROWSER
+companion's storage, correct for a browser and inherited by the merged shell only
+because the companion stack came along whole. The shell already has
+`host/src/SessionStore.cpp` and already owns the `.scoopyMap` document natively
+(`slMap`). A native session store is the same move `slMap` already made, it is
+THE FLIP the roadmap has been pointing at, and it would delete this failure class
+rather than harden it.
+
+That is a real architectural step and it was not taken here.
+
 ### The ABI gate — a third casualty of the collapse, and its replacement
 
 `checkAbiCoverage` was failing on `main` before any of this work, and the reason

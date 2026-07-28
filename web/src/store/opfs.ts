@@ -83,15 +83,81 @@ export async function ensureDir(path: string): Promise<void> {
   await dirHandle(path, true);
 }
 
+/**
+ * Write a file, and NEVER leave a half-written one behind.
+ *
+ * ⚠️ THIS FUNCTION USED TO MANUFACTURE CORRUPT SESSIONS. `fileHandle(path, true)`
+ * CREATES the file before a single byte is written, so any failure after that
+ * point left a ZERO-LENGTH file on disk — which `listSessions` then showed as a
+ * perfectly normal session that `openSession` could only answer with
+ * "JSON Parse error: Unexpected EOF". A new session appeared in the library and
+ * could never be loaded, and nothing named the reason.
+ *
+ * Two defences, because the failure had two halves:
+ *
+ * 1. A WRITE PATH THAT WORKS ON WEBKIT. `createWritable()` is the standard
+ *    route and is what Chromium uses; WebKit shipped it late and it is the
+ *    prime suspect for the empty file in the JUCE WKWebView host. Safari's
+ *    long-standing route is `createSyncAccessHandle()` — worker-only in other
+ *    engines, but available on the MAIN THREAD in Safari, which is exactly the
+ *    host that needs it. Tried in that order, and the fallback also runs when
+ *    `createWritable` exists but produces nothing.
+ *
+ * 2. VERIFY, THEN CLEAN UP. The file is re-read after closing; if the length
+ *    does not match what was asked for, the file is REMOVED and the call
+ *    throws. A caller that fails loudly can be retried — a silent zero-length
+ *    file is a landmine that only detonates later, in a different feature, with
+ *    a message about JSON.
+ */
 export async function writeFile(path: string, bytes: Uint8Array | string): Promise<void> {
+  const payload = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes.slice();
   const handle = await fileHandle(path, true);
-  const writable = await handle.createWritable();
-  try {
-    // A fresh BlobPart per write: `createWritable()` truncates by default, so this is a full
-    // replace, not an append.
-    await writable.write(typeof bytes === "string" ? bytes : (bytes.slice() as Uint8Array<ArrayBuffer>));
-  } finally {
-    await writable.close();
+
+  let wrote = false;
+  if (typeof handle.createWritable === "function") {
+    try {
+      const writable = await handle.createWritable();
+      try {
+        // `createWritable()` truncates by default, so this is a full replace.
+        await writable.write(payload as Uint8Array<ArrayBuffer>);
+      } finally {
+        await writable.close();
+      }
+      wrote = true;
+    } catch {
+      wrote = false; // fall through to the sync handle
+    }
+  }
+
+  if (!wrote || (await handle.getFile()).size !== payload.byteLength) {
+    const withSync = handle as FileSystemFileHandle & {
+      createSyncAccessHandle?: () => Promise<{
+        write: (b: BufferSource, o?: { at?: number }) => number;
+        truncate: (n: number) => void;
+        flush: () => void;
+        close: () => void;
+      }>;
+    };
+    if (typeof withSync.createSyncAccessHandle === "function") {
+      const access = await withSync.createSyncAccessHandle();
+      try {
+        access.truncate(0);
+        access.write(payload as BufferSource, { at: 0 });
+        access.flush();
+      } finally {
+        access.close();
+      }
+    }
+  }
+
+  // THE VERIFY. Both paths above can fail quietly on a host that implements the
+  // handle but not the write; only reading the file back proves anything.
+  if ((await handle.getFile()).size !== payload.byteLength) {
+    await remove(path).catch(() => {}); // never leave the landmine
+    throw new Error(
+      `OPFS write failed for ${path} — this host wrote 0 of ${payload.byteLength} bytes ` +
+        `(neither createWritable nor createSyncAccessHandle stored the data)`,
+    );
   }
 }
 
