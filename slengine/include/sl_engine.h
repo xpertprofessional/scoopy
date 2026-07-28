@@ -273,6 +273,17 @@ uint32_t sl_tape_waveform(const sl_engine* e, uint32_t tape, uint32_t channel,
 void sl_tape_set_rate(sl_engine* e, uint32_t tape, double rate);
 double sl_tape_rate(const sl_engine* e, uint32_t tape);
 
+/** How this tape follows a tempo (P3-2b-5, TAPE-STRETCH.md): 0 timePitch —
+    varispeed, zero latency, pitch moves with rate (the default) · 1 timeStretch
+    — the Signalsmith stretcher restores pitch, costing its group delay. The
+    MODE decides what the one rate number drives; the ratio still arrives via
+    sl_tape_set_rate. Entering timeStretch lazily allocates this tape's
+    stretcher with an async warm-up; the render stays DRY until
+    sl_tape_stretch_ready answers 1. */
+void sl_tape_set_tempo_mode(sl_engine* e, uint32_t tape, uint32_t mode);
+uint32_t sl_tape_tempo_mode(const sl_engine* e, uint32_t tape);
+uint32_t sl_tape_stretch_ready(const sl_engine* e, uint32_t tape);
+
 /** Where this tape's recording comes from. THE one place the transplant is not
     1:1 — wizard's deck could only record device input channels, but the strip
     model's closing argument is that recording is always "capture this bus",

@@ -65,7 +65,7 @@ juce::var capabilities() {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 89);
+    obj->setProperty("schemaVersion", 90);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -226,6 +226,14 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         }
         if (action == "setRate") {
             sl_tape_set_rate(engine, tape, numProp(params, "rate", 1.0));
+            return ok(okFlag());
+        }
+        if (action == "setTempoMode") {
+            // P3-2b-5: 0 timePitch · 1 timeStretch. The mode decides what the
+            // one rate number drives; entering 1 lazily allocates the tape's
+            // stretcher (async warm-up — the render stays dry until warm).
+            sl_tape_set_tempo_mode(engine, tape,
+                                   static_cast<uint32_t>(intProp(params, "mode")));
             return ok(okFlag());
         }
         if (action == "scrubBegin") { sl_tape_scrub_begin(engine, tape); return ok(okFlag()); }

@@ -5,9 +5,11 @@
 #include "sl_tape.h"
 
 #include "sl_channel.h"
+#include "NativeBusStretcher.hpp" // timeStretch (P3-2b-5) — reused as-is, 2ch
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 namespace sl {
@@ -34,8 +36,14 @@ inline double sanitize(float s) {
 } // namespace
 
 void TapeBank::configure(double sampleRate, uint32_t maxBlockFrames) {
-    (void)sampleRate; // scratch is sized in frames; the rate only shapes ramps
+    sampleRate_ = sampleRate; // the stretchers need the real rate (P3-2b-5)
     maxBlockFrames_ = maxBlockFrames;
+    // Crossfade scratch for the stretch engage/disengage transitions. Shared:
+    // the render walks tapes serially.
+    stretchDryL_.assign(maxBlockFrames, 0.0f);
+    stretchDryR_.assign(maxBlockFrames, 0.0f);
+    stretchWetL_.assign(maxBlockFrames, 0.0f);
+    stretchWetR_.assign(maxBlockFrames, 0.0f);
     for (uint32_t t = 0; t < kMaxTapes; ++t) {
         outL_[t].assign(maxBlockFrames, 0.0f);
         outR_[t].assign(maxBlockFrames, 0.0f);
@@ -290,6 +298,43 @@ void TapeBank::setRate(uint32_t tape, double r) {
 double TapeBank::rate(uint32_t tape) const {
     if (tape >= kMaxTapes) return 0.0;
     return tapes_[tape].rate.load(std::memory_order_relaxed);
+}
+
+/* --- timeStretch (P3-2b-5, TAPE-STRETCH.md) -------------------------------- */
+
+void TapeBank::setTempoMode(uint32_t tape, uint32_t mode) {
+    if (tape >= kMaxTapes || mode > 1u) return;
+    Tape& d = tapes_[tape];
+    if (mode == 1u && stretchers_[tape] == nullptr) {
+        // LAZY, and configured with an ASYNC warm-up: the ~600 ms node warm-up
+        // must not stall the message thread, and the render stays DRY until
+        // isWarm() — which the latency policy absorbs (stretch engages on a
+        // tempo intent, not a deadline).
+        auto st = std::make_unique<scoopyloops::NativeBusStretcher>();
+        st->configure(sampleRate_ > 0.0 ? sampleRate_ : 48000.0, 2,
+                      static_cast<int>(maxBlockFrames_ > 0 ? maxBlockFrames_ : 512u),
+                      /*asyncWarmup=*/true);
+        // Input staging for the unity-read stream, sized for the |rate| ≤ 16
+        // clamp plus carry slack.
+        const size_t cap =
+            static_cast<size_t>(maxBlockFrames_ > 0 ? maxBlockFrames_ : 512u) * 16u + 4u;
+        stretchInL_[tape].assign(cap, 0.0f);
+        stretchInR_[tape].assign(cap, 0.0f);
+        // Publish LAST: a render that sees the pointer sees a configured object.
+        d.stretch.store(st.get(), std::memory_order_release);
+        stretchers_[tape] = std::move(st);
+    }
+    d.tempoMode.store(mode, std::memory_order_release);
+}
+
+uint32_t TapeBank::tempoMode(uint32_t tape) const {
+    return tape >= kMaxTapes ? 0u : tapes_[tape].tempoMode.load(std::memory_order_relaxed);
+}
+
+uint32_t TapeBank::stretchReady(uint32_t tape) const {
+    if (tape >= kMaxTapes) return 0u;
+    auto* st = tapes_[tape].stretch.load(std::memory_order_acquire);
+    return st != nullptr && st->isWarm() ? 1u : 0u;
 }
 
 /* --- recording ------------------------------------------------------------ */
@@ -663,8 +708,12 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
 
         const double regionLen = static_cast<double>(re) - static_cast<double>(rs);
         bool finished = false;
+
+        // The dry (varispeed) body, callable: the stretch transitions render it
+        // into scratch for the one-block crossfade (P3-2b-5, TAPE-STRETCH.md).
+        auto renderVarispeed = [&](float* L, float* R) {
         for (uint32_t i = 0; i < frames; ++i) {
-            if (finished) { dl[i] = 0.0f; dr[i] = 0.0f; continue; }
+            if (finished) { L[i] = 0.0f; R[i] = 0.0f; continue; }
             d.smRate += alpha * (tgtRate - d.smRate);
             // SNAP once the glide is inaudibly close. A one-pole only approaches
             // its target asymptotically, so without this the smoothed rate would
@@ -679,11 +728,11 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             const bool identity = d.smRate == 1.0 || d.smRate == -1.0;
             if (identity) {
                 const auto idx = static_cast<uint64_t>(d.playhead);
-                dl[i] = d.sample(0, idx);
-                dr[i] = dchan > 1 ? d.sample(1, idx) : dl[i];
+                L[i] = d.sample(0, idx);
+                R[i] = dchan > 1 ? d.sample(1, idx) : L[i];
             } else {
-                dl[i] = d.sampleLerp(0, d.playhead);
-                dr[i] = dchan > 1 ? d.sampleLerp(1, d.playhead) : dl[i];
+                L[i] = d.sampleLerp(0, d.playhead);
+                R[i] = dchan > 1 ? d.sampleLerp(1, d.playhead) : L[i];
             }
             // Sum the input in at the position we just READ, so this pass and
             // the next hear it at the same point in the loop.
@@ -702,8 +751,8 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 // HEAR YOURSELF. The tape's own output carries the live input on
                 // top of the material — D-WZ-MON-02 asks for "the input AGAINST
                 // the loop", and this is the only place both can exist at once.
-                dl[i] += vals[0];
-                dr[i] += dchan > 1 ? vals[1] : vals[0];
+                L[i] += vals[0];
+                R[i] += dchan > 1 ? vals[1] : vals[0];
                 // The RAM mix is destructive, so the drain is what preserves
                 // this pass: every overdub lands as its own stamped take file,
                 // even though the pre-mix buffer does not.
@@ -746,6 +795,119 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 }
             }
         }
+        };
+
+        // --- timeStretch path (P3-2b-5, TAPE-STRETCH.md) --------------------
+        // The stage-1 read is the SAME timeline at unity magnitude — the
+        // staged stream is exactly what varispeed would play, loop seam
+        // included — and the stretcher restores pitch (fixed-output model:
+        // inN in, `frames` out). One reader, two modes.
+        auto* stretcher = d.stretch.load(std::memory_order_acquire);
+        const bool wantStretch =
+            d.tempoMode.load(std::memory_order_acquire) == 1u && stretcher != nullptr &&
+            stretcher->isWarm() && !overdubbing &&
+            st == static_cast<uint32_t>(TapeState::looping) && regionLen > 0.0;
+        const bool wasStretch = d.stretchOn != 0;
+        if (wantStretch || wasStretch) {
+            const bool transition = wantStretch != wasStretch;
+            float* wetL = stretchWetL_.data();
+            float* wetR = stretchWetR_.data();
+            float* dryL = stretchDryL_.data();
+            float* dryR = stretchDryR_.data();
+
+            if (transition) {
+                // The DRY leg — committed only when dry is where we end up.
+                const double ph = d.playhead;
+                const double sm = d.smRate;
+                renderVarispeed(dryL, dryR);
+                if (wantStretch) { d.playhead = ph; d.smRate = sm; }
+            }
+
+            {
+                const double ph = d.playhead;
+                const double sm = d.smRate;
+                if (wantStretch && !wasStretch) {
+                    // ENGAGE: integer playhead (unity reads become identity
+                    // reads), then prime from the material just PLAYED so the
+                    // vocoder window opens on continuity, not on silence.
+                    d.playhead = std::floor(d.playhead);
+                    const double rateMag = std::abs(d.smRate == 0.0 ? 1.0 : d.smRate);
+                    int primeN = stretcher->engageInputLength(rateMag);
+                    const int primeCap = static_cast<int>(stretchInL_[di].size());
+                    if (primeN > primeCap) primeN = primeCap;
+                    if (primeN > 0) {
+                        float* pl = stretchInL_[di].data();
+                        float* pr = stretchInR_[di].data();
+                        for (int k = 0; k < primeN; ++k) {
+                            double pos = d.playhead - static_cast<double>(primeN - k);
+                            while (pos < static_cast<double>(rs)) pos += regionLen;
+                            const auto idx = static_cast<uint64_t>(pos);
+                            pl[k] = d.sample(0, idx);
+                            pr[k] = dchan > 1 ? d.sample(1, idx) : pl[k];
+                        }
+                        const float* prime[2] = {pl, pr};
+                        stretcher->engagePrimed(prime, primeN);
+                    }
+                    d.stretchInFrac = 0.0;
+                }
+                // INPUT COUNT: the timeline advances |smRate| source frames per
+                // output frame, smoothed exactly like the dry path so a tempo
+                // move glides identically in both modes; the fraction carries.
+                double acc = d.stretchInFrac;
+                for (uint32_t i = 0; i < frames; ++i) {
+                    d.smRate += alpha * (tgtRate - d.smRate);
+                    if (std::abs(tgtRate - d.smRate) < 1e-6) d.smRate = tgtRate;
+                    acc += std::abs(d.smRate);
+                }
+                auto inN = static_cast<uint32_t>(acc);
+                d.stretchInFrac = acc - static_cast<double>(inN);
+                const auto inCap = static_cast<uint32_t>(stretchInL_[di].size());
+                if (inN > inCap) inN = inCap;
+                if (inN == 0) inN = 1; // the model needs at least one source frame
+                float* inL = stretchInL_[di].data();
+                float* inR = stretchInR_[di].data();
+                const double dir = d.smRate < 0.0 ? -1.0 : 1.0;
+                for (uint32_t k = 0; k < inN; ++k) {
+                    const auto idx = static_cast<uint64_t>(d.playhead);
+                    inL[k] = d.sample(0, idx);
+                    inR[k] = dchan > 1 ? d.sample(1, idx) : inL[k];
+                    d.playhead += dir;
+                    if (dir >= 0.0) {
+                        if (d.playhead >= static_cast<double>(re))
+                            d.playhead = static_cast<double>(rs) +
+                                std::fmod(d.playhead - static_cast<double>(rs), regionLen);
+                    } else if (d.playhead < static_cast<double>(rs)) {
+                        d.playhead = static_cast<double>(re) -
+                            std::fmod(static_cast<double>(rs) - d.playhead, regionLen);
+                    }
+                }
+                const float* ins[2] = {inL, inR};
+                float* outs[2] = {wetL, wetR};
+                stretcher->process(ins, static_cast<int>(inN), outs,
+                                   static_cast<int>(frames), 1.0);
+                if (!wantStretch) { d.playhead = ph; d.smRate = sm; }
+            }
+
+            if (!transition) {
+                for (uint32_t i = 0; i < frames; ++i) { dl[i] = wetL[i]; dr[i] = wetR[i]; }
+            } else {
+                // Equal-power over the block: toward WET on engage, DRY on exit.
+                for (uint32_t i = 0; i < frames; ++i) {
+                    const double r =
+                        (static_cast<double>(i) + 1.0) / static_cast<double>(frames);
+                    const double w = rampShape(r);
+                    const double toWet = wantStretch ? w : 1.0 - w;
+                    dl[i] = static_cast<float>(dryL[i] * (1.0 - toWet) + wetL[i] * toWet);
+                    dr[i] = static_cast<float>(dryR[i] * (1.0 - toWet) + wetR[i] * toWet);
+                }
+            }
+            d.stretchOn = wantStretch ? 1u : 0u;
+            if (odCaptured > 0) drain_[di].write(odScratch, odCaptured, fs, blockStartSample);
+            d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
+            continue;
+        }
+
+        renderVarispeed(dl, dr);
         // Each overdub PASS drains to its own crash-safe stamped take file: the
         // RAM mix is destructive, so the file is what preserves the material of
         // every pass.

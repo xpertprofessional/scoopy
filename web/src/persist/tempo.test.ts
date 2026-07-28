@@ -200,13 +200,16 @@ describe('tapeEffectiveRate (P3-2b-3 — tape sync v1, timePitch)', () => {
     expect(tapeEffectiveRate(tapeEl({ rate: -1 }), 128)).toBeCloseTo(-2, 5)
   })
 
-  it('unsynced, unknown-bpm and timeStretch tapes keep the manual rate', () => {
+  it('unsynced and unknown-bpm tapes keep the manual rate', () => {
     expect(tapeEffectiveRate(tapeEl({ syncToMaster: false, rate: 0.5 }), 128)).toBe(0.5)
     // No bpm = cannot sync; the intent stays, the rate stays honest.
     expect(tapeEffectiveRate(tapeEl({ bpm: null, rate: 0.5 }), 128)).toBe(0.5)
-    // timeStretch's engine is P3-2b-5; silently falling back to varispeed
-    // would change PITCH behind the user's back — the thing the mode refuses.
-    expect(tapeEffectiveRate(tapeEl({ tempoMode: 'timeStretch', rate: 0.5 }), 128)).toBe(0.5)
+  })
+
+  it('timeStretch takes the SAME ratio — the engine mode decides what it drives (P3-2b-5)', () => {
+    // One number, two mechanisms: varispeed moves pitch with it, the
+    // stretcher holds pitch. The mode travels beside the rate in applyTempo.
+    expect(tapeEffectiveRate(tapeEl({ tempoMode: 'timeStretch' }), 128)).toBeCloseTo(2, 5)
   })
 
   it('mapTapeRateOps includes UNSYNCED tapes at their manual rate', () => {
@@ -231,6 +234,6 @@ describe('tapeEffectiveRate (P3-2b-3 — tape sync v1, timePitch)', () => {
         },
       ],
     }
-    expect(mapTapeRateOps(map)).toEqual([{ tape: 0, rate: 0.75 }])
+    expect(mapTapeRateOps(map)).toEqual([{ tape: 0, rate: 0.75, mode: 0 }])
   })
 })

@@ -540,6 +540,18 @@ double sl_tape_rate(const sl_engine* e, uint32_t tape) {
     return e == nullptr ? 0.0 : e->tapes.rate(tape);
 }
 
+void sl_tape_set_tempo_mode(sl_engine* e, uint32_t tape, uint32_t mode) {
+    if (e != nullptr) e->tapes.setTempoMode(tape, mode);
+}
+
+uint32_t sl_tape_tempo_mode(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0u : e->tapes.tempoMode(tape);
+}
+
+uint32_t sl_tape_stretch_ready(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0u : e->tapes.stretchReady(tape);
+}
+
 int32_t sl_tape_set_record_source(sl_engine* e, uint32_t tape, uint32_t kind,
                                   int32_t chan0, int32_t chan1) {
     return e == nullptr ? 0 : e->tapes.setRecordSource(tape, kind, chan0, chan1);

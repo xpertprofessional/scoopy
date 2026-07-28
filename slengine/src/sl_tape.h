@@ -36,6 +36,8 @@
 #include <mutex>
 #include <vector>
 
+namespace scoopyloops { class NativeBusStretcher; }
+
 namespace sl {
 
 inline constexpr uint32_t kMaxTapes = 8;
@@ -150,6 +152,20 @@ struct Tape {
     std::atomic<uint64_t> recStartSample{0};
     uint64_t recCapFrames = 0;   // 256 MB/tape in frames (D-WZ-DECK-01)
     std::atomic<uint32_t> recCapReached{0};
+
+    // --- timeStretch (P3-2b-5, TAPE-STRETCH.md) ------------------------------
+    /** 0 timePitch (varispeed — the default) · 1 timeStretch. The MODE decides
+        what the one rate number drives, `applyDeckParams`' shape. */
+    std::atomic<uint32_t> tempoMode{0};
+    /** Installed by TapeBank::setTempoMode (control thread), read by render.
+        NEVER deleted while the bank lives — a retire path for a 2-channel idle
+        object is the chunk machinery again for no audible gain, so stretchers
+        are allocated once per tape and freed with the bank (spec amendment,
+        recorded in TAPE-STRETCH.md). */
+    std::atomic<scoopyloops::NativeBusStretcher*> stretch{nullptr};
+    // Render-owned stretch state.
+    double stretchInFrac = 0.0; // fractional input-frame carry across blocks
+    uint32_t stretchOn = 0;     // previous block's effective path (edge detect)
 
     // --- render-owned ---------------------------------------------------------
     double playhead = 0.0;
@@ -406,6 +422,16 @@ public:
                       float* outMin, float* outMax) const;
     void setRate(uint32_t tape, double rate);
     double rate(uint32_t tape) const;
+    /** timeStretch (P3-2b-5, TAPE-STRETCH.md): 0 timePitch · 1 timeStretch.
+        Entering 1 lazily allocates + configures this tape's stretcher with an
+        ASYNC warm-up — the render stays dry until `isWarm()`, which the
+        latency policy absorbs (stretch engages on a tempo intent, not a
+        deadline). Control thread. */
+    void setTempoMode(uint32_t tape, uint32_t mode);
+    uint32_t tempoMode(uint32_t tape) const;
+    /** Introspection for the fixture (and one day a UI lamp): allocated AND
+        warm — the block after this reads 1, the wet path is reachable. */
+    uint32_t stretchReady(uint32_t tape) const;
     uint32_t state(uint32_t tape) const;
     uint32_t capReached(uint32_t tape) const;
 
@@ -511,6 +537,18 @@ private:
     std::vector<float> recScratch_;  // interleaved capture staging (maxBlock × 2)
     std::atomic<uint32_t> recArm_[kMaxTapes]; // control→render: 1 = start, 2 = stop
     uint32_t maxBlockFrames_ = 0;
+
+    // --- timeStretch (P3-2b-5) ----------------------------------------------
+    // Owned here, PUBLISHED to the render via Tape::stretch (atomic pointer),
+    // and never freed while the bank lives — see the field's comment.
+    std::unique_ptr<scoopyloops::NativeBusStretcher> stretchers_[kMaxTapes];
+    // Per-tape input staging: the unity-read source stream. Sized for the
+    // |rate| ≤ 16 clamp (maxBlock × 16 + slack) when the stretcher is made.
+    std::vector<float> stretchInL_[kMaxTapes], stretchInR_[kMaxTapes];
+    // Shared per-block scratch for the engage/disengage crossfade (the render
+    // walks tapes serially, so one pair each suffices).
+    std::vector<float> stretchDryL_, stretchDryR_, stretchWetL_, stretchWetR_;
+    double sampleRate_ = 0.0;
 };
 
 } // namespace sl

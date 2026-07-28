@@ -76,6 +76,7 @@ foreach(t
     sl_tape_record_test       # capture, the 256 MB cap, the drain, LAW C-2 stamps
     sl_tape_overdub_test      # D-WZ-OVERDUB-01 SUM/REPLACE + refusals + drain regression
     sl_tape_varispeed_test    # identity bit-exactness at ±1, reverse, wrap
+    sl_tape_stretch_test      # P3-2b-5: 2× timeline with pitch HELD (timeStretch)
     sl_tape_insert_test       # control-thread splice
     sl_tape_mix_record_test   # NEW: record the main mix, same-block, honest stamp
     sl_channel_test           # the uniform channel + the channel-bus record tap

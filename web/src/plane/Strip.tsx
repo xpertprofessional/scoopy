@@ -858,6 +858,29 @@ export function Strip({
               {tapeSynced ? 'SYNC' : 'FREE'}
             </button>
           )}
+          {/* HOW following costs (P3-2b-5): T+P = varispeed (pitch moves,
+              zero latency — the tape default) · STR = the stretcher (pitch
+              held, group delay accepted). Two modes only: tempoOnly is a
+              step-clock concept a tape has no steps for. */}
+          {strip.element.kind === 'tape' && (
+            <button
+              type="button"
+              className={`strip-tempomode${tapeSynced ? ' active' : ''}`}
+              aria-label="tape tempo mode"
+              title={
+                tapeEl?.tempoMode === 'timeStretch'
+                  ? 'stretch — follows tempo with the pitch left where it is (adds ~0.1 s of latency)'
+                  : 'time + pitch — varispeed, like a turntable: tempo and pitch move together'
+              }
+              onClick={() =>
+                updateTapeTempo(strip.key, link, {
+                  tempoMode: tapeEl?.tempoMode === 'timeStretch' ? 'timePitch' : 'timeStretch',
+                })
+              }
+            >
+              {tapeEl?.tempoMode === 'timeStretch' ? 'STR' : 'T+P'}
+            </button>
+          )}
           <GeoRange
             value={tapeShownRate}
             min={RATE_MIN}

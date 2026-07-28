@@ -27,6 +27,18 @@
     {
       "name": "sl_tape_record_cap_reached",
       "reason": "Same as sl_tape_state — wizard surfaced the 256 MB cap flag via its HotFrame deck block. A cap that stops a recording with no way to observe it is the silent-truncation failure D-WZ-DECK-01 exists to make visible."
+    },
+    {
+      "name": "sl_tape_set_tempo_mode",
+      "reason": "P3-2b-5 (TAPE-STRETCH.md): 0 timePitch / 1 timeStretch — what the one rate number DRIVES. Wizard's deck had varispeed only; pitch-preserving stretch is the merge's 'stretch and re-pitch every element to the master' made real for tapes, on scoopy's own Signalsmith stretcher."
+    },
+    {
+      "name": "sl_tape_tempo_mode",
+      "reason": "The readback for sl_tape_set_tempo_mode, so the dispatcher and fixtures can verify what landed rather than trusting the send (the silent-refusal defect class params:check exists for)."
+    },
+    {
+      "name": "sl_tape_stretch_ready",
+      "reason": "The stretcher warms up ASYNC (~600 ms) and the render stays dry until it is warm; without an introspection point the fixture could only sleep-and-hope, and a UI lamp could never say why stretch has not engaged yet."
     }
   ]
 }

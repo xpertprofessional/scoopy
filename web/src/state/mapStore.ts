@@ -321,6 +321,10 @@ export async function applyTempo(link: EngineLink | null): Promise<void> {
   // unsynced ones included at their manual rate: un-syncing must RESTORE the
   // hand's rate, not leave the engine carrying the last synced one.
   for (const t of mapTapeRateOps(map)) {
+    // MODE BEFORE RATE, like the deck trio: the mode decides what the rate
+    // drives, so a rate landing on yesterday's mode would briefly drive the
+    // wrong mechanism.
+    await ask(link, 'slTape', { action: 'setTempoMode', tape: t.tape, mode: t.mode })
     await ask(link, 'slTape', { action: 'setRate', tape: t.tape, rate: t.rate })
   }
 }

@@ -274,9 +274,11 @@ describe("applyTempo", () => {
     setMap(mapWith([strip()]));
     const { link, calls } = fakeLink();
     return applyTempo(link).then(() => {
-      expect(calls).toHaveLength(1);
-      expect(calls[0]?.method).toBe("slTape");
-      expect(calls[0]?.params).toMatchObject({ action: "setRate", tape: 0, rate: 1 });
+      // Two calls per tape since P3-2b-5: the MODE (what the rate drives)
+      // travels first, then the rate — the deck trio's ordering rule.
+      expect(calls).toHaveLength(2);
+      expect(calls[0]?.params).toMatchObject({ action: "setTempoMode", tape: 0, mode: 0 });
+      expect(calls[1]?.params).toMatchObject({ action: "setRate", tape: 0, rate: 1 });
     });
   });
 

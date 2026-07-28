@@ -168,13 +168,14 @@ export function inferTapeBpm(
  * Sync owns the MAGNITUDE; the hand keeps the SIGN — a reversed tape stays
  * reversed while synced, because reverse is a musical choice sync has no
  * business overriding. Unsynced (or bpm honestly unknown), the document's own
- * rate stands. `timeStretch` returns the manual rate untouched: its engine is
- * P3-2b-5, and a mode that silently fell back to varispeed would change PITCH
- * behind the user's back — the exact thing choosing timeStretch refuses.
+ * rate stands.
+ *
+ * BOTH modes take the same ratio (P3-2b-5): the engine's `tempoMode` decides
+ * what the number DRIVES — varispeed (pitch moves) or the stretcher (pitch
+ * held). `applyTempo` sends the mode alongside the rate.
  */
 export function tapeEffectiveRate(element: TapeElement, masterBpm: number): number {
   if (!element.syncToMaster || element.bpm === null) return element.rate
-  if (element.tempoMode !== 'timePitch') return element.rate // stretcher: P3-2b-5
   const out = djSyncLaw({
     masterBpm,
     tempoMode: 'timePitch',
@@ -186,14 +187,22 @@ export function tapeEffectiveRate(element: TapeElement, masterBpm: number): numb
   return element.rate < 0 ? -out.syncRatio : out.syncRatio
 }
 
-/** Every tape strip's effective rate, in strip order — what `applyTempo`
-    pushes. Unsynced tapes are INCLUDED at their manual rate, for the same
-    reason the grid branch sends ratio 1: un-syncing must restore the hand's
-    rate, not leave the engine carrying the last synced one. */
-export function mapTapeRateOps(map: PlaneMap): { tape: number; rate: number }[] {
+/** Every tape strip's effective rate AND mode, in strip order — what
+    `applyTempo` pushes. Unsynced tapes are INCLUDED at their manual rate, for
+    the same reason the grid branch sends ratio 1: un-syncing must restore the
+    hand's rate, not leave the engine carrying the last synced one. */
+export function mapTapeRateOps(
+  map: PlaneMap,
+): { tape: number; rate: number; mode: 0 | 1 }[] {
   return map.strips.flatMap((s) =>
     s.element.kind === 'tape'
-      ? [{ tape: s.element.index, rate: tapeEffectiveRate(s.element, map.transport.masterBpm) }]
+      ? [
+          {
+            tape: s.element.index,
+            rate: tapeEffectiveRate(s.element, map.transport.masterBpm),
+            mode: (s.element.tempoMode === 'timeStretch' ? 1 : 0) as 0 | 1,
+          },
+        ]
       : [],
   )
 }
