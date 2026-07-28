@@ -121,15 +121,16 @@ struct Backend {
     React root with its own JuceLink, all onto the one Backend. */
 class PanelWindow final : public juce::DocumentWindow {
 public:
-    using OpenPanel = std::function<void(const juce::String&)>;
+    using OpenPanel = std::function<void(const juce::String&, const juce::String&)>;
     using CloseSelf = std::function<void(PanelWindow*)>;
 
-    PanelWindow(Backend& backendToUse, juce::String panel, bool isMainToUse,
-                OpenPanel openPanel, CloseSelf closeSelf)
+    PanelWindow(Backend& backendToUse, juce::String panel, juce::String panelArgToUse,
+                bool isMainToUse, OpenPanel openPanel, CloseSelf closeSelf)
         : juce::DocumentWindow("ScoopyLoops - " + panel, juce::Colours::black,
                                juce::DocumentWindow::allButtons),
           backend(backendToUse),
           panelName(std::move(panel)),
+          panelArg(std::move(panelArgToUse)),
           isMain(isMainToUse),
           openPanelFn(std::move(openPanel)),
           closeSelfFn(std::move(closeSelf)) {
@@ -139,7 +140,18 @@ public:
                 .withResourceProvider(provideResource)
                 // Panel identity, the same hook the mac shell uses: scoopy's
                 // App.tsx reads window.__slPanel first (P1 spike §Q2).
-                .withUserScript("window.__slPanel = \"" + panelName + "\";")
+                // Panel identity + its ADDRESS (P3-4-2). `__slPanelArg` was
+                // read by FxSlotPanel/InstrumentPanel and never injected — an
+                // addressed window opened unaddressed. Sanitised to
+                // alphanumerics because it rides inside a user script.
+                .withUserScript("window.__slPanel = \"" + panelName + "\";" +
+                                (panelArg.isNotEmpty()
+                                     ? " window.__slPanelArg = \"" +
+                                           panelArg.retainCharacters(
+                                               "abcdefghijklmnopqrstuvwxyz"
+                                               "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") +
+                                           "\";"
+                                     : juce::String()))
                 .withNativeFunction(
                     "slCommand",
                     [this](const juce::Array<juce::var>& args,
@@ -256,7 +268,7 @@ private:
                                : method == "openPanelWindow"
                                    ? params.getProperty("panel", "companion").toString()
                                    : juce::String("instrument");
-            openPanelFn(panel);
+            openPanelFn(panel, params.getProperty("arg", "").toString());
             auto* env = new juce::DynamicObject();
             env->setProperty("ok", true);
             env->setProperty("result", juce::var(new juce::DynamicObject()));
@@ -273,6 +285,7 @@ private:
     juce::String panelName;
     bool isMain;
     OpenPanel openPanelFn;
+    juce::String panelArg;
     CloseSelf closeSelfFn;
     std::unique_ptr<GuardedWebView> webView;
 };
@@ -293,7 +306,7 @@ public:
         // (merge P2 step 4): strips, their elements and the patchbay. The
         // companion shell stays reachable as a spawned panel; it is where a
         // session is composed, which is a different job from performing a set.
-        openPanel("plane", /*isMain*/ true);
+        openPanel("plane", "", /*isMain*/ true);
         startTimerHz(30); // the HotFrame broadcast
     }
 
@@ -305,10 +318,11 @@ public:
     }
 
 private:
-    void openPanel(const juce::String& panel, bool isMain = false) {
+    void openPanel(const juce::String& panel, const juce::String& arg,
+                   bool isMain = false) {
         windows.push_back(std::make_unique<PanelWindow>(
-            *backend, panel, isMain,
-            [this](const juce::String& p) { openPanel(p, false); },
+            *backend, panel, arg, isMain,
+            [this](const juce::String& p, const juce::String& a) { openPanel(p, a, false); },
             [this](PanelWindow* w) { removeWindow(w); }));
     }
 

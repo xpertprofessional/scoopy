@@ -638,6 +638,65 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         >
           sessions ⇱
         </button>
+        {/* THE PANELS MENU (P3-4-2) — the door PANEL-AUDIT.md promised. Every
+            compiled-in panel the audit marked mechanical opens from here;
+            "nothing lost" stops depending on knowing a panel's name. fxslot
+            leads: it is the return-FX config path P3-3-1 is blocked on. */}
+        <button
+          type="button"
+          className="plane-compose"
+          onPointerDown={(e) => {
+            openMenu(
+              [
+                { kind: 'info', label: 'FX returns' },
+                ...[0, 1, 2, 3].map((slot) => ({
+                  kind: 'item' as const,
+                  label: `FX ${slot + 1} ⇱`,
+                  onSelect: () =>
+                    send(link, 'openPanelWindow', { panel: 'fxslot', arg: String(slot) }),
+                })),
+                { kind: 'sep' },
+                { kind: 'info', label: 'surfaces' },
+                ...(
+                  [
+                    ['transport', 'transport — beat repeat, quantize, ramp, keyboard'],
+                    ['spectral', 'spectral — texture, warp, gesture'],
+                    ['paintmode', 'paint mode'],
+                    ['midi', 'MIDI mapping'],
+                    ['perf', 'performance monitor'],
+                    ['capture', 'capture'],
+                    ['deckmixer', 'deck mixer'],
+                    ['djmode', 'DJ mode'],
+                  ] as const
+                ).map(([panel, label]) => ({
+                  kind: 'item' as const,
+                  label: `${label} ⇱`,
+                  onSelect: () => send(link, 'openPanelWindow', { panel }),
+                })),
+                { kind: 'sep' },
+                { kind: 'info', label: 'settings' },
+                ...(
+                  [
+                    ['general', 'general'],
+                    ['audio', 'audio'],
+                    ['appearance', 'appearance'],
+                    ['template', 'templates'],
+                    ['import', 'import'],
+                  ] as const
+                ).map(([panel, label]) => ({
+                  kind: 'item' as const,
+                  label: `${label} ⇱`,
+                  onSelect: () => send(link, 'openPanelWindow', { panel }),
+                })),
+              ],
+              e.clientX,
+              e.clientY,
+            )
+          }}
+          title="every panel — FX returns, transport, spectral, settings and the rest"
+        >
+          ≡ panels
+        </button>
         {/* COMPOSE-BESIDE-THE-MAP. The plane is the PERFORMATIVE surface; a
             session is COMPOSED in the grid, which is a different job. Without
             this affordance, booting into the plane simply takes the composer
