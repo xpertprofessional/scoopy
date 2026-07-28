@@ -370,6 +370,10 @@ export function Strip({
       chan0: tap.chan0,
       chan1: tap.chan1,
       sourceDesc: tap.label,
+      // P3-2b-1: stamp the master tempo into the take's sidecar. The recorded
+      // loop's own bpm derives from this — it is what makes a tape syncable
+      // later without guessing.
+      bpmAtStart: masterBpm,
     })
   }
 

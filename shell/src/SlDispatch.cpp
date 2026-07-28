@@ -65,7 +65,7 @@ juce::var capabilities() {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 88);
+    obj->setProperty("schemaVersion", 89);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -381,7 +381,10 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             const bool opened = recorder.beginTake(
                 tape, c1 >= 0 ? 2u : 1u, sl_engine_sample_rate(engine),
                 0 /* the engine stamps the true start; applied at endTake */,
-                params.getProperty("sourceDesc", "").toString().toStdString());
+                params.getProperty("sourceDesc", "").toString().toStdString(),
+                // P3-2b-1: the MASTER tempo when capture began, from TS (the
+                // tempo authority). 0 = caller had none; the sidecar omits it.
+                numProp(params, "bpmAtStart", 0.0));
             return ok(okFlag(opened));
         }
         if (action == "stop") {

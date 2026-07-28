@@ -56,6 +56,10 @@ function strip(over: Partial<Strip> = {}): Strip {
       stereo: false,
       loop: { enabled: true, start: 0, end: 1000 },
       rate: 1,
+      bpm: null,
+      syncToMaster: false,
+      tempoMode: "timePitch" as const,
+      pulseRelation: "auto" as const,
     },
     level: 1,
     mute: false,
@@ -458,6 +462,10 @@ describe("the lane budget", () => {
       stereo: true,
       loop: { enabled: false, start: 0, end: 0 },
       rate: 1,
+      bpm: null,
+      syncToMaster: false,
+      tempoMode: "timePitch" as const,
+      pulseRelation: "auto" as const,
     };
     // 6 + 2 = 8 fits exactly.
     expect(checkBudget("new", stereoTape).ok).toBe(true);
@@ -481,6 +489,10 @@ describe("the lane budget", () => {
       stereo: true,
       loop: { enabled: false, start: 0, end: 0 },
       rate: 1,
+      bpm: null,
+      syncToMaster: false,
+      tempoMode: "timePitch" as const,
+      pulseRelation: "auto" as const,
     };
     setMap(
       mapWith([

@@ -118,7 +118,7 @@ window.__JUCE__ = { backend: (() => {
   const emit = (id, payload) => on(id).forEach((fn) => fn(payload))
   async function handle(method, p) {
     if (method === 'getCapabilities')
-      return { schemaVersion: 88, pluginHosting: false, fileSystem: true,
+      return { schemaVersion: 89, pluginHosting: false, fileSystem: true,
                midiHardware: false, audioDeviceSelection: true, returnFx: false }
     if (method === 'slFiles') {
       const res = await fetch('/__lib', { method: 'POST', body: JSON.stringify(p) })

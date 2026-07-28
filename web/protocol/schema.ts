@@ -12,7 +12,7 @@ import type { MethodOf, ParamsOf, ResultOf } from "./types.ts";
  * Bump SCHEMA_VERSION on any breaking change and update both sides in the
  * same increment. Publishes across mismatched versions are refused.
  */
-export const SCHEMA_VERSION = 88; // v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
+export const SCHEMA_VERSION = 89; // v89: TAPE TEMPO IDENTITY, document side (P3-2b-1) — slRecord/start gains optional `bpmAtStart` (the MASTER tempo when capture began, stamped into the take's sidecar by the host; the datum a recorded loop needs to state its own bpm and sync later, MAP-SCHEMA "dual stamps"). Sidecar field is OMITTED when the caller had no tempo, so old sidecars and tempo-less ones parse identically. v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
 
 // ---------------------------------------------------------------------------
 // ParamWrite — fine-grained live controls (audio-thread atomics on the
@@ -1700,6 +1700,10 @@ export const COMMANDS = {
           sidecar. It is the strip's provenance — the only record of what the
           material was, once the strip's element is the tape. */
       sourceDesc: z.string().optional(),
+      /** start: the plane's MASTER tempo when capture began (P3-2b-1), stamped
+          into the sidecar as `bpmAtStart`. TS is the tempo authority, so the
+          value travels in rather than being asked for; omitted = unknown. */
+      bpmAtStart: z.number().positive().optional(),
     }).strict(),
     result: z.object({
       ok: z.boolean(),

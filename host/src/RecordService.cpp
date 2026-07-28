@@ -26,6 +26,7 @@ struct Service::DeckSlot {
     std::string sourceDesc;
     uint64_t framesWritten = 0;
     uint64_t droppedFrames = 0;
+    double bpmAtStart = 0.0; // master tempo at record start; 0 = unknown
     std::vector<float> scratch;
 };
 
@@ -102,7 +103,8 @@ void Service::drainDeck(uint32_t deck, bool finalDrain) {
 }
 
 bool Service::beginTake(uint32_t deck, uint32_t channels, double sampleRate,
-                        uint64_t startEngineSample, const std::string& sourceDesc) {
+                        uint64_t startEngineSample, const std::string& sourceDesc,
+                        double bpmAtStart) {
     if (deck >= slots_.size() || channels == 0 || sampleRate <= 0.0) return false;
     const auto epochMs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -118,6 +120,7 @@ bool Service::beginTake(uint32_t deck, uint32_t channels, double sampleRate,
     slot.sourceDesc = sourceDesc;
     slot.framesWritten = 0;
     slot.droppedFrames = 0;
+    slot.bpmAtStart = bpmAtStart;
     wav::Format fmt;
     fmt.channels = channels;
     fmt.sampleRate = sampleRate;
@@ -158,7 +161,8 @@ bool Service::endTake(uint32_t deck, uint64_t startEngineSample) {
                   tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
 
     wav::writeSidecar(slot.path, deck, slot.startEngineSample, iso, slot.sourceDesc,
-                      slot.sampleRate, slot.channels, slot.framesWritten);
+                      slot.sampleRate, slot.channels, slot.framesWritten,
+                      slot.bpmAtStart);
 
     TakeInfo info;
     info.deckId = deck;

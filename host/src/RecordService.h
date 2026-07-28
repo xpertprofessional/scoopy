@@ -54,8 +54,11 @@ public:
 
     // Called (message thread) right after wz_deck_record_start: opens the take
     // file for `deck`. `sourceDesc` is the human label of what is being recorded.
+    // `bpmAtStart` (P3-2b-1): the master tempo when capture began, 0 = unknown —
+    // written into the sidecar so a recorded loop can state its own bpm later.
     bool beginTake(uint32_t deck, uint32_t channels, double sampleRate,
-                   uint64_t startEngineSample, const std::string& sourceDesc);
+                   uint64_t startEngineSample, const std::string& sourceDesc,
+                   double bpmAtStart = 0.0);
     // Called right after wz_deck_record_stop: drains the tail, closes the file,
     // writes the sidecar, and appends to the take list.
     /** `startEngineSample` is the engine's true start for this take, known only

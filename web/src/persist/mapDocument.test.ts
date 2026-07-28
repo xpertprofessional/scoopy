@@ -41,6 +41,10 @@ const tape = (stereo: boolean, takeRef: string | null = null) => ({
   stereo,
   loop: { enabled: true, start: 0, end: 48000 },
   rate: 1,
+  bpm: null,
+  syncToMaster: false,
+  tempoMode: 'timePitch' as const,
+  pulseRelation: 'auto' as const,
 })
 
 // Spelled out rather than built from `plane/stripOps.newGridElement`: this file
@@ -226,6 +230,79 @@ describe('map document', () => {
       expect(r.ok).toBe(true)
       if (!r.ok) return
       expect(r.map.strips[0]?.element.kind).toBe('tape')
+    })
+  })
+
+  describe('the v4 → v5 migration (a tape strip gains its tempo identity, P3-2b-1)', () => {
+    /** A v4 document: a tape strip with none of the tempo fields. */
+    const v4Doc = () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: tape(false, 'take_0009') })],
+      }) as unknown as {
+        schemaVersion: number
+        map: { strips: { element: Record<string, unknown> }[] }
+      }
+      doc.schemaVersion = 4
+      for (const s of doc.map.strips) {
+        delete s.element.bpm
+        delete s.element.syncToMaster
+        delete s.element.tempoMode
+        delete s.element.pulseRelation
+      }
+      return doc
+    }
+
+    it('opens a v4 map SOUNDING THE SAME — sync off, bpm honestly unknown', () => {
+      const r = loadMap(v4Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(4)
+      const el = r.map.strips[0]?.element
+      expect(el?.kind).toBe('tape')
+      if (el?.kind !== 'tape') return
+      // A v4 tape had no sync mechanism at all, so the faithful restatement is
+      // sync OFF with an UNKNOWN bpm — never an inferred one, which could
+      // differ between builds and change how a saved set plays.
+      expect(el.syncToMaster).toBe(false)
+      expect(el.bpm).toBeNull()
+      // timePitch is the D-3 zero-latency default and is inert while sync is
+      // off; a migrated tape that later syncs behaves like a new one.
+      expect(el.tempoMode).toBe('timePitch')
+      expect(el.pulseRelation).toBe('auto')
+    })
+
+    it('keeps the material fields untouched on the way', () => {
+      const r = loadMap(v4Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const el = r.map.strips[0]?.element
+      if (el?.kind !== 'tape') return
+      expect(el.takeRef).toBe('take_0009')
+      expect(el.rate).toBe(1)
+      expect(el.loop.enabled).toBe(true)
+    })
+
+    it('leaves a GRID strip alone', () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: grid() })],
+      }) as unknown as { schemaVersion: number }
+      doc.schemaVersion = 4
+      const r = loadMap(doc)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.map.strips[0]?.element.kind).toBe('grid')
+    })
+
+    it('a migrated map re-saves as clean idempotent v5', () => {
+      const r = loadMap(v4Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const again = loadMap(JSON.parse(JSON.stringify(saveMap(r.map))))
+      expect(again.ok).toBe(true)
+      if (!again.ok) return
+      expect(again.migratedFrom).toBeUndefined()
     })
   })
 

@@ -215,6 +215,12 @@ export function newTapeElement(index: number, stereo: boolean): TapeElement {
     stereo,
     loop: { enabled: true, start: 0, end: 0 },
     rate: 1,
+    // Tempo identity (P3-2b-1): unknown until a take's bpmAtStart stamp or
+    // the user supplies it; sync off; timePitch = the D-3 zero-latency default.
+    bpm: null,
+    syncToMaster: false,
+    tempoMode: 'timePitch',
+    pulseRelation: 'auto',
   }
 }
 

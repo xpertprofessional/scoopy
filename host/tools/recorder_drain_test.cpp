@@ -81,7 +81,7 @@ int main() {
     wz_deck_record_start(e, 0);
     // open() can only write a PROVISIONAL zero: the engine does not know the
     // true start until its first render block after arming.
-    CHECK(svc.beginTake(0, 1, kRate, 0, "Test Ramp"));
+    CHECK(svc.beginTake(0, 1, kRate, 0, "Test Ramp", /*bpmAtStart=*/128.5));
 
     // "Render" 200 blocks of a ramp with NO synchronisation with the drain
     // thread — if the drain could block the render, this loop would stall.
@@ -147,6 +147,9 @@ int main() {
     CHECK(std::strstr(json, "\"deckId\": 0") != nullptr);
     CHECK(std::strstr(json, "Test Ramp") != nullptr);
     CHECK(std::strstr(json, "\"channels\": 1") != nullptr);
+    // P3-2b-1: the master tempo at record start rides in the sidecar — the
+    // datum a tape needs to state its own bpm and sync to a master later.
+    CHECK(std::strstr(json, "\"bpmAtStart\": 128.500000") != nullptr);
 
     // --- naming is time-sortable + self-describing (provisional policy) -----
     const auto n1 = wizard::record::Service::takeFileName(0, 1000);

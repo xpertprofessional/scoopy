@@ -152,7 +152,8 @@ bool Writer::close() {
 
 bool writeSidecar(const std::string& wavPath, uint32_t deckId, uint64_t startEngineSample,
                   const std::string& wallClockIso, const std::string& sourceDesc,
-                  double sampleRate, uint32_t channels, uint64_t frames) {
+                  double sampleRate, uint32_t channels, uint64_t frames,
+                  double bpmAtStart) {
     const std::string path = wavPath + ".json";
     std::FILE* f = std::fopen(path.c_str(), "wb");
     if (f == nullptr) return false;
@@ -167,10 +168,14 @@ bool writeSidecar(const std::string& wavPath, uint32_t deckId, uint64_t startEng
     std::fprintf(f,
                  "{\n  \"deckId\": %u,\n  \"startEngineSample\": %llu,\n"
                  "  \"wallClock\": \"%s\",\n  \"sourceDesc\": \"%s\",\n"
-                 "  \"sampleRate\": %.6f,\n  \"channels\": %u,\n  \"frames\": %llu\n}\n",
+                 "  \"sampleRate\": %.6f,\n  \"channels\": %u,\n  \"frames\": %llu",
                  deckId, static_cast<unsigned long long>(startEngineSample),
                  wallClockIso.c_str(), desc.c_str(), sampleRate, channels,
                  static_cast<unsigned long long>(frames));
+    // OMITTED when unknown, not written as 0: an absent field and a tempo-less
+    // host read identically, and 0 BPM would be a lie the parser had to guard.
+    if (bpmAtStart > 0.0) std::fprintf(f, ",\n  \"bpmAtStart\": %.6f", bpmAtStart);
+    std::fprintf(f, "\n}\n");
     std::fclose(f);
     return true;
 }

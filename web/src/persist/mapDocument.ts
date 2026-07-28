@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 4
+export const MAP_SCHEMA_VERSION = 5
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -62,6 +62,23 @@ export const ElementSchema = z.discriminatedUnion('kind', [
         .strict(),
       /** Signed varispeed; negative is reverse. */
       rate: z.number(),
+      /** THE TAPE'S OWN TEMPO (P3-2b-1) — the missing input of the sync law.
+          `null` = unknown: a tape knows frames, not beats, so the value comes
+          from the take's `bpmAtStart` stamp (with a loop-length inference,
+          D-2) or the user's own hand in the Inspector. A null-bpm tape cannot
+          sync and says so, rather than guessing. */
+      bpm: z.number().positive().nullable(),
+      /** Locked to the plane's master tempo? Same intent field the grid
+          element carries — one sync vocabulary for every element. */
+      syncToMaster: z.boolean(),
+      /** HOW this tape follows the master. `timePitch` is varispeed — zero
+          latency, pitch moves with rate, honest tape behaviour and the D-3
+          default. `timeStretch` will engage the stretcher (P3-2b-5) and
+          accepts its group delay. `tempoOnly` is deliberately ABSENT: it is a
+          step-clock concept and a tape has no steps to re-clock. */
+      tempoMode: z.enum(['timePitch', 'timeStretch']),
+      /** Musical relation to the master — same vocabulary as the grid. */
+      pulseRelation: z.enum(['auto', '1:3', '1:2', '2:3', '1:1', '3:2', '2:1', '3:1']),
     })
     .strict(),
   /** A scoopy session — sequenced sampler tracks. Always stereo. */
@@ -355,6 +372,40 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
                 tempoMode: 'timeStretch',
                 pulseRelation: '1:1',
                 transpose: 0,
+              },
+            }
+          }),
+        },
+      }
+    },
+  },
+  4: {
+    to: 5,
+    name: 'a tape strip carries its tempo intent (P3-2b-1)',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      const strips = Array.isArray(map.strips) ? (map.strips as RawMap[]) : []
+      return {
+        ...m,
+        map: {
+          ...map,
+          strips: strips.map((s) => {
+            const element = (s.element ?? {}) as RawMap
+            if (element.kind !== 'tape') return s
+            return {
+              ...s,
+              element: {
+                ...element,
+                // CHOSEN SO A v4 MAP SOUNDS UNCHANGED (the house migration
+                // rule): v4 tapes had no sync at all, so the faithful
+                // restatement is sync OFF with an UNKNOWN bpm — never an
+                // inferred one, which could differ between builds and change
+                // how a saved set plays. timePitch is the D-3 default (zero
+                // latency); it is inert while sync is off.
+                bpm: null,
+                syncToMaster: false,
+                tempoMode: 'timePitch',
+                pulseRelation: 'auto',
               },
             }
           }),

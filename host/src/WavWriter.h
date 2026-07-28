@@ -82,9 +82,14 @@ private:
 
 /** Sidecar metadata written next to the take (`<take>.json`): the fields
     CONCEPT §3 names — deckId, startEngineSample, wallClock, sourceDesc,
-    sampleRate, channels. Plain hand-rolled JSON (no dependency). */
+    sampleRate, channels. Plain hand-rolled JSON (no dependency).
+    `bpmAtStart` (P3-2b-1, MAP-SCHEMA "dual stamps"): the MASTER tempo when
+    capture began — the datum a tape needs to state its own bpm later. 0 =
+    unknown (a host with no tempo authority), and the field is then OMITTED so
+    older sidecars and tempo-less ones are the same shape. */
 bool writeSidecar(const std::string& wavPath, uint32_t deckId, uint64_t startEngineSample,
                   const std::string& wallClockIso, const std::string& sourceDesc,
-                  double sampleRate, uint32_t channels, uint64_t frames);
+                  double sampleRate, uint32_t channels, uint64_t frames,
+                  double bpmAtStart = 0.0);
 
 } // namespace wizard::wav

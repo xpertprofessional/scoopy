@@ -88,6 +88,22 @@ describe('sidecar parsing', () => {
     const raw = { ...JSON.parse(REAL_SIDECAR), startEngineSample: -1 }
     expect(parseSidecar(raw).ok).toBe(false)
   })
+
+  it('carries bpmAtStart when present, and its ABSENCE stays valid (P3-2b-1)', () => {
+    // Both directions matter: a v89 sidecar states the master tempo capture
+    // began at; every pre-v89 sidecar on disk has no such field and must keep
+    // parsing — a schema bump that orphaned yesterday's takes would be data
+    // loss by validation.
+    const stamped = parseSidecar({ ...JSON.parse(REAL_SIDECAR), bpmAtStart: 128.5 })
+    expect(stamped.ok).toBe(true)
+    if (stamped.ok) expect(stamped.sidecar.bpmAtStart).toBe(128.5)
+    const old = parseSidecar(JSON.parse(REAL_SIDECAR))
+    expect(old.ok).toBe(true)
+    if (old.ok) expect(old.sidecar.bpmAtStart).toBeUndefined()
+    // 0 would be a lie the writer refuses to tell (it omits instead) — and the
+    // parser refuses to accept.
+    expect(parseSidecar({ ...JSON.parse(REAL_SIDECAR), bpmAtStart: 0 }).ok).toBe(false)
+  })
 })
 
 describe('Law C-2 alignment', () => {

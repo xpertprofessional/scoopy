@@ -41,6 +41,10 @@ export const TakeSidecarSchema = z
     sampleRate: z.number().positive(),
     channels: z.number().int().min(1),
     frames: z.number().int().min(0),
+    /** The MASTER tempo when capture began (P3-2b-1) — what lets a recorded
+        loop state its own bpm. Optional: pre-v89 sidecars and tempo-less hosts
+        simply do not have it, and both must keep parsing. */
+    bpmAtStart: z.number().positive().optional(),
   })
   .strict()
 export type TakeSidecar = z.infer<typeof TakeSidecarSchema>
