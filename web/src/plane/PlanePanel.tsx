@@ -43,6 +43,8 @@ import {
   spawnPoint,
 } from './stripOps.ts'
 import { useCompanion } from '../store/companionEngine.ts'
+import { juceBackend } from '../../protocol/juceLink.ts'
+import { autoStartEngine } from './bootEngine.ts'
 import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
 import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
@@ -252,6 +254,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     // Without this the grid creation gesture is an empty list, which reads as
     // "there are no sessions" rather than "nobody asked yet".
     void useCompanion.getState().refresh()
+    // P3-U1: start the engine sink HERE, not behind the companion panel's
+    // button — that button lives in a DIFFERENT WebView with its own store and
+    // can never start this window's sink. Without this, play/publish
+    // early-return on `!audio.running` and every grid transport gesture on the
+    // plane is enabled and silently inert. Native host only (gestureless by
+    // design); the browser keeps its click (AudioContext autoplay rule).
+    // A failure lands on the plane's own note line — the 502bc1d lesson: an
+    // error only the companion panel renders is invisible here.
+    void autoStartEngine(juceBackend() !== null, () => useCompanion.getState()).then(
+      (failNote) => {
+        if (failNote) setNote(failNote)
+      },
+    )
   }, [link])
 
   // Autosave, once the map has a name. Debounced rather than periodic: a
