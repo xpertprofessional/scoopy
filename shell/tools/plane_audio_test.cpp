@@ -453,6 +453,39 @@ int main() {
         for (int b = 0; b < 120; ++b) { render(0.0); afterSync = std::max(afterSync, peak(lane[0])); }
         CHECK(afterSync > 0.01);
 
+        // ── AND THE TAPES' SYNC SURVIVES A PUBLISH TOO (P3-2b-6) ────────────
+        //
+        // The tape's tempo axis is a strip-level intent applied via slTape
+        // setRate/setTempoMode — a SESSION publish must not touch it, or the
+        // deck hazard above returns wearing the other element's clothes: edit
+        // one grid step, and every synced LOOP silently falls back to unity.
+        // (Tape 0 already holds material and is looping from the tape section
+        // of this test.)
+        CHECK(replyOk(cmd("slTape", R"({"action":"setRate","tape":0,"rate":2.0})")));
+        CHECK(replyOk(cmd("slTape", R"({"action":"setTempoMode","tape":0,"mode":1})")));
+        CHECK(sl_tape_rate(e, 0) == 2.0);
+        CHECK(sl_tape_tempo_mode(e, 0) == 1u);
+        CHECK(replyOk(dispatch("slWorld", world, settings, e, &services)));
+        CHECK(sl_tape_rate(e, 0) == 2.0);
+        CHECK(sl_tape_tempo_mode(e, 0) == 1u);
+        // …and the RATE actually reaches the reader: measured at the playhead,
+        // which is the tier where "the tape follows the master" is observable.
+        // (Warm-up may keep the stretcher dry here; the varispeed path measures
+        // identically because the TIMELINE is the same in both modes.)
+        CHECK(replyOk(cmd("slTape", R"({"action":"setTempoMode","tape":0,"mode":0})")));
+        // The earlier tape section left tape 0 stopped; a frozen playhead
+        // measures 0 no matter what the rate says. Loop it again first.
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":0})")));
+        for (int b = 0; b < 200; ++b) render(0.0); // let the rate glide settle
+        const double tp0 = sl_tape_playhead(e, 0);
+        for (int b = 0; b < 8; ++b) render(0.0);
+        double tAdvanced = sl_tape_playhead(e, 0) - tp0;
+        while (tAdvanced < 0.0)
+            tAdvanced += static_cast<double>(sl_tape_frames(e, 0)); // wrapped
+        const double tPerFrame = tAdvanced / (8.0 * static_cast<double>(kQ));
+        CHECK(tPerFrame > 1.9 && tPerFrame < 2.1);
+        CHECK(replyOk(cmd("slTape", R"({"action":"setRate","tape":0,"rate":1.0})")));
+
         // Dropping the deck DOES clear it: deck scope outlives a publish, not
         // the deck. Otherwise the next strip to take this slot would inherit the
         // previous one's sync — the "loaded carrying whatever ratio the previous
