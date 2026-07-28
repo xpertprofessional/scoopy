@@ -66,6 +66,11 @@ public:
         applied here to the file's bext TimeReference, the sidecar and the
         TakeInfo — all three carried 0 before, so align compared zeros. */
     bool endTake(uint32_t deck, uint64_t startEngineSample);
+    /** Close with the stamp the slot ALREADY carries. For passes whose true
+        start was known at beginTake — an overdub punch stamps its start when
+        it opens, unlike a recording, whose exact start only the engine's
+        record-stop can report (P3-U3). */
+    bool endTakeKeepStamp(uint32_t deck);
 
     std::vector<TakeInfo> takes() const;
     /** Forget a take (by path). Does NOT touch the filesystem — the shell moves

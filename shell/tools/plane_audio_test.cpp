@@ -1116,6 +1116,57 @@ int main() {
         CHECK(chained > 0.05);
     }
 
+    // ── OVERDUB THROUGH THE DISPATCHER (P3-U3) ──────────────────────────────
+    //
+    // Before this path was wired, a punch through the dispatcher layered
+    // SILENCE (no record source was set) and persisted NOTHING (no take was
+    // bracketed). Both halves are asserted: the material gets AUDIBLY louder,
+    // and the pass lands as its own take file.
+    {
+        const auto takesBefore = recorder.takes().size();
+        // The sections above re-bound channel 0 (grid, chains); this block
+        // needs to HEAR tape 0, so bind it back and unmute first.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":0,"kind":1,"index":0})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMute","channel":0,"muted":false})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setLevel","channel":0,"level":1.0})")));
+        // …and a path to main: the route surgery above may have re-pointed
+        // channel 0's default. srcKind 0 = channelOut, dstKind 2 = main.
+        cmd("slRoute",
+            R"({"action":"add","srcKind":0,"srcIndex":0,"dstKind":2,"dstIndex":0,"gain":1.0})");
+        // Every pass below measures the SAME span — retriggered to the region
+        // entry — or the comparison would race the playhead: a punch sums into
+        // the frames it PASSED, and a window that has moved on measures the
+        // untouched remainder.
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":0})")));
+        double before = 0.0;
+        for (int b = 0; b < 60; ++b) { render(0.0); before = std::max(before, peak(lane[0])); }
+        // Punch over that same span, REPLACE mode, with SILENT input — the
+        // P3-13a distinction, and the phase-proof one: summing a sine into a
+        // sine can partially CANCEL (both this material and this input are the
+        // harness tone), and the master path could cap a louder sum. Replacing
+        // with silence must make the material QUIETER, and nothing can fake it.
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":3})")));
+        const auto od = cmd("slTape",
+            R"({"action":"overdubStart","tape":0,"mode":1,"sourceKind":0,"chan0":0,"chan1":-1,)"
+            R"("sourceDesc":"overdub in 1","bpmAtStart":120})");
+        CHECK(replyOk(od));
+        for (int b = 0; b < 60; ++b) render(0.0); // the pass: silence replaces
+        const auto odStop = cmd("slTape", R"({"action":"overdubStop","tape":0})");
+        CHECK(replyOk(odStop));
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":3})")));
+        // The pass persisted as its OWN take — the RAM mix is destructive and
+        // the file is what preserves it (D-WZ-OVERDUB-01).
+        CHECK(recorder.takes().size() == takesBefore + 1);
+        CHECK(odStop.getProperty("result", juce::var())
+                  .getProperty("path", juce::var()).toString().isNotEmpty());
+        // …and the punched span is audibly QUIETER — silence replaced it.
+        double after = 0.0;
+        for (int b = 0; b < 60; ++b) { render(0.0); after = std::max(after, peak(lane[0])); }
+        CHECK(before > 0.05);          // there was something to erase
+        CHECK(after < before * 0.5);   // and it is gone where the punch passed
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":2})")));
+    }
+
     // The take is enumerable, which is what makes it reloadable tomorrow.
     const auto takes = cmd("slTakes", R"({"action":"list"})");
     CHECK(replyOk(takes));

@@ -12,7 +12,7 @@ import type { MethodOf, ParamsOf, ResultOf } from "./types.ts";
  * Bump SCHEMA_VERSION on any breaking change and update both sides in the
  * same increment. Publishes across mismatched versions are refused.
  */
-export const SCHEMA_VERSION = 90; // v90: TAPE timeStretch (P3-2b-5) — slTape gains setTempoMode (0 timePitch · 1 timeStretch); the engine's per-tape Signalsmith stretcher holds pitch while the timeline runs at the sync ratio, the varispeed reader staging its input (TAPE-STRETCH.md). v89: TAPE TEMPO IDENTITY, document side (P3-2b-1) — slRecord/start gains optional `bpmAtStart` (the MASTER tempo when capture began, stamped into the take's sidecar by the host; the datum a recorded loop needs to state its own bpm and sync later, MAP-SCHEMA "dual stamps"). Sidecar field is OMITTED when the caller had no tempo, so old sidecars and tempo-less ones parse identically. v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
+export const SCHEMA_VERSION = 91; // v91: OVERDUB MADE WHOLE (P3-U3) — slTape/overdubStart gains the record-source args + sourceDesc/bpmAtStart and BRACKETS A TAKE (the RAM mix is destructive; each pass persists as its own crash-safe stamped file, D-WZ-OVERDUB-01); overdubStop closes it and returns the pass's path. Before this, a punch through the dispatcher layered SILENCE (no source set) and persisted NOTHING (no take bracket). v90: TAPE timeStretch (P3-2b-5) — slTape gains setTempoMode (0 timePitch · 1 timeStretch); the engine's per-tape Signalsmith stretcher holds pitch while the timeline runs at the sync ratio, the varispeed reader staging its input (TAPE-STRETCH.md). v89: TAPE TEMPO IDENTITY, document side (P3-2b-1) — slRecord/start gains optional `bpmAtStart` (the MASTER tempo when capture began, stamped into the take's sidecar by the host; the datum a recorded loop needs to state its own bpm and sync later, MAP-SCHEMA "dual stamps"). Sidecar field is OMITTED when the caller had no tempo, so old sidecars and tempo-less ones parse identically. v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
 
 // ---------------------------------------------------------------------------
 // ParamWrite — fine-grained live controls (audio-thread atomics on the
@@ -1598,9 +1598,20 @@ export const COMMANDS = {
       startFrame: z.number().min(0).optional(),
       endFrame: z.number().min(0).optional(),
       columns: z.number().int().min(1).max(4096).optional(),
+      /** overdubStart (P3-U3): WHAT the punch layers in — same vocabulary as
+          slRecord/start. Without a source the engine layers silence, which is
+          a punch that "worked" and did nothing. */
+      sourceKind: z.number().int().min(0).max(2).optional(),
+      chan0: z.number().int().optional(),
+      chan1: z.number().int().optional(),
+      sourceDesc: z.string().optional(),
+      bpmAtStart: z.number().positive().optional(),
     }).strict(),
     result: z.object({
       ok: z.boolean(),
+      /** overdubStop: the pass's take file — the RAM mix is destructive, this
+          is what preserves the pass (D-WZ-OVERDUB-01). */
+      path: z.string().optional(),
       // waveform
       min: z.array(z.number()).optional(),
       max: z.array(z.number()).optional(),

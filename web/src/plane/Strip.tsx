@@ -69,6 +69,7 @@ import {
   isRecording,
   mmss,
   newTapeElement,
+  RECORD_SOURCE,
   recordTapFor,
   stateWord,
   statusLine,
@@ -307,6 +308,40 @@ export function Strip({
   // the hand's own rate otherwise — the readout must never disagree with what
   // the engine was sent.
   const tapeShownRate = tapeEl ? tapeEffectiveRate(tapeEl, masterBpm) : 1
+
+  /* ── overdub punch (P3-U3 / D-WZ-OVERDUB-01) ─────────────────────────── */
+  // UI-side latch: the engine has no overdub HotFrame flag (deliberately — the
+  // tape genuinely stays `looping` while layering), so the lamp is ours.
+  const [punching, setPunching] = useState(false)
+  // The punch layers this strip's INPUT into the loop (D-WZ-MON-02's "the
+  // input AGAINST the loop") — the engine's overdub taps device-input channels
+  // only, so a strip without an input has nothing to layer and the button says
+  // so instead of arming a punch that would sum silence.
+  const canPunch =
+    tapeEl !== null && input !== null && !recording && live.tapeState === SL_TAPE_STATE.loop
+  const onPunch = async (replace: boolean) => {
+    if (!link || tape === null) return
+    if (punching) {
+      // Punch OUT closes the pass's take — the RAM mix is destructive; the
+      // file is what preserves this pass.
+      await ask(link, 'slTape', { action: 'overdubStop', tape })
+      setPunching(false)
+      setRevision((v) => v + 1) // the material changed under the wave
+      return
+    }
+    if (!canPunch || !input) return
+    const r = await ask(link, 'slTape', {
+      action: 'overdubStart',
+      tape,
+      mode: replace ? 1 : 0, // SUM layers; ⌥ REPLACE erases what was under it
+      sourceKind: RECORD_SOURCE.deviceInput,
+      chan0: input.left,
+      chan1: input.right ?? -1,
+      sourceDesc: `overdub ${channelLabel(channels, input.left, input.right)}`,
+      bpmAtStart: masterBpm,
+    })
+    if (r) setPunching(true)
+  }
 
   /* ── transport ───────────────────────────────────────────────────────── */
 
@@ -725,6 +760,28 @@ export function Strip({
             onClick={() => trigger(2)}
             title="stop — leaves the playhead where it is"
           />
+          {/* OVR (P3-U3): sound-on-sound into the playing loop, the wizard
+              power the merge exists to keep. A raw button because ⌥ chooses
+              REPLACE for this punch and the shared Button drops the event. */}
+          {!isGrid && (
+            <button
+              type="button"
+              className={`strip-ovr mono${punching ? ' latched' : ''}`}
+              disabled={!punching && !canPunch}
+              onClick={(e) => void onPunch(e.altKey)}
+              title={
+                punching
+                  ? 'punch OUT — the pass lands as its own take'
+                  : !canPunch
+                    ? input === null
+                      ? 'overdub layers this strip’s INPUT into the loop — patch an input first (⋯)'
+                      : 'overdub needs a LOOPING tape — press ⟳ first'
+                    : 'punch IN — layers the input into the loop (sound-on-sound) · ⌥ replaces instead'
+              }
+            >
+              OVR
+            </button>
+          )}
         </span>
         {/* TWO switches, and keeping them separate is the whole of the fix.
             MON is the strip's INPUT (does what you are recording also reach the

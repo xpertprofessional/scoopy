@@ -65,7 +65,7 @@ juce::var capabilities() {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 90);
+    obj->setProperty("schemaVersion", 91);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -243,10 +243,41 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         }
         if (action == "scrubEnd") { sl_tape_scrub_end(engine, tape); return ok(okFlag()); }
         if (action == "overdubStart") {
+            // A PUNCH, MADE WHOLE (P3-U3). The engine layers the tape's RECORD
+            // SOURCE into the loop — so the source must be SET here (an unset
+            // source layers silence, which is a punch that "worked" and did
+            // nothing), and each pass must drain to its own crash-safe stamped
+            // take: the RAM mix is destructive, the file is what preserves the
+            // pass (D-WZ-OVERDUB-01 / recorder.md §9).
+            if (services == nullptr || services->recorder == nullptr)
+                return fail("slTape/overdubStart: no recorder on this host");
+            const auto kind = static_cast<uint32_t>(intProp(params, "sourceKind", 0));
+            const auto c0 = static_cast<int32_t>(intProp(params, "chan0", 0));
+            const auto c1 = static_cast<int32_t>(intProp(params, "chan1", -1));
+            if (sl_tape_set_record_source(engine, tape, kind, c0, c1) != 1)
+                return fail("slTape/overdubStart: the engine refused that record source");
+            // The punch begins within one block of now — an overdub's start is
+            // known at OPEN, unlike a recording's (which only record-stop can
+            // report), so the stamp is captured here and KEPT at close.
+            const uint64_t startedAt = sl_engine_time_samples(engine);
             sl_tape_overdub_start(engine, tape, static_cast<uint32_t>(intProp(params, "mode")));
-            return ok(okFlag());
+            const bool opened = services->recorder->beginTake(
+                tape, sl_tape_channels(engine, tape), sl_engine_sample_rate(engine), startedAt,
+                params.getProperty("sourceDesc", "overdub").toString().toStdString(),
+                numProp(params, "bpmAtStart", 0.0));
+            return ok(okFlag(opened));
         }
-        if (action == "overdubStop") { sl_tape_overdub_stop(engine, tape); return ok(okFlag()); }
+        if (action == "overdubStop") {
+            sl_tape_overdub_stop(engine, tape);
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ok", true);
+            if (services != nullptr && services->recorder != nullptr &&
+                services->recorder->endTakeKeepStamp(tape)) {
+                const auto all = services->recorder->takes();
+                if (!all.empty()) o->setProperty("path", juce::String(all.back().path));
+            }
+            return ok(juce::var(o));
+        }
         if (action == "info") {
             auto* o = new juce::DynamicObject();
             o->setProperty("ok", true);

@@ -176,6 +176,17 @@ bool Service::endTake(uint32_t deck, uint64_t startEngineSample) {
     return true;
 }
 
+bool Service::endTakeKeepStamp(uint32_t deck) {
+    if (deck >= slots_.size()) return false;
+    uint64_t stamp = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!slots_[deck]->open) return false;
+        stamp = slots_[deck]->startEngineSample;
+    }
+    return endTake(deck, stamp);
+}
+
 bool Service::forgetTake(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex_);
     // Refuse while a deck is still writing this file — a take being recorded is

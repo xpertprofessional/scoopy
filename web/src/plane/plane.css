@@ -984,3 +984,28 @@
   overflow: auto;
   position: relative;
 }
+
+/* OVR — the overdub punch (P3-U3). REC's shape at verb width: it is the same
+   species of control (it writes), so it wears the same hot border, and the
+   latched state is the same "this is happening" fill. */
+.strip-ovr {
+  flex: 0 0 34px;
+  height: 22px;
+  background: var(--bg);
+  color: var(--hot);
+  border: var(--hairline) solid var(--hot);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  cursor: pointer;
+}
+.strip-ovr:hover:not(:disabled) { background: var(--bg-raised); }
+.strip-ovr.latched {
+  background: var(--hot);
+  color: var(--bg);
+}
+.strip-ovr:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--line);
+  color: var(--text-dim);
+}
