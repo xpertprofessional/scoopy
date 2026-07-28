@@ -169,6 +169,17 @@ export interface World {
   isPlaying: boolean;
   startStep: number;
   tracks: WorldTrack[];
+  /** DECK-SCOPE transport verbs (P3-M-1a) — beat repeat + whole-session
+      reverse, riding the world like a scene does: session scope, restated by
+      every publish, never the document. Optional: absent = the engine's fresh
+      defaults. Consumed by the NATIVE applier (SlWorldApply); the browser
+      worklet ignores them today. */
+  beatRepeatActive?: boolean;
+  beatRepeatStartStep?: number;
+  beatRepeatLength?: number;
+  beatRepeatSubdivision?: number;
+  beatRepeatStartSubcell?: number;
+  reverseTransport?: boolean;
 }
 
 /**

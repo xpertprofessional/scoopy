@@ -67,6 +67,25 @@ juce::var applyWorld(sl_engine* engine, const juce::var& world) {
         return applied(false, "snapshot_begin refused (deck " + juce::String((int) deck) +
                               " out of range — max is " + juce::String((int) sl_deck_count() - 1) + ")");
 
+    // DECK-SCOPE transport verbs (P3-M-1a): beat repeat + whole-session
+    // reverse, riding the world exactly as a scene does — session scope,
+    // restated by every publish. Absent fields = the fresh snapshot's own
+    // defaults, so a world that never heard of beat repeat publishes clean.
+    {
+        static const char* const kDeckFields[] = {
+            "beatRepeatActive",       "beatRepeatStartStep",
+            "beatRepeatLength",       "beatRepeatSubdivision",
+            "beatRepeatStartSubcell", "reverseTransport",
+        };
+        for (const char* f : kDeckFields) {
+            const auto v = world.getProperty(f, juce::var());
+            if (v.isVoid()) continue;
+            const auto id = sl_snapshot_deck_param_id(f);
+            if (id != SL_PARAM_UNKNOWN)
+                sl_snapshot_deck_set(engine, id, static_cast<double>(v));
+        }
+    }
+
     const auto* tracks = world.getProperty("tracks", juce::var()).getArray();
     if (tracks == nullptr) return applied(false, "world.tracks missing or not an array");
 

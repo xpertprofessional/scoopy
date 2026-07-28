@@ -1039,6 +1039,53 @@ void sl_snapshot_track_end(sl_engine* e) {
     e->trackOpen = false;
 }
 
+/* --- deck-scope snapshot fields (P3-M-1a) --------------------------------- */
+
+namespace {
+// Append-only, ids are indices — the kDeckParamNames discipline.
+const char* const kSnapshotDeckParamNames[] = {
+    "beatRepeatActive",       // 0 — bool
+    "beatRepeatStartStep",    // 1
+    "beatRepeatLength",       // 2
+    "beatRepeatSubdivision",  // 3 — 1 whole-step · 2/4/8/16/32 = 1/N rolls
+    "beatRepeatStartSubcell", // 4 — sub-cell phase for 1/N windows
+    "reverseTransport",       // 5 — bool; whole-session tape reverse
+};
+constexpr int32_t kSnapshotDeckParamCount =
+    static_cast<int32_t>(sizeof(kSnapshotDeckParamNames) / sizeof(kSnapshotDeckParamNames[0]));
+} // namespace
+
+int32_t sl_snapshot_deck_param_id(const char* name) {
+    if (name == nullptr) return SL_PARAM_UNKNOWN;
+    for (int32_t i = 0; i < kSnapshotDeckParamCount; ++i)
+        if (std::strcmp(kSnapshotDeckParamNames[i], name) == 0) return i;
+    return SL_PARAM_UNKNOWN;
+}
+
+void sl_snapshot_deck_set(sl_engine* e, int32_t param, double v) {
+    if (e == nullptr || e->currentDeck >= kMaxDecks) return;
+    auto& s = e->deckWorlds[e->currentDeck].snapshot;
+    const auto sz = [&](double x) {
+        return static_cast<std::size_t>(x < 0.0 ? 0.0 : x);
+    };
+    switch (param) {
+        case 0: s.isBeatRepeatActive = v != 0.0; break;
+        case 1: s.beatRepeatStartStep = sz(v); break;
+        case 2: s.beatRepeatLength = sz(v) > 0 ? sz(v) : 1; break;
+        case 3: {
+            // Only the spec'd subdivisions; anything else is whole-step. A
+            // wrong roll rate is worse than no roll.
+            const auto n = sz(v);
+            s.beatRepeatSubdivision =
+                (n == 2 || n == 4 || n == 8 || n == 16 || n == 32) ? n : 1;
+            break;
+        }
+        case 4: s.beatRepeatStartSubcell = sz(v); break;
+        case 5: s.reverseTransport = v != 0.0; break;
+        default: break; // unknown key IGNORED, never misread
+    }
+}
+
 int32_t sl_track_param_id(const char* name) {
     return lookupName(kScalarParamNames, SL_T_SCALAR_COUNT, name);
 }

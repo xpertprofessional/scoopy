@@ -1116,6 +1116,45 @@ int main() {
         CHECK(chained > 0.05);
     }
 
+    // ── BEAT REPEAT THROUGH THE WORLD (P3-M-1a) ─────────────────────────────
+    //
+    // The deck-scope snapshot fields ride a publish like a scene does. The pin
+    // is AUDIBLE, deliberately: the HotFrame's step is the MASTER step, which
+    // "keeps advancing underneath" a beat repeat by design — so a step-number
+    // assertion measures the wrong tier. Instead: a pattern with sound ONLY in
+    // steps 0–1. Repeating [0,2) keeps it loud nearly always; running free, it
+    // is loud only ~a quarter of the time.
+    {
+        auto brWorldFor = [&](bool active) {
+            return juce::JSON::parse(juce::String(
+                R"({"action":"publish","world":{"deck":0,"bpm":480,"isPlaying":true,"startStep":0,)"
+                ) + (active ? R"("beatRepeatActive":true,"beatRepeatStartStep":0,"beatRepeatLength":2,)"
+                            : "") +
+                R"("tracks":[{"sampleId":"tone","steps":[1,1,0,0,0,0,0,0],"volume":1.0}]}})");
+        };
+        auto loudFraction = [&](int blocks) {
+            int loud = 0;
+            for (int b = 0; b < blocks; ++b) {
+                render(0.0);
+                if (peak(lane[0]) > 0.02) ++loud;
+            }
+            return static_cast<double>(loud) / blocks;
+        };
+        CHECK(replyOk(dispatch("slWorld", brWorldFor(true), settings, e, &services)));
+        for (int b = 0; b < 50; ++b) render(0.0); // settle into the window
+        const double withBr = loudFraction(300);
+        CHECK(replyOk(dispatch("slWorld", brWorldFor(false), settings, e, &services)));
+        for (int b = 0; b < 50; ++b) render(0.0);
+        const double withoutBr = loudFraction(300);
+        // The repeat holds the loud window; free running spends most of the
+        // pattern in the silent six steps. The margin is deliberately wide.
+        CHECK(withBr > withoutBr + 0.3);
+        CHECK(replyOk(dispatch("slWorld",
+            juce::JSON::parse(R"({"action":"publish","world":{"deck":0,"bpm":120,)"
+                              R"("isPlaying":false,"startStep":0,"tracks":[]}})"),
+            settings, e, &services)));
+    }
+
     // ── OVERDUB THROUGH THE DISPATCHER (P3-U3) ──────────────────────────────
     //
     // Before this path was wired, a punch through the dispatcher layered

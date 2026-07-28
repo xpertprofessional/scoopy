@@ -669,6 +669,18 @@ void sl_snapshot_track_set_array(sl_engine* e, int32_t param, const double* valu
 /** Push the track in progress into the pending world. */
 void sl_snapshot_track_end(sl_engine* e);
 
+/** DECK-SCOPE snapshot fields (P3-M-1a) — the transport-verb layer a session
+    publish carries: beat repeat and whole-session reverse. Set BETWEEN
+    sl_snapshot_begin and commit, on the deck begin opened, keyed by name like
+    the track params. Names: beatRepeatActive · beatRepeatStartStep ·
+    beatRepeatLength · beatRepeatSubdivision · beatRepeatStartSubcell ·
+    reverseTransport. An unknown id is IGNORED, never misread — the applier
+    translates and refusals are its job. These are SESSION-scope by design
+    (rebuilt by every publish): a beat repeat is a hand gesture the store
+    restates, not a document field. */
+int32_t sl_snapshot_deck_param_id(const char* name);
+void sl_snapshot_deck_set(sl_engine* e, int32_t param, double value);
+
 /** Resolve a track parameter by name; SL_PARAM_UNKNOWN if unknown.
     (v2 spelled these sl_param_id / sl_array_param_id — renamed in v3 to free
     the deck-scope param namespace, SL-ABI-V3.md §3.) */
