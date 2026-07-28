@@ -301,6 +301,31 @@ function StripInspector({
               }}
             />
           </label>
+          <label className="ins-field mono">
+            bpm
+            {/* THE TAPE'S OWN TEMPO (P3-2b-2) — the sync law's `originalBpm`.
+                Auto-filled from the take's record-time stamp when it can be
+                inferred honestly; ALWAYS editable, and the hand always wins
+                (the auto-fill only ever writes a null). Empty = unknown: a
+                tape that cannot state its tempo cannot sync, and says so
+                rather than guessing. */}
+            <input
+              type="number"
+              min={1}
+              max={600}
+              step={0.01}
+              value={tape.bpm ?? ''}
+              placeholder="unknown"
+              onChange={(e) => {
+                const raw = e.target.value
+                const bpm = raw === '' ? null : Number(raw)
+                if (bpm !== null && (!Number.isFinite(bpm) || bpm <= 0)) return
+                updateStrip(strip.key, (s) =>
+                  s.element.kind === 'tape' ? { ...s, element: { ...s.element, bpm } } : s,
+                )
+              }}
+            />
+          </label>
           <div className="ins-row mono">
             <dt>take</dt>
             {/* The provenance. Once a strip's element is a tape, this reference

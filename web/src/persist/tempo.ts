@@ -120,3 +120,37 @@ export function mapTempoIntents(map: PlaneMap): TempoIntent[] {
 export function formatSyncedBpm(intent: TempoIntent): string {
   return intent.syncedBpm === null ? '—' : intent.syncedBpm.toFixed(1)
 }
+
+/**
+ * A TAPE'S BPM, inferred from its loop and the sidecar stamp (P3-2b-2,
+ * PROVISIONAL under D-2 — the recommendation built, logged, re-tunable).
+ *
+ * A tape knows frames; music knows beats. The bridge is the take's
+ * `bpmAtStart` — the master tempo when capture began: the loop's length in
+ * seconds at that tempo gives a raw beat count, which is SNAPPED to the
+ * nearest power of two (in log space — musical loop lengths are 1/2/4/8/…
+ * beats, and neighbours are a factor of two apart, so a hand-stopped loop
+ * lands unambiguously). The tape's own bpm is then whatever tempo makes the
+ * snapped count exact over the actual audio.
+ *
+ * THE HONESTY GUARD: a loop more than ~20% off every power of two was not cut
+ * near a musical length, and `null` (unknown — the Inspector's field stays
+ * empty for the hand to fill) beats a confidently wrong number that would
+ * stretch the tape to nonsense the moment sync engages.
+ */
+export function inferTapeBpm(
+  loopFrames: number,
+  sampleRate: number,
+  bpmAtStart: number,
+): number | null {
+  if (loopFrames <= 0 || sampleRate <= 0 || bpmAtStart <= 0) return null
+  const seconds = loopFrames / sampleRate
+  const rawBeats = (seconds * bpmAtStart) / 60
+  if (rawBeats <= 0) return null
+  const snappedLog = Math.round(Math.log2(rawBeats))
+  const beats = 2 ** snappedLog
+  const ratio = rawBeats / beats
+  if (ratio > 1.2 || ratio < 1 / 1.2) return null // not near a musical length
+  // The bpm that makes `beats` exact over the audio that actually exists.
+  return Math.round((beats * 60 / seconds) * 100) / 100
+}

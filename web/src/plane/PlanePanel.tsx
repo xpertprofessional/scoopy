@@ -47,7 +47,7 @@ import {
 import { useCompanion } from '../store/companionEngine.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
-import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
+import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo.ts'
 import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import './plane.css'
@@ -290,7 +290,13 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // takeRef changes — recording stops and take loads both move that.
   const [takeIndex, setTakeIndex] = useState<Map<
     string,
-    { name: string; seconds: number | null }
+    {
+      name: string
+      seconds: number | null
+      frames: number | null
+      sampleRate: number | null
+      bpmAtStart: number | null
+    }
   > | null>(null)
   const takeRefs = strips
     .map((s) => (s.element.kind === 'tape' ? (s.element.takeRef ?? '') : ''))
@@ -307,25 +313,71 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         takes?: Array<{ path: string; sidecar: string | null }>
       }>(link, 'slTakes', { action: 'list' })
       if (!r?.takes) return
-      const idx = new Map<string, { name: string; seconds: number | null }>()
+      const idx = new Map<
+        string,
+        {
+          name: string
+          seconds: number | null
+          frames: number | null
+          sampleRate: number | null
+          bpmAtStart: number | null
+        }
+      >()
       for (const t of r.takes) {
         // A corrupt or absent sidecar is still a TAKE — named, no length. The
         // wav with no sidecar is exactly the take a crash leaves behind, and
         // the one a user most wants back (takeLibrary's own rule).
         let seconds: number | null = null
+        let frames: number | null = null
+        let sampleRate: number | null = null
+        let bpmAtStart: number | null = null
         if (t.sidecar != null) {
           try {
             const p = parseSidecar(JSON.parse(t.sidecar))
-            if (p.ok) seconds = takeSeconds(p.sidecar)
+            if (p.ok) {
+              seconds = takeSeconds(p.sidecar)
+              frames = p.sidecar.frames
+              sampleRate = p.sidecar.sampleRate
+              bpmAtStart = p.sidecar.bpmAtStart ?? null
+            }
           } catch {
             /* named take, unknown length */
           }
         }
-        idx.set(t.path, { name: t.path.split('/').pop() ?? t.path, seconds })
+        idx.set(t.path, {
+          name: t.path.split('/').pop() ?? t.path,
+          seconds,
+          frames,
+          sampleRate,
+          bpmAtStart,
+        })
       }
       setTakeIndex(idx)
     })()
   }, [link, takeRefs])
+
+  // A TAPE LEARNS ITS BPM (P3-2b-2, provisional D-2). When a tape strip's bpm
+  // is honestly unknown and its take carries the record-time tempo stamp, the
+  // inference law fills it in — into the DOCUMENT, where the Inspector's field
+  // can override it and a save remembers it. Only ever fills a null: a bpm the
+  // user typed, or a previous inference, is never re-derived behind their back.
+  useEffect(() => {
+    if (!takeIndex) return
+    for (const s of strips) {
+      if (s.element.kind !== 'tape' || s.element.bpm !== null || !s.element.takeRef) continue
+      const t = takeIndex.get(s.element.takeRef)
+      if (!t?.bpmAtStart || !t.frames || !t.sampleRate) continue
+      const loopFrames =
+        s.element.loop.end > s.element.loop.start
+          ? s.element.loop.end - s.element.loop.start
+          : t.frames
+      const bpm = inferTapeBpm(loopFrames, t.sampleRate, t.bpmAtStart)
+      if (bpm !== null)
+        updateStrip(s.key, (st) =>
+          st.element.kind === 'tape' ? { ...st, element: { ...st.element, bpm } } : st,
+        )
+    }
+  }, [takeIndex, strips])
 
   // ⌘R summons the ledger. A KEY rather than a docked panel: nobody should need
   // it in a six-strip set, and a permanently docked table would spend screen

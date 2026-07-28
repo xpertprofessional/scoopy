@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { TEMPO_MODE_ID, deckTempoIntent, formatSyncedBpm, mapTempoIntents } from './tempo.ts'
+import { TEMPO_MODE_ID, deckTempoIntent, formatSyncedBpm, inferTapeBpm, mapTempoIntents } from './tempo.ts'
 import { emptyMap, type PlaneMap, type Strip } from './mapDocument.ts'
 
 const gridEl = (over: Record<string, unknown> = {}) =>
@@ -122,5 +122,50 @@ describe('mapTempoIntents', () => {
       strips: [strip(gridEl({ bpm: 90, pulseRelation: '1:1' }))],
     }
     expect(mapTempoIntents(map)[0]?.syncedBpm).toBeCloseTo(90, 4)
+  })
+})
+
+describe('inferTapeBpm (P3-2b-2, provisional D-2)', () => {
+  const sr = 48000
+
+  it('an exact 4-beat loop at the stamped tempo comes back at that tempo', () => {
+    // 4 beats at 120 = 2 s = 96000 frames.
+    expect(inferTapeBpm(96000, sr, 120)).toBe(120)
+  })
+
+  it('a hand-stopped loop snaps to the nearest power of two and re-derives', () => {
+    // ~4.1 beats' worth of audio at 128: snapped to 4 beats, so the tape's own
+    // bpm is slightly LOW of 128 — the audio is a touch long for 4 at 128.
+    const frames = Math.round((4.1 * 60 / 128) * sr)
+    const bpm = inferTapeBpm(frames, sr, 128)
+    expect(bpm).not.toBeNull()
+    expect(bpm!).toBeGreaterThan(124)
+    expect(bpm!).toBeLessThan(128)
+  })
+
+  it('snapping is unambiguous across the guard band — neighbours are 2× apart', () => {
+    // 8.3 beats at 120 → snaps to 8, never 4 or 16.
+    const frames = Math.round((8.3 * 60 / 120) * sr)
+    const bpm = inferTapeBpm(frames, sr, 120)!
+    const seconds = frames / sr
+    expect(Math.round((seconds * bpm) / 60)).toBe(8)
+  })
+
+  it('refuses a loop that is not near ANY musical length', () => {
+    // 2.9 beats: 45% off 2 and 27% off 4 — outside the guard both ways.
+    const frames = Math.round((2.9 * 60 / 120) * sr)
+    expect(inferTapeBpm(frames, sr, 120)).toBeNull()
+  })
+
+  it('refuses garbage rather than guessing', () => {
+    expect(inferTapeBpm(0, sr, 120)).toBeNull()
+    expect(inferTapeBpm(96000, 0, 120)).toBeNull()
+    expect(inferTapeBpm(96000, sr, 0)).toBeNull()
+  })
+
+  it('a long-form recording still resolves (32 beats)', () => {
+    // 32 beats at 90 — a 21.3 s phrase. Inference is not just for one-bar loops.
+    const frames = Math.round((32 * 60 / 90) * sr)
+    expect(inferTapeBpm(frames, sr, 90)).toBe(90)
   })
 })
