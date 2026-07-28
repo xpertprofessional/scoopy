@@ -47,6 +47,7 @@ import type { PlaneMap, Strip } from './mapDocument.ts'
 
 /** A grid element narrowed — the only element kind with a tempo. */
 type GridElement = Extract<Strip['element'], { kind: 'grid' }>
+type TapeElement = Extract<Strip['element'], { kind: 'tape' }>
 
 /** `tempoMode`'s wire value. The engine keys it 0/1/2 (SL-ABI-V3 §3) and the
     document spells it, because a document should be readable and an ABI should
@@ -153,4 +154,46 @@ export function inferTapeBpm(
   if (ratio > 1.2 || ratio < 1 / 1.2) return null // not near a musical length
   // The bpm that makes `beats` exact over the audio that actually exists.
   return Math.round((beats * 60 / seconds) * 100) / 100
+}
+
+/**
+ * A TAPE'S EFFECTIVE RATE under the master (P3-2b-3 — tape sync v1, timePitch).
+ *
+ * The first "every element" half of the mission's sync domain made audible,
+ * with ZERO new DSP: the varispeed path (`sl_tape_set_rate`) has been built
+ * and wired end-to-end since the tape transplant; this only computes the
+ * number — through the LAW, not by dividing, for the same reasons the grid
+ * branch was moved onto it (pulse relations, the ceilings).
+ *
+ * Sync owns the MAGNITUDE; the hand keeps the SIGN — a reversed tape stays
+ * reversed while synced, because reverse is a musical choice sync has no
+ * business overriding. Unsynced (or bpm honestly unknown), the document's own
+ * rate stands. `timeStretch` returns the manual rate untouched: its engine is
+ * P3-2b-5, and a mode that silently fell back to varispeed would change PITCH
+ * behind the user's back — the exact thing choosing timeStretch refuses.
+ */
+export function tapeEffectiveRate(element: TapeElement, masterBpm: number): number {
+  if (!element.syncToMaster || element.bpm === null) return element.rate
+  if (element.tempoMode !== 'timePitch') return element.rate // stretcher: P3-2b-5
+  const out = djSyncLaw({
+    masterBpm,
+    tempoMode: 'timePitch',
+    syncEnabled: true,
+    originalBpm: element.bpm,
+    pulseRelation: element.pulseRelation,
+    nudgeBpmDelta: 0,
+  })
+  return element.rate < 0 ? -out.syncRatio : out.syncRatio
+}
+
+/** Every tape strip's effective rate, in strip order — what `applyTempo`
+    pushes. Unsynced tapes are INCLUDED at their manual rate, for the same
+    reason the grid branch sends ratio 1: un-syncing must restore the hand's
+    rate, not leave the engine carrying the last synced one. */
+export function mapTapeRateOps(map: PlaneMap): { tape: number; rate: number }[] {
+  return map.strips.flatMap((s) =>
+    s.element.kind === 'tape'
+      ? [{ tape: s.element.index, rate: tapeEffectiveRate(s.element, map.transport.masterBpm) }]
+      : [],
+  )
 }

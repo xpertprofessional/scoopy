@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { TEMPO_MODE_ID, deckTempoIntent, formatSyncedBpm, inferTapeBpm, mapTempoIntents } from './tempo.ts'
+import { TEMPO_MODE_ID, deckTempoIntent, formatSyncedBpm, inferTapeBpm, mapTapeRateOps, mapTempoIntents, tapeEffectiveRate } from './tempo.ts'
 import { emptyMap, type PlaneMap, type Strip } from './mapDocument.ts'
 
 const gridEl = (over: Record<string, unknown> = {}) =>
@@ -167,5 +167,70 @@ describe('inferTapeBpm (P3-2b-2, provisional D-2)', () => {
     // 32 beats at 90 — a 21.3 s phrase. Inference is not just for one-bar loops.
     const frames = Math.round((32 * 60 / 90) * sr)
     expect(inferTapeBpm(frames, sr, 90)).toBe(90)
+  })
+})
+
+describe('tapeEffectiveRate (P3-2b-3 — tape sync v1, timePitch)', () => {
+  const tapeEl = (over: Record<string, unknown> = {}) => ({
+    kind: 'tape' as const,
+    index: 0,
+    takeRef: 't',
+    stereo: false,
+    loop: { enabled: true, start: 0, end: 96000 },
+    rate: 1,
+    bpm: 64 as number | null,
+    syncToMaster: true,
+    tempoMode: 'timePitch' as const,
+    pulseRelation: '1:1' as const,
+    ...over,
+  })
+
+  it('a synced tape resolves through the LAW — 64 under 128 at 1:1 runs 2×', () => {
+    expect(tapeEffectiveRate(tapeEl(), 128)).toBeCloseTo(2, 5)
+  })
+
+  it('auto resolves the PULSE first — 70 under 140 lands at 1:2, rate ~1', () => {
+    // The whole reason this goes through djSyncLaw and not a division: a
+    // 70 BPM loop under a 140 master is the same pulse at half time, not a
+    // chipmunk at 2×.
+    expect(tapeEffectiveRate(tapeEl({ bpm: 70, pulseRelation: 'auto' }), 140)).toBeCloseTo(1, 5)
+  })
+
+  it('sync owns the MAGNITUDE, the hand keeps the SIGN — reverse survives', () => {
+    expect(tapeEffectiveRate(tapeEl({ rate: -1 }), 128)).toBeCloseTo(-2, 5)
+  })
+
+  it('unsynced, unknown-bpm and timeStretch tapes keep the manual rate', () => {
+    expect(tapeEffectiveRate(tapeEl({ syncToMaster: false, rate: 0.5 }), 128)).toBe(0.5)
+    // No bpm = cannot sync; the intent stays, the rate stays honest.
+    expect(tapeEffectiveRate(tapeEl({ bpm: null, rate: 0.5 }), 128)).toBe(0.5)
+    // timeStretch's engine is P3-2b-5; silently falling back to varispeed
+    // would change PITCH behind the user's back — the thing the mode refuses.
+    expect(tapeEffectiveRate(tapeEl({ tempoMode: 'timeStretch', rate: 0.5 }), 128)).toBe(0.5)
+  })
+
+  it('mapTapeRateOps includes UNSYNCED tapes at their manual rate', () => {
+    // Un-syncing must RESTORE the hand's rate — omission would leave the
+    // engine carrying the last synced ratio with the UI showing FREE.
+    const map = {
+      ...emptyMap(),
+      strips: [
+        {
+          key: 'a',
+          name: 'A',
+          cell: { x: 0, y: 0, w: 340, h: 196 },
+          channel: 0,
+          element: tapeEl({ syncToMaster: false, rate: 0.75 }),
+          level: 1,
+          mute: false,
+          sends: [0, 0, 0, 0] as [number, number, number, number],
+          monitor: false,
+          recordArm: false,
+          recordTap: null,
+          sessionPerf: {},
+        },
+      ],
+    }
+    expect(mapTapeRateOps(map)).toEqual([{ tape: 0, rate: 0.75 }])
   })
 })

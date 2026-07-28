@@ -33,7 +33,7 @@ import {
   type PlaneMap,
   type Strip,
 } from "../persist/mapDocument.ts";
-import { TEMPO_MODE_ID, mapTempoIntents } from "../persist/tempo.ts";
+import { TEMPO_MODE_ID, mapTapeRateOps, mapTempoIntents } from "../persist/tempo.ts";
 import { setTempoOverride } from "../store/companionEngine.ts";
 
 /* ── the store ────────────────────────────────────────────────────────────── */
@@ -316,6 +316,13 @@ export async function applyTempo(link: EngineLink | null): Promise<void> {
       value: intent.transpose,
     })
   }
+  // THE TAPES TOO (P3-2b-3) — the mission's "a deck syncs like a loop does",
+  // in the other direction. Every tape's effective rate is sent every time,
+  // unsynced ones included at their manual rate: un-syncing must RESTORE the
+  // hand's rate, not leave the engine carrying the last synced one.
+  for (const t of mapTapeRateOps(map)) {
+    await ask(link, 'slTape', { action: 'setRate', tape: t.tape, rate: t.rate })
+  }
 }
 
 /** A grid element's tempo fields — the ones `applyTempo` resolves. */
@@ -362,6 +369,31 @@ export function updateGridTempo(
     const el = getMap().strips.find((s) => s.key === key)?.element
     if (el?.kind === 'grid') setTempoOverride(patch.bpm, el.deck)
   }
+  void applyTempo(link)
+}
+
+/** A tape element's tempo fields — the ones `applyTempo` resolves (P3-2b-3). */
+type TapeElement = Extract<Element, { kind: 'tape' }>
+type TapeTempoPatch = Partial<
+  Pick<TapeElement, 'bpm' | 'syncToMaster' | 'tempoMode' | 'pulseRelation'>
+>
+
+/**
+ * Edit one tape strip's tempo AND tell the engine — `updateGridTempo`'s twin,
+ * built WITH the push from day one (the grid's toggle reached the engine by
+ * accident for a whole phase; this one never gets the chance to). Simpler than
+ * the grid's: a tape has no published world carrying a second tempo, so there
+ * is no override layer — the document's fields and `applyTempo`'s rate push
+ * are the whole story.
+ */
+export function updateTapeTempo(
+  key: string,
+  link: EngineLink | null,
+  patch: TapeTempoPatch,
+): void {
+  updateStrip(key, (s) =>
+    s.element.kind === 'tape' ? { ...s, element: { ...s.element, ...patch } } : s,
+  )
   void applyTempo(link)
 }
 

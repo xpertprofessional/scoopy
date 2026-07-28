@@ -52,7 +52,9 @@ import {
   setMute,
   updateGridTempo,
   updateStrip,
+  updateTapeTempo,
 } from '../state/mapStore.ts'
+import { tapeEffectiveRate } from '../persist/tempo.ts'
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import type { Chips } from './cables.ts'
 import { channelLabel, inputChoices, setInputDevice, useDeviceStore } from './devices.ts'
@@ -295,6 +297,16 @@ export function Strip({
   const can = enabledControls(strip, live, ctx)
   const word = stateWord(strip, live, gridPlaying)
   const w = waveWidth(strip.cell.w)
+
+  /* ── tape sync (P3-2b-3) ─────────────────────────────────────────────── */
+  const tapeEl = strip.element.kind === 'tape' ? strip.element : null
+  const tapeBpmForSync = tapeEl?.bpm ?? null
+  // "Synced" on screen means EFFECTIVE — intent on + a bpm to resolve against.
+  const tapeSynced = tapeEl?.syncToMaster === true && tapeBpmForSync !== null
+  // What the rate row SHOWS: the effective rate under the master while synced,
+  // the hand's own rate otherwise — the readout must never disagree with what
+  // the engine was sent.
+  const tapeShownRate = tapeEl ? tapeEffectiveRate(tapeEl, masterBpm) : 1
 
   /* ── transport ───────────────────────────────────────────────────────── */
 
@@ -816,27 +828,59 @@ export function Strip({
           />
         ) : (
         <div className={`ds-row strip-row${can.rate ? '' : ' ds-row-disabled'}`}>
-          <span className="ds-label mono">rate</span>
+          {/* SYNC, ON A TAPE (P3-2b-3) — the mission's "a deck syncs like a
+              loop does", from the loop's side, with the SAME control the grid
+              row carries. timePitch/varispeed: pitch moves with rate, which is
+              honest tape behaviour and the D-3 zero-latency default; the
+              pitch-preserving stretch is P3-2b-5. Dim without a bpm — a tape
+              that cannot state its tempo cannot sync, and the title says where
+              the bpm comes from. */}
+          {strip.element.kind === 'tape' && (
+            <button
+              type="button"
+              className={`strip-sync${tapeSynced ? ' active' : ''}`}
+              disabled={!can.rate || tapeBpmForSync === null}
+              title={
+                tapeBpmForSync === null
+                  ? 'sync needs a bpm — recorded takes infer one; set it in the inspector otherwise'
+                  : tapeSynced
+                    ? `synced — this tape runs at ${formatRate(tapeShownRate)} against the plane’s master (varispeed: pitch moves too)`
+                    : 'free — this tape runs at its own rate'
+              }
+              onClick={() =>
+                // The raw INTENT field, not the effective state: toggling off a
+                // sync whose bpm went missing must actually clear the intent.
+                updateTapeTempo(strip.key, link, {
+                  syncToMaster: !(tapeEl?.syncToMaster === true),
+                })
+              }
+            >
+              {tapeSynced ? 'SYNC' : 'FREE'}
+            </button>
+          )}
           <GeoRange
-            value={strip.element.kind === 'tape' ? strip.element.rate : 1}
+            value={tapeShownRate}
             min={RATE_MIN}
             max={RATE_MAX}
             step={0.01}
             origin="center"
-            disabled={!can.rate}
+            // Sync OWNS the rate: a drag that fought the sync engine would snap
+            // back on the next tempo pass and teach that the control is broken.
+            disabled={!can.rate || tapeSynced}
             onChange={(v) => liveSetRate(link, strip, snapUnity(v))}
             onDoubleClick={() => {
+              if (tapeSynced) return
               liveSetRate(link, strip, 1)
               flushLiveEdits()
             }}
-            title="rate — negative runs it backwards; double-click for 1.00×"
+            title={
+              tapeSynced
+                ? 'rate is owned by SYNC — free the tape to set it by hand'
+                : 'rate — negative runs it backwards; double-click for 1.00×'
+            }
           />
-          <span
-            className={`ds-value mono${
-              strip.element.kind === 'tape' && strip.element.rate < 0 ? ' warn' : ''
-            }`}
-          >
-            {formatRate(strip.element.kind === 'tape' ? strip.element.rate : 1)}
+          <span className={`ds-value mono${tapeShownRate < 0 ? ' warn' : ''}`}>
+            {formatRate(tapeShownRate)}
           </span>
         </div>
         )}

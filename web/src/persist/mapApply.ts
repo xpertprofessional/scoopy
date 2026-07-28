@@ -18,7 +18,7 @@
  *     The document layer decides WHAT should be true; nothing here decides when.
  */
 import { perfFor, type PlaneMap, type Route, type Strip } from './mapDocument'
-import { TEMPO_MODE_ID, deckTempoIntent } from './tempo'
+import { TEMPO_MODE_ID, deckTempoIntent, tapeEffectiveRate } from './tempo'
 
 /** One engine call, named for the ABI entry point it becomes. */
 export type EngineOp =
@@ -132,7 +132,14 @@ export function planApply(map: PlaneMap): EngineOp[] {
         start: t.loop.start,
         end: t.loop.end,
       })
-      ops.push({ op: 'tapeSetRate', tape: t.index, rate: t.rate })
+      // The EFFECTIVE rate (P3-2b-3): a synced tape opens synced — restoring
+      // the manual rate and waiting for some later tempo pass would play the
+      // first bars at the wrong speed, which on a reload mid-set is audible.
+      ops.push({
+        op: 'tapeSetRate',
+        tape: t.index,
+        rate: tapeEffectiveRate(t, map.transport.masterBpm),
+      })
     } else if (strip.element.kind === 'grid') {
       // The engine takes a RATIO; the document stores the intent, so the ratio
       // is RESOLVED here — through scoopy's tempo law, not by dividing.

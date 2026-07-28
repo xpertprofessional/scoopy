@@ -279,6 +279,35 @@ describe('planApply', () => {
     expect(ops).toContainEqual({ op: 'tapeSetRate', tape: 3, rate: -0.75 })
   })
 
+  it('a SYNCED tape opens at its EFFECTIVE rate, not the manual one (P3-2b-3)', () => {
+    // Restoring the manual rate and waiting for a later tempo pass would play
+    // the first bars at the wrong speed — on a mid-set reload, audibly.
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [
+        strip({
+          channel: 1,
+          element: {
+            kind: 'tape',
+            index: 2,
+            takeRef: 'take_0008',
+            stereo: false,
+            loop: { enabled: true, start: 0, end: 96000 },
+            rate: 1,
+            bpm: 64,
+            syncToMaster: true,
+            tempoMode: 'timePitch',
+            pulseRelation: '1:1',
+          },
+        }),
+      ],
+    }
+    map.transport.masterBpm = 128
+    const rateOp = planApply(map).find((o) => o.op === 'tapeSetRate')
+    expect(rateOp).toBeDefined()
+    if (rateOp?.op === 'tapeSetRate') expect(rateOp.rate).toBeCloseTo(2, 5)
+  })
+
   it('does not load a take for a tape that has no material', () => {
     const map: PlaneMap = {
       ...emptyMap(),

@@ -267,10 +267,17 @@ describe("applyTempo", () => {
     });
   });
 
-  it("does nothing for a map with no grid strips", () => {
+  it("a gridless map still pushes TAPE rates — and nothing else (P3-2b-3)", () => {
+    // This used to assert zero calls; the tape branch changed the premise.
+    // The default fixture is a tape strip at rate 1, unsynced — which is SENT
+    // (un-syncing must restore the hand's rate), and is the only traffic.
     setMap(mapWith([strip()]));
     const { link, calls } = fakeLink();
-    return applyTempo(link).then(() => expect(calls).toHaveLength(0));
+    return applyTempo(link).then(() => {
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("slTape");
+      expect(calls[0]?.params).toMatchObject({ action: "setRate", tape: 0, rate: 1 });
+    });
   });
 
   it("setMasterBpm REACHES THE ENGINE, not just the document", () => {
