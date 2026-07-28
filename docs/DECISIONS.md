@@ -612,3 +612,38 @@ as its own row with a stated use case rather than as an orphan button.
 | **D-WZ-DECK-01** | P3 | Deck memory policy: 8 decks × long takes live in RAM for instant playback. Cap per deck, then — stop, spill, or degrade-to-file? |
 | **D-WZ-PDC-01** | P6 | PDC in a live mixer: full-graph PDC delays monitoring. Proposal: compensate parallel paths only, expose per-channel latency, subtract insert latency from record-path stamps. Deviates from parlante's full-PDC (offline vs live). |
 | **D-WZ-SHARED-01** | after P2 | Rule of three: extract `@suite/design-tokens` + `@suite/slp-codegen` as private packages once the third vendored copy proves out. |
+
+## D-SL-STORE-01 · 2026-07-28 · The merged app's library is native disk (ratifies D-1)
+**Decision:** the session/sample library lives on native disk behind the contained `slFiles`
+dispatch (atomic staged writes, verbatim names, traversal refused, trash-first removal); OPFS
+remains the browser companion's storage only.
+**Rationale:** measured — the JUCE WKWebView could LIST an OPFS library but not WRITE one; every
+"new session" was a zero-length landmine. The flip is the same move `slMap` made, one tier down,
+and routing `opfs.ts` wholesale flipped sessions, samples and the file browser in one seam.
+**Consequences:** the library is a visible folder beside Takes; the zero-length corrupt-session
+class is unmanufacturable; the read-only `/takes` mount rides the same namespace (carve).
+
+## D-SL-TAPEBPM-01 · 2026-07-28 · A tape learns its bpm by inference, with a refuse-band (ratifies D-2)
+**Decision:** a recorded tape's bpm derives from loop length + the take's `bpmAtStart` stamp,
+snapped to the nearest power-of-two beat count in log space; >±20% off every power of two infers
+NOTHING (Inspector field stays empty for the hand); the user's typed value always wins and is
+never re-derived; loaded files are manual-only.
+**Rationale:** neighbours on the scale are 2× apart, so a hand-stopped loop lands unambiguously;
+"unknown" beats a confidently wrong number that stretches a tape to nonsense when sync engages.
+**Consequences:** quantized capture (SL-ABI-V3 §5's record_start_quantized) stays the later,
+by-construction upgrade, deferred with §7.
+
+## D-SL-TAPESYNC-01 · 2026-07-28 · Sync ≠ stretch: varispeed default, opt-in stretcher, C-3 closes dry (ratifies D-3)
+**Decision:** a synced tape defaults to `timePitch` (zero latency, pitch rides rate);
+`timeStretch` is per-strip opt-in accepting the stretcher's group delay; the Law C-3
+record→loop handoff NEVER engages the stretcher in its own block; no cross-element delay
+matching until an alignment problem is heard.
+**Rationale:** a freshly closed loop must play NOW; the ~116 ms group delay is a price the
+performer chooses per strip, not a tax on every capture.
+**Consequences:** TAPE-STRETCH.md is the normative spec; the all-or-nothing bypass group stays
+decks-only.
+
+## D-SL-PANELS-01 · 2026-07-28 · deckmixer and djmode stay reachable as windows (D-5, interim)
+**Decision:** both panels keep their ≡ doors while the plane matures; the retire-and-rehome
+audit is revisited at the polish pass. Instrument stays doorless until P6 (pluginHosting false).
+**Rationale:** "nothing lost" outranks tidiness while the replacement surface is still growing.

@@ -1,5 +1,10 @@
 # Morning decisions 2 — for the user, opened 2026-07-28
 
+> ## ✅ D-1 · D-2 · D-3 · D-5 SIGNED 2026-07-28 (user, live)
+> Ratified as D-SL-STORE-01 · D-SL-TAPEBPM-01 · D-SL-TAPESYNC-01 · D-SL-PANELS-01 in
+> `docs/DECISIONS.md`. **D-4 (the morph) stays OPEN by choice: to be sketched live with the
+> user before any code — P3-X1 remains awaiting-decision(D-4).** The queue below is the record.
+
 *Queued by the Fable 5 review session. Same contract as `docs/MORNING-DECISIONS.md`:
 each entry is the question, the options with trade-offs, and a recommendation.
 Rows marked `provisional(D-n)` in `P3-LEDGER.md` BUILD the recommendation and log
