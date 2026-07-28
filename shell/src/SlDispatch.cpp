@@ -540,6 +540,150 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         return fail("slMap: unknown action '" + action + "'");
     }
 
+    // ── The library filesystem (P3-SES-1 — THE FLIP) ─────────────────────────
+    //
+    // The session/sample library, as native disk. OPFS is the BROWSER
+    // companion's storage; the JUCE WKWebView host can LIST an OPFS library but
+    // cannot WRITE one (measured — every "new session" was a zero-length
+    // landmine), so the merged app's library lives here instead: the same move
+    // slMap already made, one tier down. The web's `opfs.ts` routes to this
+    // whole-hog when a JUCE backend exists, so sessions, samples and the file
+    // browser flip together and the browser path stays byte-identical.
+    //
+    // The shell moves BYTES (base64 or text); it never parses a session.
+    // Paths are OPFS-shaped ("/sessions/Untitled/pattern.json"), validated
+    // segment-by-segment and CONTAINED under <takesDir>/../Library — the
+    // web_resources traversal rule, applied to storage.
+    if (method == "slFiles") {
+        if (services == nullptr || services->takesDir.empty())
+            return fail("slFiles: this host has no library directory");
+        const juce::File libRoot = juce::File(services->takesDir).getParentDirectory()
+                                       .getChildFile("Library");
+        const auto action = params.getProperty("action", juce::var()).toString();
+        const auto rawPath = params.getProperty("path", juce::var()).toString();
+
+        // Resolve an OPFS-style path against the root, refusing anything that
+        // could step outside it. Segment names are kept VERBATIM (a kit's
+        // filePath must round-trip exactly), so containment is checks, not
+        // renaming.
+        juce::File file = libRoot;
+        {
+            juce::StringArray segs;
+            segs.addTokens(rawPath, "/", "");
+            for (const auto& seg : segs) {
+                if (seg.isEmpty()) continue;
+                if (seg == "." || seg == ".." || seg.containsChar('\\') ||
+                    seg.containsChar(':'))
+                    return fail("slFiles: refused path segment '" + seg + "'");
+                file = file.getChildFile(seg);
+            }
+            // Belt and braces: whatever the walk produced must still be inside.
+            if (file != libRoot && !file.isAChildOf(libRoot))
+                return fail("slFiles: path escapes the library");
+        }
+
+        if (action == "list") {
+            if (!file.isDirectory()) return fail("slFiles/list: no such directory");
+            juce::Array<juce::var> arr;
+            for (const auto& e :
+                 file.findChildFiles(juce::File::findFilesAndDirectories, false)) {
+                auto* o = new juce::DynamicObject();
+                o->setProperty("name", e.getFileName());
+                o->setProperty("isDirectory", e.isDirectory());
+                o->setProperty("sizeBytes",
+                               e.isDirectory() ? 0.0 : static_cast<double>(e.getSize()));
+                o->setProperty("modifiedMs",
+                               static_cast<double>(
+                                   e.getLastModificationTime().toMilliseconds()));
+                arr.add(juce::var(o));
+            }
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ok", true);
+            o->setProperty("entries", juce::var(arr));
+            return ok(juce::var(o));
+        }
+
+        if (action == "mkdirs")
+            return ok(okFlag(file.createDirectory()));
+
+        if (action == "exists") {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ok", true);
+            o->setProperty("exists", file.exists());
+            return ok(juce::var(o));
+        }
+
+        if (action == "read") {
+            if (!file.existsAsFile()) return fail("slFiles/read: no such file");
+            juce::MemoryBlock bytes;
+            if (!file.loadFileAsData(bytes)) return fail("slFiles/read: could not read");
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ok", true);
+            o->setProperty("b64", juce::Base64::toBase64(bytes.getData(), bytes.getSize()));
+            return ok(juce::var(o));
+        }
+
+        if (action == "write") {
+            // ATOMIC, like slMap/save: stage a sibling and rename, so a crash
+            // mid-write leaves the previous file rather than a truncated one —
+            // the exact landmine class the OPFS store manufactured.
+            juce::MemoryBlock bytes;
+            const auto text = params.getProperty("text", juce::var());
+            const auto b64 = params.getProperty("b64", juce::var());
+            if (!text.isVoid()) {
+                const juce::String s = text.toString(); // keep the String alive
+                const auto utf8 = s.toUTF8();           // …while its bytes are copied
+                bytes.append(utf8.getAddress(), utf8.sizeInBytes() - 1);
+            } else if (!b64.isVoid()) {
+                juce::MemoryOutputStream decoded(bytes, false);
+                if (!juce::Base64::convertFromBase64(decoded, b64.toString()))
+                    return fail("slFiles/write: bad base64");
+            } else {
+                return fail("slFiles/write: text or b64 required");
+            }
+            if (!file.getParentDirectory().createDirectory())
+                return fail("slFiles/write: could not create the directory");
+            const auto tmp = file.getSiblingFile(file.getFileName() + ".tmp");
+            {
+                juce::FileOutputStream out(tmp);
+                if (!out.openedOk()) return fail("slFiles/write: could not stage");
+                out.setPosition(0);
+                out.truncate();
+                if (!out.write(bytes.getData(), bytes.getSize())) {
+                    tmp.deleteFile();
+                    return fail("slFiles/write: could not write");
+                }
+            }
+            // VERIFY before the rename — a short write must never replace a
+            // good file, and the failure names the byte counts.
+            if (static_cast<size_t>(tmp.getSize()) != bytes.getSize()) {
+                const auto detail = juce::String(tmp.getSize()) + " of " +
+                                    juce::String(static_cast<int64_t>(bytes.getSize())) +
+                                    " bytes";
+                tmp.deleteFile();
+                return fail("slFiles/write: staged " + detail);
+            }
+            if (!tmp.moveFileTo(file)) {
+                tmp.deleteFile();
+                return fail("slFiles/write: could not replace the existing file");
+            }
+            return ok(okFlag());
+        }
+
+        if (action == "remove") {
+            if (!file.exists()) return fail("slFiles/remove: no such entry");
+            if (file == libRoot) return fail("slFiles/remove: refused the library root");
+            // Trash first — a session directory is a night's work and a
+            // mis-click must stay recoverable (the slMap/delete rule). Staged
+            // temporaries and test scratch may live where trash is unavailable;
+            // recursive delete is the honest fallback, reported if it too fails.
+            const bool gone = file.moveToTrash() || file.deleteRecursively();
+            return ok(okFlag(gone));
+        }
+
+        return fail("slFiles: unknown action '" + action + "'");
+    }
+
     // ── The master output ────────────────────────────────────────────────────
     if (method == "slMaster") {
         if (engine == nullptr) return fail("slMaster: no engine on this host");

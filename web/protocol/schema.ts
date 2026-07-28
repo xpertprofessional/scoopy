@@ -1826,6 +1826,46 @@ export const COMMANDS = {
     }).strict(),
   },
   /**
+   * THE LIBRARY FILESYSTEM (P3-SES-1 — the flip).
+   *
+   * The session/sample library, as native disk. OPFS is the BROWSER
+   * companion's storage; the JUCE WKWebView host can LIST an OPFS library but
+   * cannot WRITE one (measured — every "new session" was a zero-length
+   * landmine), so on this host `opfs.ts` routes every I/O call here and the
+   * library lives under the shell's Library directory with atomic writes.
+   *
+   * Paths are OPFS-shaped ("/sessions/Untitled/pattern.json") and validated
+   * segment-by-segment in the shell — nothing may step outside the library
+   * root, and names round-trip VERBATIM (a kit's filePath is an identity).
+   * The shell moves bytes (text or base64) and never parses a session.
+   */
+  slFiles: {
+    params: z.object({
+      action: z.enum(["list", "read", "write", "remove", "exists", "mkdirs"]),
+      path: z.string(),
+      /** write: UTF-8 content (the JSON fast path — no base64 either way). */
+      text: z.string().optional(),
+      /** write: binary content, base64. Samples are MBs, takes never travel
+          this road (they stay native paths, the slMap rule). */
+      b64: z.string().optional(),
+    }).strict(),
+    result: z.object({
+      ok: z.boolean(),
+      /** read: the file's bytes, base64. */
+      b64: z.string().optional(),
+      /** exists: the answer. */
+      exists: z.boolean().optional(),
+      /** list: one level, dirs and files, OPFS-entry shaped. */
+      entries: z.array(z.object({
+        name: z.string(),
+        isDirectory: z.boolean(),
+        sizeBytes: z.number(),
+        modifiedMs: z.number(),
+      }).strict()).optional(),
+      error: z.string().nullable().optional(),
+    }).strict(),
+  },
+  /**
    * THE MASTER OUTPUT (merge P2 step 4, increment 5).
    *
    * The plane's front-of-house level. Live, applied once by the core's master

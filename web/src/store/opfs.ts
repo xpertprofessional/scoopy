@@ -17,7 +17,17 @@
  *
  * Paths are absolute, "/"-separated, and rooted at the OPFS root: `/samples/Kicks/808.wav`.
  * There is no cwd here — callers pass whole paths.
+ *
+ * ⚠️ P3-SES-1 — ON THE JUCE HOST THIS MODULE IS A ROUTER, NOT A STORE. The
+ * WKWebView host can LIST an OPFS library but cannot WRITE one (every "new
+ * session" was a zero-length landmine), so when a JUCE backend exists every
+ * I/O function below delegates to `nativeFiles.ts` → the shell's `slFiles`
+ * dispatch, and the library lives on real disk with atomic writes. Same paths,
+ * same throw semantics; sessions, samples and the file browser flip together.
+ * In a browser nothing changes — OPFS remains the companion's disk.
  */
+import * as native from "./nativeFiles.ts";
+import { nativeFilesActive } from "./nativeFiles.ts";
 
 /** Where the two libraries live. Everything the companion persists is under one of these. */
 export const SAMPLES_ROOT = "/samples";
@@ -80,6 +90,7 @@ async function fileHandle(path: string, create = false): Promise<FileSystemFileH
 }
 
 export async function ensureDir(path: string): Promise<void> {
+  if (nativeFilesActive()) return native.ensureDir(path);
   await dirHandle(path, true);
 }
 
@@ -110,6 +121,7 @@ export async function ensureDir(path: string): Promise<void> {
  *    a message about JSON.
  */
 export async function writeFile(path: string, bytes: Uint8Array | string): Promise<void> {
+  if (nativeFilesActive()) return native.writeFile(path, bytes);
   const payload = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes.slice();
   const handle = await fileHandle(path, true);
 
@@ -162,17 +174,20 @@ export async function writeFile(path: string, bytes: Uint8Array | string): Promi
 }
 
 export async function readFile(path: string): Promise<Uint8Array> {
+  if (nativeFilesActive()) return native.readFile(path);
   const handle = await fileHandle(path);
   const file = await handle.getFile();
   return new Uint8Array(await file.arrayBuffer());
 }
 
 export async function readText(path: string): Promise<string> {
+  if (nativeFilesActive()) return native.readText(path);
   const handle = await fileHandle(path);
   return (await handle.getFile()).text();
 }
 
 export async function exists(path: string): Promise<boolean> {
+  if (nativeFilesActive()) return native.exists(path);
   try {
     await fileHandle(path);
     return true;
@@ -187,6 +202,7 @@ export async function exists(path: string): Promise<boolean> {
 }
 
 export async function remove(path: string): Promise<void> {
+  if (nativeFilesActive()) return native.remove(path);
   const dir = await dirHandle(parentPath(path));
   await dir.removeEntry(baseName(path), { recursive: true });
 }
@@ -200,6 +216,7 @@ export async function remove(path: string): Promise<void> {
  * the schema's own contract, not a shortcut.
  */
 export async function list(path: string): Promise<OpfsEntry[]> {
+  if (nativeFilesActive()) return native.list(path);
   const dir = await dirHandle(path);
   const out: OpfsEntry[] = [];
   for await (const [name, handle] of dir as unknown as AsyncIterable<

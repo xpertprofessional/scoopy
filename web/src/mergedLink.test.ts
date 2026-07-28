@@ -55,6 +55,7 @@ const REPLY: Record<string, unknown> = {
   setSetting: {},
   getSetting: { value: null },
   openPanelWindow: {},
+  slFiles: { ok: true },
 };
 
 function installJuceBackend() {
@@ -118,8 +119,28 @@ describe("MergedLink routing", () => {
       await link!.command(method as never, {});
     }
 
-    const native = sent.filter((s) => s.name === "slCommand").map((s) => s.params[0]);
+    // The companion stack's own boot now emits slFiles (P3-SES-1 — the file
+    // browser scans the NATIVE library on this host), interleaved at whatever
+    // moment its async init reaches the disk. That traffic is routing WORKING,
+    // not part of this test's issued sequence — filtered, and asserted native
+    // in its own case below.
+    const native = sent
+      .filter((s) => s.name === "slCommand")
+      .map((s) => s.params[0])
+      .filter((m) => m !== "slFiles");
     expect(native).toEqual(planeMethods);
+  });
+
+  it("sends the LIBRARY FILESYSTEM native — sessions must land on real disk", async () => {
+    // P3-SES-1: OPFS can be listed but not written in the WKWebView, so
+    // `opfs.ts` routes through slFiles here. A miss on this allowlist would
+    // silently send the session library back to the browser companion — the
+    // exact zero-length-session failure the flip exists to delete.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()!;
+    await link.command("slFiles" as never, { action: "mkdirs", path: "/sessions" });
+    const native = sent.filter((s) => s.name === "slCommand").map((s) => s.params[0]);
+    expect(native).toContain("slFiles");
   });
 
   it("sends the handshake and settings native — they are the SHELL's, not this webview's", async () => {

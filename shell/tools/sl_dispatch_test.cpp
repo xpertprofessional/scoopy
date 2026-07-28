@@ -361,6 +361,108 @@ int main() {
         sl_engine_destroy(e);
     }
 
+    // ── slFiles — the native library filesystem (P3-SES-1) ───────────────────
+    // The OPFS replacement on the JUCE host. What must hold: byte round-trips
+    // (text and base64), verbatim names, listing, atomic replace, containment
+    // (a path may NEVER escape the library), and honest refusals.
+    {
+        FakeSettings s2;
+        const auto scratch = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("sl_dispatch_test_files");
+        scratch.deleteRecursively();
+        wizard::sl::HostServices svc;
+        svc.takesDir = scratch.getChildFile("Takes").getFullPathName().toStdString();
+        const auto lib = scratch.getChildFile("Library");
+        auto call = [&](const char* json) {
+            return dispatch("slFiles", juce::JSON::parse(json), s2, nullptr, &svc);
+        };
+
+        // No services → refused by name, never a fabricated empty library.
+        CHECK(!replyOk(dispatch("slFiles", juce::JSON::parse(R"({"action":"list","path":"/"})"),
+                                s2, nullptr, nullptr)));
+
+        // Text round-trip, directories made on the way. Name kept VERBATIM —
+        // "Untitled 2" with its space is the library's actual naming scheme.
+        CHECK(replyOk(call(
+            R"({"action":"write","path":"/sessions/Untitled 2/pattern.json","text":"{\"bpm\":120}"})")));
+        {
+            const auto r = call(R"({"action":"read","path":"/sessions/Untitled 2/pattern.json"})");
+            CHECK(replyOk(r));
+            juce::MemoryBlock decoded;
+            {
+                juce::MemoryOutputStream out(decoded, false);
+                CHECK(juce::Base64::convertFromBase64(
+                    out, result(r).getProperty("b64", juce::var()).toString()));
+            }
+            CHECK(juce::String::fromUTF8(static_cast<const char*>(decoded.getData()),
+                                         static_cast<int>(decoded.getSize())) ==
+                  "{\"bpm\":120}");
+        }
+
+        // The file really is where the containment says it is.
+        CHECK(lib.getChildFile("sessions/Untitled 2/pattern.json").existsAsFile());
+
+        // Base64 round-trip of real bytes, including zeros.
+        {
+            const unsigned char raw[5] = {0x00, 0xFF, 0x10, 0x00, 0x7F};
+            const auto b64 = juce::Base64::toBase64(raw, sizeof(raw));
+            CHECK(replyOk(dispatch("slFiles",
+                [&] {
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty("action", "write");
+                    o->setProperty("path", "/samples/kit/hit.bin");
+                    o->setProperty("b64", b64);
+                    return juce::var(o);
+                }(),
+                s2, nullptr, &svc)));
+            const auto f = lib.getChildFile("samples/kit/hit.bin");
+            CHECK(f.getSize() == 5);
+            juce::MemoryBlock back;
+            CHECK(f.loadFileAsData(back));
+            CHECK(back.getSize() == 5 && std::memcmp(back.getData(), raw, 5) == 0);
+        }
+
+        // Listing: the sessions dir holds exactly the one directory, as a dir.
+        {
+            const auto r = call(R"({"action":"list","path":"/sessions"})");
+            CHECK(replyOk(r));
+            const auto* entries = result(r).getProperty("entries", juce::var()).getArray();
+            CHECK(entries != nullptr && entries->size() == 1);
+            CHECK(entries->getReference(0).getProperty("name", "") == juce::var("Untitled 2"));
+            CHECK((bool) entries->getReference(0).getProperty("isDirectory", false));
+        }
+        // A directory that does not exist is a FAILURE, matching OPFS's throw —
+        // "no such directory" and "empty" are different facts.
+        CHECK(!replyOk(call(R"({"action":"list","path":"/nowhere"})")));
+
+        // Atomic replace: writing over keeps exactly the new content.
+        CHECK(replyOk(call(
+            R"({"action":"write","path":"/sessions/Untitled 2/pattern.json","text":"NEW"})")));
+        CHECK(lib.getChildFile("sessions/Untitled 2/pattern.json").loadFileAsString() == "NEW");
+        // …and no stale .tmp stays behind.
+        CHECK(!lib.getChildFile("sessions/Untitled 2/pattern.json.tmp").exists());
+
+        // CONTAINMENT. Nothing with ".." may resolve; nothing may escape.
+        CHECK(!replyOk(call(R"({"action":"read","path":"/../secrets"})")));
+        CHECK(!replyOk(call(R"({"action":"write","path":"/a/../../x","text":"no"})")));
+        CHECK(!replyOk(call(R"({"action":"remove","path":"/.."})")));
+        CHECK(!replyOk(call(R"({"action":"remove","path":"/"})"))); // the root itself
+
+        // exists / mkdirs / remove.
+        {
+            const auto r = call(R"({"action":"exists","path":"/sessions/Untitled 2"})");
+            CHECK(replyOk(r) && (bool) result(r).getProperty("exists", false));
+        }
+        CHECK(replyOk(call(R"({"action":"mkdirs","path":"/sessions/Empty"})")));
+        CHECK(lib.getChildFile("sessions/Empty").isDirectory());
+        CHECK(replyOk(call(R"({"action":"remove","path":"/sessions/Untitled 2"})")));
+        CHECK(!lib.getChildFile("sessions/Untitled 2").exists());
+        // Removing what is not there is a failure, matching OPFS's throw.
+        CHECK(!replyOk(call(R"({"action":"remove","path":"/sessions/Untitled 2"})")));
+
+        scratch.deleteRecursively();
+    }
+
     std::printf("sl_dispatch_test OK\n");
     return 0;
 }
