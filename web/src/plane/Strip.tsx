@@ -55,6 +55,7 @@ import {
   updateTapeTempo,
 } from '../state/mapStore.ts'
 import { tapeEffectiveRate } from '../persist/tempo.ts'
+import { useCompanion } from '../store/companionEngine.ts'
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import type { Chips } from './cables.ts'
 import { channelLabel, inputChoices, setInputDevice, useDeviceStore } from './devices.ts'
@@ -439,6 +440,12 @@ export function Strip({
     // The menu now carries more than the input picker (the session library, the
     // record tap), so it opens whenever ANY of its sections has an owner.
     if (!onPickInput && !onLoadSession) return
+    // Ask the disk again as the menu opens — the library can change from
+    // ANOTHER window (the sessions panel), and a menu built from a stale list
+    // reads as "there are no sessions" (found in the first real-host walk).
+    // The refresh is async; the focus-refresh in PlanePanel usually got there
+    // first, and the re-render updates the list for the next open regardless.
+    void useCompanion.getState().refresh()
     ev.preventDefault()
     const items: MenuItem[] = []
     if (onPickInput) {

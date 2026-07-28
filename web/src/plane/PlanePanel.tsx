@@ -299,6 +299,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // over and over.
   useEffect(() => attachAutosave(link), [link])
 
+  // THE LIBRARY REFRESHES ON FOCUS. Every panel window is a separate WebView
+  // with its OWN companion store, so a session created in the sessions window
+  // is invisible here until somebody asks the disk again — and the boot
+  // effect asked exactly once. Coming BACK to this window is precisely the
+  // moment freshness matters (create over there, load over here), and it is
+  // how the first real-host walk found the gap: "Untitled" on disk, the strip
+  // menu insisting there were no sessions.
+  useEffect(() => {
+    const refresh = () => void useCompanion.getState().refresh()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [])
+
   // REFUSALS REACH THE NOTE LINE (P3-U6). Every slChannel/slRoute/slTape/…
   // failure used to be one console.error — invisible in the shipped app, so a
   // control that the engine refused was indistinguishable from a dead one
