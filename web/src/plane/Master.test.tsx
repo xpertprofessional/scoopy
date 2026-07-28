@@ -22,13 +22,21 @@ const render = (deckCount: number) =>
   )
 
 describe('master transport enablement (P3-U5)', () => {
-  it('disables all three verbs with zero decks — no silent no-ops', () => {
-    // They used to be always enabled and iterate an empty array: three
-    // buttons that "worked" and did nothing, which reads as a broken app.
+  it('disables every deck verb with zero decks — no silent no-ops', () => {
+    // They used to be always enabled and iterate an empty array: buttons that
+    // "worked" and did nothing, which reads as a broken app. Six now: the
+    // transport trio + BR/length/REV (P3-M-1b).
     const html = render(0)
-    expect(html.match(/disabled/g)?.length).toBe(3)
+    expect(html.match(/disabled/g)?.length).toBe(6)
     // …and the title says what would make them live.
     expect(html).toContain('load a session into a strip')
+  })
+
+  it('renders the folded verbs — BR, the fused-scale label, REV (P3-M-1b)', () => {
+    const html = render(1)
+    expect(html).toContain('>BR<')
+    expect(html).toContain('>REV<')
+    expect(html).toContain('beat-repeat length')
   })
 
   it('enables them the moment a deck exists', () => {

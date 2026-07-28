@@ -36,6 +36,12 @@ export function Master({
   onStop,
   onRestart,
   deckCount = 0,
+  brActive = false,
+  brLabel = '2',
+  revActive = false,
+  onToggleBeatRepeat,
+  onCycleBeatRepeat,
+  onToggleReverse,
 }: {
   link: EngineLink | null
   level: number
@@ -53,6 +59,14 @@ export function Master({
       three enabled buttons iterating an empty array are silent no-ops, and a
       control that does nothing teaches that the transport is broken (P3-U5). */
   deckCount?: number
+  /** BEAT REPEAT + REV (P3-M-1b) — scoopy's transport verbs, folded in. The
+      panel owns the fused-scale state; this renders it. */
+  brActive?: boolean
+  brLabel?: string
+  revActive?: boolean
+  onToggleBeatRepeat?: () => void
+  onCycleBeatRepeat?: () => void
+  onToggleReverse?: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const lampRef = useRef<HTMLSpanElement | null>(null)
@@ -191,6 +205,50 @@ export function Master({
           title={deckCount === 0 ? 'no deck to stop — load a session into a strip' : 'stop every deck'}
         >
           ◼
+        </button>
+        {/* BEAT REPEAT (P3-M-1b): scoopy's signature performance verb, folded
+            into the master. BR latches the window; the number cycles the fused
+            scale (16…2 whole steps, then 1/2…1/32 re-triggering rolls) and is
+            live while latched. REV runs the whole session backwards — true
+            tape reverse, composing with any track's own direction. */}
+        <button
+          type="button"
+          className={`master-br mono${brActive ? ' latched' : ''}`}
+          disabled={deckCount === 0}
+          onClick={onToggleBeatRepeat}
+          title={
+            deckCount === 0
+              ? 'no deck — load a session into a strip'
+              : brActive
+                ? 'release the beat repeat'
+                : 'beat repeat — loop the window on every deck'
+          }
+        >
+          BR
+        </button>
+        <button
+          type="button"
+          className="master-br mono"
+          disabled={deckCount === 0}
+          onClick={onCycleBeatRepeat}
+          title="beat-repeat length — 16…2 whole steps, then 1/2…1/32 rolls"
+        >
+          {brLabel}
+        </button>
+        <button
+          type="button"
+          className={`master-br mono${revActive ? ' latched' : ''}`}
+          disabled={deckCount === 0}
+          onClick={onToggleReverse}
+          title={
+            deckCount === 0
+              ? 'no deck — load a session into a strip'
+              : revActive
+                ? 'play forward again'
+                : 'REV — the whole session backwards, true tape reverse'
+          }
+        >
+          REV
         </button>
       </span>
       <label className="plane-bpm mono">

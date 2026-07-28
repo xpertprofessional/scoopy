@@ -253,6 +253,14 @@ interface CompanionState {
   startEngine(): Promise<void>;
   play(deck?: number): void;
   stop(deck?: number): void;
+  /** P3-M-1b: latch/release a beat repeat on this deck (runtime, republishes).
+      null releases. */
+  setBeatRepeat(
+    deck: number,
+    br: { startStep: number; length: number; subdivision?: number } | null,
+  ): void;
+  /** P3-M-1b: whole-session tape reverse (runtime, republishes). */
+  setReverse(deck: number, on: boolean): void;
   setBpm(bpm: number, deck?: number): void;
   /**
    * Switch the active pattern scene. While playing, a plain select SCHEDULES the switch at the
@@ -318,6 +326,13 @@ export function resolveWorldBpm(documentBpm: number, override: number | null): n
  */
 let mainGainOverride: number | null = null;
 
+/** P3-M-1b: runtime transport verbs, PER DECK and never the document — a beat
+    repeat is a hand gesture; it is restated by every publish and dies with the
+    deck (the slot-reuse rule sync already follows). */
+const beatRepeatState: ({ startStep: number; length: number; subdivision?: number } | null)[] =
+  [null, null, null];
+const reverseState: boolean[] = [false, false, false];
+
 /** Push ONE DECK's document at the engine. No-op until the engine is running. */
 function publish(state: CompanionState, deck: number, playing: boolean): string[] {
   const d = deckOf(state, deck);
@@ -338,6 +353,10 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
       // The companion IS the no-return-FX host (BrowserLink answers returnFx: false): dry render,
       // matching the hidden sends row. The document's send values stay untouched.
       disableReturnFx: true,
+      // The transport verbs ride every publish (P3-M-1b) — restating them is
+      // what makes them survive scene switches and edits.
+      beatRepeat: beatRepeatState[deck] ?? null,
+      reverseTransport: reverseState[deck] === true,
     },
   );
   // THE DECK AXIS, and it stops here. `worldFromSession` still does all 505
@@ -449,6 +468,10 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     // last one was overridden to. Exactly the shape of the sync ratio that
     // outlived its deck (see PlanePanel's dropElement / `slDeck clear`).
     tempoOverrideBpm[deck] = null;
+    // The transport verbs go with the deck too (P3-M-1b): a reused slot must
+    // not inherit the previous occupant's repeat or reverse.
+    beatRepeatState[deck] = null;
+    reverseState[deck] = false;
   },
 
   async importFile(file) {
@@ -678,6 +701,20 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     } catch (err) {
       set({ engine: "failed", error: `engine failed to start: ${(err as Error).message}` });
     }
+  },
+
+  setBeatRepeat(deck, br) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    beatRepeatState[deck] = br;
+    if (audio.running && deckOf(get(), deck).session)
+      publish(get(), deck, deckOf(get(), deck).playing);
+  },
+
+  setReverse(deck, on) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    reverseState[deck] = on;
+    if (audio.running && deckOf(get(), deck).session)
+      publish(get(), deck, deckOf(get(), deck).playing);
   },
 
   play(deck = 0) {

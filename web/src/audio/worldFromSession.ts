@@ -251,6 +251,12 @@ export interface WorldOptions {
    * keeps its send values untouched; this shapes only the published world.
    */
   disableReturnFx?: boolean;
+  /** DECK-SCOPE transport verbs (P3-M-1b) — beat repeat + whole-session
+      reverse, runtime performance state the store restates on every publish
+      (never the document: a beat repeat is a hand gesture). Emitted onto the
+      World for the NATIVE applier; the browser worklet ignores them today. */
+  beatRepeat?: { startStep: number; length: number; subdivision?: number } | null;
+  reverseTransport?: boolean;
 }
 
 /**
@@ -497,6 +503,19 @@ export function worldFromSession(
       isPlaying: options.isPlaying ?? true,
       startStep: options.startStep ?? 0,
       tracks,
+      // Present only when SET: an absent field publishes the engine's fresh
+      // defaults, so a session that never heard of beat repeat stays clean.
+      ...(options.beatRepeat
+        ? {
+            beatRepeatActive: true,
+            beatRepeatStartStep: options.beatRepeat.startStep,
+            beatRepeatLength: options.beatRepeat.length,
+            ...(options.beatRepeat.subdivision && options.beatRepeat.subdivision > 1
+              ? { beatRepeatSubdivision: options.beatRepeat.subdivision }
+              : {}),
+          }
+        : {}),
+      ...(options.reverseTransport ? { reverseTransport: true } : {}),
     },
     missingSamples,
     emptyTracks,

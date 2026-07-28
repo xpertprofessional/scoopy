@@ -55,6 +55,26 @@ describe("worldFromSession", () => {
     expect(world.tracks.length).toBe(1);
   });
 
+  it("emits the transport verbs ONLY when set — absent means the engine's defaults (P3-M-1b)", () => {
+    const clean = worldFromSession(pattern, kit).world;
+    expect("beatRepeatActive" in clean).toBe(false);
+    expect("reverseTransport" in clean).toBe(false);
+    const br = worldFromSession(pattern, kit, {
+      beatRepeat: { startStep: 0, length: 2 },
+      reverseTransport: true,
+    }).world;
+    expect(br.beatRepeatActive).toBe(true);
+    expect(br.beatRepeatStartStep).toBe(0);
+    expect(br.beatRepeatLength).toBe(2);
+    // Whole-step windows carry NO subdivision field — 1 is the engine default
+    // and writing it would claim a roll that is not happening.
+    expect("beatRepeatSubdivision" in br).toBe(false);
+    const roll = worldFromSession(pattern, kit, {
+      beatRepeat: { startStep: 0, length: 1, subdivision: 8 },
+    }).world;
+    expect(roll.beatRepeatSubdivision).toBe(8);
+  });
+
   it("carries bpm off the document root", () => {
     const { world } = worldFromSession(pattern, kit);
     expect(world.bpm).toBe(pattern.bpm);

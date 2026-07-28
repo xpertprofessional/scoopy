@@ -1009,3 +1009,24 @@
   border-color: var(--line);
   color: var(--text-dim);
 }
+
+/* BR / length / REV (P3-M-1b) — the master's folded transport verbs. The
+   transport-button shape at word width; latched = the same "this is
+   happening" fill the strip's REC uses. */
+.master-br {
+  height: 22px;
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  cursor: pointer;
+}
+.master-br:hover:not(:disabled) { background: var(--bg-raised); }
+.master-br.latched {
+  background: var(--hot);
+  border-color: var(--hot);
+  color: var(--bg);
+}
+.master-br:disabled { opacity: 0.4; cursor: default; color: var(--text-dim); }

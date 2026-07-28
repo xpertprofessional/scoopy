@@ -309,6 +309,39 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // until the first listing answers, so nothing flashes "missing" merely
   // because the disk has not been asked yet. Re-fetched whenever any strip's
   // takeRef changes — recording stops and take loads both move that.
+  // BEAT REPEAT + REV (P3-M-1b): master-level runtime state, fanned over every
+  // loaded deck through the companion's per-deck verbs. UI state only — the
+  // truth the engine hears is restated by each deck's publish.
+  const BR_SCALE: { label: string; length: number; subdivision?: number }[] = [
+    { label: '16', length: 16 },
+    { label: '8', length: 8 },
+    { label: '4', length: 4 },
+    { label: '2', length: 2 },
+    { label: '1', length: 1 },
+    { label: '1/2', length: 1, subdivision: 2 },
+    { label: '1/4', length: 1, subdivision: 4 },
+    { label: '1/8', length: 1, subdivision: 8 },
+    { label: '1/16', length: 1, subdivision: 16 },
+    { label: '1/32', length: 1, subdivision: 32 },
+  ]
+  const [brOn, setBrOn] = useState(false)
+  const [brIdx, setBrIdx] = useState(3) // '2' — the classic window
+  const [revOn, setRevOn] = useState(false)
+  const setBeatRepeat = useCompanion((c) => c.setBeatRepeat)
+  const setReverse = useCompanion((c) => c.setReverse)
+  const applyBr = (on: boolean, idx: number) => {
+    const sc = BR_SCALE[idx] ?? BR_SCALE[3]!
+    for (const d of loadedDecks)
+      setBeatRepeat(
+        d,
+        // startStep 0 = repeat the TOP of the window. "From where you are"
+        // needs per-deck playhead steps the HotFrame only carries for deck 0;
+        // honest uniform behaviour beats a verb that works differently per
+        // strip. Revisit when per-deck steps land.
+        on ? { startStep: 0, length: sc.length, subdivision: sc.subdivision } : null,
+      )
+  }
+
   const [takeIndex, setTakeIndex] = useState<Map<
     string,
     {
@@ -731,6 +764,24 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           // two scopes. Restart is stop-then-play for the same reason it is on a
           // strip: a publish is phase-continuous by design and cannot retrigger.
           deckCount={loadedDecks.length}
+          brActive={brOn}
+          brLabel={BR_SCALE[brIdx]?.label ?? '2'}
+          revActive={revOn}
+          onToggleBeatRepeat={() => {
+            const next = !brOn
+            setBrOn(next)
+            applyBr(next, brIdx)
+          }}
+          onCycleBeatRepeat={() => {
+            const next = (brIdx + 1) % BR_SCALE.length
+            setBrIdx(next)
+            if (brOn) applyBr(true, next) // live while latched
+          }}
+          onToggleReverse={() => {
+            const next = !revOn
+            setRevOn(next)
+            for (const d of loadedDecks) setReverse(d, next)
+          }}
           onPlay={() => loadedDecks.forEach((d) => companionPlay(d))}
           onStop={() => loadedDecks.forEach((d) => companionStop(d))}
           onRestart={() =>
