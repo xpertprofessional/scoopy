@@ -648,6 +648,23 @@ export function Strip({
             loop={strip.element.kind === 'tape' ? strip.element.loop : undefined}
             missing={Boolean(missing)}
             hint={tape === null ? 'press REC to give this strip material' : undefined}
+            // SCRUB (P3-U3): `can.scrub` finally has its consumer — the wave's
+            // unmodified drag, per pd-scrub-interaction. The engine owns the
+            // physics (rate from the gap) and arms the cue on release.
+            canScrub={can.scrub}
+            onScrub={{
+              begin: (frame) => {
+                if (tape === null) return
+                send(link, 'slTape', { action: 'scrubBegin', tape })
+                send(link, 'slTape', { action: 'scrubTo', tape, frame })
+              },
+              to: (frame) => {
+                if (tape !== null) send(link, 'slTape', { action: 'scrubTo', tape, frame })
+              },
+              end: () => {
+                if (tape !== null) send(link, 'slTape', { action: 'scrubEnd', tape })
+              },
+            }}
             onLoopDrag={(start, end) =>
               updateStrip(strip.key, (s) =>
                 s.element.kind === 'tape'

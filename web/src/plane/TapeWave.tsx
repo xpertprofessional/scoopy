@@ -36,6 +36,8 @@ export function TapeWave({
   revision,
   loop,
   onLoopDrag,
+  onScrub,
+  canScrub = false,
   hint,
   missing,
 }: {
@@ -46,6 +48,11 @@ export function TapeWave({
   revision: number
   loop?: { enabled: boolean; start: number; end: number }
   onLoopDrag?: (start: number, end: number) => void
+  /** SCRUB (P3-U3): the unmodified wave drag, per pd-scrub-interaction. The
+      wave reports positions in FRAMES; the engine derives the rate from the
+      gap (the turntable law). */
+  onScrub?: { begin: (frame: number) => void; to: (frame: number) => void; end: () => void }
+  canScrub?: boolean
   hint?: string
   /** The referenced take could not be found. Draw the field, say so in it. */
   missing?: boolean
@@ -218,27 +225,45 @@ export function TapeWave({
     return () => cancelAnimationFrame(raf)
   }, [width, env, frames, loop?.enabled, loop?.start, loop?.end, missing])
 
-  /* ── the loop-brace drag ──────────────────────────────────────────────── */
+  /* ── the wave drag: SCRUB, or ⇧ for the loop brace (P3-U3) ────────────── */
+  //
+  // pd-scrub-interaction's law, applied: the WAVEFORM owns the unmodified
+  // drag, and it is SCRUB — the turntable hand, the thing a tape is for. The
+  // loop brace moves to ⇧-drag, the spec's one modifier. The gesture is
+  // decided ONCE at pointerdown and owns the whole drag (the WaveformView
+  // lock, copied): a drag that could change meaning mid-flight is two bugs.
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!onLoopDrag || frames <= 0) return
+    if (frames <= 0) return
+    const scrub = !e.shiftKey && canScrub && onScrub !== undefined
+    if (!scrub && !onLoopDrag) return
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const at = (clientX: number) =>
       Math.round(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * frames)
     const anchor = at(e.clientX)
     const el = e.currentTarget as HTMLElement
     el.setPointerCapture(e.pointerId)
+    if (scrub) onScrub!.begin(anchor)
 
     const move = (ev: PointerEvent) => {
       const here = at(ev.clientX)
-      // Drag in either direction from the anchor; the brace is a span, not a
-      // handle, so which end you started from is not a mode.
-      onLoopDrag(Math.min(anchor, here), Math.max(anchor, here))
+      if (scrub) {
+        // Position, not velocity: the engine derives the rate from the gap
+        // (sl_tape's turntable law), so pixels never pretend to be physics.
+        onScrub!.to(here)
+      } else {
+        // Drag in either direction from the anchor; the brace is a span, not a
+        // handle, so which end you started from is not a mode.
+        onLoopDrag!(Math.min(anchor, here), Math.max(anchor, here))
+      }
     }
     const up = (ev: PointerEvent) => {
       el.releasePointerCapture?.(ev.pointerId)
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)
       el.removeEventListener('pointercancel', up)
+      // Letting go arms the cue (D-WZ-SCRUBCUE-01) engine-side; nothing to do
+      // here but say the drag is over.
+      if (scrub) onScrub!.end()
     }
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerup', up)
@@ -250,6 +275,13 @@ export function TapeWave({
       className={`strip-wavefield${missing ? ' missing' : ''}`}
       style={{ width, height: WAVE_H }}
       onPointerDown={onPointerDown}
+      title={
+        canScrub
+          ? 'drag to scrub — the tape follows your hand, release arms the cue · ⇧-drag sets the loop region'
+          : onLoopDrag
+            ? 'drag to set the loop region'
+            : undefined
+      }
       data-no-drag
     >
       <canvas ref={canvasRef} style={{ width, height: WAVE_H }} aria-hidden />
