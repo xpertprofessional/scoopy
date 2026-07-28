@@ -188,6 +188,9 @@ await page.waitForSelector('.strip-scenes', { timeout: 10000 })
 
 check('the strip became a grid deck (scene pads present)',
   (await page.$('.strip-scenes')) !== null)
+check('the strip took the SESSION NAME (P3-U2) — not an anonymous "STRIP 1"',
+  ((await page.textContent('.strip-name')) ?? '').includes('Untitled'),
+  await page.textContent('.strip-name'))
 check('the grid row (sync · tempo mode · bpm) is present',
   (await page.$('.strip-gridrow')) !== null)
 check('no fatal error blocks', (await page.$$('.fatal-error')).length === 0)

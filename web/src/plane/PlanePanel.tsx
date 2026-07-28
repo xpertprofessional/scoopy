@@ -38,6 +38,7 @@ import {
   freeChannel,
   freeDeck,
   inputRoute,
+  nameAfterSessionLoad,
   newGridElement,
   newStrip,
   spawnPoint,
@@ -399,7 +400,13 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       return
     }
     const bpm = (opened.pattern.bpm as number | undefined) ?? 120
-    updateStrip(stripKey, (s) => ({ ...s, element: newGridElement(deck, sessionId, bpm) }))
+    // The strip takes the session's NAME as well as its element (P3-U2): a
+    // default or previous-session name follows the load, a user's rename wins.
+    updateStrip(stripKey, (s) => ({
+      ...s,
+      name: nameAfterSessionLoad(s, sessionId),
+      element: newGridElement(deck, sessionId, bpm),
+    }))
     // AND TELL THE ENGINE WHAT THE NEW ELEMENT'S TEMPO IS. A deck SLOT is
     // reused, so without this the fresh element inherits whatever sync, mode and
     // transpose the previous occupant left in the engine — the document saying

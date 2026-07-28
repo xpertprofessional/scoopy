@@ -849,6 +849,7 @@ function recordSourceLabel(strip: StripDoc): string | null {
     case 'tape':
       return `tape ${strip.element.index}`
     case 'grid':
-      return `deck ${strip.element.deck}`
+      // The session BY NAME — "deck 0" is an engine slot, not a provenance.
+      return `${strip.element.sessionId} · deck ${strip.element.deck}`
   }
 }

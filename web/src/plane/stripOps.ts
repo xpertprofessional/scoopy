@@ -83,6 +83,26 @@ export function newStripKey(): string {
  * is what gives it a tape. A strip that arrived with a dead tape element would
  * be the "form to fill in" the plane exists to avoid.
  */
+/**
+ * What a strip is CALLED after a session loads into it (P3-U2).
+ *
+ * A loaded strip used to keep reading "STRIP 1 · records: deck 0" — the
+ * session's name appeared nowhere on the object, contrary to the strip menu's
+ * own promise ("what stays on the object is the RESULT — … the status line
+ * naming the session"). The rule: a name the USER typed wins; the DEFAULT
+ * name and a PREVIOUS session's name follow the load. That keeps renames
+ * sacred without leaving a strip anonymous.
+ */
+export function nameAfterSessionLoad(
+  strip: Pick<Strip, 'name' | 'channel' | 'element'>,
+  sessionId: string,
+): string {
+  const isDefault = strip.name === `STRIP ${strip.channel + 1}`
+  const isPreviousSession =
+    strip.element.kind === 'grid' && strip.name === strip.element.sessionId
+  return isDefault || isPreviousSession ? sessionId : strip.name
+}
+
 export function newStrip(channel: number, at: { x: number; y: number }): Strip {
   return {
     key: newStripKey(),

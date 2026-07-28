@@ -11,6 +11,7 @@ import {
   inputFor,
   inputRoute,
   mmss,
+  nameAfterSessionLoad,
   newStrip,
   newGridElement,
   newStripKey,
@@ -423,5 +424,32 @@ describe('placement', () => {
     const v = { width: 1000, height: 600 }
     const p = { scale: 1, panX: 0, panY: 0 }
     expect(spawnPoint(v, p, 1).x).toBeGreaterThan(spawnPoint(v, p, 0).x)
+  })
+})
+
+describe('nameAfterSessionLoad (P3-U2)', () => {
+  const base = () => newStrip(0, { x: 0, y: 0 }) // name "STRIP 1"
+
+  it('a default-named strip takes the session name', () => {
+    expect(nameAfterSessionLoad(base(), 'My Jam')).toBe('My Jam')
+  })
+
+  it('a strip named after its PREVIOUS session follows a swap', () => {
+    const s = { ...base(), name: 'Old Jam', element: newGridElement(0, 'Old Jam', 120) }
+    expect(nameAfterSessionLoad(s, 'New Jam')).toBe('New Jam')
+  })
+
+  it('a name the user typed WINS — renames are sacred', () => {
+    const s = { ...base(), name: 'front left monitor' }
+    expect(nameAfterSessionLoad(s, 'My Jam')).toBe('front left monitor')
+    // …including when the strip already holds a different session.
+    const g = { ...s, element: newGridElement(0, 'Old Jam', 120) }
+    expect(nameAfterSessionLoad(g, 'New Jam')).toBe('front left monitor')
+  })
+
+  it('the default is per-CHANNEL, so "STRIP 2" on channel 1 also follows', () => {
+    const s = { ...newStrip(1, { x: 0, y: 0 }) }
+    expect(s.name).toBe('STRIP 2')
+    expect(nameAfterSessionLoad(s, 'My Jam')).toBe('My Jam')
   })
 })

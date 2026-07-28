@@ -136,7 +136,7 @@ function StripInspector({
               ? 'empty — press REC to give it material'
               : strip.element.kind === 'tape'
                 ? `tape ${strip.element.index}${strip.element.stereo ? ' · stereo' : ' · mono'}`
-                : `grid deck ${strip.element.deck}`}
+                : `${strip.element.sessionId} · grid deck ${strip.element.deck}`}
           </dd>
         </div>
         <div className="ins-row mono">
