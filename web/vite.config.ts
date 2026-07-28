@@ -48,6 +48,10 @@ function selfContainedWorklet(): Plugin {
       const out = await esbuild({
         entryPoints: [resolve(__dirname, "src/audio/scoopy-worklet.js")],
         bundle: true,
+        // The environment shim (P3-F2) lives at the top of scoopy-worklet.js
+        // itself — ONE shim covers the dev server and this bundle, because
+        // MODULARIZE runs the glue's environment detection inside the factory
+        // call, after module evaluation.
         format: "esm",
         target: "es2022",
         platform: "browser",

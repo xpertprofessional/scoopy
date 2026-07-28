@@ -21,6 +21,23 @@
  */
 import createScoopyEngine from "./scoopy-engine.js";
 
+// THE ENVIRONMENT SHIM (P3-F2). Emscripten's glue (regenerated 2026-07-27)
+// decides "worker" by `!!globalThis.WorkerGlobalScope` — a symbol an
+// AudioWorkletGlobalScope does not have — so it fell through web/worker/node to
+// SHELL and aborted at boot ("shell environment detected but not enabled"),
+// which is a MUTE app with an error only the console sees. Declaring this scope
+// AS a worker scope is the honest statement: everything the worker path needs
+// holds here (no DOM, no importScripts fetches — the WASM is embedded via
+// -sSINGLE_FILE). It runs before `createScoopyEngine()` because MODULARIZE puts
+// the detection inside the factory, not at module evaluation — which is the
+// only reason a shim in this file can work at all.
+if (
+  typeof globalThis.WorkerGlobalScope === "undefined" &&
+  typeof AudioWorkletGlobalScope !== "undefined"
+) {
+  globalThis.WorkerGlobalScope = AudioWorkletGlobalScope;
+}
+
 const QUANTUM = 128; // AudioWorklet's fixed render quantum — not a tunable
 
 /**

@@ -1471,6 +1471,9 @@ async function createScoopyEngine(moduleArg = {}) {
 var scoopy_engine_default = createScoopyEngine;
 
 // src/audio/scoopy-worklet.js
+if (typeof globalThis.WorkerGlobalScope === "undefined" && typeof AudioWorkletGlobalScope !== "undefined") {
+  globalThis.WorkerGlobalScope = AudioWorkletGlobalScope;
+}
 var QUANTUM = 128;
 if (typeof globalThis.performance === "undefined") {
   globalThis.performance = {
