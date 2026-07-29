@@ -736,6 +736,73 @@ void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled) {
     if (e != nullptr) e->watchdog.setEnabled(enabled);
 }
 
+/* ── FX-return plugin slots (P6-2) ──────────────────────────────────────────
+ *
+ * Thin doors onto core.returnPluginSlot(). The whole family is guarded: on a
+ * SCOOPY_PLUGIN_HOST=0 build the slot members do not exist, so every function
+ * refuses/answers empty — the honest hostless shape, same as the capability. */
+
+int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner, const char* identifier) {
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    auto& slot = e->core.returnPluginSlot(returnIndex);
+    if (identifier == nullptr || identifier[0] == '\0') {
+        slot.unload();
+        return 1;
+    }
+    if (scanner == nullptr) return 0;
+    // Async by design: the JUCE message thread instantiates the plugin. State
+    // restore (P6-5) will thread a blob through the empty string.
+    slot.loadAsync(*static_cast<scoopyloops::NativePluginScanner*>(scanner),
+                   identifier, /*stateBase64*/ "",
+                   [](bool, std::string) {});
+    return 1;
+#else
+    (void) e; (void) returnIndex; (void) scanner; (void) identifier;
+    return 0;
+#endif
+}
+
+uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out, uint32_t cap) {
+    if (out != nullptr && cap > 0) out[0] = '\0';
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    // returnPluginSlot is non-const (it hands out a mutable slot); the reads
+    // below are const-safe, so the cast stays local to this door.
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    const std::string name = slot.loadedName();
+    if (name.empty()) return 0;
+    if (out != nullptr && cap > 0) {
+        const uint32_t n = std::min<uint32_t>(cap - 1, static_cast<uint32_t>(name.size()));
+        std::memcpy(out, name.data(), n);
+        out[n] = '\0';
+    }
+    return static_cast<uint32_t>(name.size());
+#else
+    (void) e; (void) returnIndex;
+    return 0;
+#endif
+}
+
+double sl_fx_plugin_latency_ms(const sl_engine* e, int returnIndex) {
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4 || e->sampleRate <= 0.0) return 0.0;
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    return 1000.0 * slot.latencySamples() / e->sampleRate;
+#else
+    (void) e; (void) returnIndex;
+    return 0.0;
+#endif
+}
+
+void sl_fx_teardown(sl_engine* e) {
+#if SCOOPY_PLUGIN_HOST
+    if (e != nullptr) e->core.teardownPluginsNow();
+#else
+    (void) e;
+#endif
+}
+
 /* ── Routing (§4) ─────────────────────────────────────────────────────────── */
 
 int32_t sl_route_add(sl_engine* e, uint32_t src, uint32_t dst, double gain, uint32_t feedback) {

@@ -1,6 +1,7 @@
 #include "SlDispatch.h"
 
 #include "AudioIO.h"
+#include "NativePluginHost.hpp" // JUCE-free scanner surface (P6-2)
 #include "RecordService.h"
 #include "SlWorldApply.h"
 #include "TakeScan.h"
@@ -58,7 +59,7 @@ uint64_t tapeFrames(const sl_engine* e, uint32_t tape) {
 
 } // namespace
 
-juce::var capabilities() {
+juce::var capabilities(const HostServices* services) {
     auto* obj = new juce::DynamicObject();
     // ⚠️ Must equal scoopy web/protocol/schema.ts SCHEMA_VERSION. A mismatch is
     // not silent — scoopy's debug panel renders "SCHEMA MISMATCH" — which is the
@@ -70,13 +71,19 @@ juce::var capabilities() {
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
     // here shows a control that then does nothing.
-    obj->setProperty("pluginHosting", false);      // P6, not built
+    //
+    // pluginHosting is PER-HOST truth (P6-2): true exactly when a scanner is
+    // present — the app owns one since the host compiled in (P6-1); a headless
+    // dispatcher has none and stays false.
+    obj->setProperty("pluginHosting",
+                     services != nullptr && services->pluginScanner != nullptr);
     obj->setProperty("fileSystem", true);          // the shell owns native dialogs
     obj->setProperty("midiHardware", false);       // not built
     obj->setProperty("audioDeviceSelection", true);// wizard's AudioIO enumerates/selects
     // returnFx false = the send/return section is absent and the render is dry,
     // rather than a wrong-sounding echo feeding the returns' C++ defaults (the
     // honest shape the schema comment prescribes for a host without it).
+    // Flips at P6-3, when a loaded plugin makes the wet path mean something.
     obj->setProperty("returnFx", false);
     return juce::var(obj);
 }
@@ -85,7 +92,7 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                    SettingsStore& settings, sl_engine* engine,
                    HostServices* services) {
     if (method == "getCapabilities")
-        return ok(capabilities());
+        return ok(capabilities(services));
 
     // ── Play path (Option B) ─────────────────────────────────────────────────
     // This host's worldPublish carries a FLAT World object (already keyed by
@@ -147,6 +154,61 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // the first push arrives.
     if (method == "getUiState")
         return ok(emptyObject());
+
+    // ── Plugin scanner + FX-return slots (P6-2) ─────────────────────────────
+    //
+    // The scanner is HOST property (services->pluginScanner): the app owns the
+    // real JUCE-backed one, a headless dispatcher owns none and every command
+    // here refuses by name — the same honest shape as the record commands.
+    if (method == "listPlugins" || method == "listInstruments") {
+        auto* scanner = services != nullptr ? services->pluginScanner : nullptr;
+        if (scanner == nullptr) return fail(method + ": no plugin host on this build");
+        // One scan, two halves: FX inserts for the return picker, instruments
+        // for the track row — same list, opposite isInstrument filter.
+        const bool wantInstruments = (method == "listInstruments");
+        juce::Array<juce::var> list;
+        for (const auto& p : scanner->results()) {
+            if (p.isInstrument != wantInstruments) continue;
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty("identifier", juce::String(p.identifier));
+            obj->setProperty("name", juce::String(p.name));
+            obj->setProperty("manufacturer", juce::String(p.manufacturer));
+            obj->setProperty("format", juce::String(p.format));
+            list.add(juce::var(obj));
+        }
+        auto* r = new juce::DynamicObject();
+        r->setProperty("plugins", juce::var(list));
+        r->setProperty("scanning", scanner->isScanning());
+        return ok(juce::var(r));
+    }
+
+    if (method == "rescanPlugins") {
+        auto* scanner = services != nullptr ? services->pluginScanner : nullptr;
+        if (scanner == nullptr) return fail("rescanPlugins: no plugin host on this build");
+        // Fire-and-forget: the scan runs out-of-process per plugin and can take
+        // minutes on a first sweep. The panel polls listPlugins while
+        // `scanning` reads true — that poll IS the progress UI, so no event
+        // lane is needed here. No-op if a scan is already running (the
+        // scanner's own guard).
+        scanner->beginScan(/*progress*/ nullptr, /*completion*/ nullptr);
+        return ok(emptyObject());
+    }
+
+    if (method == "selectFxPlugin") {
+        auto* scanner = services != nullptr ? services->pluginScanner : nullptr;
+        if (scanner == nullptr) return fail("selectFxPlugin: no plugin host on this build");
+        if (engine == nullptr) return fail("selectFxPlugin: no engine on this host");
+        const int returnIndex = static_cast<int>(params.getProperty("returnIndex", 0));
+        // null identifier = unload — the picker's "— none —" row.
+        const auto idVar = params.getProperty("identifier", juce::var());
+        const juce::String identifier = idVar.isVoid() ? juce::String() : idVar.toString();
+        if (sl_fx_plugin_select(engine, returnIndex, scanner,
+                                identifier.isEmpty() ? nullptr : identifier.toRawUTF8()) == 0)
+            return fail("selectFxPlugin: refused (bad returnIndex or hostless build)");
+        // Accepted, not loaded: instantiation is async on the message thread.
+        // The toolbar push picks the name/latency up when the load lands.
+        return ok(emptyObject());
+    }
 
     // ── The plane (merge P2 step 4) ──────────────────────────────────────────
     //
@@ -928,6 +990,109 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // Host-tier commands the UI actually needs arrive in later increments, each
     // wired to the device/engine tier it requires.
     return fail("slCommand: '" + method + "' is not implemented on this host yet");
+}
+
+juce::var toolbarState(sl_engine* engine, HostServices* services) {
+    // ⚠️ This object must satisfy ToolbarUiState (schema.ts, `.strict()`) IN
+    // FULL — zod refuses a partial, so a missing field here silently returns
+    // the FxSlotPanel to WaitingForState. The only consumers of this topic in
+    // the merged host are the FX 1–4 picker windows (deckmixer/djmode/transport
+    // are retired doors), so: fxSlots is the truth, everything else is the
+    // schema-required NEUTRAL, spelled out rather than fabricated from state
+    // this host does not have.
+    auto* obj = new juce::DynamicObject();
+
+    auto boolArray = [](int n, bool v) {
+        juce::Array<juce::var> a;
+        for (int i = 0; i < n; ++i) a.add(v);
+        return juce::var(a);
+    };
+    auto numArray = [](int n, double v) {
+        juce::Array<juce::var> a;
+        for (int i = 0; i < n; ++i) a.add(v);
+        return juce::var(a);
+    };
+
+    obj->setProperty("masterIsPlaying", false);
+    obj->setProperty("masterTempo", 120.0);
+    obj->setProperty("deckPlaying", boolArray(3, false));
+    obj->setProperty("deckQuantizePending", boolArray(3, false));
+    obj->setProperty("deckVolume", numArray(3, 1.0));
+    obj->setProperty("deckMuted", boolArray(3, false));
+    obj->setProperty("deckSoloed", boolArray(3, false));
+    obj->setProperty("sendSoloed", boolArray(4, false));
+    obj->setProperty("returnVolume", numArray(2, 1.0));
+    obj->setProperty("crossfaderEngaged", false);
+    obj->setProperty("crossfaderPosition", 0.0);
+    obj->setProperty("deckCEnabled", false);
+    obj->setProperty("djModeEnabled", false);
+    obj->setProperty("editingDeckIndex", juce::var());
+    obj->setProperty("deckSections", juce::var(juce::Array<juce::var>()));
+
+    // The truth this push exists for: per-return plugin name + latency, read
+    // straight from the engine's slots. Loads are async — a slot mid-load reads
+    // as empty and the next push (the shell re-sends at ~2 Hz) carries the name.
+    juce::Array<juce::var> fxSlots;
+    for (int i = 1; i <= 4; ++i) {
+        auto* slot = new juce::DynamicObject();
+        char name[256];
+        const bool loaded = engine != nullptr
+            && sl_fx_plugin_name(engine, i, name, sizeof(name)) > 0;
+        slot->setProperty("mode", "host");
+        slot->setProperty("pluginName", loaded ? juce::var(juce::String(juce::CharPointer_UTF8(name)))
+                                               : juce::var());
+        slot->setProperty("editorVisible", false); // P6-4
+        slot->setProperty("hostToHardware", false);
+        slot->setProperty("postFader", false);
+        slot->setProperty("latencyMs", engine != nullptr ? sl_fx_plugin_latency_ms(engine, i) : 0.0);
+        slot->setProperty("sendMasterGain", 1.0);
+        slot->setProperty("returnLevel", 1.0);
+        slot->setProperty("muted", false);
+        slot->setProperty("soloed", false);
+        slot->setProperty("externalAvailable", false);
+        slot->setProperty("channelLabel", juce::var());
+        slot->setProperty("outputChannel", -1);
+        fxSlots.add(juce::var(slot));
+    }
+    obj->setProperty("fxSlots", juce::var(fxSlots));
+
+    {
+        juce::Array<juce::var> outs;
+        for (int i = 0; i < 3; ++i) outs.add(juce::var());
+        obj->setProperty("deckOutputChannels", juce::var(outs));
+    }
+    obj->setProperty("outputPairs", juce::var(juce::Array<juce::var>()));
+    {
+        juce::Array<juce::var> perDeck;
+        for (int d = 0; d < 3; ++d) perDeck.add(numArray(4, 0.0));
+        obj->setProperty("deckMasterSend", juce::var(perDeck));
+    }
+    {
+        auto* mic = new juce::DynamicObject();
+        mic->setProperty("enabled", false);
+        mic->setProperty("gain", 1.0);
+        mic->setProperty("monitorOn", false);
+        mic->setProperty("muted", false);
+        mic->setProperty("send1", 0.0);
+        mic->setProperty("send2", 0.0);
+        mic->setProperty("send3", 0.0);
+        mic->setProperty("send4", 0.0);
+        mic->setProperty("inputStartChannel", 0);
+        mic->setProperty("inputIsStereo", false);
+        obj->setProperty("mic", juce::var(mic));
+    }
+    obj->setProperty("inputChannelCount", 0);
+    {
+        auto* kb = new juce::DynamicObject();
+        kb->setProperty("enabled", false);
+        kb->setProperty("octaveOffset", 0);
+        kb->setProperty("velocity", 100);
+        obj->setProperty("musicalKeyboard", juce::var(kb));
+    }
+    obj->setProperty("midiPin", juce::var());
+
+    (void) services; // reserved: later increments may read device state here
+    return juce::var(obj);
 }
 
 } // namespace wizard::sl

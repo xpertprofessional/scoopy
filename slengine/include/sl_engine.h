@@ -595,6 +595,37 @@ double sl_watchdog_gain(const sl_engine* e);
     clean. */
 void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled);
 
+/* ── FX-return plugin slots (P6-2) ──────────────────────────────────────────
+ *
+ * Doors onto the core's per-return NativePluginSlot machinery (compiled in
+ * since P6-1 behind SCOOPY_PLUGIN_HOST). The SCANNER stays host-owned — plugin
+ * discovery is a JUCE/message-thread affair the engine tier must not run — so
+ * it crosses this C boundary as an opaque pointer (scoopyloops::
+ * NativePluginScanner*). On a flag-OFF build every function refuses/answers
+ * empty, never pretends.
+ *
+ * Loading is ASYNC (the JUCE message thread instantiates the plugin); a select
+ * returning 1 means "accepted", not "loaded" — poll sl_fx_plugin_name until
+ * the name lands. returnIndex is 1…4 everywhere, matching the schema. */
+
+/** Load `identifier` (createIdentifierString) into return slot 1…4, resolving
+    it through `scanner`; identifier NULL/empty = unload. Returns 1 accepted /
+    0 refused (bad index, no scanner on a load, or a hostless build). */
+int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner,
+                        const char* identifier);
+/** The loaded plugin's display name into out (NUL-terminated, truncated to
+    cap). Returns the full length in bytes, 0 = no plugin (or still loading —
+    loads are async). */
+uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out,
+                           uint32_t cap);
+/** Plugin-reported latency for the slot, in milliseconds at the engine's
+    configured rate. 0 when empty. */
+double sl_fx_plugin_latency_ms(const sl_engine* e, int returnIndex);
+/** Synchronous plugin teardown — MAIN/MESSAGE THREAD ONLY, call during app
+    shutdown BEFORE the engine is destroyed (a plugin destructor may pump the
+    message loop; the async unload path never runs once the loop is stopping). */
+void sl_fx_teardown(sl_engine* e);
+
 /* ── Session snapshots (§6) ─────────────────────────────────────────────────
  *
  * The world a deck plays: samples, tracks, per-step patterns. Built

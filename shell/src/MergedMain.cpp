@@ -80,6 +80,13 @@ struct Backend {
     wizard::record::SlTakeDrainSource drainSource;
     wizard::record::Service recorder;
     wizard::sl::HostServices services;
+#if SCOOPY_PLUGIN_HOST
+    // The AU/VST3 scanner (P6-2). Constructed eagerly — its ctor only restores
+    // the persisted scan cache; the expensive sweep runs on `rescanPlugins`.
+    // Real implementation here (the app links NativePluginHost.mm); headless
+    // hosts never construct one and the dispatcher refuses by name.
+    scoopyloops::NativePluginScanner pluginScanner;
+#endif
 
     explicit Backend(sl_engine* e)
         : engine(e),
@@ -109,6 +116,9 @@ struct Backend {
         // refuse honestly — the app still runs and still plays.
         if (recorder.start(drainSource, services.takesDir)) services.recorder = &recorder;
         services.audio = &audioIO; // the plane's input source picker reads this
+#if SCOOPY_PLUGIN_HOST
+        services.pluginScanner = &pluginScanner; // flips pluginHosting true (P6-2)
+#endif
     }
 
     ~Backend() {
@@ -328,6 +338,11 @@ public:
     void shutdown() override {
         stopTimer();
         windows.clear();
+        // Hosted plugins die synchronously HERE, on the message thread, before
+        // the engine that owns their slots: a plugin destructor may pump the
+        // message loop, and the async unload path never runs once the loop is
+        // stopping (the destroyNow contract, NativePluginHost.hpp).
+        if (engine != nullptr) sl_fx_teardown(engine);
         backend.reset();
         if (engine != nullptr) { sl_engine_destroy(engine); engine = nullptr; }
     }
@@ -374,12 +389,28 @@ private:
         frame.ensureStorageAllocated(static_cast<int>(n));
         for (uint32_t i = 0; i < n; ++i) frame.add(hotFrameBuf[i]);
         for (auto& w : windows) w->emitHotFrame(frame);
+
+        // The "toolbar" uiState push (P6-2) — the FX picker windows subscribe
+        // to it and render WaitingForState until it arrives. Every 15th
+        // HotFrame tick (~2 Hz): cheap to build, and plugin loads are async so
+        // a periodic push IS how their names reach the panel — no completion
+        // plumbing across the dispatch boundary.
+        if (++toolbarTick >= 15) {
+            toolbarTick = 0;
+            auto* payload = new juce::DynamicObject();
+            payload->setProperty("topic", "toolbar");
+            payload->setProperty("state",
+                                 wizard::sl::toolbarState(engine, &backend->services));
+            const juce::var msg(payload);
+            for (auto& w : windows) w->emitEvent("slUiState", msg);
+        }
     }
 
     sl_engine* engine = nullptr;
     std::unique_ptr<Backend> backend;
     std::vector<std::unique_ptr<PanelWindow>> windows;
     std::vector<double> hotFrameBuf;
+    int toolbarTick = 0; // 30 Hz timer ÷ 15 → the ~2 Hz toolbar push (P6-2)
 };
 
 // START_JUCE_APPLICATION, opened one notch (P6-1): the out-of-process plugin

@@ -318,6 +318,13 @@ class MergedLink extends BrowserLink {
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.
     "slWorld",
+    // The plugin scanner + FX-return slots (P6-2). Native because only the
+    // shell process links the real NativePluginHost — a browser cannot host an
+    // AU, and the companion stack refuses all four by name.
+    "listPlugins",
+    "listInstruments",
+    "rescanPlugins",
+    "selectFxPlugin",
     // The library filesystem (P3-SES-1). On this host the session/sample
     // library is native disk — OPFS can be LISTED but not WRITTEN in the
     // WKWebView, so `opfs.ts` routes every I/O call here.

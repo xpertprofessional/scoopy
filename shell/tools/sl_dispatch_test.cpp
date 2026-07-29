@@ -5,6 +5,7 @@
 // the not-yet-implemented rest honestly rather than faking success.
 #include "SlDispatch.h"
 #include "SlWorldApply.h"
+#include "NativePluginHost.hpp"
 #include "sl_engine.h"
 
 #include <cstdio>
@@ -39,7 +40,19 @@ bool replyOk(const juce::var& r) { return r.getProperty("ok", false); }
 juce::var result(const juce::var& r) { return r.getProperty("result", juce::var()); }
 } // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    // Debug door: `sl_dispatch_test --dump-toolbar` prints the toolbar push as
+    // JSON and exits, so the TS side can prove the C++ shape against the REAL
+    // zod schema (node -e "...ToolbarUiState.parse(...)"). Not part of the
+    // ctest run — a hand tool for exactly the drift the key-set pins guard.
+    if (argc > 1 && juce::String(argv[1]) == "--dump-toolbar") {
+        wizard::sl::HostServices services;
+        sl_engine* e = sl_engine_create(48000.0, 512, 92);
+        std::printf("%s\n", juce::JSON::toString(wizard::sl::toolbarState(e, &services))
+                                .toRawUTF8());
+        sl_engine_destroy(e);
+        return 0;
+    }
     FakeSettings settings;
 
     // getCapabilities — the handshake. schemaVersion must be scoopy’s (92), or
@@ -479,6 +492,86 @@ int main() {
         CHECK(!replyOk(call(R"({"action":"remove","path":"/sessions/Untitled 2"})")));
 
         scratch.deleteRecursively();
+    }
+
+    // ── Plugin scanner + FX-return slots (P6-2) ─────────────────────────────
+    // Headless truth: without a scanner every plugin command refuses by name
+    // and pluginHosting stays false; WITH one (here the link-time stub — this
+    // binary carries no JUCE plugin host) the commands answer the schema shape
+    // and the capability flips. The app wires the REAL scanner the same way.
+    {
+        CHECK(!replyOk(dispatch("listPlugins", juce::var(), settings, nullptr)));
+        CHECK(!replyOk(dispatch("rescanPlugins", juce::var(), settings, nullptr)));
+        CHECK(!replyOk(dispatch("selectFxPlugin",
+            juce::JSON::parse(R"({"returnIndex":1,"identifier":"x"})"), settings, nullptr)));
+
+        scoopyloops::NativePluginScanner scanner;
+        HostServices services;
+        services.pluginScanner = &scanner;
+
+        const auto caps = result(dispatch("getCapabilities", juce::var(), settings,
+                                          nullptr, &services));
+        CHECK((bool) caps.getProperty("pluginHosting", false) == true);
+
+        const auto lp = dispatch("listPlugins", juce::var(), settings, nullptr, &services);
+        CHECK(replyOk(lp));
+        CHECK(result(lp).hasProperty("plugins"));
+        CHECK(result(lp).getProperty("plugins", juce::var()).isArray());
+        CHECK(result(lp).hasProperty("scanning"));
+        CHECK(replyOk(dispatch("listInstruments", juce::var(), settings, nullptr, &services)));
+        CHECK(replyOk(dispatch("rescanPlugins", juce::var(), settings, nullptr, &services)));
+
+        // selectFxPlugin needs the engine (the slots live in the core).
+        CHECK(!replyOk(dispatch("selectFxPlugin",
+            juce::JSON::parse(R"({"returnIndex":1,"identifier":"x"})"),
+            settings, nullptr, &services)));
+        sl_engine* engine = sl_engine_create(48000.0, 512, 92);
+        CHECK(engine != nullptr);
+        CHECK(!replyOk(dispatch("selectFxPlugin",
+            juce::JSON::parse(R"({"returnIndex":9,"identifier":"x"})"),
+            settings, engine, &services))); // out-of-range refuses
+        CHECK(replyOk(dispatch("selectFxPlugin",
+            juce::JSON::parse(R"({"returnIndex":1,"identifier":null})"),
+            settings, engine, &services))); // null = unload, always accepted
+
+        // The toolbar push exists FOR fxSlots: 4 slots, panel-critical fields
+        // present, pluginName explicit-null when empty (zod .strict() +
+        // .nullable() both demand the key exist).
+        const auto tb = toolbarState(engine, &services);
+        const auto fxSlots = tb.getProperty("fxSlots", juce::var());
+        CHECK(fxSlots.isArray() && fxSlots.size() == 4);
+        for (int i = 0; i < 4; ++i) {
+            const auto slot = fxSlots[i];
+            CHECK(slot.hasProperty("pluginName"));
+            CHECK(slot.getProperty("pluginName", "x").isVoid()); // nothing loaded
+            CHECK(slot.hasProperty("latencyMs"));
+            CHECK(slot.getProperty("mode", "").toString() == "host");
+        }
+        // The EXACT required key set of ToolbarUiState (schema.ts, `.strict()`).
+        // zod refuses a missing key AND an unknown one, and the panel's
+        // safeParse failure mode is silent (it stays on WaitingForState) — so
+        // this pins the full contract, not a sample. The two optional fields
+        // (activeIsBouncing / activeIsOutputRecording) are legitimately absent.
+        static const char* kToolbarKeys[] = {
+            "masterIsPlaying", "masterTempo", "deckPlaying", "deckQuantizePending",
+            "deckVolume", "deckMuted", "deckSoloed", "sendSoloed", "returnVolume",
+            "crossfaderEngaged", "crossfaderPosition", "deckCEnabled", "djModeEnabled",
+            "editingDeckIndex", "deckSections", "fxSlots", "deckOutputChannels",
+            "outputPairs", "deckMasterSend", "mic", "inputChannelCount",
+            "musicalKeyboard", "midiPin"};
+        for (const char* key : kToolbarKeys) CHECK(tb.hasProperty(key));
+        CHECK(tb.getDynamicObject()->getProperties().size()
+              == (int) (sizeof(kToolbarKeys) / sizeof(kToolbarKeys[0])));
+
+        static const char* kFxSlotKeys[] = {
+            "mode", "pluginName", "editorVisible", "hostToHardware", "postFader",
+            "latencyMs", "sendMasterGain", "returnLevel", "muted", "soloed",
+            "externalAvailable", "channelLabel", "outputChannel"};
+        for (const char* key : kFxSlotKeys) CHECK(fxSlots[0].hasProperty(key));
+        CHECK(fxSlots[0].getDynamicObject()->getProperties().size()
+              == (int) (sizeof(kFxSlotKeys) / sizeof(kFxSlotKeys[0])));
+
+        sl_engine_destroy(engine);
     }
 
     std::printf("sl_dispatch_test OK\n");

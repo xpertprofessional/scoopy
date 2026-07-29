@@ -26,6 +26,10 @@
 
 struct sl_engine;
 
+namespace scoopyloops {
+class NativePluginScanner;
+}
+
 namespace wizard::record {
 class Service;
 }
@@ -57,6 +61,13 @@ struct HostServices {
         why every strip was hard-wired to channels 0/1. Nullable: a host with no
         device still answers every other command. */
     host::AudioIO* audio = nullptr;
+    /** The AU/VST3 plugin scanner (P6-2) — owned by the app, which is the only
+        process with the real NativePluginHost implementation and a JUCE message
+        loop for it to marshal on. Null = this host cannot host plugins, and the
+        plugin commands (and the pluginHosting capability) say so honestly —
+        which is also the headless-test state, where the link-time stub would
+        answer empty anyway. */
+    scoopyloops::NativePluginScanner* pluginScanner = nullptr;
 };
 
 /** Persistence behind getSetting/setSetting/getSettings. Injected so the
@@ -86,7 +97,20 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
 /** The merged host's capability model, exposed for the test and for Main.cpp to
     reuse. schemaVersion MUST track scoopy's SCHEMA_VERSION or its UI renders a
     mismatch banner — a runtime backstop for the one coupling a C++/TS split
-    can't check at build time. */
-juce::var capabilities();
+    can't check at build time.
+
+    `services` (nullable) decides the host-dependent flags: pluginHosting is
+    true exactly when a scanner is present — the app passes its services, the
+    headless test passes nothing and reads the honest false. */
+juce::var capabilities(const HostServices* services = nullptr);
+
+/** The "toolbar" uiState push (P6-2). Exists FOR `fxSlots` — the FxSlotPanel
+    (the FX 1–4 doors) subscribes to this topic and renders WaitingForState
+    until it arrives. The fxSlot entries are truthful (name/latency read from
+    the engine's return slots); every other field is the schema-required
+    NEUTRAL, explicitly, because the surfaces that would read them (deckmixer /
+    djmode / transport) are retired doors in this host. GUI-free so the shape
+    is pinned headlessly. */
+juce::var toolbarState(sl_engine* engine, HostServices* services);
 
 } // namespace wizard::sl
