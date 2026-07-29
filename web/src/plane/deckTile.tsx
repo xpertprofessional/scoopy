@@ -184,6 +184,11 @@ export function DeckFace({
         className="strip-deckface"
         data-no-drag
         onPointerDownCapture={() => claimKeyboard(element.deck)}
+        // A wheel INSIDE the tile scrolls the deck's own rows; without this it
+        // bubbles to the plane surface and ZOOMS THE WORLD instead — the tile
+        // becomes uncontrollable the moment you try to reach track five (the
+        // user's first real-host complaint, 2026-07-29).
+        onWheel={(e) => e.stopPropagation()}
       >
         <GridPanel link={link} source={source} />
       </div>

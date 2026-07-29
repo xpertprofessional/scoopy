@@ -667,3 +667,22 @@ route into loopers, and keep carve (cross-strip by construction) as the one-clic
 the deck tile needs a plane-side source for GridPanel@dj (P3-D4-M measures adapter vs shell
 topics); per-session-track taps remain a future decision (Method-B feedback trap unchanged).
 The build record is the P3.5 queue in `docs/merge/P3-LEDGER.md`.
+
+## D-WZ-PDC-01 · 2026-07-29 · PDC in a live mixer: parallel paths only — SIGNED, P6 opens
+**Decision:** plugin latency is compensated across PARALLEL paths only (never the full graph);
+each channel's latency is exposed in the UI; insert latency is subtracted from record-path
+timestamps. Live monitoring stays immediate. Signed live by the user (AskUserQuestion), who
+also directed the implementation route: REUSE scoopyloops' own `NativePluginHost` (JUCE-based
+C++/ObjC++ — crash-safe out-of-process VST3/AU scanner + per-return `NativePluginSlot`), whose
+header the merged tree already vendors and whose render machinery already sits in the vendored
+core behind `SCOOPY_PLUGIN_HOST=0`.
+**Rationale:** full-graph PDC delays live monitoring — wrong for a live-capture instrument
+(the parlante deviation is offline-vs-live, documented since the proposal). The reuse route:
+the "plugin hosting path we already created in scoopyloops" is JUCE C++, not Swift — porting
+would be rebuilding what exists.
+**Consequences:** P6 un-parks. P3-3-1/P3-3-2 (FX returns audible) unblock — their config path
+IS the hosted plugin. The P6 queue (P3-LEDGER.md): vendor `NativePluginHost.mm` + flip
+`SCOOPY_PLUGIN_HOST=1` + link JUCE plugin formats → fxSlot dispatch + scanner/picker live →
+plugin audible on a return (returnFx flips true) → JUCE-hosted editor windows (replacing
+FxSlotWindowController.swift's job) → fx-slot state (identifier + state blob) persisted per
+return in the `.scoopyMap` → per-channel latency surfacing per this decision.
