@@ -393,7 +393,7 @@
   min-width: 18px;
   height: 14px;
   line-height: 1;
-  font-size: 9px;
+  font-size: var(--type-micro-size);
   background: transparent;
   color: var(--text-dim);
   border: var(--hairline) solid var(--line);
@@ -441,7 +441,7 @@
   position: absolute;
   right: 3px;
   top: -1px;
-  font-size: 7px;
+  font-size: var(--type-nano-size);
   color: var(--text-dim);
   pointer-events: none;
 }
@@ -587,13 +587,15 @@
 .plane-library-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 39;
+  /* Above the matrix scrim (--z-popover), below the menus (--z-menu): the
+     library is summoned OVER other overlays but a ⋯ menu still wins. */
+  z-index: calc(var(--z-popover) + 1);
 }
 .plane-library {
   position: absolute;
   top: 34px;
   left: 8px;
-  z-index: 40;
+  z-index: calc(var(--z-popover) + 2);
   min-width: 260px;
   max-width: 360px;
   max-height: 60vh;
@@ -601,12 +603,12 @@
   background: var(--bg-raised);
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--elev-2);
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: var(--type-label-size);
 }
 .plane-library-actions {
   display: flex;
@@ -623,7 +625,7 @@
   padding: 2px 8px;
   cursor: pointer;
 }
-.plane-library-actions button:hover { background: var(--bg-hover, var(--bg)); }
+.plane-library-actions button:hover { background: var(--bg-raised); }
 .plane-library-empty { color: var(--text-dim); padding: 4px 2px; }
 .plane-library-row {
   display: flex;
@@ -646,7 +648,7 @@
   color: var(--text);
   border: var(--hairline) solid var(--accent);
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--type-value-size);
   padding: 1px 4px;
   min-width: 0;
 }
@@ -661,7 +663,7 @@
 }
 .plane-library-verb:hover:not(:disabled) { color: var(--text); border-color: var(--line); }
 .plane-library-verb:disabled { opacity: 0.35; cursor: default; }
-.plane-library-verb.arm { color: var(--warn, #c66); border-color: var(--warn, #c66); }
+.plane-library-verb.arm { color: var(--warn); border-color: var(--warn); }
 
 /* P3-C2: a compose window owns this deck — the scene field reads locked, the
    pads stay visible (fill, not presence) but inert. */
@@ -683,7 +685,7 @@
   align-items: baseline;
   gap: 6px;
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: var(--type-label-size);
   border-bottom: var(--hairline) solid var(--line);
 }
 .compose-window-body {
@@ -1219,7 +1221,7 @@
   color: var(--hot);
   border: var(--hairline) solid var(--hot);
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   cursor: pointer;
 }
 .strip-ovr:hover:not(:disabled) { background: var(--bg-raised); }
@@ -1244,7 +1246,7 @@
   color: var(--text);
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   cursor: pointer;
 }
 .master-br:hover:not(:disabled) { background: var(--bg-raised); }
