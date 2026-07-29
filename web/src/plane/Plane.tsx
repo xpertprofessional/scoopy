@@ -497,6 +497,30 @@ export function Plane({
               noOutput={s.element.kind !== 'none' && !hasOutput(map, s)}
               input={route ? { left: route.src.index, right: route.src.sub } : null}
               onPickInput={(left, right) => repointInput(s.channel, left, right)}
+              // P3-R2: the other strips as record sources, and who already
+              // feeds this bus (for the status line + the menu's checkmark).
+              peerStrips={strips
+                .filter((p) => p.key !== s.key)
+                .map((p) => ({ key: p.key, name: p.name }))}
+              busSources={map.routes
+                .filter((r) => r.src.kind === 'channelOut' && r.dst.index === s.channel)
+                .flatMap((r) => {
+                  const src = strips.find((p) => p.channel === r.src.index)
+                  return src ? [src.name] : []
+                })}
+              onRecordFromStrip={(srcKey, at) => {
+                const src = strips.find((p) => p.key === srcKey)
+                if (!src) return
+                // Already cabled in → the tap flip (done strip-side) is the
+                // whole gesture; a second identical cable would double the gain.
+                const already = map.routes.some(
+                  (r) =>
+                    r.src.kind === 'channelOut' &&
+                    r.src.index === src.channel &&
+                    r.dst.index === s.channel,
+                )
+                if (!already) void patch(src.channel, s.channel, null, at)
+              }}
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}
               composing={deck >= 0 && (composingDecks?.has(deck) ?? false)}

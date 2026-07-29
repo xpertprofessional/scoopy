@@ -120,6 +120,9 @@ export function Strip({
   takeSeconds = null,
   input = null,
   onPickInput,
+  peerStrips = [],
+  busSources = [],
+  onRecordFromStrip,
   chips,
   gridScene = 'A',
   gridQueued = null,
@@ -162,6 +165,14 @@ export function Strip({
   input?: { left: number; right: number | null } | null
   /** Re-point this strip's input route. */
   onPickInput?: (left: number, right: number | null) => void
+  /** P3-R2: the OTHER strips, offered as record sources in the ⋯ menu. */
+  peerStrips?: { key: string; name: string }[]
+  /** Names of strips whose output is routed into this one — the status line's
+      answer to "what will a bus-tap REC actually capture". */
+  busSources?: string[]
+  /** Patch that strip's output into this one (consent flow included) — the
+      other half of the one-gesture "record from ▸ STRIP N". */
+  onRecordFromStrip?: (srcKey: string, at: { x: number; y: number }) => void
   /** GRID strips only. The scene actually RUNNING and one armed for the next
       cycle boundary — from the session store, not the map: the map remembers a
       scene per (strip, session), the engine is what is playing one, and those
@@ -302,9 +313,14 @@ export function Strip({
     // useless — the strip could not say which input, because nothing could turn
     // a route's channel index into a name. Now it can, so the object answers
     // "what will REC capture?" with an answer you can act on.
-    recordSource: input
-      ? channelLabel(channels, input.left, input.right)
-      : recordSourceLabel(strip),
+    // P3-R2: a bus tap with named sources says WHO feeds it — "this strip's
+    // bus" was true and anonymous; "STRIP 2 → this bus" is an answer.
+    recordSource:
+      strip.recordTap === 'bus' && busSources.length > 0
+        ? `${busSources.join(' + ')} → this bus`
+        : input
+          ? channelLabel(channels, input.left, input.right)
+          : recordSourceLabel(strip),
     recSeconds: recording ? recSeconds : null,
   }
   const status = statusLine(strip, live, ctx)
@@ -478,6 +494,25 @@ export function Strip({
             onSelect: () => onPickInput(c.left, c.right),
           })
         }
+      }
+    }
+    // P3-R2: OTHER STRIPS as record sources — one gesture for "loop that
+    // strip". Selecting one patches that strip's output into this one (with
+    // the wouldCycle consent flow, in the plane's hands) AND sets the tap to
+    // the bus, so the very next REC captures the chain. This is the signed
+    // one-kind-per-strip model's own gesture: a looper strip records a session
+    // strip by ROUTING, not by sharing a box.
+    if (onRecordFromStrip && peerStrips.length > 0) {
+      for (const p of peerStrips) {
+        items.push({
+          kind: 'item',
+          label: `${p.name} → this strip’s bus`,
+          checked: strip.recordTap === 'bus' && busSources.includes(p.name),
+          onSelect: () => {
+            updateStrip(strip.key, (s) => ({ ...s, recordTap: 'bus' }))
+            onRecordFromStrip(p.key, { x: ev.clientX, y: ev.clientY })
+          },
+        })
       }
     }
     // ⚠️ THE GRID CREATION GESTURE — how a scoopy session gets into a strip,

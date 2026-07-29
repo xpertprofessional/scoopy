@@ -329,3 +329,20 @@ describe('the composing lock (P3-C2)', () => {
     expect(html).not.toMatch(/>COMP</)
   })
 })
+
+describe('record from another strip (P3-R2)', () => {
+  it('a bus tap with named sources says WHO feeds it', () => {
+    const html = render(withTape({ recordTap: 'bus' }), { busSources: ['LOOPER 2', 'STRIP 3'] })
+    expect(html).toContain('LOOPER 2 + STRIP 3 → this bus')
+  })
+
+  it('a bus tap nobody feeds keeps the generic label — no invented sources', () => {
+    const html = render(withTape({ recordTap: 'bus' }))
+    expect(html).not.toContain('→ this bus')
+  })
+
+  it('named sources without the bus tap change nothing — the tap decides', () => {
+    const html = render(withTape(), { busSources: ['STRIP 3'] })
+    expect(html).not.toContain('→ this bus')
+  })
+})
