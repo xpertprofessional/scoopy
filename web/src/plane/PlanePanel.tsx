@@ -53,6 +53,7 @@ import { autoStartEngine } from './bootEngine.ts'
 import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo.ts'
 import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
+import { encodeComposeArg } from './composeArg.ts'
 import './plane.css'
 
 /**
@@ -80,6 +81,21 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   /** Which deck the in-window composer is showing, or null for the plane. */
   const [composing, setComposing] = useState<number | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+
+  // COMPOSE, HOST-SPLIT (P3-C1): the merged host spawns the REAL window,
+  // addressed with {deck, session} through the sanitizer-proof arg; the
+  // browser host (no window layer) keeps the in-window overlay.
+  const composeDeck = (deck: number) => {
+    const name = useCompanion.getState().decks[deck]?.session?.name
+    if (juceBackend() !== null && name !== undefined) {
+      send(link, 'openPanelWindow', {
+        panel: 'compose',
+        arg: encodeComposeArg({ deck, session: name }),
+      })
+    } else {
+      setComposing(deck)
+    }
+  }
   /** A deck for the BAR's compose button to open — the first grid strip on the
       plane. (A strip's own COMPOSE names its own deck; this is the affordance
       for "I just want the composer".) Inert rather than hidden when there is
@@ -770,22 +786,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         >
           ≡ panels
         </button>
-        {/* COMPOSE-BESIDE-THE-MAP. The plane is the PERFORMATIVE surface; a
-            session is COMPOSED in the grid, which is a different job. Without
-            this affordance, booting into the plane simply takes the composer
-            away.
-
-            ⚠️ IN THIS WINDOW, not a new one. It used to open a `panel: 'grid'`
-            window, which cannot work: the shell drops the arg, nothing loads a
-            session into that window's grid backend, and every panel window has
-            its OWN companionEngine — so two windows holding one deck would each
-            publish their own world for it. See Composer.tsx. */}
+        {/* COMPOSE. The plane is the PERFORMATIVE surface; a session is
+            COMPOSED in the grid, which is a different job. In the MERGED host
+            this opens the REAL SEPARATE WINDOW (P3-C1 — the user's explicit
+            wish): `panel:'compose'` addressed via `__slPanelArg` with
+            {deck, session}; that window opens the session from disk into its
+            own store and owns the deck's publishes while it lives (P3-C2).
+            In the browser (no window layer) the in-window overlay remains. */}
         <button
           type="button"
           className="plane-compose"
-          title="compose the selected grid strip's session, beside the map"
+          title="compose the selected grid strip's session, in its own window"
           disabled={firstLoadedDeck === null}
-          onClick={() => setComposing(firstLoadedDeck)}
+          onClick={() => firstLoadedDeck !== null && composeDeck(firstLoadedDeck)}
         >
           compose
         </button>
@@ -863,7 +876,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onOpenMatrix={() => setMatrix(true)}
           onLoadSession={(key, id) => void loadSession(key, id)}
           onDropElement={dropElement}
-          onCompose={setComposing}
+          onCompose={composeDeck}
           takeIndex={takeIndex}
         />
         <Inspector

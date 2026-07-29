@@ -130,9 +130,9 @@ public:
                                juce::DocumentWindow::allButtons),
           backend(backendToUse),
           panelName(std::move(panel)),
-          panelArg(std::move(panelArgToUse)),
           isMain(isMainToUse),
           openPanelFn(std::move(openPanel)),
+          panelArg(std::move(panelArgToUse)),
           closeSelfFn(std::move(closeSelf)) {
         webView = std::make_unique<GuardedWebView>(
             juce::WebBrowserComponent::Options{}
@@ -184,6 +184,16 @@ public:
     void emitHotFrame(const juce::Array<juce::var>& frame) {
         if (webView != nullptr) webView->emitEventIfBrowserIsVisible("slHotFrame", juce::var(frame));
     }
+
+    /** P3-C1: broadcast lane for window-lifecycle events (`slPanelClosed`).
+        The emitHotFrame loop's twin — there is no other cross-window channel;
+        the compose ownership handoff rides events + disk, never shared memory. */
+    void emitEvent(const juce::String& name, const juce::var& payload) {
+        if (webView != nullptr) webView->emitEventIfBrowserIsVisible(name, payload);
+    }
+
+    const juce::String& panel() const { return panelName; }
+    const juce::String& arg() const { return panelArg; }
 
 private:
     /** THE PARAM LANE, and the map from scoopy's names to the engine's.
@@ -332,9 +342,21 @@ private:
         // on the stack — a use-after-free the moment control returns. Hop to a
         // later message so the window is torn down after its callback unwinds.
         juce::MessageManager::callAsync([this, w] {
+            // Capture identity BEFORE the erase deletes `w`.
+            const auto closedPanel = w->panel();
+            const auto closedArg = w->arg();
             windows.erase(std::remove_if(windows.begin(), windows.end(),
                                          [w](const std::unique_ptr<PanelWindow>& p) { return p.get() == w; }),
                           windows.end());
+            // P3-C1: tell the survivors which window went away — the plane
+            // resumes ownership of a deck when its compose window closes
+            // (single-publisher rule, P3-C2). Broadcast like the HotFrame:
+            // uninterested windows simply have no listener.
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty("panel", closedPanel);
+            obj->setProperty("arg", closedArg);
+            const juce::var payload(obj);
+            for (auto& win : windows) win->emitEvent("slPanelClosed", payload);
         });
     }
 

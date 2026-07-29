@@ -31,6 +31,7 @@ import { FileBrowserPanel } from "./panels/FileBrowserPanel.tsx";
 import { CapturePanel } from "./panels/CapturePanel.tsx";
 import { CompanionPanel } from "./panels/CompanionPanel.tsx";
 import { PlanePanel } from "./plane/PlanePanel.tsx";
+import { ComposeWindow } from "./plane/ComposeWindow.tsx";
 
 /**
  * Panel host shell: routes ?panel=<name> to its component; the debug view
@@ -153,6 +154,9 @@ function PanelRoute({
   // wrapped around two live meters. The meters moved into the console — OUT to
   // CAPTURE, CPU to the MIXER block — and the row is gone.
   if (panel === "grid") return <GridPanel link={link} />;
+  // The compose WINDOW (P3-C1): the real composer, addressed to one deck +
+  // session via __slPanelArg. Spawned per strip by the plane's COMPOSE ⇱.
+  if (panel === "compose") return <ComposeWindow link={link} />;
   if (panel === "djmode") return <DjPanel link={link} />;
   if (panel === "filebrowser") return <FileBrowserPanel link={link} />;
   if (panel === "capture") return <CapturePanel link={link} />;

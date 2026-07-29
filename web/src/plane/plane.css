@@ -558,6 +558,30 @@
 .plane-library-verb:disabled { opacity: 0.35; cursor: default; }
 .plane-library-verb.arm { color: var(--warn, #c66); border-color: var(--warn, #c66); }
 
+/* ── The compose WINDOW (P3-C1): the whole WebView is the composer. ── */
+.compose-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+.compose-window-bar {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-bottom: var(--hairline) solid var(--line);
+}
+.compose-window-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* Sync · tempo · compose, in the rate row's 18 px slot. */
 .strip-gridrow { gap: 4px; }
 
