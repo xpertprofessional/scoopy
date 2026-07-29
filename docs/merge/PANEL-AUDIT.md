@@ -14,11 +14,11 @@ door build (P3-4-2) fixes that alongside the menu.
 | panel | job | door |
 |---|---|---|
 | plane | THE app — the merged main surface | ✅ is the main window |
-| companion | session library, import/export; embeds filebrowser + grid | ✅ `sessions ⇱` |
+| companion | session library, import/export; embeds filebrowser + grid | ~~✅ `sessions ⇱`~~ **RETIRING (D-SL-MORPH-01, user decree 2026-07-29): the companion is the BROWSER's shell only — a web bonus, never app-internal.** Its library job rehomes to the plane's `library ▾` (P3-L1); the `sessions ⇱` door is deleted with it |
 | grid | the composer (sequencer editing) | ✅ per-strip `COMPOSE ⇱` + bar `compose` (in-window) |
 | filebrowser | the sample library browser | ✅ embedded in companion; no separate door needed now |
 | **fxslot** | **the return-FX editor — the CONFIG path P3-3-1 is blocked on** | MECHANICAL, FIRST: menu entry per return slot + `__slPanelArg` injection. Unblocks the returns flip |
-| transport | scoopy's master transport (beat-repeat, launch quantize, tempo ramp, keyboard, LCM bar) | MECHANICAL interim: menu entry. Its verbs FOLD into the plane's master per P3-M-1; the panel stays reachable until the fold is complete |
+| transport | scoopy's master transport (beat-repeat, launch quantize, tempo ramp, keyboard, LCM bar) | **RETIRED (D-SL-MORPH-01, 2026-07-29)**: its window hangs on WaitingForState in the merged host (desktop-shell-coupled topics, the P3-M-1 measurement); its signature verbs already live on the plane's master (P3-M-1b); the rest lands with the deck tile (P3-D4-2). Door removed by P3-P1; code stays routed |
 | spectral | the deck-bus creative layer (texture/warp/gesture — the Signalsmith surface) | MECHANICAL: menu entry. Where it LIVES long-term (a strip affordance?) is D-4/D-5 taste; a door loses nothing meanwhile |
 | paintmode | grid paint/edit-mode settings | MECHANICAL: menu entry (composer-adjacent) |
 | midi | MIDI mapping | MECHANICAL: menu entry |
@@ -29,8 +29,8 @@ door build (P3-4-2) fixes that alongside the menu.
 | appearance | themes/looks | MECHANICAL: menu, `settings` group |
 | template | new-session templates | MECHANICAL: menu, `settings` group |
 | import | import settings | MECHANICAL: menu, `settings` group |
-| deckmixer | the DJ mixer surface | MECHANICAL door now; whether it SURVIVES beside the plane (which is the new mixer) is **D-5** |
-| djmode | the DJ performance view | MECHANICAL door now; the plane is the new DJ view — survival is **D-5** |
+| deckmixer | the DJ mixer surface | **RETIRED (D-SL-MORPH-01, 2026-07-29, amends the D-5 interim)**: window hangs on WaitingForState (no `attachToolbar` topics in the merged host); the plane IS the mixer (strip channels + master). Door removed by P3-P1; code stays routed |
+| djmode | the DJ performance view | **RETIRED (D-SL-MORPH-01, 2026-07-29, amends the D-5 interim)**: window hangs on WaitingForState (no `attachDj` topics); the plane strip BECOMES the deck — the same `GridPanel@dj` renders inside the deck tile (P3-D4-1). Door removed by P3-P1; code stays routed |
 | instrument | per-track plugin picker | **PARKED, with the reason**: `pluginHosting: false` — the merged host runs no plugins until P6. A door to a panel whose every action fails is worse than none. Un-parks with P6 |
 
 ## The door build (P3-4-2)
@@ -44,3 +44,10 @@ one day instrument) open ADDRESSED. Panel windows already exist
 D-5 (MORNING-DECISIONS-2) collects the taste calls this table names:
 deckmixer/djmode survival, capture-job rehoming, audio-panel reconciliation,
 spectral's long-term home.
+
+**2026-07-29 (D-SL-MORPH-01):** deckmixer/djmode/transport survival is ANSWERED —
+retired (rows above). The user's direction on the ≡ menu itself: "all these
+controls should eventually be available through the plane … the panels menu makes
+no sense" — the menu is interim scaffolding; each remaining row dissolves as its
+job rehomes onto the plane. Capture rehoming, audio-panel reconciliation and
+spectral's home remain open D-5 items.

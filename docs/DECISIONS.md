@@ -647,3 +647,23 @@ decks-only.
 **Decision:** both panels keep their ≡ doors while the plane matures; the retire-and-rehome
 audit is revisited at the polish pass. Instrument stays doorless until P6 (pluginHosting false).
 **Rationale:** "nothing lost" outranks tidiness while the replacement surface is still growing.
+
+## D-SL-MORPH-01 · 2026-07-29 · The strip IS the deck — real GridPanel, one kind per strip (ratifies D-4)
+**Decision:** (1) a session-loaded strip expands to a large tile (~3×3 cells) hosting the REAL
+`GridPanel` at DJ density — the same component that IS the DJ deck view in scoopyloops since
+AR-6 — with the deck verbs folded into the strip header; collapsed, it keeps the compact face.
+(2) Strips are ONE KIND EACH: a scoopy-session (grid) strip or a looper (tape) strip — no
+composite grid+tape element; "the looper records the deck's own output" is two routed strips
+(patch grid-strip bus → looper strip's record tap). (3) "Stacked" is the recorded answer only
+if a combined face ever returns. (4) Amends D-SL-PANELS-01: djmode/transport/deckmixer leave
+the ≡ menu (their windows hang on WaitingForState in the merged host); code stays; the ≡ menu
+is interim scaffolding, dissolving as panel jobs rehome onto the plane.
+**Rationale:** the user's words — the strip should show "exactly what we see when we toggle dj
+deck view" (single performance deck), and strips should "be different: scoopy session grid or
+looper" rather than combining. The parity target is already in-tree web code; a projection
+would be a second deck UI to maintain. One-kind strips kill the P3-X1 migration, let sends
+route into loopers, and keep carve (cross-strip by construction) as the one-click loop→grid path.
+**Consequences:** P3-X1 retired-by-decision; STRIP-MODEL's "a strip can hold BOTH" amended;
+the deck tile needs a plane-side source for GridPanel@dj (P3-D4-M measures adapter vs shell
+topics); per-session-track taps remain a future decision (Method-B feedback trap unchanged).
+The build record is the P3.5 queue in `docs/merge/P3-LEDGER.md`.

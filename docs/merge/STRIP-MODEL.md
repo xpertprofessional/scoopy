@@ -40,8 +40,14 @@ element materialises when you arm/record** — it does not sit there empty on ev
 strip. So a fresh or pure-input strip carries no dead tape-deck; hitting record
 creates the tape. Capability everywhere, clutter nowhere.
 
-A strip can hold **grid + tape together** — a scoopy deck with a looper recording
-the deck's own output.
+~~A strip can hold **grid + tape together** — a scoopy deck with a looper recording
+the deck's own output.~~ **AMENDED by D-SL-MORPH-01 (user, 2026-07-29): strips are
+ONE KIND EACH — a grid (session) strip or a looper (tape) strip, never both in one
+strip.** The use case survives as **two routed strips**: the grid strip's bus
+patches into a looper strip's record tap (ROUTING-MATRIX; P3-R1..R3). REC on a
+grid strip spawns/targets its linked looper strip instead of growing a tape
+element in place. Everything else in this section (uniform channel, element
+composability at the model tier, record-arm universality) stands.
 
 ### Presets keep the quick-looper fast
 Empty-start would slow the "quick looper" want, so: **presets.** "New looper

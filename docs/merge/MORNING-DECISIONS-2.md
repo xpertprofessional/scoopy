@@ -2,8 +2,27 @@
 
 > ## ✅ D-1 · D-2 · D-3 · D-5 SIGNED 2026-07-28 (user, live)
 > Ratified as D-SL-STORE-01 · D-SL-TAPEBPM-01 · D-SL-TAPESYNC-01 · D-SL-PANELS-01 in
-> `docs/DECISIONS.md`. **D-4 (the morph) stays OPEN by choice: to be sketched live with the
-> user before any code — P3-X1 remains awaiting-decision(D-4).** The queue below is the record.
+> `docs/DECISIONS.md`. The queue below is the record.
+>
+> ## ✅ D-4 SIGNED 2026-07-29 (user, live — AskUserQuestion with previews)
+> Ratified as **D-SL-MORPH-01** in `docs/DECISIONS.md`. The user's answers:
+> 1. **Strip-as-deck = the REAL `GridPanel` at DJ density inside a large strip tile**
+>    (~3×3 cells), deck verbs in the strip header — chosen over the plane-native
+>    projection AND over no-expansion, with the cost (djMeta plumbing, big tiles)
+>    named in the option and accepted.
+> 2. **Strips are one-kind-each** — a scoopy-session (grid) strip OR a looper (tape)
+>    strip; no composite grid+tape element. The user's own words: "not differ between
+>    strip and looper, but have strips be different: scoopy session grid or looper so
+>    we dont need to combine those in a strip". P3-X1's composite migration is
+>    RETIRED; "looper records the deck's own output" = two routed strips (P3-R3).
+> 3. **"Stacked"** recorded as the answer IF a combined face ever returns — moot today.
+> 4. **Dead doors retired** (amends D-5's interim): djmode/transport/deckmixer leave
+>    the ≡ menu; code stays; "all these controls should eventually be available
+>    through the plane … the panels menu makes no sense" — the ≡ menu is interim
+>    scaffolding, dissolving as jobs rehome.
+> Still open inside D-4's old scope: the nudge FEEL ships as hold-to-bend in
+> P3-D4-2 (provisional, veto re-tunes); "playful" veto vocabulary — unasked, queue
+> stays. The P3.5 queue in `P3-LEDGER.md` is the build record.
 
 *Queued by the Fable 5 review session. Same contract as `docs/MORNING-DECISIONS.md`:
 each entry is the question, the options with trade-offs, and a recommendation.
