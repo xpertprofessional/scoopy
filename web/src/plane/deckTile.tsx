@@ -20,15 +20,19 @@
  * keyed by track only, so expanded tiles share one ⌘Z timeline — same as DJ
  * mode on the desktop.
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import { BrowserLink } from '../browserLink.ts'
 import type { EngineLink } from '../engineLink.ts'
-import { projectScene } from '../audio/sceneProjection.ts'
+import { HotFrameLayout } from '../../protocol/schema.ts'
+import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
+import { lcmForScene } from '../audio/patternClock.ts'
 import { GridPanel, djSource } from '../panels/GridPanel.tsx'
 import { pickAudioFile } from '../panels/CompanionPanel.tsx'
 import { deckTempoIntent } from '../persist/tempo.ts'
+import { useNudge } from '../state/nudgeStore.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+import type { WorkingSession } from '../store/sessionStore.ts'
 import {
   applyGridRow,
   gridPeakPaths,
@@ -64,11 +68,14 @@ export function useDeckTileBinding(
   link: EngineLink | null,
   element: GridElement,
   masterBpm: number,
-): void {
+): { session: WorkingSession | null; scene: SceneLetter } {
   const deck = element.deck
   const session = useCompanion((c) => c.decks[deck]?.session ?? null)
   const scene = useCompanion((c) => c.decks[deck]?.scene ?? 'A')
   const playing = useCompanion((c) => c.decks[deck]?.playing ?? false)
+  // The transient hold-to-bend (P3-D4-2) — folded into the resolved-tempo
+  // display so the strike-through shows what the deck runs at UNDER the hand.
+  const nudge = useNudge((s) => s.deltas[deck] ?? 0)
   const browserLink = link instanceof BrowserLink ? link : null
 
   // The per-deck handler slots — every gesture the dj band fires lands on THIS
@@ -134,7 +141,7 @@ export function useDeckTileBinding(
     const refresh = () =>
       browserLink.djGridBackend(deck).setMetaFacts({
         deckIndex: deck,
-        syncedBpm: deckTempoIntent(element, masterBpm).syncedBpm,
+        syncedBpm: deckTempoIntent(element, masterBpm, nudge).syncedBpm,
         keyboardActive: keyboardDeck === deck,
       })
     refresh()
@@ -146,7 +153,9 @@ export function useDeckTileBinding(
       if (keyboardDeck === deck) keyboardDeck = null
       browserLink.djGridBackend(deck).setMetaFacts({ keyboardActive: false })
     }
-  }, [browserLink, deck, element, masterBpm])
+  }, [browserLink, deck, element, masterBpm, nudge])
+
+  return { session, scene }
 }
 
 /**
@@ -164,18 +173,67 @@ export function DeckFace({
   element: GridElement
   masterBpm: number
 }) {
-  useDeckTileBinding(link, element, masterBpm)
+  const { session, scene } = useDeckTileBinding(link, element, masterBpm)
   // STABLE identity (the DjPanel DeckSlot rule): GridPanel keys its topic
   // subscriptions off `source`, so a fresh object each render would tear down
   // and re-subscribe every topic every frame.
   const source = useMemo(() => djSource(element.deck), [element.deck])
   return (
+    <>
+      <div
+        className="strip-deckface"
+        data-no-drag
+        onPointerDownCapture={() => claimKeyboard(element.deck)}
+      >
+        <GridPanel link={link} source={source} />
+      </div>
+      <LcmBar link={link} deck={element.deck} session={session} scene={scene} />
+    </>
+  )
+}
+
+/**
+ * THE LCM BAR (P3-D4-2, the sketch's `▓▓▓░░ LCM` row): where the deck is in
+ * its pattern cycle. Computed WEB-SIDE from what is real — the engine's
+ * per-deck playhead step (`playheadStepDeck<d>`, written since before D4-3)
+ * folded through the session's own LCM (`lcmForScene`) — because the desktop's
+ * `lcmPosDeck*` HotFrame fields have NO writer in the merged engine and a bar
+ * fed by zero-filled slots would sit frozen at 0 forever.
+ *
+ * Painted on the HotFrame callback via a ref, the StripMeter pattern — a
+ * 30 Hz progress bar must not re-render React.
+ */
+function LcmBar({
+  link,
+  deck,
+  session,
+  scene,
+}: {
+  link: EngineLink | null
+  deck: number
+  session: WorkingSession | null
+  scene: SceneLetter
+}) {
+  const fillRef = useRef<HTMLSpanElement | null>(null)
+  const lcm = session ? lcmForScene(session.pattern, scene) : 0
+  useEffect(() => {
+    if (!link || lcm <= 0) return
+    const idx = (HotFrameLayout as Record<string, number>)[`playheadStepDeck${deck}`]
+    if (idx === undefined) return
+    return link.onHotFrame((frame) => {
+      const step = frame[idx] ?? -1
+      const frac = step < 0 ? 0 : (step % lcm) / lcm
+      if (fillRef.current) fillRef.current.style.width = `${(frac * 100).toFixed(1)}%`
+    })
+  }, [link, deck, lcm])
+  return (
     <div
-      className="strip-deckface"
-      data-no-drag
-      onPointerDownCapture={() => claimKeyboard(element.deck)}
+      className="strip-lcm"
+      title={lcm > 0 ? `pattern cycle — ${lcm} steps` : 'pattern cycle'}
+      aria-label="pattern cycle position"
     >
-      <GridPanel link={link} source={source} />
+      <span ref={fillRef} className="strip-lcm-fill" />
+      <span className="strip-lcm-label mono">LCM</span>
     </div>
   )
 }

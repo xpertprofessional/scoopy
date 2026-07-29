@@ -41,6 +41,7 @@ import {
   freeChannel,
   freeDeck,
   freeTape,
+  BR_SCALE,
   inputRoute,
   linkedLooperFor,
   nameAfterSessionLoad,
@@ -403,19 +404,8 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // takeRef changes — recording stops and take loads both move that.
   // BEAT REPEAT + REV (P3-M-1b): master-level runtime state, fanned over every
   // loaded deck through the companion's per-deck verbs. UI state only — the
-  // truth the engine hears is restated by each deck's publish.
-  const BR_SCALE: { label: string; length: number; subdivision?: number }[] = [
-    { label: '16', length: 16 },
-    { label: '8', length: 8 },
-    { label: '4', length: 4 },
-    { label: '2', length: 2 },
-    { label: '1', length: 1 },
-    { label: '1/2', length: 1, subdivision: 2 },
-    { label: '1/4', length: 1, subdivision: 4 },
-    { label: '1/8', length: 1, subdivision: 8 },
-    { label: '1/16', length: 1, subdivision: 16 },
-    { label: '1/32', length: 1, subdivision: 32 },
-  ]
+  // truth the engine hears is restated by each deck's publish. The scale table
+  // moved to stripOps at D4-2 (each strip's own BR shares it).
   const [brOn, setBrOn] = useState(false)
   const [brIdx, setBrIdx] = useState(3) // '2' — the classic window
   const [revOn, setRevOn] = useState(false)

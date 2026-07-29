@@ -204,6 +204,12 @@ export interface DeckState {
   missingSamples: string[];
   /** Samples that failed to decode. Same rule. */
   decodeFailures: { name: string; error: string }[];
+  /** P3-M-1b/D4-2: runtime transport verbs, never the document — a beat repeat
+      is a hand gesture. IN DeckState (they were module arrays) since D4-2, so
+      the deck tile's header lamps can read the per-deck TRUTH reactively;
+      restated by every publish; dies with the deck (closeDeck → idleDeck). */
+  beatRepeat: { startStep: number; length: number; subdivision?: number } | null;
+  reverse: boolean;
 }
 
 export function idleDeck(): DeckState {
@@ -217,6 +223,8 @@ export function idleDeck(): DeckState {
     soloedTracks: [],
     missingSamples: [],
     decodeFailures: [],
+    beatRepeat: null,
+    reverse: false,
   };
 }
 
@@ -342,12 +350,8 @@ export function resolveWorldBpm(documentBpm: number, override: number | null): n
  */
 let mainGainOverride: number | null = null;
 
-/** P3-M-1b: runtime transport verbs, PER DECK and never the document — a beat
-    repeat is a hand gesture; it is restated by every publish and dies with the
-    deck (the slot-reuse rule sync already follows). */
-const beatRepeatState: ({ startStep: number; length: number; subdivision?: number } | null)[] =
-  [null, null, null];
-const reverseState: boolean[] = [false, false, false];
+// (P3-M-1b's beatRepeatState/reverseState module arrays moved INTO DeckState at
+// D4-2 — the deck tile's header lamps need the per-deck truth reactively.)
 
 /** Push ONE DECK's document at the engine. No-op until the engine is running. */
 function publish(state: CompanionState, deck: number, playing: boolean): string[] {
@@ -371,8 +375,8 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
       disableReturnFx: true,
       // The transport verbs ride every publish (P3-M-1b) — restating them is
       // what makes them survive scene switches and edits.
-      beatRepeat: beatRepeatState[deck] ?? null,
-      reverseTransport: reverseState[deck] === true,
+      beatRepeat: d.beatRepeat,
+      reverseTransport: d.reverse,
     },
   );
   // THE DECK AXIS, and it stops here. `worldFromSession` still does all 505
@@ -484,10 +488,8 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     // last one was overridden to. Exactly the shape of the sync ratio that
     // outlived its deck (see PlanePanel's dropElement / `slDeck clear`).
     tempoOverrideBpm[deck] = null;
-    // The transport verbs go with the deck too (P3-M-1b): a reused slot must
-    // not inherit the previous occupant's repeat or reverse.
-    beatRepeatState[deck] = null;
-    reverseState[deck] = false;
+    // (The transport verbs — beatRepeat/reverse — live in DeckState since
+    // D4-2, so idleDeck() above already cleared them with the slot.)
   },
 
   async importFile(file) {
@@ -708,14 +710,14 @@ export const useCompanion = create<CompanionState>((set, get) => ({
 
   setBeatRepeat(deck, br) {
     if (deck < 0 || deck >= MAX_DECKS) return;
-    beatRepeatState[deck] = br;
+    set((s) => patchDeck(s, deck, { beatRepeat: br }));
     if (audio.running && deckOf(get(), deck).session)
       publish(get(), deck, deckOf(get(), deck).playing);
   },
 
   setReverse(deck, on) {
     if (deck < 0 || deck >= MAX_DECKS) return;
-    reverseState[deck] = on;
+    set((s) => patchDeck(s, deck, { reverse: on }));
     if (audio.running && deckOf(get(), deck).session)
       publish(get(), deck, deckOf(get(), deck).playing);
   },

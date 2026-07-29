@@ -123,6 +123,23 @@ describe('mapTempoIntents', () => {
     }
     expect(mapTempoIntents(map)[0]?.syncedBpm).toBeCloseTo(90, 4)
   })
+
+  it('folds the per-deck nudge in — and only for the deck under the hand (P3-D4-2)', () => {
+    const map: PlaneMap = {
+      ...emptyMap(),
+      transport: { masterBpm: 120, masterLevel: 1 },
+      strips: [
+        strip(gridEl({ deck: 0, bpm: 120, pulseRelation: '1:1' })),
+        strip(gridEl({ deck: 1, bpm: 120, pulseRelation: '1:1' })),
+      ],
+    }
+    const nudged = mapTempoIntents(map, (deck) => (deck === 0 ? 4 : 0))
+    expect(nudged[0]?.syncedBpm).toBeCloseTo(124, 3)
+    expect(nudged[1]?.syncedBpm).toBeCloseTo(120, 3)
+    // No hand = the pre-nudge behaviour, exactly (map load must not change).
+    const clean = mapTempoIntents(map)
+    expect(clean[0]?.syncedBpm).toBeCloseTo(120, 3)
+  })
 })
 
 describe('inferTapeBpm (P3-2b-2, provisional D-2)', () => {

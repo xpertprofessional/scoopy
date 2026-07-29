@@ -117,6 +117,21 @@ describe("deck isolation — the property the increment is for", () => {
     expect(companionDeck(2).session).toBeNull();
   });
 
+  it("beat repeat and reverse are PER-DECK DeckState — readable truth for the tile lamps (P3-D4-2)", () => {
+    useCompanion.getState().setBeatRepeat(1, { startStep: 0, length: 2 });
+    useCompanion.getState().setReverse(1, true);
+    expect(companionDeck(1).beatRepeat).toEqual({ startStep: 0, length: 2 });
+    expect(companionDeck(1).reverse).toBe(true);
+    // The other deck's hand is its own.
+    expect(companionDeck(0).beatRepeat).toBeNull();
+    expect(companionDeck(0).reverse).toBe(false);
+    // A reused slot must not inherit the previous occupant's repeat/reverse —
+    // the verbs die with the deck (closeDeck → idleDeck).
+    useCompanion.getState().closeDeck(1);
+    expect(companionDeck(1).beatRepeat).toBeNull();
+    expect(companionDeck(1).reverse).toBe(false);
+  });
+
   it("selectScene lands on the deck it was aimed at", () => {
     // Stopped, so the switch is immediate (no clock to schedule against).
     useCompanion.getState().selectScene("C", { deck: 1 });

@@ -379,6 +379,73 @@
   height: 100%;
 }
 
+/* DECK VERBS (P3-D4-2) — the header's ▶ REV BR·scale ‹› SAVE ⏏ row, in the
+   expanded tile only. Same 16px header discipline as the menu/expand buttons. */
+.strip-deckverbs {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.strip-deckverbs .sdv {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  min-width: 18px;
+  height: 14px;
+  line-height: 1;
+  font-size: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-deckverbs .sdv:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.strip-deckverbs .sdv.latched {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.strip-deckverbs .sdv:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* THE LCM BAR (P3-D4-2): the deck's position in its pattern cycle, between the
+   GridPanel region and the channel rows. Fill width is painted at HotFrame
+   rate via a ref — no React re-render. */
+.strip-lcm {
+  position: relative;
+  flex: 0 0 8px;
+  height: 8px;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.strip-lcm-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--sem-color, var(--accent));
+  opacity: 0.55;
+}
+
+.strip-lcm-label {
+  position: absolute;
+  right: 3px;
+  top: -1px;
+  font-size: 7px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
 .strip-name {
   flex: 1 1 auto;
   min-width: 0;

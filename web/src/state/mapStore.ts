@@ -34,6 +34,10 @@ import {
   type Strip,
 } from "../persist/mapDocument.ts";
 import { TEMPO_MODE_ID, mapTapeRateOps, mapTempoIntents } from "../persist/tempo.ts";
+// Deferred-use cycle, deliberately: nudgeStore calls applyTempo at gesture time
+// and applyTempo reads nudgeOf at push time — neither touches the other at
+// module evaluation, which is what makes the cycle safe under ESM.
+import { nudgeOf } from "./nudgeStore.ts";
 import { setTempoOverride } from "../store/companionEngine.ts";
 
 /* ── the store ────────────────────────────────────────────────────────────── */
@@ -300,7 +304,7 @@ export async function applyMap(link: EngineLink | null, map: PlaneMap): Promise<
 export async function applyTempo(link: EngineLink | null): Promise<void> {
   if (!link) return
   const map = getMap()
-  for (const intent of mapTempoIntents(map)) {
+  for (const intent of mapTempoIntents(map, nudgeOf)) {
     // All three sent every time rather than diffed: the engine is the only
     // thing that knows what it is currently carrying, and a diff against a
     // stale local guess is how a deck ends up stretched with the UI at 1:1.

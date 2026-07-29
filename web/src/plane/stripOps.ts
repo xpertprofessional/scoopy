@@ -521,3 +521,29 @@ export function inputFor(map: PlaneMap, strip: Strip): Route | null {
     ) ?? null
   )
 }
+
+/** The beat-repeat FUSED SCALE (P3-M-1b, shared with the deck tile at D4-2):
+    16…2 whole steps, then 1 and the 1/N re-triggering rolls. One table for the
+    master bar's fan-out AND each strip's own BR — two copies would drift into
+    two different instruments. */
+export const BR_SCALE: { label: string; length: number; subdivision?: number }[] = [
+  { label: '16', length: 16 },
+  { label: '8', length: 8 },
+  { label: '4', length: 4 },
+  { label: '2', length: 2 },
+  { label: '1', length: 1 },
+  { label: '1/2', length: 1, subdivision: 2 },
+  { label: '1/4', length: 1, subdivision: 4 },
+  { label: '1/8', length: 1, subdivision: 8 },
+  { label: '1/16', length: 1, subdivision: 16 },
+  { label: '1/32', length: 1, subdivision: 32 },
+]
+
+/** The scale row a beat-repeat window is wearing, for the cycler + label.
+    −1 = not on the scale (a hand-built window) — cycling starts from '2'. */
+export function brScaleIndex(br: { length: number; subdivision?: number } | null): number {
+  if (!br) return -1
+  return BR_SCALE.findIndex(
+    (sc) => sc.length === br.length && (sc.subdivision ?? 1) === (br.subdivision ?? 1),
+  )
+}

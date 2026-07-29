@@ -390,3 +390,47 @@ describe('the deck tile (P3-D4-1, D-SL-MORPH-01)', () => {
     expect(html).not.toContain('strip-deckface')
   })
 })
+
+describe('the deck verbs in the tile header (P3-D4-2)', () => {
+  const tile = (over: Partial<StripDoc> = {}, props: Record<string, unknown> = {}) =>
+    render(
+      base({
+        element: newGridElement(0, 'ses', 120),
+        cell: { x: 0, y: 0, w: 692, h: 612 },
+        ...over,
+      }),
+      props,
+    )
+
+  it('the expanded tile carries the verb row — ▶ REV BR scale nudge SAVE ⏏', () => {
+    const html = tile()
+    expect(html).toContain('strip-deckverbs')
+    for (const verb of ['▶', 'REV', 'BR', 'SAVE', '⏏', '‹', '›']) expect(html).toContain(verb)
+    // …and the LCM bar sits in the tile.
+    expect(html).toContain('strip-lcm')
+  })
+
+  it('the collapsed strip carries NONE of it — the master bar already fans BR/REV', () => {
+    const html = render(base({ element: newGridElement(0, 'ses', 120) }))
+    expect(html).not.toContain('strip-deckverbs')
+    expect(html).not.toContain('strip-lcm')
+  })
+
+  it('nudge on a FREE deck is disabled and TEACHES — the law bends the synced target', () => {
+    const html = tile() // newGridElement defaults syncToMaster: false
+    expect(html).toContain('nudge bends the SYNCED tempo — turn SYNC on first')
+  })
+
+  it('nudge on a SYNCED deck is armed with the hold-to-bend title', () => {
+    const el = { ...newGridElement(0, 'ses', 120), syncToMaster: true }
+    const html = tile({ element: el })
+    expect(html).toContain('snaps back on release')
+  })
+
+  it('the composing lock disables the verbs — one publisher at a time', () => {
+    const html = tile({}, { composing: true })
+    // Every sdv button except SAVE renders disabled under the lock.
+    const disabledCount = (html.match(/class="sdv mono[^"]*" disabled=""/g) ?? []).length
+    expect(disabledCount).toBeGreaterThanOrEqual(5)
+  })
+})

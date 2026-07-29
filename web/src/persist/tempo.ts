@@ -108,10 +108,17 @@ export function deckTempoIntent(
   }
 }
 
-/** Every grid strip's tempo intent, in strip order. */
-export function mapTempoIntents(map: PlaneMap): TempoIntent[] {
+/** Every grid strip's tempo intent, in strip order. `nudgeOf` supplies the
+    TRANSIENT per-deck bend (P3-D4-2, hold-to-bend) — omitted = no hand on the
+    fader, which keeps every pre-nudge caller (map load) exact. */
+export function mapTempoIntents(
+  map: PlaneMap,
+  nudgeOf?: (deck: number) => number,
+): TempoIntent[] {
   return map.strips.flatMap((s) =>
-    s.element.kind === 'grid' ? [deckTempoIntent(s.element, map.transport.masterBpm)] : [],
+    s.element.kind === 'grid'
+      ? [deckTempoIntent(s.element, map.transport.masterBpm, nudgeOf?.(s.element.deck) ?? 0)]
+      : [],
   )
 }
 

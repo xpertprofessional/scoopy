@@ -182,6 +182,7 @@ export function GridControls({
   strip,
   locked = false,
   masterBpm,
+  nudgeBpm = 0,
   onSetBpm,
   onToggleSync,
   onCycleTempoMode,
@@ -193,10 +194,13 @@ export function GridControls({
   /** P3-C2: a compose window owns this deck — tempo/sync/compose lock with the
       reason in the title until it closes (one publisher at a time). */
   locked?: boolean
+  /** P3-D4-2: the TRANSIENT hold-to-bend delta — folded into the law so the
+      synced readout shows what the deck is running at UNDER the hand. */
+  nudgeBpm?: number
 }) {
   if (strip.element.kind !== 'grid') return null
   const g = strip.element
-  const intent = deckTempoIntent(g, masterBpm)
+  const intent = deckTempoIntent(g, masterBpm, nudgeBpm)
   const LOCKED_TITLE = 'editing in the compose window ⇱ — close it to change this here'
   return (
     <>

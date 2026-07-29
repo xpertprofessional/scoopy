@@ -218,6 +218,10 @@ check('the deck tile hosts the real GridPanel at DJ density',
   (await page.$('.strip-deckface .track-strips.density-dj')) !== null)
 check('the tile\'s MasterRow is scoopy\'s own (BPM · VOL · DRV — P3-D4-1a made it real)',
   (await page.$('.strip-deckface .master-row')) !== null)
+check('the header carries the deck verbs (▶ REV BR · nudge · SAVE · ⏏ — P3-D4-2)',
+  (await page.$('.strip-deckverbs')) !== null)
+check('the LCM bar sits between the deck rows and the channel row (P3-D4-2)',
+  (await page.$('.strip-lcm')) !== null)
 check('the panel is not stuck waiting for state',
   !((await page.textContent('.strip-deckface')) ?? '').includes('waiting for pattern state'))
 // …and the way back restores the compact strip to the pixel.
