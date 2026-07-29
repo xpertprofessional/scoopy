@@ -22,6 +22,7 @@
  * world — which is also why every selection trips the tempo-sync re-apply.
  */
 import { SCENE_LETTERS, type SceneLetter } from '../audio/sceneProjection.ts'
+import { sceneDisplayLabel } from '../state/scenesStore.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 import type { DJTempoMode } from '../panels/djMix.ts'
 import { deckTempoIntent, formatSyncedBpm } from '../persist/tempo.ts'
@@ -41,6 +42,15 @@ export type GridElementProps = {
       rendered per strip and a store read per strip is a subscription per strip
       to a value that is the same for all of them. */
   masterBpm: number
+  /** The session's enabled scene row (a prefix of A…H, `enabledScenes(pattern)`).
+      The pads render THESE, not a fixed eight: a 3-scene session showing five
+      dead pads was the P3-U8 defect. Defaults to all eight for a strip whose
+      session has not arrived yet. */
+  enabledScenes?: readonly SceneLetter[]
+  /** Enable one more scene (`setEnabledSceneCount(count+1)`) — the pad row's
+      `+`, matching the app's own add slot. Absent = the affordance is not
+      wired (SSR tests, older callers) and the pad renders disabled. */
+  onAddScene?: () => void
   onSelectScene: (scene: SceneLetter, immediate: boolean) => void
   onSetBpm: (bpm: number) => void
   onToggleSync: () => void
@@ -92,10 +102,23 @@ export function GridScenes({
   strip,
   scene,
   queued,
+  enabledScenes: enabled = SCENE_LETTERS,
+  onAddScene,
   onSelectScene,
-}: Pick<GridElementProps, 'strip' | 'scene' | 'queued' | 'onSelectScene'>) {
+}: Pick<
+  GridElementProps,
+  'strip' | 'scene' | 'queued' | 'enabledScenes' | 'onAddScene' | 'onSelectScene'
+>) {
   if (strip.element.kind !== 'grid') return null
-  const pads = SCENE_LETTERS.slice(0, scenePadCount(strip.cell.w))
+  // The row's width cap is geometry (L5); the SESSION decides the count within
+  // it. Letters remain the storage/type identity end to end — only the FACE is
+  // 1-based, exactly the app's own rule (native displayLabel, ScenePads).
+  const cap = scenePadCount(strip.cell.w)
+  const pads = enabled.slice(0, cap)
+  // Room in the row ⇒ the set is not full (cap ≤ 8), so an add pad shown is an
+  // add pad that works; at 8-of-8 the row is full of real pads and the slot is
+  // simply occupied — the honest full state.
+  const room = pads.length < cap
   return (
     <>
       {/* The scene row occupies the WAVE FIELD's rect — same box, same height,
@@ -110,17 +133,34 @@ export function GridScenes({
             className={`strip-pad${s === scene ? ' active' : ''}${s === queued ? ' queued' : ''}`}
             // ⌘-click launches NOW; a plain click schedules at the next cycle
             // boundary. The modifier is the same one the desktop uses, so the
-            // gesture does not have to be learned twice.
+            // gesture does not have to be learned twice. (The desktop's ⇧=queue
+            // is deliberately NOT mapped: here a plain click already IS the
+            // queued switch — a second modifier saying the same thing would be
+            // a fake distinction.)
             onClick={(e) => onSelectScene(s, e.metaKey || e.altKey)}
             title={
               s === scene
-                ? `scene ${s} — playing`
-                : `scene ${s} — click to schedule at the next cycle, ⌘-click to switch now`
+                ? `scene ${sceneDisplayLabel(s)} — playing`
+                : `scene ${sceneDisplayLabel(s)} — click to schedule at the next cycle, ⌘-click to switch now`
             }
           >
-            {s}
+            {sceneDisplayLabel(s)}
           </button>
         ))}
+        {/* The add slot, the app's own gesture (ScenePads): labeled with the
+            number it would become. Rendered whenever the row has room — fill,
+            not presence (L2) — and disabled when the affordance is not wired. */}
+        {room && (
+          <button
+            type="button"
+            className="strip-pad strip-pad-add"
+            disabled={!onAddScene}
+            onClick={() => onAddScene?.()}
+            title={`enable scene ${enabled.length + 1} — a new empty snapshot of this pattern`}
+          >
+            {`+${enabled.length + 1}`}
+          </button>
+        )}
       </div>
     </>
   )

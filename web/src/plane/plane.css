@@ -468,6 +468,15 @@
   color: var(--accent);
 }
 
+/* The add slot (P3-U8): quieter than a real pad — it is an offer, not a scene —
+   and dashed like every other "this could exist" affordance. */
+.strip-pad-add {
+  border-style: dashed;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.strip-pad-add:disabled { cursor: default; opacity: 0.35; }
+
 /* Sync · tempo · compose, in the rate row's 18 px slot. */
 .strip-gridrow { gap: 4px; }
 

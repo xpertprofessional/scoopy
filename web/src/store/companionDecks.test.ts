@@ -149,3 +149,54 @@ describe("an out-of-range deck is refused, never aliased", () => {
     expect(companionDeck(0).session?.name).toBe("beach");
   });
 });
+
+describe("setEnabledSceneCount (P3-U8) — the scene row is a document fact", () => {
+  const withScenes = (name: string, count?: number) => {
+    const s = session(name);
+    if (count !== undefined)
+      (s.pattern as Record<string, unknown>).enabledSceneCount = count;
+    return s;
+  };
+
+  it("grows the row on the deck it was aimed at, leaving peers alone", () => {
+    setDeck(0, { session: withScenes("beach", 3) });
+    setDeck(1, { session: withScenes("forest", 3) });
+    useCompanion.getState().setEnabledSceneCount(4, 0);
+    expect(companionDeck(0).session?.pattern.enabledSceneCount).toBe(4);
+    expect(companionDeck(1).session?.pattern.enabledSceneCount).toBe(3);
+  });
+
+  it("clamps to 1..8 — a count outside the letters is a caller bug, not a document state", () => {
+    setDeck(0, { session: withScenes("beach", 3) });
+    useCompanion.getState().setEnabledSceneCount(99, 0);
+    expect(companionDeck(0).session?.pattern.enabledSceneCount).toBe(8);
+    useCompanion.getState().setEnabledSceneCount(0, 0);
+    expect(companionDeck(0).session?.pattern.enabledSceneCount).toBe(1);
+  });
+
+  it("shrinking below the active scene falls back to A and disarms any queue", () => {
+    setDeck(0, {
+      session: withScenes("beach", 8),
+      scene: "F",
+      scheduledScene: "G",
+      switchBoundaryStep: 64,
+    });
+    useCompanion.getState().setEnabledSceneCount(3, 0);
+    const d = companionDeck(0);
+    // A pad that no longer exists must not stay the one playing (or armed).
+    expect(d.scene).toBe("A");
+    expect(d.scheduledScene).toBeNull();
+    expect(d.switchBoundaryStep).toBeNull();
+  });
+
+  it("shrinking above the active scene leaves the performance state untouched", () => {
+    setDeck(0, { session: withScenes("beach", 8), scene: "B" });
+    useCompanion.getState().setEnabledSceneCount(4, 0);
+    expect(companionDeck(0).scene).toBe("B");
+  });
+
+  it("no session, no edit — the verb refuses quietly like every deck-scoped op", () => {
+    useCompanion.getState().setEnabledSceneCount(4, 0);
+    expect(companionDeck(0).session).toBeNull();
+  });
+});

@@ -22,6 +22,7 @@ import { juceBackend } from "../../protocol/juceLink.ts";
 import { nativeLink } from "../engineLink.ts";
 import { lcmForScene, switchBoundary } from "../audio/patternClock.ts";
 import {
+  SCENE_LETTERS,
   SECTION_KEYS,
   projectScene,
   sectionKeyFor,
@@ -269,6 +270,13 @@ interface CompanionState {
    * always immediate.
    */
   selectScene(scene: SceneLetter, opts?: { immediate?: boolean; deck?: number }): void;
+  /**
+   * P3-U8: grow (or shrink) the session's scene row — a DOCUMENT edit
+   * (`pattern.enabledSceneCount`, clamped 1..8), autosaved like any other.
+   * Shrinking below the active/queued scene falls back to scene A immediately:
+   * a pad that no longer exists must not stay the one playing.
+   */
+  setEnabledSceneCount(count: number, deck?: number): void;
   /** Flip a track's launch gate (the grid's ▶/■) — immediate, unquantized. */
   toggleLaunch(trackIndex: number, deck?: number): void;
   /** Flip a track's solo — desktop semantics: peers ride the mixMuted gain ramp, triggers keep firing. */
@@ -786,6 +794,38 @@ export const useCompanion = create<CompanionState>((set, get) => ({
       lcmForScene(d.session.pattern, scene),
     );
     set((s) => patchDeck(s, deck, { scheduledScene: scene, switchBoundaryStep: boundary }));
+  },
+
+  setEnabledSceneCount(count, deck = 0) {
+    const st = get();
+    const d = deckOf(st, deck);
+    if (!d.session) return;
+    const n = Math.min(SCENE_LETTERS.length, Math.max(1, Math.round(count)));
+    const current =
+      typeof d.session.pattern.enabledSceneCount === "number"
+        ? d.session.pattern.enabledSceneCount
+        : SCENE_LETTERS.length;
+    if (n === current) return;
+    const next: WorkingSession = {
+      ...d.session,
+      pattern: { ...d.session.pattern, enabledSceneCount: n },
+    };
+    // A scene past the new edge cannot stay active or armed. Fall back to A the
+    // seamless-immediate way rather than leaving the engine on a pad the UI no
+    // longer shows. (The add-pad only grows, so this is the defensive half.)
+    const orphaned = SCENE_LETTERS.indexOf(d.scene) >= n;
+    const orphanedQueue = d.scheduledScene !== null && SCENE_LETTERS.indexOf(d.scheduledScene) >= n;
+    set((s) =>
+      patchDeck(s, deck, {
+        session: next,
+        ...(orphaned ? { scene: "A" as SceneLetter } : {}),
+        ...(orphaned || orphanedQueue ? { scheduledScene: null, switchBoundaryStep: null } : {}),
+      }),
+    );
+    // Republish only when the audible projection changed — the count itself is
+    // pad-row bookkeeping, but an orphan fallback re-projects the world.
+    if (orphaned) publish(get(), deck, deckOf(get(), deck).playing);
+    autosaver.schedule(next);
   },
 
   toggleLaunch(trackIndex, deck = 0) {

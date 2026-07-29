@@ -123,6 +123,8 @@ export function Strip({
   chips,
   gridScene = 'A',
   gridQueued = null,
+  gridEnabledScenes,
+  onAddScene,
   masterBpm = 120,
   onSelectScene,
   onCompose,
@@ -170,6 +172,11 @@ export function Strip({
   chips?: Chips
   gridScene?: SceneLetter
   gridQueued?: SceneLetter | null
+  /** The session's enabled scene prefix — the pads render THESE (P3-U8).
+      Undefined = session not arrived; GridScenes falls back to all eight. */
+  gridEnabledScenes?: readonly SceneLetter[]
+  /** Enable one more scene (the pad row's `+`). */
+  onAddScene?: () => void
   /** The plane's master tempo. GRID strips only, and passed in for the same
       reason `chips` is: one subscription in the plane beats one per strip to a
       value every strip shares. It is what the strip resolves its SYNC readout
@@ -678,6 +685,8 @@ export function Strip({
               strip={strip}
               scene={gridScene}
               queued={gridQueued}
+              enabledScenes={gridEnabledScenes}
+              onAddScene={onAddScene}
               onSelectScene={(sc, immediate) => onSelectScene?.(sc, immediate)}
             />
           </div>

@@ -21,6 +21,7 @@ import {
 } from '../state/mapStore.ts'
 import { useContextMenu } from '../design/ContextMenu.tsx'
 import { useCompanion } from '../store/companionEngine.ts'
+import { enabledScenes } from '../audio/sceneProjection.ts'
 import { fitToContent, zoomAbout, type Viewport } from './planeLayout.ts'
 import { Cables } from './Cables.tsx'
 import { chipsOf, feedbackInto, feedbackMs, hasOutput, type Cable } from './cables.ts'
@@ -85,6 +86,7 @@ export function Plane({
   const decks = useCompanion((c) => c.decks)
   const sessions = useCompanion((c) => c.sessions)
   const selectScene = useCompanion((c) => c.selectScene)
+  const setEnabledSceneCount = useCompanion((c) => c.setEnabledSceneCount)
   const playDeck = useCompanion((c) => c.play)
   const stopDeck = useCompanion((c) => c.stop)
   const { openMenu } = useContextMenu()
@@ -494,6 +496,16 @@ export function Plane({
               onPickInput={(left, right) => repointInput(s.channel, left, right)}
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}
+              // The pads render the SESSION's scene row, not a fixed eight —
+              // a 3-scene session showing five dead pads was the P3-U8 defect.
+              gridEnabledScenes={d?.session ? enabledScenes(d.session.pattern) : undefined}
+              onAddScene={
+                d?.session
+                  ? () =>
+                      deck >= 0 &&
+                      setEnabledSceneCount(enabledScenes(d.session!.pattern).length + 1, deck)
+                  : undefined
+              }
               masterBpm={map.transport.masterBpm}
               // Scene selection goes to the SESSION store, not the engine:
               // sl_deck_* has no scene entry point because a scene is a
