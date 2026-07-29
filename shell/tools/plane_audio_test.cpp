@@ -568,6 +568,69 @@ int main() {
         const auto tooFar = publishDeck(static_cast<int>(sl_deck_count()), 120);
         CHECK(replyOk(tooFar)); // the command ran…
         CHECK(!(bool) tooFar.getProperty("result", juce::var()).getProperty("applied", true));
+
+        // ── 10b. PER-TRACK DJ TELEMETRY IN THE HOTFRAME (P3-D4-3) ────────────
+        //
+        // The djTrack* blocks were declared in the layout and NEVER WRITTEN:
+        // the zero-fill left 0.0 in every slot, and the UI's `?? -1` guard
+        // never fires on a real 0.0 — so every deck-tile track would paint a
+        // permanent step-0 playhead wash. The desktop filled these from Swift
+        // (WebDjBinding.djHotFields); the merged engine owns them now.
+        //
+        // Indices restated BY HAND from schema.ts (the harness rule above): if
+        // the emitter and the schema ever disagree, this must FAIL rather than
+        // move in lockstep with a regenerated header.
+        {
+            constexpr int kDjStepD0T0 = 44, kDjStepD2T0 = 76;
+            constexpr int kDjPosD0T0 = 108;
+            constexpr int kDjLevelD0T0 = 172, kDjLevelD2T0 = 204;
+
+            std::vector<double> hf(sl_hotframe_length(), 0.0);
+            auto grab = [&] {
+                CHECK(sl_hotframe(e, hf.data(), static_cast<uint32_t>(hf.size())) > 0);
+                return 0;
+            };
+
+            // Decks 0 and 1 are PLAYING from §10 (8-step single-track worlds).
+            for (int b = 0; b < 8; ++b) render(0.0);
+            grab();
+            const double step0 = hf[kDjStepD0T0];
+            CHECK(step0 >= 0.0 && step0 < 8.0);          // a real step, not a wash
+            CHECK(hf[kDjStepD0T0 + 1] == -1.0);          // track 1 does not exist → hidden
+            CHECK(hf[kDjStepD2T0] == -1.0);              // deck 2 inactive → hidden
+            CHECK(hf[kDjLevelD0T0] > 0.0);               // the tone is sounding
+            CHECK(hf[kDjLevelD2T0] == 0.0);              // silence where nothing plays
+            // The sample cursor is either a live fraction or an honest −1
+            // (voice gaps between steps are real), never a fake 0-wash.
+            const double pos0 = hf[kDjPosD0T0];
+            CHECK(pos0 == -1.0 || (pos0 >= 0.0 && pos0 <= 1.0));
+
+            // The step ADVANCES — a frozen value would be the old bug wearing
+            // a valid number. 8 steps at 120 bpm = 62.5 ms/step ≈ 12 blocks;
+            // render past a boundary and the shown step must move.
+            double moved = step0;
+            for (int b = 0; b < 40 && moved == step0; ++b) {
+                render(0.0);
+                grab();
+                moved = hf[kDjStepD0T0];
+            }
+            CHECK(moved != step0);
+
+            // Stopping the deck hides the playhead: −1, not a parked step.
+            const auto stopJson = juce::String(
+                R"({"action":"publish","world":{"deck":0,"bpm":120,"isPlaying":false,
+                    "startStep":0,"tracks":[{"sampleId":"tone",
+                    "steps":[1,1,1,1,1,1,1,1],"volume":1.0}]}})");
+            CHECK(replyOk(dispatch("slWorld", juce::JSON::parse(stopJson), settings, e,
+                                   &services)));
+            render(0.0);
+            grab();
+            CHECK(hf[kDjStepD0T0] == -1.0);
+            CHECK(hf[kDjPosD0T0] == -1.0);
+
+            // Restore §10's end state for §11's fresh-ground assumptions.
+            CHECK(replyOk(publishDeck(0, 120)));
+        }
     }
 
     // ── 11. STRIP → STRIP PATCHING (increment 4) ─────────────────────────────

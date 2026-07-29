@@ -1145,6 +1145,62 @@ uint32_t sl_hotframe(sl_engine* e, double* out, uint32_t capacity) {
     out[SL_HF_playheadStepDeck1] = static_cast<double>(e->core.deckPlayheadStep(1));
     out[SL_HF_playheadStepDeck2] = static_cast<double>(e->core.deckPlayheadStep(2));
 
+    // ── Per-deck, per-track DJ telemetry (P3-D4-3) ───────────────────────────
+    // The djTrack* blocks were declared in the layout and never written: the
+    // zero-fill above put 0.0 in every slot, and the UI's `?? -1` guard never
+    // fires on a real 0.0 — so every track painted a permanent step-0 playhead
+    // wash. On the desktop these were Swift's job (WebDjBinding.djHotFields);
+    // here the engine owns them, from the same state it renders.
+    //
+    //   step  −1 = not playing (the UI hides the wash). While live: the deck's
+    //         playhead folded per track — the deck-scope beat-repeat window
+    //         first (display follows the repeat; the master step advances
+    //         underneath BY DESIGN, the P3-M-1a lesson), then the track's own
+    //         step count, then the reverse mirror (whole-session XOR per-track,
+    //         the render's own composition rule). KNOWN LIMIT, recorded: a
+    //         per-track speed multiplier or locator repeat deviates from this
+    //         uniform fold — the desktop resolved those through the sequencer's
+    //         full display logic; revisit if a deck tile playhead visibly drifts.
+    //   pos   the render's own sample cursor (deckTrackSamplePos: −1 when no
+    //         voice), gated on live like the desktop gates it.
+    //   level deckTrackMixLevel, deliberately NOT gated — a stopped-but-ringing
+    //         voice is the whole point of the activity LED.
+    {
+        constexpr uint32_t kDjTracks = 16;
+        constexpr uint32_t kDjDecks = 3;
+        const uint32_t stepBase[kDjDecks] = {SL_HF_djTrackStepD0T0, SL_HF_djTrackStepD1T0,
+                                             SL_HF_djTrackStepD2T0};
+        const uint32_t posBase[kDjDecks] = {SL_HF_djTrackPosD0T0, SL_HF_djTrackPosD1T0,
+                                            SL_HF_djTrackPosD2T0};
+        const uint32_t levelBase[kDjDecks] = {SL_HF_djTrackLevelD0T0, SL_HF_djTrackLevelD1T0,
+                                              SL_HF_djTrackLevelD2T0};
+        for (uint32_t deck = 0; deck < kDjDecks; ++deck) {
+            const DeckWorld& w = e->deckWorlds[deck];
+            const auto& snap = w.snapshot;
+            const bool live = w.active && snap.isPlaying && e->core.deckClockLive(deck);
+            uint64_t shown = e->core.deckPlayheadStep(deck);
+            if (live && snap.isBeatRepeatActive && snap.beatRepeatLength > 0 &&
+                shown >= snap.beatRepeatStartStep) {
+                shown = snap.beatRepeatStartStep +
+                        ((shown - snap.beatRepeatStartStep) % snap.beatRepeatLength);
+            }
+            for (uint32_t t = 0; t < kDjTracks; ++t) {
+                double step = -1.0;
+                if (live && t < snap.tracks.size() && !snap.tracks[t].steps.empty()) {
+                    const auto n = static_cast<uint64_t>(snap.tracks[t].steps.size());
+                    uint64_t st = shown % n;
+                    if (snap.reverseTransport != snap.tracks[t].reversed) st = n - 1 - st;
+                    step = static_cast<double>(st);
+                }
+                out[stepBase[deck] + t] = step;
+                out[posBase[deck] + t] =
+                    live ? static_cast<double>(e->core.deckTrackSamplePos(deck, t)) : -1.0;
+                out[levelBase[deck] + t] =
+                    static_cast<double>(e->core.deckTrackMixLevel(deck, t));
+            }
+        }
+    }
+
     // ── The plane (merge P2 step 4) ──────────────────────────────────────────
     // The strip surface's telemetry: what each strip is contributing, what each
     // tape is doing, and whether the watchdog is holding the output. This is
