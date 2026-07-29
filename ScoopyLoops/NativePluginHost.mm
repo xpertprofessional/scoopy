@@ -573,6 +573,7 @@ public:
             old.reset(); // old plugin's destructor (releaseResources/deactivate) may pump
                          // the message loop — must run without the slot mutex held.
             latency.store(lat, std::memory_order_release);
+            loaded.store(true, std::memory_order_release);
             if (completion) completion(true, nm);
         });
     }
@@ -584,6 +585,7 @@ public:
             closeEditorInternal(); // the editor references the instance we're dropping
             std::unique_ptr<juce::AudioPluginInstance> old;
             { std::lock_guard<std::mutex> lock(mutex); old = std::move(instance); loadedIdentifier.clear(); }
+            loaded.store(false, std::memory_order_release);
             if (old != nullptr) old->releaseResources();
             latency.store(0, std::memory_order_release);
         });
@@ -606,6 +608,7 @@ public:
             loadedIdentifier.clear();
         }
         oldEditor.reset();              // destroy the editor window first (it references the instance)
+        loaded.store(false, std::memory_order_release);
         if (old != nullptr) old->releaseResources();
         old.reset();                    // run the plugin ~dtor outside the lock
         latency.store(0, std::memory_order_release);
@@ -670,6 +673,10 @@ public:
     juce::AudioBuffer<float> scratch;
     juce::MidiBuffer midi;
     std::atomic<int> latency { 0 };
+    // Lock-free mirror of `instance != nullptr` for audio-thread callers
+    // (isLoadedLockFree): flipped true after a load swaps in, false on
+    // unload/destroyNow — beside `latency`, which follows the same lifecycle.
+    std::atomic<bool> loaded { false };
 };
 
 // FX-return insert: dual-mono audio in → wet audio out, with an always-empty MIDI buffer.
@@ -725,6 +732,7 @@ void NativePluginSlot::loadAsync(NativePluginScanner& scanner,
 void NativePluginSlot::unload() { impl_->unload(); }
 void NativePluginSlot::destroyNow() { impl_->destroyNow(); }
 bool NativePluginSlot::hasPlugin() const noexcept { return impl_->has(); }
+bool NativePluginSlot::isLoadedLockFree() const noexcept { return impl_->loaded.load(std::memory_order_acquire); }
 int  NativePluginSlot::latencySamples() const noexcept { return impl_->latency.load(std::memory_order_acquire); }
 bool NativePluginSlot::processStereoBlock(float* left, float* right, int numFrames,
                                           double bpm, bool isPlaying) noexcept
@@ -956,6 +964,7 @@ void NativePluginSlot::loadAsync(NativePluginScanner&, const std::string&, const
 void NativePluginSlot::unload() {}
 void NativePluginSlot::destroyNow() {}
 bool NativePluginSlot::hasPlugin() const noexcept { return false; }
+bool NativePluginSlot::isLoadedLockFree() const noexcept { return false; }
 int  NativePluginSlot::latencySamples() const noexcept { return 0; }
 bool NativePluginSlot::processStereoBlock(float*, float*, int, double, bool) noexcept { return false; }
 std::string NativePluginSlot::stateBase64() const { return {}; }

@@ -109,6 +109,13 @@ public:
     void destroyNow();
 
     bool hasPlugin() const noexcept;
+    // AUDIO-THREAD-SAFE loaded probe (P6-3). hasPlugin() takes the slot mutex —
+    // correct for control threads, a potential priority inversion on the audio
+    // thread (the message thread holds that mutex across a load swap). This one
+    // is a plain atomic read: true from the moment a load lands until unload/
+    // destroy. Used by the host's send-lane pre-seed to decide, per block,
+    // whether a return is actually consuming its send bus.
+    bool isLoadedLockFree() const noexcept;
     int  latencySamples() const noexcept;
 
     // AUDIO THREAD. Processes a stereo block in place (left/right, numFrames).

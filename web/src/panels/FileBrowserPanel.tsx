@@ -45,7 +45,7 @@ export const SAMPLE_DRAG_MIME = "application/x-scoopy-sample";
  * text drop over a track row reads back no tag and is ignored. The custom MIME
  * is still set for same-webview drags (more specific, no tag to strip).
  */
-const SAMPLE_DRAG_TEXT_TAG = "scoopy-sample";
+const SAMPLE_DRAG_TEXT_TAG = "\u0001scoopy-sample\u0001";
 
 /** Write the sample-drag payload onto a dragstart event (both channels). */
 export function writeSampleDrag(dt: DataTransfer, path: string): void {

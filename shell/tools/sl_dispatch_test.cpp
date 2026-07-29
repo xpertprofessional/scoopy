@@ -512,6 +512,9 @@ int main(int argc, char* argv[]) {
         const auto caps = result(dispatch("getCapabilities", juce::var(), settings,
                                           nullptr, &services));
         CHECK((bool) caps.getProperty("pluginHosting", false) == true);
+        // returnFx rides the same truth (P6-3): a return is a hosted plugin now,
+        // so the send/return section is real exactly where hosting is.
+        CHECK((bool) caps.getProperty("returnFx", false) == true);
 
         const auto lp = dispatch("listPlugins", juce::var(), settings, nullptr, &services);
         CHECK(replyOk(lp));

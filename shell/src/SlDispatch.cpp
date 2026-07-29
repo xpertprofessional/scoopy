@@ -80,11 +80,16 @@ juce::var capabilities(const HostServices* services) {
     obj->setProperty("fileSystem", true);          // the shell owns native dialogs
     obj->setProperty("midiHardware", false);       // not built
     obj->setProperty("audioDeviceSelection", true);// wizard's AudioIO enumerates/selects
-    // returnFx false = the send/return section is absent and the render is dry,
-    // rather than a wrong-sounding echo feeding the returns' C++ defaults (the
-    // honest shape the schema comment prescribes for a host without it).
-    // Flips at P6-3, when a loaded plugin makes the wet path mean something.
-    obj->setProperty("returnFx", false);
+    // returnFx follows pluginHosting (P6-3): with the internal return delay
+    // retired, "a return is either external or a hosted plugin" — so the
+    // send/return section is real exactly where a plugin can be hosted. The
+    // old false was for the wrong-sounding-echo era (returns at hard C++
+    // defaults); that processor no longer exists. On a host WITH the scanner,
+    // sends travel (worldFromSession stops zeroing them) and the per-track
+    // send controls appear; an unloaded return consumes them into silence,
+    // which is the honest meaning of an empty FX slot.
+    obj->setProperty("returnFx",
+                     services != nullptr && services->pluginScanner != nullptr);
     return juce::var(obj);
 }
 

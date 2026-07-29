@@ -776,6 +776,7 @@ bool NativeAudioEngineCore::configure(double sampleRate,
         slot.prepare(sampleRate, static_cast<int>(bufferSizeFrames));
     instWetL_.assign(bufferSizeFrames, 0.0f);
     instWetR_.assign(bufferSizeFrames, 0.0f);
+    for (auto& f : hostSendFeed_) f.assign(bufferSizeFrames, 0.0f);
 #endif
     voiceStretchPool_.configure(sampleRate, static_cast<int>(bufferSizeFrames));
     rbAttackFadeTotal_ = static_cast<std::uint32_t>(std::max(1.0, sampleRate * 0.003));  // ~3 ms
@@ -2809,7 +2810,7 @@ void NativeAudioEngineCore::render(const float* inputLeft,
                             }
                             deckMasterSendCurrent_[di][n] = target;
                         }
-                    }
+                                            }
                     // Deck lane carries full-level output only when routed to a dedicated
                     // output; otherwise it is silent (the deck is in the main mix). A console
                     // mute silences the dedicated lane too (its sends already passed through).
@@ -2992,10 +2993,14 @@ void NativeAudioEngineCore::render(const float* inputLeft,
     // Host returns process block-based: run the plugin once over the whole block,
     // dual-mono in (the send bus is mono-accumulated), writing wet stereo into
     // hostWetN scratch which the per-frame loop reads. Passthrough -> silence wet.
+    // Host returns gather their input as send lane + the embedding host's own
+    // feed (hostSendFeed_ — the plane's tape-strip sends, which mix in after
+    // this render and so can never ride the lane itself; see hostSendFeed()).
     if (ret1HostMode) {
         const float* s1 = outputs[laneIndex(AudioLane::send1)];
+        const float* f1 = hostSendFeed_[0].data();
         for (std::uint32_t f = 0; f < framesToRender; ++f) {
-            hostWet1L_[f] = s1 != nullptr ? s1[f] : 0.0f;
+            hostWet1L_[f] = (s1 != nullptr ? s1[f] : 0.0f) + f1[f];
             hostWet1R_[f] = hostWet1L_[f];
         }
         if (!returnPluginSlot1_.processStereoBlock(hostWet1L_.data(), hostWet1R_.data(),
@@ -3007,7 +3012,7 @@ void NativeAudioEngineCore::render(const float* inputLeft,
     if (ret2HostMode) {
         const float* s2 = outputs[laneIndex(AudioLane::send2)];
         for (std::uint32_t f = 0; f < framesToRender; ++f) {
-            hostWet2L_[f] = s2 != nullptr ? s2[f] : 0.0f;
+            hostWet2L_[f] = (s2 != nullptr ? s2[f] : 0.0f) + hostSendFeed_[1][f];
             hostWet2R_[f] = hostWet2L_[f];
         }
         if (!returnPluginSlot2_.processStereoBlock(hostWet2L_.data(), hostWet2R_.data(),
@@ -3019,7 +3024,7 @@ void NativeAudioEngineCore::render(const float* inputLeft,
     if (ret3HostMode) {
         const float* s3 = outputs[laneIndex(AudioLane::send3)];
         for (std::uint32_t f = 0; f < framesToRender; ++f) {
-            hostWet3L_[f] = s3 != nullptr ? s3[f] : 0.0f;
+            hostWet3L_[f] = (s3 != nullptr ? s3[f] : 0.0f) + hostSendFeed_[2][f];
             hostWet3R_[f] = hostWet3L_[f];
         }
         if (!returnPluginSlot3_.processStereoBlock(hostWet3L_.data(), hostWet3R_.data(),
@@ -3031,7 +3036,7 @@ void NativeAudioEngineCore::render(const float* inputLeft,
     if (ret4HostMode) {
         const float* s4 = outputs[laneIndex(AudioLane::send4)];
         for (std::uint32_t f = 0; f < framesToRender; ++f) {
-            hostWet4L_[f] = s4 != nullptr ? s4[f] : 0.0f;
+            hostWet4L_[f] = (s4 != nullptr ? s4[f] : 0.0f) + hostSendFeed_[3][f];
             hostWet4R_[f] = hostWet4L_[f];
         }
         if (!returnPluginSlot4_.processStereoBlock(hostWet4L_.data(), hostWet4R_.data(),
@@ -3157,6 +3162,19 @@ void NativeAudioEngineCore::render(const float* inputLeft,
             ret1AddL = r1L;
             ret1AddR = r1R;
         }
+#if SCOOPY_PLUGIN_HOST
+        // P6-3: NO SNAPSHOT, STILL WET. A host without a published world (a
+        // tape-only plane) has ret1 == nullptr, and the full path above —
+        // gate/pan/LFO, all snapshot-owned — has nothing to run on. The plugin
+        // wet still belongs in the mix, so it takes the same lightweight
+        // imperative path returns 3 & 4 always use: wet × return level, with
+        // solo-mute. The moment a world arrives, the snapshot path above owns
+        // this return again.
+        else if (ret1HostMode && !ret1SoloMute) {
+            ret1AddL = hostWet1L_[frame] * ret1Vol;
+            ret1AddR = hostWet1R_[frame] * ret1Vol;
+        }
+#endif
 
         // Phase 10: return track 2 processing
         float ret2AddL = 0.0f, ret2AddR = 0.0f;
@@ -3206,6 +3224,13 @@ void NativeAudioEngineCore::render(const float* inputLeft,
             ret2AddL = r2L;
             ret2AddR = r2R;
         }
+#if SCOOPY_PLUGIN_HOST
+        // Same no-snapshot wet fallback as return 1 above (P6-3).
+        else if (ret2HostMode && !ret2SoloMute) {
+            ret2AddL = hostWet2L_[frame] * ret2Vol;
+            ret2AddR = hostWet2R_[frame] * ret2Vol;
+        }
+#endif
 
         // Extended host returns 3 & 4: wet = host-plugin output × imperative return level, with
         // solo-mute. No gate/pan/LFO path (those live only on returns 1 & 2). External-mode 3/4

@@ -65,6 +65,34 @@ add_executable(plane_audio_test tools/plane_audio_test.cpp)
 target_link_libraries(plane_audio_test PRIVATE wz_sl_command wz_sl_world wz_sl_engine wz_record)
 add_test(NAME plane_audio_test COMMAND plane_audio_test)
 
+# A PLUGIN IS AUDIBLE ON A RETURN (P6-3). The wet half plane_audio_test cannot
+# prove: it links the REAL NativePluginHost.mm (the app's own object — its
+# symbols outrank the stub on scoopy_engine's link interface), loads Apple's
+# AUDelay in-process, and asserts a delay tail on MAIN after the input stops.
+# Apple-only by nature; exits 77 (SKIP) where the AU is absent.
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    add_executable(plugin_audible_test
+        tools/plugin_audible_test.cpp
+        ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
+    set_target_properties(plugin_audible_test PROPERTIES
+        OBJCXX_STANDARD 20
+        OBJCXX_STANDARD_REQUIRED ON)
+    target_include_directories(plugin_audible_test PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(plugin_audible_test PRIVATE
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_VST3=1
+        # runDispatchLoopUntil — how a console harness pumps the async plugin
+        # lifecycle. Modal loops are banned in the APP, not in a test main().
+        JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(plugin_audible_test PRIVATE
+        wz_sl_command wz_sl_world wz_sl_engine
+        juce::juce_audio_processors
+        "-framework CoreAudioKit"
+        juce::juce_recommended_config_flags)
+    add_test(NAME plugin_audible_test COMMAND plugin_audible_test)
+    set_tests_properties(plugin_audible_test PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # The Option-B play path (native half): a name-keyed World -> v3 snapshot. Links
 # the v3 engine; GUI-free so it is tested headlessly (a World payload -> audio).
 add_library(wz_sl_world STATIC src/SlWorldApply.cpp)

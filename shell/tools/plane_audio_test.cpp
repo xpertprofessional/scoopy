@@ -1405,6 +1405,80 @@ int main() {
         CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":2})")));
     }
 
+    // ── 16. STRIP SENDS REACH THE SEND BUS — BOTH ELEMENT KINDS (P6-3) ───────
+    //
+    // The transport half of "a plugin on the returns". TAPE-side: the channel
+    // mixer writes the post-fader send AFTER core.render, so it is observable
+    // on the outgoing lane (and it is exactly what the host feeds the plugin,
+    // one block later). GRID-side: the deck-master send is consumed INSIDE
+    // core.render — host-mode returns eat the bus and zero the lane — so only
+    // the command chain is pinned here; the audible proof for both kinds is
+    // plugin_audible_test, which hosts a real AU.
+    {
+        // Fresh ground: silence everything the sections above left ringing —
+        // then REINSTALL the defaults: a bare remove-all also takes the
+        // channelSend → sendBus cables, and a send with no route to its bus is
+        // exactly the silence this section would then misdiagnose.
+        for (uint32_t id = 0; id < sl_route_capacity(); ++id)
+            if (sl_route_active(e, id) != 0) sl_route_remove(e, id);
+        CHECK(replyOk(cmd("slRoute", R"({"action":"installDefaults"})")));
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":0,"mode":2})")));
+        const auto stopWorld = juce::JSON::parse(
+            R"({"action":"publish","world":{"deck":0,"bpm":120,"isPlaying":false,"startStep":0,
+                "tracks":[]}})");
+        CHECK(replyOk(dispatch("slWorld", stopWorld, settings, e, &services)));
+        for (int b = 0; b < 40; ++b) render(0.0);
+
+        // TAPE-SIDE: input → strip 0, send 1 up. The lane index is kLaneMap's
+        // law: lanes 2…5 are sends 1…4. Channel 0 is re-pointed at the LIVE
+        // INPUT (§4 bound it to its tape) and its monitor opened — the
+        // deviceInput route is monitor-gated (§3's feedback lesson), and the
+        // send tap rides the audible channel bus.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":0,"kind":0,"index":0})")));
+        CHECK(replyOk(cmd("slRoute",
+            R"({"action":"add","srcKind":2,"srcIndex":0,"srcSub":1,"dstKind":0,"dstIndex":0,"gain":1.0})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setMonitor","channel":0,"on":true})")));
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSend","channel":0,"send":0,"level":1.0})")));
+        double stripSend = 0.0;
+        for (int b = 0; b < 40; ++b) { render(0.5); stripSend = std::max(stripSend, peak(lane[2])); }
+        CHECK(stripSend > 0.05);
+
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSend","channel":0,"send":0,"level":0.0})")));
+        for (int b = 0; b < 40; ++b) render(0.5); // ramp out
+        double stripSendOff = 0.0;
+        for (int b = 0; b < 40; ++b) { render(0.5); stripSendOff = std::max(stripSendOff, peak(lane[2])); }
+        CHECK(stripSendOff < 1e-4);
+
+        // GRID-SIDE: the wiring only. A grid strip's send fader projects onto
+        // the core's deck-master send (projectToCore), and the core CONSUMES
+        // the send bus inside render() — host-mode returns eat it into the
+        // plugin and ZERO the lane on the way out ("wet returns to main", the
+        // measured law of this section's first draft). So with the stub host
+        // there is nothing lane-observable to assert; what this pins is the
+        // COMMAND chain — binding verdict and level readbacks, the two places
+        // a green envelope can hide a refusal — and the AUDIBLE proof (deck
+        // send → plugin → wet on main) lives in plugin_audible_test's grid
+        // half, where a real AU makes the consumption observable.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSend","channel":0,"send":0,"level":0.0})")));
+        const auto playWorld = juce::JSON::parse(
+            R"({"action":"publish","world":{"deck":0,"bpm":120,"isPlaying":true,"startStep":0,
+                "tracks":[{"sampleId":"tone","steps":[1,1,1,1,1,1,1,1],"volume":1.0}]}})");
+        CHECK(replyOk(dispatch("slWorld", playWorld, settings, e, &services)));
+        const auto bind = cmd("slChannel", R"({"action":"setSource","channel":1,"kind":2,"index":0})");
+        CHECK(replyOk(bind));
+        CHECK((bool) bind.getProperty("result", juce::var()).getProperty("ok", false));
+        CHECK(sl_channel_source_kind(e, 1) == 2u);
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSend","channel":1,"send":0,"level":1.0})")));
+        CHECK(sl_channel_send(e, 1, 0) == 1.0);
+        double gridMain = 0.0;
+        for (int b = 0; b < 120; ++b) { render(0.0); gridMain = std::max(gridMain, peak(lane[0])); }
+        CHECK(gridMain > 0.01); // the deck is sounding through it all
+
+        // Quiet the deck and unbind for whatever runs after.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":1,"kind":0,"index":0})")));
+        CHECK(replyOk(dispatch("slWorld", stopWorld, settings, e, &services)));
+    }
+
     // The take is enumerable, which is what makes it reloadable tomorrow.
     const auto takes = cmd("slTakes", R"({"action":"list"})");
     CHECK(replyOk(takes));

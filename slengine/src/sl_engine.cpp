@@ -156,6 +156,20 @@ struct sl_engine {
     std::atomic<double> masterLevel{1.0};
     double masterSmoothed = -1.0;
 
+    // P6-3 — the strip→host-return send feed. The channel mixer adds strip
+    // sends AFTER core.render, which is where the host plugins consume the
+    // send lanes — so without help a tape strip's send could never reach a
+    // plugin. A LIVE host return (mode host, wet→main, plugin loaded — the
+    // core's returnHostActive probe) is instead fed the PREVIOUS block's
+    // strip-send content, pre-seeded into its lane before the core runs: one
+    // block late (P6-6's compensation territory), and exactly nothing when no
+    // plugin is loaded, so every hostless gate stays sample-identical.
+    // stripSendHold = last block's channel-contributed send content;
+    // sendAfterCore = scratch for the post-mix diff that isolates it.
+    std::array<std::vector<float>, sl::kNumSends> stripSendHold;
+    std::array<std::vector<float>, sl::kNumSends> sendAfterCore;
+    std::uint32_t stripSendHoldFrames = 0;
+
     // HotFrame telemetry. The counter is monotonic per emitted frame (the UI
     // detects dropped frames from its gaps); `created` anchors hostTimeMs, which
     // the UI uses only for relative dead-reckoning between frames.
@@ -183,6 +197,9 @@ struct sl_engine {
         tapes.configure(rate, block);
         channels.configure(rate, block);
         watchdog.configure(rate);
+        for (auto& h : stripSendHold) h.assign(block, 0.0f);
+        for (auto& s : sendAfterCore) s.assign(block, 0.0f);
+        stripSendHoldFrames = 0;
 
         mixer = MixerState{};
         mixer.mainGain = 1.0f;
@@ -307,11 +324,55 @@ void renderInto(sl_engine* e,
     e->tapes.renderPlayback(in_bus, in_count, frames, e->sampleRate, blockStartSample);
 
     for (auto& lane : e->lanes) std::fill_n(lane.begin(), frames, 0.0f);
+
+    // P6-3 — feed last block's STRIP sends into the live host returns. The
+    // channel mixer adds strip sends AFTER core.render, and render() rebuilds
+    // the send lanes from the world every block, so a strip's send can reach a
+    // return plugin only through the core's own hostSendFeed buffers: written
+    // here (one block late — P6-6's compensation territory), ADDED to the lane
+    // content where the plugin gathers its input. The probe is all atomics; on
+    // a hostless/stub build it is constant false and nothing is written.
+    bool hostActive[sl::kNumSends];
+    for (std::uint32_t s = 0; s < sl::kNumSends; ++s) {
+        hostActive[s] = e->core.returnHostActive(static_cast<int>(s) + 1);
+        float* feed = e->core.hostSendFeed(static_cast<int>(s), frames);
+        if (feed == nullptr) continue;
+        if (hostActive[s]) {
+            const std::uint32_t held = std::min(frames, e->stripSendHoldFrames);
+            std::copy_n(e->stripSendHold[s].data(), held, feed);
+            if (held < frames) std::fill_n(feed + held, frames - held, 0.0f);
+        } else {
+            std::fill_n(feed, frames, 0.0f);
+        }
+    }
+
     e->core.render(inL, inR, e->lanePtrs, frames);
+
+    // Snapshot the send lanes as the core left them, so the post-mix diff below
+    // isolates what the CHANNELS add — that alone is next block's feed (holding
+    // the whole lane would feed the grid decks' sends to the plugin twice).
+    for (std::uint32_t s = 0; s < sl::kNumSends; ++s)
+        if (hostActive[s])
+            std::copy_n(e->lanes[kLaneMap.send[s]].data(), frames, e->sendAfterCore[s].data());
 
     const auto laneCount = static_cast<std::uint32_t>(NativeAudioEngineCore::laneCount);
     e->channels.mixInto(e->lanePtrs.data(), laneCount, frames, e->tapes, e->sampleRate,
                         kLaneMap, in_bus, in_count);
+
+    // The diff: strip-send content of THIS block, held for the next one. An
+    // inactive return holds silence so a plugin landing mid-stream starts from
+    // a clean feed rather than a stale one.
+    for (std::uint32_t s = 0; s < sl::kNumSends; ++s) {
+        if (hostActive[s]) {
+            const float* lane = e->lanes[kLaneMap.send[s]].data();
+            const float* base = e->sendAfterCore[s].data();
+            float* hold = e->stripSendHold[s].data();
+            for (std::uint32_t i = 0; i < frames; ++i) hold[i] = lane[i] - base[i];
+        } else {
+            std::fill_n(e->stripSendHold[s].data(), frames, 0.0f);
+        }
+    }
+    e->stripSendHoldFrames = frames;
     // Guard G1, applied to the main pair once every contributor is in — the
     // core's mix, the strips, and any regenerating feedback path between them.
     // A channel-bus tap is deliberately taken BEFORE this (a strip's own

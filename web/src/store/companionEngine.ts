@@ -30,6 +30,7 @@ import {
   type SceneLetter,
 } from "../audio/sceneProjection.ts";
 import { worldFromSession } from "../audio/worldFromSession.ts";
+import { useCapabilitiesStore } from "../state/capabilitiesStore.ts";
 import { kitSamples } from "../persist/kit.ts";
 import { resetUndo } from "../state/undoStore.ts";
 import { decodePatternFileAnyVersion } from "../persist/migrations.ts";
@@ -370,9 +371,12 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
       sampleRates,
       stoppedTracks: new Set(d.stoppedTracks),
       soloedTracks: new Set(d.soloedTracks),
-      // The companion IS the no-return-FX host (BrowserLink answers returnFx: false): dry render,
-      // matching the hidden sends row. The document's send values stay untouched.
-      disableReturnFx: true,
+      // The HOST decides (P6-3): the merged shell hosts return plugins now and
+      // answers returnFx true, so the tracks' send levels must travel; the
+      // browser companion still answers false (a WASM worklet hosts no AU) and
+      // renders dry, matching its hidden sends row. The document's send values
+      // stay untouched either way — this only gates what the ENGINE hears.
+      disableReturnFx: !useCapabilitiesStore.getState().caps.returnFx,
       // The transport verbs ride every publish (P3-M-1b) — restating them is
       // what makes them survive scene switches and edits.
       beatRepeat: d.beatRepeat,

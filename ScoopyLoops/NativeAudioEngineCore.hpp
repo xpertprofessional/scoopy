@@ -1218,6 +1218,44 @@ public:
             returnHardwareOut_[returnIndex - 1].store(toHardware, std::memory_order_release);
     }
 
+    // AUDIO-THREAD probe (P6-3): is return 1…4 a LIVE host return this block —
+    // host mode, wet summed to main (not hardware), plugin actually loaded?
+    // Every read is an atomic; never the slot mutex (the message thread holds
+    // that across a load swap). The host's strip-send feed keys off this, so a
+    // hostless/stub build — where it is constant false — feeds nothing and
+    // stays sample-identical to the flag-OFF world.
+    bool returnHostActive(int returnIndex) noexcept {
+#if SCOOPY_PLUGIN_HOST
+        if (returnIndex < 1 || returnIndex > static_cast<int>(kNumSends)) return false;
+        const auto i = static_cast<std::size_t>(returnIndex - 1);
+        if (returnMode_[i].load(std::memory_order_acquire) != 2) return false;
+        if (returnHardwareOut_[i].load(std::memory_order_acquire)) return false;
+        return returnPluginSlot(returnIndex).isLoadedLockFree();
+#else
+        (void) returnIndex;
+        return false;
+#endif
+    }
+
+    // AUDIO THREAD (P6-3): the HOST's own feed into a return plugin, ADDED to
+    // the send lane's content at the moment the plugin consumes it. Exists
+    // because a host mixing sources AFTER render() (the plane's tape strips)
+    // cannot reach the send lanes any other way: render() rebuilds those lanes
+    // from the world every block, so anything pre-seeded is overwritten. The
+    // caller fills sendIndex 0…3 for `frameCount` frames before render() (same
+    // thread, same block); the feed is consumed only by a live host return.
+    // Null when the host is compiled out — callers must check.
+    float* hostSendFeed(int sendIndex, std::uint32_t frameCount) noexcept {
+#if SCOOPY_PLUGIN_HOST
+        if (sendIndex < 0 || sendIndex >= static_cast<int>(kNumSends)) return nullptr;
+        auto& f = hostSendFeed_[static_cast<std::size_t>(sendIndex)];
+        return f.size() >= frameCount ? f.data() : nullptr;
+#else
+        (void) sendIndex; (void) frameCount;
+        return nullptr;
+#endif
+    }
+
     // Per-return WET output level for the extended host returns (sends 3 & 4). Returns 1 & 2 take
     // their volume from the ReturnTrack snapshot (full gate/pan/LFO path); sends 3 & 4 use this
     // lightweight imperative level (the "Return level" fader) applied to the host-plugin wet. Set
@@ -2051,6 +2089,10 @@ private:
     // Per-block wet scratch for host-mode returns (stereo). Sized in configure().
     std::vector<float> hostWet1L_, hostWet1R_, hostWet2L_, hostWet2R_;
     std::vector<float> hostWet3L_, hostWet3R_, hostWet4L_, hostWet4R_;
+    // The host's own per-send feed into the return plugins (P6-3, mono per send
+    // — matching the send lanes). Written by the embedding host before render(),
+    // added to the lane content where hostWet is gathered. Sized in configure().
+    std::array<std::vector<float>, kNumSends> hostSendFeed_ {};
 
     // Per-track instrument host pool. instrumentSlotKey_[i] packs the (deck, track) bound to slot i
     // (−1 = free); written on the control thread, read lock-free on the audio thread to skip unbound
