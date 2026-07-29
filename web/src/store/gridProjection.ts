@@ -218,31 +218,42 @@ export function applyGridPattern(state: GridPatternState, row: DocRow): DocRow {
   const track = { ...row.track };
   const settings = { ...row.settings };
 
+  // ⚠️ DENSE OR NOTHING. The grid reducers write per-step arrays by index
+  // (`flamCounts[step] = …` on a slice), and several of these arrays start [] in a
+  // fresh session — an edit at step 8 then yields a SPARSE array whose holes
+  // JSON.stringify as null, and the strict decoder refuses the whole session on
+  // reopen (the 2026-07-29 real-host find). This is the one seam where runtime grid
+  // state re-enters the DOCUMENT, so holes die here: each array is copied with its
+  // native neutral fill (the same defaults canonicalGridSubset pads with).
+  const dense = <T,>(a: readonly T[], fill: T): T[] =>
+    Array.from(a, (v) => (v === undefined ? fill : v));
+
   const modeIndex = Math.max(0, PLAYBACK_MODES.indexOf(state.playbackMode as never));
 
   track.playbackMode = modeIndex;
   track.isMuted = state.muted;
   track.patternStartStep = state.patternStartStep ?? 0;
 
-  track.steps = state.steps;
-  track.cellLengths = state.cellLengths;
+  track.steps = dense(state.steps, false);
+  track.cellLengths = dense(state.cellLengths, 1);
   track.wrapSourceStep = state.wrapSourceStep ?? undefined;
-  track.pitchOffsets = state.pitchOffsets;
-  track.accentLevels = state.accentLevels;
-  track.flamCounts = state.flamCounts;
-  track.glideSteps = state.glideSteps;
-  track.reverseSteps = state.reverseSteps;
-  track.preSilenceMsOffsets = state.preSilenceMsOffsets;
-  track.cellChopIndices = state.cellChopIndices;
-  track.chordIndices = state.chordIndices;
-  track.volumeOffsets = state.volumeOffsets;
-  track.mixVolumeOffsets = state.mixVolumeOffsets;
-  track.panOffsets = state.panOffsets;
-  track.toneOffsets = state.toneOffsets;
-  track.sampleStartMsOffsets = state.sampleStartMsOffsets;
-  track.sampleEndMsOffsets = state.sampleEndMsOffsets;
+  track.pitchOffsets = dense(state.pitchOffsets, 0);
+  track.accentLevels = dense(state.accentLevels, 0);
+  track.flamCounts = dense(state.flamCounts, 1);
+  track.glideSteps = dense(state.glideSteps, false);
+  track.reverseSteps = dense(state.reverseSteps, false);
+  track.preSilenceMsOffsets = dense(state.preSilenceMsOffsets, 0);
+  track.cellChopIndices = dense(state.cellChopIndices, 0);
+  track.chordIndices = dense(state.chordIndices, 0);
+  track.volumeOffsets = dense(state.volumeOffsets, 0);
+  track.mixVolumeOffsets = dense(state.mixVolumeOffsets, 0);
+  track.panOffsets = dense(state.panOffsets, 0);
+  track.toneOffsets = dense(state.toneOffsets, 0);
+  track.sampleStartMsOffsets = dense(state.sampleStartMsOffsets, 0);
+  track.sampleEndMsOffsets = dense(state.sampleEndMsOffsets, 0);
   // The fraction back to the enum. Nearest wins — the grid can only ever send one of the six.
-  track.rhythmicOffsetSteps = state.rhythmicOffsetRatios.map((r) => nearestRhythmicIndex(r));
+  // (dense first: .map PRESERVES holes, it does not fill them.)
+  track.rhythmicOffsetSteps = dense(state.rhythmicOffsetRatios, 0).map((r) => nearestRhythmicIndex(r));
 
   track.sampleStartMs = state.sampleStartMs;
   track.sampleEndMs = state.sampleEndMs;
@@ -307,7 +318,7 @@ export function applyGridPattern(state: GridPatternState, row: DocRow): DocRow {
   track.midiOutEnabled = state.midiOutEnabled;
   track.midiRootNote = state.midiRootNote;
   track.midiGatePercent = state.midiGatePercent;
-  track.midiVelocities = state.midiVelocities;
+  track.midiVelocities = dense(state.midiVelocities, 100);
 
   settings.colorHex = state.colorHex;
 

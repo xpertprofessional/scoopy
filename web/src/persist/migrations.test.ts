@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { encodePatternFile } from "./patternFile.ts";
 import {
   DEFAULT_MOD_CHANNEL,
+  decodePatternFileAnyVersion,
   legacyToneQ,
   migrateLfoClockDivision,
   migratePatternFile,
@@ -157,5 +158,41 @@ describe("migratePatternFile is safe on a CURRENT file (idempotent, non-mutating
     for (const ch of swiftDefaults) {
       expect(ch).toEqual(DEFAULT_MOD_CHANNEL);
     }
+  });
+});
+
+describe("null-hole rescue — sessions the sparse-write bug locked out", () => {
+  // Between P3-D4-1 (the deck tile made the grid's flam/accent gestures reachable on
+  // plane sessions) and the dense-write fix, `flamCounts[8] = 2` on an empty array
+  // saved as [null ×8, 2, …] — and the strict decoder refused the whole session.
+  // The migration now heals exactly those nulls; this pins the rescue on a REAL
+  // broken shape (the 2026-07-29 screenshot: indices 0–12 null except 8).
+  const CURRENT_DIR = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../fixtures/patternfile",
+  );
+
+  it("a session with null holes in flamCounts opens, holes healed to the neutral 1", () => {
+    const f = JSON.parse(readFileSync(join(CURRENT_DIR, "fresh-default.json"), "utf8"));
+    const sparse: (number | null)[] = Array(13).fill(null);
+    sparse[8] = 2;
+    f.sectionC[1].flamCounts = sparse;
+
+    const decoded = decodePatternFileAnyVersion(JSON.stringify(f)) as {
+      sectionC: Array<{ flamCounts: number[] }>;
+    };
+    expect(decoded.sectionC[1]!.flamCounts).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]);
+  });
+
+  it("boolean and offset lanes heal to their own neutrals", () => {
+    const f = JSON.parse(readFileSync(join(CURRENT_DIR, "fresh-default.json"), "utf8"));
+    f.sectionA[0].glideSteps = [null, true];
+    f.sectionA[0].preSilenceMsOffsets = [null, 5];
+
+    const decoded = decodePatternFileAnyVersion(JSON.stringify(f)) as {
+      sectionA: Array<{ glideSteps: boolean[]; preSilenceMsOffsets: number[] }>;
+    };
+    expect(decoded.sectionA[0]!.glideSteps).toEqual([false, true]);
+    expect(decoded.sectionA[0]!.preSilenceMsOffsets).toEqual([0, 5]);
   });
 });

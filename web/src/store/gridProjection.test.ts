@@ -123,6 +123,28 @@ describe("applyGridPattern (write) — the round trip IS the coverage check", ()
     expect(back.colorHex).toBe("#ff0066"); // …and it landed in trackSettings, not the track
   });
 
+  it("a SPARSE per-step array writes back DENSE — holes become the neutral, never null", () => {
+    // The grid reducers assign by index into a slice (`flamCounts[8] = 2`), and several
+    // per-step arrays start [] in a fresh session — so the runtime state can be sparse.
+    // JSON.stringify spells holes as null and the strict decoder then refuses the whole
+    // session on reopen (the 2026-07-29 real-host find). The document seam must densify.
+    const row = rows[0]!;
+    const grid = toGridPattern(row);
+
+    const sparseFlams: number[] = [];
+    sparseFlams[8] = 2; // one flam click on step 9 of a track whose flamCounts was []
+    const sparseSteps: boolean[] = [];
+    sparseSteps[3] = true;
+
+    const out = applyGridPattern({ ...grid, flamCounts: sparseFlams, steps: sparseSteps }, row);
+
+    const flams = out.track.flamCounts as number[];
+    expect(flams).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 2]);
+    expect(out.track.steps).toEqual([false, false, false, true]);
+    // The property the session file actually needs: no nulls after JSON round-trip.
+    expect(JSON.parse(JSON.stringify(flams))).not.toContain(null);
+  });
+
   it("INVERTS the derived fields instead of writing them blindly", () => {
     const row = rows[0]!;
     const grid = toGridPattern(row);

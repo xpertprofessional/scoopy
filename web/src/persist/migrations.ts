@@ -344,6 +344,29 @@ function migrateTrack(t: Obj): void {
   def(t, "rhythmicOffsetSteps", []);
   def(t, "flamCounts", []);
   def(t, "chordIndices", []);
+
+  // RESCUE, not a default: sessions saved by the plane between P3-D4-1 and the
+  // 2026-07-29 dense-write fix can carry per-step arrays with null holes — the
+  // grid reducers wrote sparse arrays (`flamCounts[8] = 2` on a shorter slice)
+  // and JSON.stringify spelled the holes as null, which the strict decoder then
+  // refused, locking the user out of their own session. Each null becomes the
+  // field's native neutral (the same fills canonicalGridSubset pads with); a
+  // null anywhere else stays put so the strict parse still catches real damage.
+  const scrub = (key: string, fill: number | boolean) => {
+    const a = t[key];
+    if (Array.isArray(a) && a.some((v) => v == null))
+      t[key] = a.map((v) => (v == null ? fill : v));
+  };
+  for (const k of ["steps", "glideSteps", "reverseSteps"]) scrub(k, false);
+  for (const k of ["cellLengths", "flamCounts"]) scrub(k, 1);
+  scrub("midiVelocities", 100);
+  for (const k of [
+    "pitchOffsets", "accentLevels", "preSilenceMsOffsets", "cellChopIndices", "chordIndices",
+    "volumeOffsets", "mixVolumeOffsets", "panOffsets", "toneOffsets",
+    "sampleStartMsOffsets", "sampleEndMsOffsets", "rhythmicOffsetSteps",
+    "send1Offsets", "send2Offsets", "send3Offsets", "send4Offsets",
+    "midiNotes", "midiPitchBends",
+  ]) scrub(k, 0);
   def(t, "freeRateEnabled", false);
   def(t, "freeRate", 1);
   def(t, "grainModeEnabled", false);

@@ -1,56 +1,67 @@
-# Wizard
+# Scoopy — the merged tree
 
-**The patchbay-recorder of the suite.** One sentence: *every sound on this machine is a
-channel strip.*
+**ScoopyLoops' full instrument, hosted on Wizard's plane.** One sentence: *the plane of
+channel strips is the main view, and scoopy's decks, loopers and mixer live inside it.*
 
-| App | Verb set |
+This repository is the **merge** of two apps:
+
+| Donor | What it brought |
 |---|---|
-| ScoopyLoops | compose, perform |
-| Parlante | master, edit, deliver |
-| **Wizard** | **source, route, record, re-play** |
+| **ScoopyLoops** | The advanced DJ/looper instrument — the audio core (`ScoopyLoops/`, C++20), the complete React UI (`web/`), sessions/kits/maps, the grid sequencer, decks A–C, FX returns |
+| **Wizard** | The *plane* — an infinite surface of channel strips with routing, patching, per-strip recording, and the JUCE shell that hosts it all natively |
 
-Any running application (via process tap), hardware input, file, or Wizard's own output
-becomes a *channel*; any channel reaches any output bus, any of 1–8 recorder/player
-decks, or the monitor. Other applications can select **"Wizard Out"** as their audio
-device and thereby become channels too.
+The shipping ScoopyLoops app lives in its own sibling repository; this tree is a strict
+**superset** of its web UI (byte-identical panels, verified by audit) plus the plane, the
+merged JUCE host, and the SL ABI v3 engine seam. Nothing of scoopy's may be lost — that
+is the merge's standing law.
 
-Wizard is deliberately **not a DAW timeline** and **not a sequencer**. Its performance
-surface is the mixer itself plus a rack of 1–8 independent recorder/player decks — the
-"playback composer": record anything, loop it or one-shot it, and record the next thing
-live into another deck while the first plays.
+The app target is **WizardMerged**: scoopy's real webdist in multi-window JUCE WebViews,
+speaking to a real engine through wizard's audio IO. Strips are one kind each — a grid
+(deck) strip or a looper (tape) strip; "the looper records the deck" is two routed
+strips. A deck strip expands into a ~2×3-cell tile hosting the REAL `GridPanel`
+(D-SL-MORPH-01). Plugin hosting on the FX returns (scoopyloops' own `NativePluginHost`,
+AU + VST3) is compiled in and being wired up (phase P6).
 
 ## Repository map
 
 | Path | Contents |
 |---|---|
-| `engine/` | Portable C++20 core — routing graph, channels, decks, ASRC, recorder drains, loopback, watchdog, metering. Static lib `wz_engine` behind the C ABI `engine/include/wz_engine.h`. No device code, no file-format code, no platform headers. |
-| `host/` | JUCE 8 — duplex device IO, decode/encode, capture backends (macOS process taps, Linux PipeWire), crash-safe WAV writers, plugin hosting. Platform code lives here and only here. |
-| `shell/` | JUCE 8 `WebBrowserComponent` app. **Shell law:** transport, window/menu chrome, file dialogs, lifecycle/permissions — nothing else. |
-| `web/` | React 18 + TS + Vite + Zustand + Zod. Owns the **Patch** document. |
-| `webdist/` | Committed web bundle (freshness-gated by `webdist:check`). |
-| `driver/mac/` | Standalone AudioServerPlugIn sub-project — the "Wizard Out" virtual device (P5). |
+| `ScoopyLoops/` | The audio core — C++20, in-tree and writable since P3-0. Engine DSP, sequencer, decks, returns, and `NativePluginHost.mm` (JUCE AU/VST3 hosting, real in the app target, stubbed for the headless gates) |
+| `vendor/scoopy/engine/` | The core's portable CMake build + the DSP gates (null test, denormal, filter/clipper characterisation, choke, scene-switch, …) — also the WASM build the browser worklet uses |
+| `slengine/` | SL ABI v3 — the merged engine's C surface over the core (`sl_engine.h`), plus tape/channel/watchdog subsystems |
+| `engine/` | Wizard's own portable engine (`wz_engine`) — routing graph, recorder drains, metering |
+| `host/` | JUCE 8 platform tier: duplex device IO, decode/encode, crash-safe writers |
+| `shell/` | The **WizardMerged** app: WebView windows, SlDispatch command seam, settings, lifecycle. Shell law: transport + chrome + dialogs, nothing else |
+| `web/` | React 18 + TS + Vite. Scoopy's entire UI **plus** the plane (`src/plane/`), the BrowserLink seam, stores, persistence (sessions/kits/maps, migrations) |
+| `webdist/` | Committed web bundle, freshness-gated (`npm run webdist:check`) |
+| `ThirdParty/JUCE` | JUCE 8 (CMake) |
 
 ## Documents
 
 | Document | Contents |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Frozen reference: tier split, engine modules, ABI shapes, capture backends, HotFrame, UI panels, gates, **loop protocol** |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Signed audio decisions — buildable without re-asking |
-| [MIGRATION.md](MIGRATION.md) | Work ledger, one row per increment. **Read its Top-level roadmap first every session.** |
-| [docs/specs/](docs/specs/) | Per-domain specs (capture · routing · asrc-clock · decks · recorder · …) |
-
-Design-phase source documents and the capture-layer ground truth live outside this repo
-in `~/audio-routing-research/` (`feasibility.md`, July 2026).
+| [docs/merge/P3-LEDGER.md](docs/merge/P3-LEDGER.md) | **The work ledger — orient here first.** One row per increment; the open phase queue is at the bottom (currently P6: plugins on the returns) |
+| [docs/merge/STRIP-DECK.md](docs/merge/STRIP-DECK.md) | The strip-as-deck spec (the expandable deck tile) |
+| [docs/merge/STRIP-MODEL.md](docs/merge/STRIP-MODEL.md) | What a strip is — one element kind each, routing, record taps |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Tier split, ABI shapes, HotFrame, gates, **loop protocol** |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Signed decisions — buildable without re-asking |
 
 ## Build
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure          # 65 gates: DSP, ABI, dispatch, audio fixtures
 
-cd web && npm ci && npm run typecheck && npm test
+cd web && npm ci
+npm run typecheck && npm test                       # vitest (1400+)
+npm run bundle                                      # rebuild webdist (the app serves THESE bytes)
 ```
 
-v1 platforms: **macOS 14.4+** and **Linux (PipeWire)**. Windows is deferred by decision —
-its virtual-device kernel-driver cost is commercial, not technical (feasibility §2, §4.2).
+The app: `build/shell/WizardMerged_artefacts/WizardMerged.app`. On macOS the AU/VST3
+plugin host compiles in by default (`SCOOPY_PLUGIN_HOST_ENABLED=ON`); the same binary is
+its own out-of-process scan worker (`--scan-plugin <format> <id>`).
+
+Loop protocol: one increment per commit, all gates green before push, ledger row updated
+in the same commit. Green gates in a desktop browser are **not** proof — features must be
+verified in the real JUCE host (WKWebView), which reaches different code paths.
