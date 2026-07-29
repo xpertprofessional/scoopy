@@ -54,6 +54,7 @@ import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo
 import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import { encodeComposeArg } from './composeArg.ts'
+import { handlePanelClosed } from './composeOwnership.ts'
 import './plane.css'
 
 /**
@@ -81,6 +82,10 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   /** Which deck the in-window composer is showing, or null for the plane. */
   const [composing, setComposing] = useState<number | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  // P3-C2: decks whose publishes a compose WINDOW currently owns. While a deck
+  // is in here the plane's verbs for it lock (Strip's `composing` face, the
+  // master fan-outs, session swap/drop) — one publisher at a time.
+  const [composingDecks, setComposingDecks] = useState<ReadonlySet<number>>(new Set())
 
   // COMPOSE, HOST-SPLIT (P3-C1): the merged host spawns the REAL window,
   // addressed with {deck, session} through the sanitizer-proof arg; the
@@ -88,14 +93,45 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const composeDeck = (deck: number) => {
     const name = useCompanion.getState().decks[deck]?.session?.name
     if (juceBackend() !== null && name !== undefined) {
+      if (composingDecks.has(deck)) {
+        setNote(`deck ${deck + 1} is already composing — close that window to hand it back`)
+        return
+      }
       send(link, 'openPanelWindow', {
         panel: 'compose',
         arg: encodeComposeArg({ deck, session: name }),
       })
+      setComposingDecks((prev) => new Set(prev).add(deck))
     } else {
       setComposing(deck)
     }
   }
+
+  // The RETURN half (P3-C2): the shell broadcasts `slPanelClosed` when any
+  // window goes; a compose window's close releases its deck and reloads the
+  // session from disk — the only channel two WebViews share. KNOWN LIMIT: a
+  // window that dies without the event (crash) leaves the lock standing until
+  // the strip's session is dropped; there is no shell verb to enumerate
+  // windows yet.
+  useEffect(() => {
+    const backend = juceBackend()
+    if (!backend) return
+    backend.addEventListener('slPanelClosed', (payload: unknown) =>
+      handlePanelClosed(payload, {
+        release: (deck) =>
+          setComposingDecks((prev) => {
+            const next = new Set(prev)
+            next.delete(deck)
+            return next
+          }),
+        // A beat's grace: the closing window flushes its autosave on pagehide,
+        // and this reopen must read the flushed file, not race the write.
+        reopen: (session, deck) =>
+          void setTimeout(() => void useCompanion.getState().open(session, deck), 500),
+        note: setNote,
+      }),
+    )
+  }, [])
   /** A deck for the BAR's compose button to open — the first grid strip on the
       plane. (A strip's own COMPOSE names its own deck; this is the affordance
       for "I just want the composer".) Inert rather than hidden when there is
@@ -105,6 +141,10 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   /** Every deck on the plane — what the MASTER transport acts on, as against a
       strip's transport, which acts on its own. Same verbs, wider scope. */
   const loadedDecks = strips.flatMap((s) => (s.element.kind === 'grid' ? [s.element.deck] : []))
+  // P3-C2: the master's fan-out verbs skip decks a compose window owns — a
+  // plane-side republish of an owned deck is exactly the stale-world race the
+  // single-publisher rule exists to prevent.
+  const activeDecks = loadedDecks.filter((d) => !composingDecks.has(d))
   const companionPlay = useCompanion((c) => c.play)
   const companionStop = useCompanion((c) => c.stop)
   const companionSessions = useCompanion((c) => c.sessions)
@@ -381,7 +421,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const setReverse = useCompanion((c) => c.setReverse)
   const applyBr = (on: boolean, idx: number) => {
     const sc = BR_SCALE[idx] ?? BR_SCALE[3]!
-    for (const d of loadedDecks)
+    for (const d of activeDecks)
       setBeatRepeat(
         d,
         // startStep 0 = repeat the TOP of the window. "From where you are"
@@ -581,6 +621,12 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     // Reuse the deck this strip already holds — swapping the session on a grid
     // strip must not consume a second of only three decks.
     const existing = strip.element.kind === 'grid' ? strip.element.deck : null
+    // P3-C2: swapping the session under an open compose window would split the
+    // document in two — the menu row is disabled, and this is the belt.
+    if (existing !== null && composingDecks.has(existing)) {
+      setNote(`deck ${existing + 1} is composing — close its window before swapping the session`)
+      return
+    }
     const deck = existing ?? freeDeck(map)
     if (deck === null) {
       setNote('all 3 grid decks are in use — drop one first')
@@ -645,6 +691,12 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const dropElement = (stripKey: string) => {
     const strip = getMap().strips.find((s) => s.key === stripKey)
     if (!strip || strip.element.kind !== 'grid') return
+    // P3-C2: dropping the session under an open compose window leaves that
+    // window editing a document nothing owns any more.
+    if (composingDecks.has(strip.element.deck)) {
+      setNote(`deck ${strip.element.deck + 1} is composing — close its window before dropping it`)
+      return
+    }
     // The STORE letting go is not the ENGINE letting go: closeDeck publishes a
     // stopped world first, or the deck keeps playing with nothing on screen to
     // stop it.
@@ -816,7 +868,10 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           // companion path a strip's own transport uses (P3-1) — one vocabulary,
           // two scopes. Restart is stop-then-play for the same reason it is on a
           // strip: a publish is phase-continuous by design and cannot retrigger.
-          deckCount={loadedDecks.length}
+          // Composing decks are OWNED elsewhere: the master counts only the
+          // decks it can actually drive, so its buttons disable honestly when
+          // every loaded deck is in a compose window.
+          deckCount={activeDecks.length}
           brActive={brOn}
           brLabel={BR_SCALE[brIdx]?.label ?? '2'}
           revActive={revOn}
@@ -833,12 +888,12 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onToggleReverse={() => {
             const next = !revOn
             setRevOn(next)
-            for (const d of loadedDecks) setReverse(d, next)
+            for (const d of activeDecks) setReverse(d, next)
           }}
-          onPlay={() => loadedDecks.forEach((d) => companionPlay(d))}
-          onStop={() => loadedDecks.forEach((d) => companionStop(d))}
+          onPlay={() => activeDecks.forEach((d) => companionPlay(d))}
+          onStop={() => activeDecks.forEach((d) => companionStop(d))}
           onRestart={() =>
-            loadedDecks.forEach((d) => {
+            activeDecks.forEach((d) => {
               companionStop(d)
               companionPlay(d)
             })
@@ -877,6 +932,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onLoadSession={(key, id) => void loadSession(key, id)}
           onDropElement={dropElement}
           onCompose={composeDeck}
+          composingDecks={composingDecks}
           takeIndex={takeIndex}
         />
         <Inspector

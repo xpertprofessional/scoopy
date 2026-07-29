@@ -125,6 +125,12 @@ window.__JUCE__ = { backend: (() => {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     }
+    if (method === 'openPanelWindow') {
+      // Recorded so the walk can assert the compose door (P3-C1) — the fake
+      // has no window layer to actually open.
+      ;(window.__panelWindowCalls ||= []).push(p)
+      return { ok: true }
+    }
     if (method === 'slRouteList') return { ok: true, routes: [], renderOrder: [] }
     if (method === 'slDevices')
       return { ok: true, current: 'Fake Duplex', devices: ['Fake Duplex'],
@@ -135,6 +141,9 @@ window.__JUCE__ = { backend: (() => {
     if (method === 'getSetting') return { value: null }
     return { ok: true }
   }
+  // The walk plays the SHELL's part for window-lifecycle events (P3-C2):
+  // the test emits slPanelClosed the way MergedMain broadcasts it.
+  window.__emitEvent = emit
   return {
     emitEvent(id, payload) {
       if (id !== '__juce__invoke') return
@@ -226,6 +235,61 @@ check('rename moved the directory on the native route',
   (files.get('/sessions/Beach/pattern.json')?.length ?? 0) > 100 &&
     !files.has('/sessions/Untitled/pattern.json'),
   [...files.keys()].join(', '))
+
+// ── 5 · The compose window and the single-publisher rule (P3-C1/C2) ────────
+await page.goto('http://localhost:4601/?panel=plane')
+await page.waitForSelector('.plane-add', { timeout: 10000 })
+await page.click('.plane-add')
+await page.waitForSelector('.plane-strip', { timeout: 5000 })
+await page.click('.strip-menu')
+await page.waitForSelector('.ds-menu', { timeout: 5000 })
+await page.locator('.ds-menu-item', { hasText: 'Beach' }).click()
+await page.waitForSelector('.strip-scenes', { timeout: 10000 })
+await page.click('.strip-compose')
+await page.waitForSelector('.strip-scenefield.locked', { timeout: 5000 })
+
+const calls = await page.evaluate(() => window.__panelWindowCalls ?? [])
+check('COMPOSE ⇱ asked the shell for a compose window',
+  calls.length === 1 && calls[0].panel === 'compose', JSON.stringify(calls))
+const composeArg = calls[0]?.arg ?? ''
+let decodedArg = null
+try {
+  decodedArg = JSON.parse(Buffer.from(
+    composeArg.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
+} catch { /* checked below */ }
+check('the address decodes to the deck and session',
+  decodedArg?.deck === 0 && decodedArg?.session === 'Beach', JSON.stringify(decodedArg))
+check('the plane locked the strip while the window owns the deck',
+  (await page.$('.strip-scenefield.locked')) !== null)
+
+// The compose window itself: a second page wearing the injected address —
+// exactly what PanelWindow's user script does.
+const page2 = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+page2.on('pageerror', (e) => pageErrors.push('page2: ' + String(e)))
+await page2.addInitScript(INIT)
+await page2.addInitScript(
+  `window.__slPanel = 'compose'; window.__slPanelArg = '${composeArg}';`)
+await page2.goto('http://localhost:4601/')
+await page2.waitForSelector('.compose-window', { timeout: 10000 })
+check('the compose window names its session',
+  ((await page2.textContent('.compose-window-bar')) ?? '').includes('Beach'),
+  await page2.textContent('.compose-window-bar'))
+await page2.waitForSelector('.trk-name', { timeout: 10000 })
+check('the REAL GridPanel mounted in the compose window',
+  (await page2.$('.trk-name')) !== null)
+await page2.close()
+
+// The plane resumes ownership on the shell's close broadcast.
+await page.evaluate(
+  (a) => window.__emitEvent('slPanelClosed', { panel: 'compose', arg: a }),
+  composeArg,
+)
+await page.waitForFunction(
+  () => document.querySelector('.strip-scenefield.locked') === null,
+  null,
+  { timeout: 10000 },
+)
+check('the lock released on slPanelClosed', true)
 
 check('no page errors', pageErrors.length === 0, pageErrors.join(' | '))
 

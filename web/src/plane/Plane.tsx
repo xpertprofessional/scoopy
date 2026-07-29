@@ -55,6 +55,7 @@ export function Plane({
   onLoadSession,
   onDropElement,
   onCompose,
+  composingDecks,
   takeIndex,
 }: {
   link: EngineLink | null
@@ -66,6 +67,8 @@ export function Plane({
   onDropElement?: (stripKey: string) => void
   /** Open the composer beside the map, bound to a deck. */
   onCompose?: (deck: number) => void
+  /** P3-C2: decks whose publishes a compose window owns — their strips lock. */
+  composingDecks?: ReadonlySet<number>
   /** The take library, path → display facts (P3-U4). `null` until the first
       listing answers — a strip must not claim "audio missing" merely because
       nobody has asked the disk yet. */
@@ -496,6 +499,7 @@ export function Plane({
               onPickInput={(left, right) => repointInput(s.channel, left, right)}
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}
+              composing={deck >= 0 && (composingDecks?.has(deck) ?? false)}
               // The pads render the SESSION's scene row, not a fixed eight —
               // a 3-scene session showing five dead pads was the P3-U8 defect.
               gridEnabledScenes={d?.session ? enabledScenes(d.session.pattern) : undefined}

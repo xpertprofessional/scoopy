@@ -125,6 +125,7 @@ export function Strip({
   gridQueued = null,
   gridEnabledScenes,
   onAddScene,
+  composing = false,
   masterBpm = 120,
   onSelectScene,
   onCompose,
@@ -177,6 +178,10 @@ export function Strip({
   gridEnabledScenes?: readonly SceneLetter[]
   /** Enable one more scene (the pad row's `+`). */
   onAddScene?: () => void
+  /** P3-C2: a compose window owns this strip's deck — the plane's publish
+      lanes for it (scenes, grid transport, tempo) lock until it closes. The
+      channel tier (level, sends, mute, MON) stays live: it never publishes. */
+  composing?: boolean
   /** The plane's master tempo. GRID strips only, and passed in for the same
       reason `chips` is: one subscription in the plane beats one per strip to a
       value every strip shares. It is what the strip resolves its SYNC readout
@@ -303,8 +308,13 @@ export function Strip({
     recSeconds: recording ? recSeconds : null,
   }
   const status = statusLine(strip, live, ctx)
-  const can = enabledControls(strip, live, ctx)
-  const word = stateWord(strip, live, gridPlaying)
+  // P3-C2: one publisher at a time. While a compose window owns this deck the
+  // grid's publish verbs read as disabled-with-a-reason (L2: fill, not
+  // presence); everything channel-tier keeps working.
+  const lock = composing && strip.element.kind === 'grid'
+  const canBase = enabledControls(strip, live, ctx)
+  const can = lock ? { ...canBase, play: false, oneShot: false, stop: false, record: false } : canBase
+  const word = lock ? 'COMP' : stateWord(strip, live, gridPlaying)
   const w = waveWidth(strip.cell.w)
 
   /* ── tape sync (P3-2b-3) ─────────────────────────────────────────────── */
@@ -490,12 +500,18 @@ export function Strip({
       items.push({ kind: 'sep' })
       items.push({ kind: 'info', label: 'load a session' })
       if (sessions.length === 0)
-        items.push({ kind: 'info', label: 'none yet — make one in "sessions ⇱"' })
+        items.push({ kind: 'info', label: 'none yet — make one in "library ▾"' })
+      // P3-C2: while a compose window owns this deck, swapping or dropping its
+      // session under the window would split the document in two. The rows
+      // stay visible (fill, not presence) but inert, with the reason named.
+      if (composing)
+        items.push({ kind: 'info', label: 'editing in the compose window — close it first' })
       for (const s of sessions) {
         items.push({
           kind: 'item',
           label: s.name,
           checked: strip.element.kind === 'grid' && strip.element.sessionId === s.name,
+          disabled: composing,
           onSelect: () => onLoadSession(s.name),
         })
       }
@@ -506,6 +522,7 @@ export function Strip({
         items.push({
           kind: 'item',
           label: 'drop this session',
+          disabled: composing,
           onSelect: () => onDropElement(),
         })
       }
@@ -680,14 +697,20 @@ export function Strip({
           two strip kinds would stop being the same object. */}
       <div className="strip-waverow">
         {isGrid ? (
-          <div className="strip-scenefield" style={{ width: w, height: WAVE_H }}>
+          <div
+            className={`strip-scenefield${lock ? ' locked' : ''}`}
+            style={{ width: w, height: WAVE_H }}
+            title={lock ? 'editing in the compose window ⇱ — close it to play scenes here' : undefined}
+          >
             <GridScenes
               strip={strip}
               scene={gridScene}
               queued={gridQueued}
               enabledScenes={gridEnabledScenes}
-              onAddScene={onAddScene}
-              onSelectScene={(sc, immediate) => onSelectScene?.(sc, immediate)}
+              onAddScene={lock ? undefined : onAddScene}
+              onSelectScene={(sc, immediate) => {
+                if (!lock) onSelectScene?.(sc, immediate)
+              }}
             />
           </div>
         ) : (
@@ -895,6 +918,7 @@ export function Strip({
         {isGrid ? (
           <GridControls
             strip={strip}
+            locked={lock}
             masterBpm={masterBpm}
             // ⚠️ `updateGridTempo`, not `updateStrip`. Every one of these has to
             // reach the ENGINE as well as the document — they used to write the

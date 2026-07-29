@@ -65,6 +65,9 @@ const STATES: Array<[string, string]> = [
   ['level at silence', render(withTape({ level: 0 }))],
   ['sends up', render(withTape({ sends: [0.5, 0, 1, 0.25] }))],
   ['wide box', render(withTape({ cell: { x: 0, y: 0, w: 720, h: 196 } }))],
+  // NOTE: grid-strip states don't belong in this list — ROWS names the tape
+  // face (`strip-wavefield`); a grid strip fills the same rect with the scene
+  // field. The composing lock (P3-C2) has its own describe below.
 ]
 
 describe('layout stability', () => {
@@ -297,5 +300,32 @@ describe('the status line', () => {
 
   it('states the feedback cost on the object, not in a tooltip', () => {
     expect(render(withTape(), { feedbackMs: 10.7 })).toContain('+10.7 ms')
+  })
+})
+
+describe('the composing lock (P3-C2)', () => {
+  const gridStrip = () => base({ element: newGridElement(0, 'ses', 120) })
+
+  it('locks the publish lanes with the reason named, and says COMP', () => {
+    const html = render(gridStrip(), { composing: true })
+    // The scene field greys as a unit, and the state word owns the why.
+    expect(html).toContain('strip-scenefield locked')
+    expect(html).toContain('editing in the compose window')
+    // `>COMP<`, the word — 'COMP' alone would match COMPOSE ⇱ on every strip.
+    expect(html).toMatch(/>COMP</)
+    // The tempo row's controls read disabled — fill, not presence.
+    expect(html).toMatch(/strip-sync[^>]*disabled|disabled[^>]*strip-sync/)
+  })
+
+  it('a strip that is NOT composing renders none of the lock', () => {
+    const html = render(gridStrip())
+    expect(html).not.toContain('strip-scenefield locked')
+    expect(html).not.toMatch(/>COMP</)
+  })
+
+  it('the lock is a GRID concern — a tape strip ignores the flag', () => {
+    const html = render(withTape(), { composing: true })
+    expect(html).not.toContain('locked')
+    expect(html).not.toMatch(/>COMP</)
   })
 })

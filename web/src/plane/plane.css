@@ -558,6 +558,11 @@
 .plane-library-verb:disabled { opacity: 0.35; cursor: default; }
 .plane-library-verb.arm { color: var(--warn, #c66); border-color: var(--warn, #c66); }
 
+/* P3-C2: a compose window owns this deck — the scene field reads locked, the
+   pads stay visible (fill, not presence) but inert. */
+.strip-scenefield.locked { opacity: 0.45; }
+.strip-scenefield.locked .strip-pad { pointer-events: none; cursor: default; }
+
 /* ── The compose WINDOW (P3-C1): the whole WebView is the composer. ── */
 .compose-window {
   position: fixed;

@@ -180,6 +180,7 @@ export function GridScenes({
  */
 export function GridControls({
   strip,
+  locked = false,
   masterBpm,
   onSetBpm,
   onToggleSync,
@@ -188,25 +189,33 @@ export function GridControls({
 }: Pick<
   GridElementProps,
   'strip' | 'masterBpm' | 'onSetBpm' | 'onToggleSync' | 'onCycleTempoMode' | 'onCompose'
->) {
+> & {
+  /** P3-C2: a compose window owns this deck — tempo/sync/compose lock with the
+      reason in the title until it closes (one publisher at a time). */
+  locked?: boolean
+}) {
   if (strip.element.kind !== 'grid') return null
   const g = strip.element
   const intent = deckTempoIntent(g, masterBpm)
+  const LOCKED_TITLE = 'editing in the compose window ⇱ — close it to change this here'
   return (
     <>
       <div className="ds-row strip-row strip-gridrow" data-no-drag>
         <button
           type="button"
           className={`strip-sync${g.syncToMaster ? ' active' : ''}`}
+          disabled={locked}
           onClick={onToggleSync}
           title={
-            g.syncToMaster
-              ? // WHAT IT WILL ACTUALLY RUN AT, not what was asked for. `auto`
-                // can resolve a 70 BPM deck under a 140 master to 1:2, and a
-                // sync control that does not say so is one you have to test by
-                // ear before you trust it.
-                `synced at ${intent.pulse} — this deck runs at ${formatSyncedBpm(intent)} BPM against the plane’s master`
-              : 'free — this deck runs at its own tempo'
+            locked
+              ? LOCKED_TITLE
+              : g.syncToMaster
+                ? // WHAT IT WILL ACTUALLY RUN AT, not what was asked for. `auto`
+                  // can resolve a 70 BPM deck under a 140 master to 1:2, and a
+                  // sync control that does not say so is one you have to test by
+                  // ear before you trust it.
+                  `synced at ${intent.pulse} — this deck runs at ${formatSyncedBpm(intent)} BPM against the plane’s master`
+                : 'free — this deck runs at its own tempo'
           }
         >
           {g.syncToMaster ? 'SYNC' : 'FREE'}
@@ -214,9 +223,10 @@ export function GridControls({
         <button
           type="button"
           className={`strip-tempomode${g.syncToMaster ? ' active' : ''}`}
+          disabled={locked}
           onClick={onCycleTempoMode}
           aria-label="tempo mode"
-          title={TEMPO_MODE_TITLE[g.tempoMode]}
+          title={locked ? LOCKED_TITLE : TEMPO_MODE_TITLE[g.tempoMode]}
         >
           {TEMPO_MODE_LABEL[g.tempoMode]}
         </button>
@@ -228,6 +238,7 @@ export function GridControls({
             step={0.1}
             value={g.bpm}
             aria-label="deck tempo"
+            disabled={locked}
             // Per-deck BPM isolation is a mission requirement, so this lives on
             // the STRIP and never on the transport: two decks at two tempos is
             // the normal case, not an exception.
@@ -238,9 +249,11 @@ export function GridControls({
             // Its OWN tempo, which stays the truth while synced — sync stretches
             // the deck, it does not rewrite the session.
             title={
-              g.syncToMaster
-                ? `this deck’s own tempo — synced, it runs at ${formatSyncedBpm(intent)}`
-                : 'this deck’s own tempo'
+              locked
+                ? LOCKED_TITLE
+                : g.syncToMaster
+                  ? `this deck’s own tempo — synced, it runs at ${formatSyncedBpm(intent)}`
+                  : 'this deck’s own tempo'
             }
           />
           bpm
@@ -249,7 +262,11 @@ export function GridControls({
           type="button"
           className="strip-compose"
           onClick={onCompose}
-          title="open this session in the composer, in its own window"
+          title={
+            locked
+              ? 'its compose window is already open — close it to hand the deck back'
+              : 'open this session in the composer, in its own window'
+          }
         >
           COMPOSE ⇱
         </button>
