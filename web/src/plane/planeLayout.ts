@@ -35,6 +35,22 @@ export const LAYOUT = {
   perRow: 4, // wide player-shaped strips: fewer per row than a narrow rack
 } as const
 
+/** The DECK TILE (P3-D4-1, STRIP-DECK.md): a session-loaded strip expanded to
+    host the REAL GridPanel at DJ density. 2×3 grid cells including the gaps
+    they span, so an expanded strip still sits ON the placement grid — collapse
+    restores DEFAULT_CELL exactly and nothing else ever moved. */
+export const DECK_CELL = {
+  w: LAYOUT.w * 2 + LAYOUT.gap, // 692 — clears the dj column's ~500px floor
+  h: LAYOUT.h * 3 + LAYOUT.gap * 2, // 612 — four tracks fully, more scroll inside
+} as const
+
+/** Is this cell wearing the deck-tile size? The DOCUMENT carries only the
+    cell — expansion is a size, not a mode flag, so this predicate is the one
+    definition of "expanded" (a second flag could disagree with the geometry). */
+export function isDeckCell(cell: Cell): boolean {
+  return cell.w >= DECK_CELL.w && cell.h >= DECK_CELL.h
+}
+
 /**
  * Deterministic left-to-right, top-to-bottom grid of `count` cells — matching
  * the old rack's reading order so a migrated session looks familiar. Inventing

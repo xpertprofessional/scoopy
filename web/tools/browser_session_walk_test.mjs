@@ -207,6 +207,30 @@ check('the grid row (sync · tempo mode · bpm) is present',
   (await page.$('.strip-gridrow')) !== null)
 check('no fatal error blocks', (await page.$$('.fatal-error')).length === 0)
 
+// ── 2b · The strip becomes the DECK (P3-D4-1, D-SL-MORPH-01) ───────────────
+// ⤢ expands the strip to the deck tile, and the REAL GridPanel must be FED:
+// "waiting for pattern state…" forever was the D4-M hard-block finding, so the
+// assertion is the dj track rows actually materialising, not the container.
+await page.click('.strip-expand')
+await page.waitForSelector('.strip-deckface', { timeout: 5000 })
+await page.waitForSelector('.strip-deckface .track-strips.density-dj', { timeout: 10000 })
+check('the deck tile hosts the real GridPanel at DJ density',
+  (await page.$('.strip-deckface .track-strips.density-dj')) !== null)
+check('the tile\'s MasterRow is scoopy\'s own (BPM · VOL · DRV — P3-D4-1a made it real)',
+  (await page.$('.strip-deckface .master-row')) !== null)
+check('the panel is not stuck waiting for state',
+  !((await page.textContent('.strip-deckface')) ?? '').includes('waiting for pattern state'))
+// …and the way back restores the compact strip to the pixel.
+await page.click('.strip-expand')
+await page.waitForFunction(() => document.querySelector('.strip-deckface') === null,
+  { timeout: 5000 })
+const collapsedBox = await page.evaluate(() => {
+  const s = document.querySelector('.plane-strip')
+  return { w: s.style.width, h: s.style.height }
+})
+check('collapse restores the 340×196 strip exactly',
+  collapsedBox.w === '340px' && collapsedBox.h === '196px', JSON.stringify(collapsedBox))
+
 // ── 3 · The library survives a reload (persistence is server-side) ─────────
 await page.goto('http://localhost:4601/?panel=plane')
 await page.waitForSelector('.plane-add', { timeout: 10000 })

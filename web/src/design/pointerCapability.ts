@@ -17,7 +17,10 @@ let coarseQuery: MediaQueryList | null = null;
 /** True when the primary pointer is coarse (finger). Cached query object;
  *  reads live so hybrid devices that flip (e.g. keyboard detached) stay true. */
 export function isCoarsePointer(): boolean {
-  if (typeof window.matchMedia !== "function") return false;
+  // SSR-safe: the plane's deck tile renders GridPanel under the house
+  // static-markup tests, where there is no window at all. No window means no
+  // pointer, and "fine" is the desktop default the metrics tables assume.
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   if (!coarseQuery) coarseQuery = window.matchMedia("(pointer: coarse)");
   return coarseQuery.matches;
 }

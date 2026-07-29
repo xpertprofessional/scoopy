@@ -430,8 +430,10 @@ async function walkDroppedDir(root: FileSystemDirectoryEntry): Promise<Map<strin
   return out;
 }
 
-/** One audio file, by user gesture. `showOpenFilePicker` where it exists, an input elsewhere. */
-function pickAudioFile(): Promise<File | null> {
+/** One audio file, by user gesture. `showOpenFilePicker` where it exists, an input elsewhere.
+    Exported for the plane's deck-tile binding (P3-D4-1) — the tile's LOAD button is the same
+    gesture against a different deck, and two pickers would drift. */
+export function pickAudioFile(): Promise<File | null> {
   const picker = (
     window as Window & {
       showOpenFilePicker?: (opts: unknown) => Promise<FileSystemFileHandle[]>;

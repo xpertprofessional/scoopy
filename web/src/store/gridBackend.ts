@@ -22,6 +22,53 @@
 import type { GridMetaState, GridPatternState, GridRuntimeState } from "../../protocol/schema.ts";
 import { applyGridPattern, docRows, toGridPattern, toGridRuntime, type DocRow } from "./gridProjection.ts";
 
+/**
+ * The topic family one backend serves (P3-D4-1). The compose grid reads
+ * `gridMeta`/`gridPattern/<i>`/`gridRuntime/<i>`; `GridPanel@dj` reads
+ * `djMeta/<d>`/`djPattern/<d>/<i>`/`djRuntime/<d>/<i>` — same shapes, different
+ * addresses. Parameterizing the ADDRESS (not forking the backend) is what lets
+ * the plane's deck tiles mount the real dj panel against the same document
+ * machinery the composer already trusts.
+ */
+export interface GridTopicNames {
+  meta: string;
+  patternPrefix: string;
+  runtimePrefix: string;
+}
+
+export const COMPOSE_TOPICS: GridTopicNames = {
+  meta: "gridMeta",
+  patternPrefix: "gridPattern/",
+  runtimePrefix: "gridRuntime/",
+};
+
+/** The dj deck `deck`'s topic family — the exact strings `djSource(deck)` reads. */
+export function djGridTopics(deck: number): GridTopicNames {
+  return {
+    meta: `djMeta/${deck}`,
+    patternPrefix: `djPattern/${deck}/`,
+    runtimePrefix: `djRuntime/${deck}/`,
+  };
+}
+
+/**
+ * Meta the DOCUMENT cannot supply — deck identity, keyboard arbitration, the
+ * sync law's resolved tempo. Owned by whoever mounts the backend (the plane's
+ * deck-tile binding); the compose defaults are the historical values.
+ */
+export interface GridMetaFacts {
+  /** Which engine deck this grid IS — hides/shows the sends cluster and keys
+      the focus ring. null = the compose grid's "no deck behind me". */
+  deckIndex: number | null;
+  /** EXACTLY ONE mounted dj panel may hold this, or every panel answers every
+      arrow key (the D4-M arbitration note). Compose keeps false — its panel
+      ignores meta keyboard state (no djSlotIndex). */
+  keyboardActive: boolean;
+  /** The sync law's resolved tempo, struck through over the session bpm when
+      the deck is synced/nudged — null = free-running. */
+  syncedBpm: number | null;
+}
+
 /** What the engine/store must tell the grid about each track's loaded sample. */
 export interface TrackRuntimeInfo {
   name: string;
@@ -66,8 +113,25 @@ export class GridBackend {
   // no idea which parameter to change. Defaults to "pitch", matching Swift's
   // Track.activeCellParameter default (an unarmed drag edits pitch).
   private activeParams: string[] = [];
+  private facts: GridMetaFacts = { deckIndex: null, keyboardActive: false, syncedBpm: null };
 
-  constructor(private hooks: GridBackendHooks) {}
+  constructor(
+    private hooks: GridBackendHooks,
+    private topics: GridTopicNames = COMPOSE_TOPICS,
+  ) {}
+
+  /** Update the mount-owned meta facts and republish meta if anything moved. */
+  setMetaFacts(facts: Partial<GridMetaFacts>): void {
+    const next = { ...this.facts, ...facts };
+    if (
+      next.deckIndex === this.facts.deckIndex &&
+      next.keyboardActive === this.facts.keyboardActive &&
+      next.syncedBpm === this.facts.syncedBpm
+    )
+      return;
+    this.facts = next;
+    this.publish(this.topics.meta, this.meta());
+  }
 
   /**
    * Load a session's document. Projects every track and publishes all three topics, so a panel that
@@ -84,10 +148,10 @@ export class GridBackend {
     this.publishAll();
   }
 
-  /** Reflect transport state into `gridMeta` (the playhead's on/off, not its position). */
+  /** Reflect transport state into the meta topic (the playhead's on/off, not its position). */
   setPlaying(playing: boolean): void {
     this.playing = playing;
-    this.hooks.publish("gridMeta", this.meta());
+    this.hooks.publish(this.topics.meta, this.meta());
   }
 
   /**
@@ -97,21 +161,23 @@ export class GridBackend {
    */
   updateRuntime(runtime: TrackRuntimeInfo[]): void {
     this.runtime = runtime;
-    this.rows.forEach((_, i) => this.publish(`gridRuntime/${i}`, this.runtimeState(i)));
+    this.rows.forEach((_, i) =>
+      this.publish(`${this.topics.runtimePrefix}${i}`, this.runtimeState(i)),
+    );
   }
 
   /** No session open — an empty grid rather than a stale one. */
   clear(): void {
     this.rows = [];
     this.runtime = [];
-    this.publish("gridMeta", this.meta());
+    this.publish(this.topics.meta, this.meta());
   }
 
   private publishAll(): void {
-    this.hooks.publish("gridMeta", this.meta());
+    this.hooks.publish(this.topics.meta, this.meta());
     this.rows.forEach((_, i) => {
-      this.hooks.publish(`gridPattern/${i}`, this.pattern(i));
-      this.hooks.publish(`gridRuntime/${i}`, this.runtimeState(i));
+      this.hooks.publish(`${this.topics.patternPrefix}${i}`, this.pattern(i));
+      this.hooks.publish(`${this.topics.runtimePrefix}${i}`, this.runtimeState(i));
     });
   }
 
@@ -121,11 +187,16 @@ export class GridBackend {
 
   /** Deterministic pull — the panel calls `getUiState` on mount; re-run the provider. */
   republish(topic: string): void {
-    if (topic === "gridMeta") return this.publish("gridMeta", this.meta());
-    const m = topic.match(/^gridPattern\/(\d+)$/);
-    if (m) return this.publish(topic, this.pattern(Number(m[1])));
-    const r = topic.match(/^gridRuntime\/(\d+)$/);
-    if (r) return this.publish(topic, this.runtimeState(Number(r[1])));
+    if (topic === this.topics.meta) return this.publish(topic, this.meta());
+    const index = (prefix: string): number | null => {
+      if (!topic.startsWith(prefix)) return null;
+      const n = Number(topic.slice(prefix.length));
+      return Number.isInteger(n) && n >= 0 ? n : null;
+    };
+    const p = index(this.topics.patternPrefix);
+    if (p !== null) return this.publish(topic, this.pattern(p));
+    const r = index(this.topics.runtimePrefix);
+    if (r !== null) return this.publish(topic, this.runtimeState(r));
   }
 
   private meta(): GridMetaState {
@@ -143,7 +214,7 @@ export class GridBackend {
       // is the only mode that can work with no Swift behind it.
       ownerPatterns: true,
       noteKeyboardActive: false,
-      keyboardActive: false,
+      keyboardActive: this.facts.keyboardActive,
       // The companion composes; perform mode is a studio DJ surface it has no
       // transport strip to toggle, so it stays off here.
       performActive: false,
@@ -151,11 +222,13 @@ export class GridBackend {
       muteGroupActive: false,
       masterVolume: this.masterVolume,
       masterDrive: this.masterDrive,
-      syncedBpm: null,
-      // No deck behind the companion grid — and no focus ring (it never renders
-      // beside sibling decks, so there is nothing to disambiguate). No deck also
-      // means no master sends (the row hides the cluster on deckIndex null).
-      deckIndex: null,
+      // Mount-owned facts (P3-D4-1): the compose defaults are the historical
+      // values (no deck, no keyboard claim, free-running); a deck tile's
+      // binding sets its own. masterSends stays [] on every host — the merged
+      // dispatch answers returnFx:false, and an empty array is how the row
+      // hides the cluster honestly.
+      syncedBpm: this.facts.syncedBpm,
+      deckIndex: this.facts.deckIndex,
       masterSends: [],
     } as GridMetaState;
   }
@@ -182,7 +255,7 @@ export class GridBackend {
   setActiveCellParameter(i: number, mode: string): void {
     if (i < 0) return;
     this.activeParams[i] = mode;
-    this.publish(`gridRuntime/${i}`, this.runtimeState(i));
+    this.publish(`${this.topics.runtimePrefix}${i}`, this.runtimeState(i));
   }
 
   /**
@@ -258,6 +331,6 @@ export class GridBackend {
   selectTrack(index: number): void {
     if (index < 0 || index >= this.rows.length) return;
     this.selected = index;
-    this.publish("gridMeta", this.meta());
+    this.publish(this.topics.meta, this.meta());
   }
 }

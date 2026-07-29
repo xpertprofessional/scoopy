@@ -341,6 +341,44 @@
   background: var(--bg-raised);
 }
 
+/* EXPAND ⇄ COLLAPSE (P3-D4-1) — the strip-menu's twin: same 16px header, same
+   fixed-basis rules, one glyph. */
+.strip-expand {
+  flex: 0 0 14px;
+  padding: 0;
+  min-width: 0;
+  height: 14px;
+  line-height: 1;
+  background: transparent;
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.strip-expand:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+/* THE DECK FACE (P3-D4-1): the real GridPanel region inside the expanded tile.
+   Takes the box's spare height (the chrome rows keep their intrinsic sizes) and
+   scrolls INSIDE itself — the strip's own overflow stays hidden, so the plane
+   never grows a scrollbar because a deck did. */
+.strip-deckface {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+/* The panel sizes itself 100vh as a WINDOW root; inside the tile, the face is
+   the window. */
+.strip-deckface .grid-panel {
+  height: 100%;
+}
+
 .strip-name {
   flex: 1 1 auto;
   min-width: 0;

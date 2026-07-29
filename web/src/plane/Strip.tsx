@@ -61,6 +61,8 @@ import type { Chips } from './cables.ts'
 import { channelLabel, inputChoices, setInputDevice, useDeviceStore } from './devices.ts'
 import { ask, send } from './send.ts'
 import { StripMeter, METER_W } from './StripMeter.tsx'
+import { DeckFace } from './deckTile.tsx'
+import { DECK_CELL, DEFAULT_CELL, isDeckCell } from './planeLayout.ts'
 import { GridControls, GridScenes, nextTempoMode } from './GridElement.tsx'
 import { TapeWave, WAVE_H } from './TapeWave.tsx'
 import {
@@ -227,6 +229,11 @@ export function Strip({
   const currentDevice = useDeviceStore((d) => d.current)
   const { openMenu } = useContextMenu()
   const isGrid = strip.element.kind === 'grid'
+  // THE DECK TILE (P3-D4-1): expansion IS the cell size — the document carries
+  // only geometry, so the predicate is the one definition and a saved map
+  // reopens exactly as arranged. Collapse restores DEFAULT_CELL to the pixel:
+  // nothing built is lost, expand is a reveal, not a mode.
+  const expanded = isGrid && isDeckCell(strip.cell)
   const [live, setLive] = useState<Live>(IDLE_LIVE)
   const [revision, setRevision] = useState(0)
   const recStartedAt = useRef<number | null>(null)
@@ -710,6 +717,33 @@ export function Strip({
         >
           {strip.name}
         </span>
+        {/* EXPAND ⇄ COLLAPSE (P3-D4-1, D-SL-MORPH-01): the strip becomes the
+            deck — the expanded tile hosts the REAL GridPanel at DJ density.
+            A visible button, not a gesture, for the same reason the ⋯ menu is
+            one: the only route to a feature must not be swallowable. Grid
+            strips only — a looper strip has no deck rows to reveal. */}
+        {isGrid && (
+          <button
+            type="button"
+            className="strip-expand"
+            aria-label={expanded ? 'collapse strip' : 'expand strip'}
+            title={
+              expanded
+                ? 'collapse — back to the compact strip'
+                : 'expand — this deck’s real DJ rows (waveforms, trim, M/S, DSP) inside the strip'
+            }
+            onClick={() =>
+              updateStrip(strip.key, (s) => ({
+                ...s,
+                cell: expanded
+                  ? { ...s.cell, w: DEFAULT_CELL.w, h: DEFAULT_CELL.h }
+                  : { ...s.cell, w: DECK_CELL.w, h: DECK_CELL.h },
+              }))
+            }
+          >
+            {expanded ? '⤡' : '⤢'}
+          </button>
+        )}
         {/* The feedback lamp's slot is reserved at all times (L2), so an alarm
             cannot shift the state word sideways. */}
         {/* THE OUT CHIP — where this strip's signal goes, stated on the object.
@@ -798,6 +832,15 @@ export function Strip({
         )}
         <StripMeter link={link} channel={strip.channel} />
       </div>
+
+      {/* THE DECK'S OWN ROWS (P3-D4-1): the real GridPanel at DJ density,
+          revealed by the expanded cell. Sits between the pads and the channel
+          row per the signed sketch; scrolls in its own overflow, never the
+          plane's. Only in the expanded box — presence follows the GEOMETRY the
+          document carries, so the collapsed strip is byte-identical to before. */}
+      {expanded && strip.element.kind === 'grid' && (
+        <DeckFace link={link} element={strip.element} masterBpm={masterBpm} />
+      )}
 
       {/* THE TRANSPORT ROW has a rhythm — record · verbs · switches — and that
           rhythm is its only structure. REC is 56 px with a text label and a

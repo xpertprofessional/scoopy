@@ -346,3 +346,47 @@ describe('record from another strip (P3-R2)', () => {
     expect(html).not.toContain('→ this bus')
   })
 })
+
+describe('the deck tile (P3-D4-1, D-SL-MORPH-01)', () => {
+  const gridAt = (cell: Partial<StripDoc['cell']> = {}) =>
+    base({
+      element: newGridElement(0, 'ses', 120),
+      cell: { x: 0, y: 0, w: 340, h: 196, ...cell },
+    })
+
+  it('a collapsed grid strip offers the expand door and NO deck face', () => {
+    const html = render(gridAt())
+    expect(html).toContain('strip-expand')
+    expect(html).toContain('⤢')
+    expect(html).not.toContain('strip-deckface')
+  })
+
+  it('the deck-tile cell reveals the REAL GridPanel between pads and channel row', () => {
+    const html = render(gridAt({ w: 692, h: 612 }))
+    expect(html).toContain('strip-deckface')
+    // The actual GridPanel mount — its root class, not a projection of ours.
+    expect(html).toContain('grid-panel')
+    // …and the way back.
+    expect(html).toContain('⤡')
+    // The compact chrome never left: expand is a reveal, not a mode. Every
+    // anatomy row is still present around the face.
+    for (const row of ROWS) {
+      if (row === 'strip-wavefield') continue // the grid face fills that rect with pads
+      expect(html).toContain(row)
+    }
+  })
+
+  it('expansion IS the geometry — one big dimension alone is not a tile', () => {
+    // The pre-existing 'wide box' state (w 720, default h) must NOT grow a
+    // deck face: both dimensions carry the decision, so a hand-resized strip
+    // cannot half-expand.
+    expect(render(gridAt({ w: 720 }))).not.toContain('strip-deckface')
+    expect(render(gridAt({ h: 640 }))).not.toContain('strip-deckface')
+  })
+
+  it('a tape strip never expands — a looper has no deck rows (one kind per strip)', () => {
+    const html = render(withTape({ cell: { x: 0, y: 0, w: 692, h: 612 } }))
+    expect(html).not.toContain('strip-expand')
+    expect(html).not.toContain('strip-deckface')
+  })
+})

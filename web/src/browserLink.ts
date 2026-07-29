@@ -26,7 +26,7 @@ import {
 } from "../protocol/schema.ts";
 import type { EngineLink } from "./engineLink.ts";
 import { FileBrowserBackend, type BrowserSettings } from "./store/fileBrowserBackend.ts";
-import { GridBackend, type GridBackendHooks } from "./store/gridBackend.ts";
+import { GridBackend, djGridTopics, type GridBackendHooks } from "./store/gridBackend.ts";
 import { SampleStore } from "./store/sampleStore.ts";
 import type { FileBrowserState } from "../protocol/schema.ts";
 
@@ -51,6 +51,10 @@ class LocalSettings implements BrowserSettings {
 
 /** 30 Hz — the rate the desktop pushes HotFrames at, so meters behave identically. */
 const HOT_FRAME_INTERVAL_MS = 1000 / 30;
+
+/** Handler-map key for the compose grid (no deck axis). Negative so it can
+    never collide with a real deck index. */
+const COMPOSE_SCOPE = -1;
 
 /** The three session-document params the MasterRow writes (P3-D4-1a). */
 export type SessionParam = "sessionBpm" | "sessionMasterVolume" | "sessionMasterDrive";
@@ -89,25 +93,40 @@ export class BrowserLink implements EngineLink {
     | ((p: SessionParam, value: number, deck: number) => void)
     | null = null;
 
-  private gridEditHandler: GridBackendHooks["onEdit"] | null = null;
-  /** Registered by the companion: assign a LIBRARY sample (OPFS path) to a track. */
-  private sampleLoadHandler: ((trackIndex: number, path: string) => Promise<void>) | null = null;
-  /** Registered by the companion: the LOAD button — pick an audio file, import it, assign it. */
-  private samplePickHandler: ((trackIndex: number) => Promise<void>) | null = null;
-  /** Registered by the companion: the grid's ▶/■ — flip the runtime launch gate. */
-  private launchToggleHandler: ((trackIndex: number) => void) | null = null;
-  /** Registered by the companion: the S button — flip the runtime solo. */
-  private soloToggleHandler: ((trackIndex: number) => void) | null = null;
-  /** Registered by the companion: the ↻ locator-repeat toggle — a scene-aware document flip. */
-  private locatorRepeatHandler: ((trackIndex: number) => void) | null = null;
+  /**
+   * THE HANDLER MAPS (P3-D4-1). These were six SINGLE slots — mount two grid
+   * surfaces and the last registration won, so deck 0's edits landed in deck
+   * 1's document (the D4-M finding, proven wrong-by-design the moment the
+   * plane mounts a deck tile per strip). Keyed by scope: COMPOSE_SCOPE is the
+   * compose grid (every existing caller, unchanged — the setters' deck
+   * argument defaults to it), 0|1|2 are the dj deck backends.
+   */
+  private gridEditHandlers = new Map<number, GridBackendHooks["onEdit"]>();
+  /** Assign a LIBRARY sample (path) to a track. */
+  private sampleLoadHandlers = new Map<number, (trackIndex: number, path: string) => Promise<void>>();
+  /** The LOAD button — pick an audio file, import it, assign it. */
+  private samplePickHandlers = new Map<number, (trackIndex: number) => Promise<void>>();
+  /** The grid's ▶/■ — flip the runtime launch gate. */
+  private launchToggleHandlers = new Map<number, (trackIndex: number) => void>();
+  /** The S button — flip the runtime solo. */
+  private soloToggleHandlers = new Map<number, (trackIndex: number) => void>();
+  /** The ↻ locator-repeat toggle — a scene-aware document flip. */
+  private locatorRepeatHandlers = new Map<number, (trackIndex: number) => void>();
 
   constructor() {
     // Playhead sentinels. A Float64Array defaults to 0 — a VALID step — so the unfilled playhead
     // slots made the companion grid draw a permanent playhead wash on step 0 of every track. The
     // schema's "not playing" value is −1 (schema.ts:135-141); these slots are static here (no
-    // per-track playhead is pumped yet), so they are stamped once.
+    // per-track playhead is pumped yet), so they are stamped once. The dj blocks joined the list
+    // at P3-D4-1: the plane's deck tiles read `djTrackStep/Pos` in a BROWSER preview too, and the
+    // native engine's real values (P3-D4-3) do not exist on this host. Levels stay 0 — honest
+    // silence, not a sentinel.
     for (const name of Object.keys(HotFrameLayout)) {
-      if (/^trackStep\d+$|^trackPos\d+$|^playheadStepDeck\d$/.test(name)) {
+      if (
+        /^trackStep\d+$|^trackPos\d+$|^playheadStepDeck\d$|^djTrackStepD\dT\d+$|^djTrackPosD\dT\d+$/.test(
+          name,
+        )
+      ) {
         this.frame[HotFrameLayout[name as keyof typeof HotFrameLayout]] = -1;
       }
     }
@@ -119,8 +138,8 @@ export class BrowserLink implements EngineLink {
       // The companion store owns the document — it folds the edit in, re-publishes the world and
       // autosaves. Registered after construction (the store outlives one link and wires itself in),
       // and a no-op until then so the link works before a session is open.
-      onEdit: (i, row) => this.gridEditHandler?.(i, row),
-      peaks: (i, points) => this.gridPeaks(i, points),
+      onEdit: (i, row) => this.gridEditHandlers.get(COMPOSE_SCOPE)?.(i, row),
+      peaks: (i, points) => this.gridPeaks(i, points, COMPOSE_SCOPE),
     });
   }
 
@@ -129,9 +148,46 @@ export class BrowserLink implements EngineLink {
     return this.grid;
   }
 
-  /** The companion store registers here so a grid edit reaches the document + engine + autosave. */
-  setGridEditHandler(fn: GridBackendHooks["onEdit"]): void {
-    this.gridEditHandler = fn;
+  /**
+   * The dj deck `deck`'s document backend (P3-D4-1) — same machinery as the
+   * compose backend at the `djMeta/<d>` topic family, created lazily so hosts
+   * that never mount a deck tile pay nothing. Its hooks close over the deck,
+   * which IS the per-deck handler routing: the D4-M "last mount wins" defect
+   * cannot exist when each backend asks its own map slot.
+   */
+  djGridBackend(deck: number): GridBackend {
+    let backend = this.djGrids.get(deck);
+    if (!backend) {
+      backend = new GridBackend(
+        {
+          publish: (topic, state) => this.pushUiState(topic, state),
+          onEdit: (i, row) => this.gridEditHandlers.get(deck)?.(i, row),
+          peaks: (i, points) => this.gridPeaks(i, points, deck),
+        },
+        djGridTopics(deck),
+      );
+      this.djGrids.set(deck, backend);
+    }
+    return backend;
+  }
+
+  private djGrids = new Map<number, GridBackend>();
+
+  /** The backend a deck-carrying command addresses; absent deck = compose. */
+  private gridFor(deck: unknown): GridBackend {
+    return typeof deck === "number" ? this.djGridBackend(deck) : this.grid;
+  }
+
+  /** The handler-map scope for a command's deck field. */
+  private scopeOf(deck: unknown): number {
+    return typeof deck === "number" ? deck : COMPOSE_SCOPE;
+  }
+
+  /** The companion store registers here so a grid edit reaches the document + engine + autosave.
+      `deck` scopes the registration to that dj backend; omitted = the compose grid (every
+      pre-D4-1 caller, unchanged). Same rule on the five setters below. */
+  setGridEditHandler(fn: GridBackendHooks["onEdit"], deck?: number): void {
+    this.gridEditHandlers.set(this.scopeOf(deck), fn);
   }
 
   /** The document owner registers here so MasterRow BPM/VOL/DRV writes land. */
@@ -152,24 +208,24 @@ export class BrowserLink implements EngineLink {
     return true;
   }
 
-  setSampleLoadHandler(fn: (trackIndex: number, path: string) => Promise<void>): void {
-    this.sampleLoadHandler = fn;
+  setSampleLoadHandler(fn: (trackIndex: number, path: string) => Promise<void>, deck?: number): void {
+    this.sampleLoadHandlers.set(this.scopeOf(deck), fn);
   }
 
-  setSamplePickHandler(fn: (trackIndex: number) => Promise<void>): void {
-    this.samplePickHandler = fn;
+  setSamplePickHandler(fn: (trackIndex: number) => Promise<void>, deck?: number): void {
+    this.samplePickHandlers.set(this.scopeOf(deck), fn);
   }
 
-  setLaunchToggleHandler(fn: (trackIndex: number) => void): void {
-    this.launchToggleHandler = fn;
+  setLaunchToggleHandler(fn: (trackIndex: number) => void, deck?: number): void {
+    this.launchToggleHandlers.set(this.scopeOf(deck), fn);
   }
 
-  setSoloToggleHandler(fn: (trackIndex: number) => void): void {
-    this.soloToggleHandler = fn;
+  setSoloToggleHandler(fn: (trackIndex: number) => void, deck?: number): void {
+    this.soloToggleHandlers.set(this.scopeOf(deck), fn);
   }
 
-  setLocatorRepeatHandler(fn: (trackIndex: number) => void): void {
-    this.locatorRepeatHandler = fn;
+  setLocatorRepeatHandler(fn: (trackIndex: number) => void, deck?: number): void {
+    this.locatorRepeatHandlers.set(this.scopeOf(deck), fn);
   }
 
   /**
@@ -177,13 +233,17 @@ export class BrowserLink implements EngineLink {
    * a track by index, so the path is threaded through the runtime info the store already hands the
    * grid on load. Set by the companion via `setGridPeakPaths`.
    */
-  private gridPeakPaths: (string | null)[] = [];
-  setGridPeakPaths(paths: (string | null)[]): void {
-    this.gridPeakPaths = paths;
+  private gridPeakPathsByScope = new Map<number, (string | null)[]>();
+  setGridPeakPaths(paths: (string | null)[], deck?: number): void {
+    this.gridPeakPathsByScope.set(this.scopeOf(deck), paths);
   }
 
-  private async gridPeaks(trackIndex: number, points: number): Promise<{ minMax: number[]; rms: number[] }> {
-    const path = this.gridPeakPaths[trackIndex];
+  private async gridPeaks(
+    trackIndex: number,
+    points: number,
+    scope: number,
+  ): Promise<{ minMax: number[]; rms: number[] }> {
+    const path = this.gridPeakPathsByScope.get(scope)?.[trackIndex];
     if (!path) return { minMax: [], rms: [] };
     const env = await this.store.peakEnvelope(path, points);
     return { minMax: env.minMax, rms: env.rms };
@@ -226,53 +286,71 @@ export class BrowserLink implements EngineLink {
           returnFx: false,
         };
 
-      case "getUiState":
+      case "getUiState": {
         // Deterministic pull: re-run the topic's provider, exactly as Swift does.
-        if (p.topic === "fileBrowser") this.pushUiState("fileBrowser", this.browser.state());
-        else this.grid.republish(p.topic as string); // gridMeta · gridPattern/<i> · gridRuntime/<i>
+        const topic = String(p.topic ?? "");
+        if (topic === "fileBrowser") this.pushUiState("fileBrowser", this.browser.state());
+        else {
+          // dj topics carry their deck in the ADDRESS (`djMeta/<d>`,
+          // `djPattern/<d>/<i>`…) — route to that deck's backend; everything
+          // else is the compose family (gridMeta · gridPattern/<i> · …).
+          const dj = topic.match(/^dj(?:Meta|Pattern|Runtime)\/(\d)(?:\/|$)/);
+          if (dj) this.djGridBackend(Number(dj[1])).republish(topic);
+          else this.grid.republish(topic);
+        }
         return {};
+      }
 
       case "publishTrackPattern":
         // THE FLIP's write path, in the browser. The grid applies its own reducers and hands back a
         // whole GridPatternState; GridBackend folds it into the document, and the store re-publishes
         // the world + autosaves. Returns the same {applied,error} Swift does — a refusal is loud.
-        return this.grid.handlePublish(p as { trackIndex: number; json: string });
+        // `p.deck` (the field the schema always carried and this switch used to DROP — the D4-M
+        // finding) addresses a dj backend; absent = compose. Same routing on the three below.
+        return this.gridFor(p.deck).handlePublish(p as { trackIndex: number; json: string });
 
       case "getSamplePeaks":
-        return this.grid.samplePeaks(p as { trackIndex: number; points: number });
+        return this.gridFor(p.deck).samplePeaks(p as { trackIndex: number; points: number });
 
       case "gridEdit":
         // In owner mode the grid applies verifiable edits itself and publishes them; the only intent
         // that still reaches here is the cursor move. Everything else that falls through is a
         // non-modeled op (topology / sample load) the browser does not do — accepted, not faked.
-        if (p.op === "selectTrack") this.grid.selectTrack(Number(p.trackIndex ?? p.index ?? 0));
+        if (p.op === "selectTrack")
+          this.gridFor(p.deck).selectTrack(Number(p.trackIndex ?? p.index ?? 0));
         return { ok: true };
 
-      case "trackEdit":
+      case "trackEdit": {
+        // Deck-routed (P3-D4-1): the op lands on the addressed backend's
+        // handlers, so a deck tile's LOAD/▶/S/↻ reach ITS document — not
+        // whichever surface registered last.
+        const scope = this.scopeOf(p.deck);
+        const grid = this.gridFor(p.deck);
+        const track = () => Number(p.trackIndex ?? grid.selectedIndex);
         // The LOAD button: pick an audio file, import it into the library, assign it to the row.
         // The handler lives in the companion (it owns the document and the DOM for a picker).
-        if (p.op === "loadSample" && this.samplePickHandler) {
-          void this.samplePickHandler(Number(p.trackIndex ?? this.grid.selectedIndex));
+        if (p.op === "loadSample" && this.samplePickHandlers.get(scope)) {
+          void this.samplePickHandlers.get(scope)!(track());
           return { ok: true };
         }
         // The ▶/■ launch button: a RUNTIME gate, not a document edit — the companion flips its
         // stopped-set, republishes the world, and pushes the row's gridRuntime back. Unquantized
         // (launch-quantize scheduling is desktop-only; `launchScheduled` stays false here).
-        if (p.op === "toggleLaunch" && this.launchToggleHandler) {
-          this.launchToggleHandler(Number(p.trackIndex ?? this.grid.selectedIndex));
+        if (p.op === "toggleLaunch" && this.launchToggleHandlers.get(scope)) {
+          this.launchToggleHandlers.get(scope)!(track());
           return { ok: true };
         }
         // Solo — the same runtime shape: never persisted (on either host), rides the world's
         // mixMuted mask. Was a silent accept, which read as "the S button is dead".
-        if (p.op === "toggleSolo" && this.soloToggleHandler) {
-          this.soloToggleHandler(Number(p.trackIndex ?? this.grid.selectedIndex));
+        if (p.op === "toggleSolo" && this.soloToggleHandlers.get(scope)) {
+          this.soloToggleHandlers.get(scope)!(track());
           return { ok: true };
         }
         // The ↻ locator-repeat toggle — a DOCUMENT edit (pattern-scoped field) that is Swift-side
         // on the desktop only because it fans across the multi-selection there. Was a silent
         // accept: the button could neither engage nor release the loop.
-        if (p.op === "toggleLocatorRepeat" && this.locatorRepeatHandler) {
-          this.locatorRepeatHandler(Number(p.trackIndex ?? this.grid.selectedIndex));
+        if (p.op === "toggleLocatorRepeat" && this.locatorRepeatHandlers.get(scope)) {
+          this.locatorRepeatHandlers.get(scope)!(track());
           return { ok: true };
         }
         // Arm the per-cell parameter lane (which lane a value-drag / ö-ä edits).
@@ -281,13 +359,14 @@ export class BrowserLink implements EngineLink {
         // Was a silent accept — the browser had NO armed lane, so every value-drag
         // resolved to the empty default and did nothing.
         if (p.op === "setActiveCellParameter" && typeof p.mode === "string") {
-          this.grid.setActiveCellParameter(Number(p.trackIndex ?? this.grid.selectedIndex), p.mode);
+          grid.setActiveCellParameter(track(), p.mode);
           return { ok: true };
         }
         // Same story as gridEdit: verifiable track edits are self-applied + published. A stray
         // intent is a non-modeled op, accepted rather than silently dropped OR loudly rejected
         // (rejecting would make the grid think the edit failed).
         return { ok: true };
+      }
 
       case "reportUndoState":
         // Undo is TS-side (undoStore); this call exists to light the NATIVE Edit menu, which has no
@@ -307,10 +386,11 @@ export class BrowserLink implements EngineLink {
         // `load` is a DOCUMENT edit, not a browser op: a double-clicked file lands on the grid's
         // selected row; a row-drop names its row. Routed to the companion, which owns the document
         // — this is the op the backend's stub has been promising since P8-6 ("load needs the TS
-        // document"). The document is here now.
-        if (p.op === "load" && this.sampleLoadHandler && typeof p.path === "string") {
+        // document"). The document is here now. The file browser has no deck axis, so this stays
+        // compose-scoped by construction.
+        if (p.op === "load" && this.sampleLoadHandlers.get(COMPOSE_SCOPE) && typeof p.path === "string") {
           const trackIndex = Number(p.trackIndex ?? this.grid.selectedIndex);
-          void this.sampleLoadHandler(trackIndex, p.path);
+          void this.sampleLoadHandlers.get(COMPOSE_SCOPE)!(trackIndex, p.path);
           return { notice: null };
         }
         return this.browser.handle(
