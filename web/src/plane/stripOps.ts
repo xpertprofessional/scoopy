@@ -138,6 +138,29 @@ export function newStrip(channel: number, at: { x: number; y: number }): Strip {
 /** The engine's record-source kinds (sl_tape_set_record_source). */
 export const RECORD_SOURCE = { deviceInput: 0, mainMix: 1, channelBus: 2 } as const
 
+/**
+ * P3-R3 — the LINKED LOOPER for a grid strip: a tape strip whose bus this
+ * strip already feeds and whose tap is the bus. REC on a grid strip targets
+ * this (or spawns one) instead of overwriting its own element — one kind per
+ * strip (D-SL-MORPH-01); "the looper records the deck's own output" is two
+ * routed strips.
+ */
+export function linkedLooperFor(map: PlaneMap, src: Strip): Strip | null {
+  return (
+    map.strips.find(
+      (s) =>
+        s.element.kind === 'tape' &&
+        s.recordTap === 'bus' &&
+        map.routes.some(
+          (r) =>
+            r.src.kind === 'channelOut' &&
+            r.src.index === src.channel &&
+            r.dst.index === s.channel,
+        ),
+    ) ?? null
+  )
+}
+
 export type RecordTap = { kind: number; chan0: number; chan1: number; label: string }
 
 /**

@@ -16,6 +16,7 @@ import {
   newGridElement,
   newStripKey,
   newTapeElement,
+  linkedLooperFor,
   RECORD_SOURCE,
   recordTapFor,
   spawnPoint,
@@ -451,5 +452,42 @@ describe('nameAfterSessionLoad (P3-U2)', () => {
     const s = { ...newStrip(1, { x: 0, y: 0 }) }
     expect(s.name).toBe('STRIP 2')
     expect(nameAfterSessionLoad(s, 'My Jam')).toBe('My Jam')
+  })
+})
+
+describe('linkedLooperFor (P3-R3)', () => {
+  const busRoute = (fromChannel: number, toChannel: number) => ({
+    src: { kind: 'channelOut' as const, index: fromChannel, sub: null },
+    dst: { kind: 'channelIn' as const, index: toChannel },
+    gain: 1,
+    feedback: false,
+  })
+
+  it('finds the tape strip this grid strip feeds whose tap is the bus', () => {
+    const grid = strip({ channel: 0, element: newGridElement(0, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
+    const map = { ...mapWith([grid, looper]), routes: [busRoute(0, 1)] }
+    expect(linkedLooperFor(map, grid)?.key).toBe(looper.key)
+  })
+
+  it('a routed tape strip WITHOUT the bus tap is not linked — its REC captures something else', () => {
+    const grid = strip({ channel: 0, element: newGridElement(0, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: null })
+    const map = { ...mapWith([grid, looper]), routes: [busRoute(0, 1)] }
+    expect(linkedLooperFor(map, grid)).toBeNull()
+  })
+
+  it('a bus-tapped tape strip nobody routed is not linked — the cable is the link', () => {
+    const grid = strip({ channel: 0, element: newGridElement(0, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
+    const map = mapWith([grid, looper])
+    expect(linkedLooperFor(map, grid)).toBeNull()
+  })
+
+  it('another grid strip never qualifies, whatever its routing', () => {
+    const grid = strip({ channel: 0, element: newGridElement(0, 'ses', 120) })
+    const other = strip({ channel: 1, element: newGridElement(1, 'other', 120), recordTap: 'bus' })
+    const map = { ...mapWith([grid, other]), routes: [busRoute(0, 1)] }
+    expect(linkedLooperFor(map, grid)).toBeNull()
   })
 })

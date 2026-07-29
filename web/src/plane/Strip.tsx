@@ -123,6 +123,7 @@ export function Strip({
   peerStrips = [],
   busSources = [],
   onRecordFromStrip,
+  onRecordIntoLooper,
   chips,
   gridScene = 'A',
   gridQueued = null,
@@ -173,6 +174,9 @@ export function Strip({
   /** Patch that strip's output into this one (consent flow included) — the
       other half of the one-gesture "record from ▸ STRIP N". */
   onRecordFromStrip?: (srcKey: string, at: { x: number; y: number }) => void
+  /** P3-R3: REC on a GRID strip records into its linked looper strip instead
+      of overwriting the grid element (one kind per strip). */
+  onRecordIntoLooper?: () => void
   /** GRID strips only. The scene actually RUNNING and one armed for the next
       cycle boundary — from the session store, not the map: the map remembers a
       scene per (strip, session), the engine is what is playing one, and those
@@ -414,6 +418,15 @@ export function Strip({
 
     let index = tape
     if (index === null) {
+      // P3-R3: a GRID strip's REC never overwrites the grid — one kind per
+      // strip (D-SL-MORPH-01, retiring P3-X1's recorded defect where capture
+      // worked and the session silently fell out of the document). The plane
+      // spawns (or targets) a looper strip patched from this strip's bus and
+      // the capture happens THERE; this strip's element does not move.
+      if (strip.element.kind === 'grid') {
+        onRecordIntoLooper?.()
+        return
+      }
       const free = freeTape(getMap())
       if (free === null) return // every tape is spoken for; nothing to say yet
       const element = newTapeElement(free, /* stereo */ false)
@@ -801,7 +814,9 @@ export function Strip({
             recording
               ? 'stop — loops instantly (Law C-3)'
               : tape === null
-                ? 'record — captures this strip’s own output into a new tape'
+                ? strip.element.kind === 'grid'
+                  ? 'record — captures this deck into its looper strip (spawned beside it; press ■ there)'
+                  : 'record — captures this strip’s own output into a new tape'
                 : 'record — replaces this tape’s material'
           }
         >

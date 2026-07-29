@@ -37,10 +37,12 @@ import { Plane } from './Plane.tsx'
 import { refreshDevices } from './devices.ts'
 import { ask, onRefusal, send } from './send.ts'
 import {
+  RECORD_SOURCE,
   freeChannel,
   freeDeck,
   freeTape,
   inputRoute,
+  linkedLooperFor,
   nameAfterSessionLoad,
   newGridElement,
   newStrip,
@@ -601,6 +603,104 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   }
 
   /**
+   * P3-R3 — REC on a GRID strip spawns (or targets) its LOOPER STRIP.
+   *
+   * The old behaviour was P3-X1's recorded defect: REC allocated a tape and
+   * REPLACED the grid element in the document — capture worked, the session
+   * silently fell out of the strip. With one-kind-per-strip signed
+   * (D-SL-MORPH-01), "the looper records the deck's own output" is TWO ROUTED
+   * STRIPS: this finds the linked looper (a tape strip whose bus this strip
+   * feeds, tap = bus) or spawns one patched from this strip's bus, then starts
+   * the capture THERE. The looper strip's own ■ closes the loop; this strip's
+   * grid never moves.
+   */
+  const recordIntoLooper = async (stripKey: string) => {
+    const map = getMap()
+    const src = map.strips.find((s) => s.key === stripKey)
+    if (!src || src.element.kind !== 'grid') return
+
+    let looper = linkedLooperFor(map, src)
+    if (!looper) {
+      const channel = freeChannel(map)
+      if (channel === null) {
+        setNote(`all ${map.strips.length} mixer channels are in use — a looper strip needs one`)
+        return
+      }
+      const freeT = freeTape(map)
+      if (freeT === null) {
+        setNote('all 8 tapes are in use — drop one first')
+        return
+      }
+      const el = surfaceRef.current
+      const at = spawnPoint(
+        { width: el?.clientWidth ?? 0, height: el?.clientHeight ?? 0 },
+        map.plane,
+        map.strips.length,
+      )
+      let strip = newStrip(channel, at)
+      strip = {
+        ...strip,
+        // Named after its JOB, not its slot: this looper exists to record that
+        // strip, and the name is how the pair reads as a pair on the plane.
+        name: `LOOP · ${src.name}`,
+        element: newTapeElement(freeT, false),
+        recordTap: 'bus',
+      }
+      const budget = checkBudget(strip.key, strip.element)
+      if (!budget.ok) {
+        setNote(`no lanes left — ${budget.wanted} of ${budget.budget}`)
+        return
+      }
+      // Patched from the SOURCE STRIP'S BUS, not the device input — the whole
+      // point of this strip is the deck's output. No cycle is possible: the
+      // edge lands on a channel that did not exist a moment ago.
+      const route = {
+        src: { kind: 'channelOut' as const, index: src.channel, sub: null },
+        dst: { kind: 'channelIn' as const, index: channel },
+        gain: 1,
+        feedback: false,
+      }
+      useMapStore.setState((st) => ({
+        map: { ...st.map, strips: [...st.map.strips, strip], routes: [...st.map.routes, route] },
+        dirty: true,
+      }))
+      send(link, 'slChannel', {
+        action: 'setSource',
+        channel,
+        kind: 1,
+        index: strip.element.kind === 'tape' ? strip.element.index : 0,
+      })
+      send(link, 'slRoute', {
+        action: 'add',
+        srcKind: 0, // channelOut — the source strip's bus
+        srcIndex: src.channel,
+        srcSub: 0xffffffff,
+        dstKind: 0,
+        dstIndex: channel,
+        gain: 1,
+        feedback: false,
+      })
+      looper = strip
+    }
+
+    if (looper.element.kind !== 'tape') return
+    const started = await ask(link, 'slRecord', {
+      action: 'start',
+      tape: looper.element.index,
+      sourceKind: RECORD_SOURCE.channelBus,
+      chan0: looper.channel,
+      chan1: -1,
+      sourceDesc: `${src.name} → ${looper.name}`,
+      bpmAtStart: masterBpm,
+    })
+    setNote(
+      started
+        ? `recording ${src.name} into “${looper.name}” — press ■ there to close the loop`
+        : `could not start recording into “${looper.name}”`,
+    )
+  }
+
+  /**
    * LOAD A SESSION INTO A STRIP — the grid creation gesture.
    *
    * Blocked until now for one reason, and it was never a missing button:
@@ -933,6 +1033,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onDropElement={dropElement}
           onCompose={composeDeck}
           composingDecks={composingDecks}
+          onRecordIntoLooper={(key) => void recordIntoLooper(key)}
           takeIndex={takeIndex}
         />
         <Inspector

@@ -56,6 +56,7 @@ export function Plane({
   onDropElement,
   onCompose,
   composingDecks,
+  onRecordIntoLooper,
   takeIndex,
 }: {
   link: EngineLink | null
@@ -69,6 +70,8 @@ export function Plane({
   onCompose?: (deck: number) => void
   /** P3-C2: decks whose publishes a compose window owns — their strips lock. */
   composingDecks?: ReadonlySet<number>
+  /** P3-R3: REC on a grid strip records into its linked looper strip. */
+  onRecordIntoLooper?: (stripKey: string) => void
   /** The take library, path → display facts (P3-U4). `null` until the first
       listing answers — a strip must not claim "audio missing" merely because
       nobody has asked the disk yet. */
@@ -524,6 +527,9 @@ export function Plane({
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}
               composing={deck >= 0 && (composingDecks?.has(deck) ?? false)}
+              onRecordIntoLooper={
+                onRecordIntoLooper ? () => onRecordIntoLooper(s.key) : undefined
+              }
               // The pads render the SESSION's scene row, not a fixed eight —
               // a 3-scene session showing five dead pads was the P3-U8 defect.
               gridEnabledScenes={d?.session ? enabledScenes(d.session.pattern) : undefined}
