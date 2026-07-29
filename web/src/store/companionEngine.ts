@@ -38,6 +38,7 @@ import type { TrackRuntimeInfo } from "./gridBackend.ts";
 import { SampleStore } from "./sampleStore.ts";
 import {
   Autosaver,
+  createSession,
   exportSession,
   importSessionEntries,
   importSessionFile,
@@ -506,23 +507,10 @@ export const useCompanion = create<CompanionState>((set, get) => ({
 
   async newSession() {
     try {
-      // The canonical fresh document — the byte-pinned fixture a fresh DESKTOP save writes, so a
-      // browser-born session is indistinguishable from a studio-born one. Dynamically imported:
-      // it is ~540 KB nobody pays for until they click New.
-      const { default: freshText } = await import(
-        "../../fixtures/patternfile/fresh-default.json?raw"
-      );
-      const pattern = decodePatternFileAnyVersion(freshText);
-      const taken = new Set((await listSessions()).map((s) => s.name));
-      let name = "Untitled";
-      for (let n = 2; taken.has(name); n++) name = `Untitled ${n}`;
-      const kit = {
-        id: crypto.randomUUID().toUpperCase(),
-        name: "Session Kit",
-        samples: [],
-      };
-      const session: WorkingSession = { name, pattern, kit, extras: new Map() };
-      await saveSession(session);
+      // Create on disk (sessionStore owns the fresh document + unique naming —
+      // P3-L1 moved it there so the plane's library can create WITHOUT
+      // loading), then open: the companion's New is create-and-open.
+      const { name } = await createSession();
       await get().refresh();
       await get().open(name);
       set({ notice: `created ${name} — load samples onto tracks from FILES`, error: null });

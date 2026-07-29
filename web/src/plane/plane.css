@@ -477,6 +477,87 @@
 }
 .strip-pad-add:disabled { cursor: default; opacity: 0.35; }
 
+/* ── The session library popover (P3-L1) — a shelf under the bar, not a
+   window. Fixed under the bar's left half; the backdrop is the close. ── */
+.plane-library-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+}
+.plane-library {
+  position: absolute;
+  top: 34px;
+  left: 8px;
+  z-index: 40;
+  min-width: 260px;
+  max-width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.plane-library-actions {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 4px;
+  border-bottom: var(--hairline) solid var(--line);
+  margin-bottom: 4px;
+}
+.plane-library-actions button {
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.plane-library-actions button:hover { background: var(--bg-hover, var(--bg)); }
+.plane-library-empty { color: var(--text-dim); padding: 4px 2px; }
+.plane-library-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+.plane-library-row:hover { background: var(--bg); }
+.plane-library-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plane-library-loaded { color: var(--text-dim); }
+.plane-library-rename {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  padding: 1px 4px;
+  min-width: 0;
+}
+.plane-library-verb {
+  flex: none;
+  background: none;
+  color: var(--text-dim);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 1px 4px;
+}
+.plane-library-verb:hover:not(:disabled) { color: var(--text); border-color: var(--line); }
+.plane-library-verb:disabled { opacity: 0.35; cursor: default; }
+.plane-library-verb.arm { color: var(--warn, #c66); border-color: var(--warn, #c66); }
+
 /* Sync · tempo · compose, in the rate row's 18 px slot. */
 .strip-gridrow { gap: 4px; }
 

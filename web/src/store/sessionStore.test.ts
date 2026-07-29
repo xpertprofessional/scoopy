@@ -18,10 +18,12 @@ import { kitSamples } from "../persist/kit.ts";
 import { installFakeOpfs } from "./opfsFake.ts";
 import * as opfs from "./opfs.ts";
 import {
+  createSession,
   importSessionFile,
   listSessions,
   openSession,
   packageSession,
+  renameSession,
   saveSession,
   type WorkingSession,
 } from "./sessionStore.ts";
@@ -151,5 +153,61 @@ describe("saveSession", () => {
     const after = (await packageSession(await openSession("Demo"))).bytes;
 
     expect(after).toEqual(before);
+  });
+});
+
+describe("createSession (P3-L1) — the library's New creates, it does not load", () => {
+  it("lands a fresh session on disk with the canonical document, and returns it", async () => {
+    const session = await createSession();
+    expect(session.name).toBe("Untitled");
+    // On disk means listable — the plane's strip menu reads this listing.
+    expect((await listSessions()).map((s) => s.name)).toEqual(["Untitled"]);
+    // The document is the byte-pinned fresh-desktop fixture, not an empty stub.
+    const reopened = await openSession("Untitled");
+    expect(Array.isArray((reopened.pattern as Record<string, unknown>).sectionA)).toBe(true);
+  });
+
+  it("names uniquely — Untitled, Untitled 2, … — the 'Untitled 2' class the store must round-trip", async () => {
+    await createSession();
+    const second = await createSession();
+    expect(second.name).toBe("Untitled 2");
+    expect((await listSessions()).map((s) => s.name).sort()).toEqual(["Untitled", "Untitled 2"]);
+  });
+
+  it("honours a preferred name, still deduplicating", async () => {
+    await createSession("Beach");
+    const clash = await createSession("Beach");
+    expect(clash.name).toBe("Beach 2");
+  });
+});
+
+describe("renameSession (P3-L1)", () => {
+  it("moves the identity and the content; the old directory is gone", async () => {
+    await importSessionFile(await fixtureFile());
+    await renameSession("Demo", "Renamed Demo");
+
+    expect((await listSessions()).map((s) => s.name)).toEqual(["Renamed Demo"]);
+    const reopened = await openSession("Renamed Demo");
+    expect(reopened.name).toBe("Renamed Demo");
+    // The kit still points at the sample library — a rename moves the
+    // identity, never the audio, so the reference cannot break.
+    expect(kitSamples(reopened.kit).every((s) => s.filePath.startsWith("/samples/Demo/"))).toBe(
+      true,
+    );
+    expect(await opfs.exists("/samples/Demo/kick.wav")).toBe(true);
+  });
+
+  it("refuses an existing target — merging two sessions silently is data loss", async () => {
+    await createSession("A");
+    await createSession("B");
+    await expect(renameSession("A", "B")).rejects.toThrow(/already exists/);
+    expect((await listSessions()).map((s) => s.name).sort()).toEqual(["A", "B"]);
+  });
+
+  it("refuses an empty name and no-ops a same-name rename", async () => {
+    await createSession("A");
+    await expect(renameSession("A", "   ")).rejects.toThrow(/needs a name/);
+    await renameSession("A", "A");
+    expect((await listSessions()).map((s) => s.name)).toEqual(["A"]);
   });
 });

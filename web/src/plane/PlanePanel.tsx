@@ -30,6 +30,7 @@ import { attachAutosave, exportMap, listMaps, openMap, saveMapAs } from '../stat
 import { carve } from './carve.ts'
 import { parseSidecar, takeSeconds } from '../persist/takeLibrary.ts'
 import { Inspector } from './Inspector.tsx'
+import { Library } from './Library.tsx'
 import { Master } from './Master.tsx'
 import { Matrix } from './Matrix.tsx'
 import { Plane } from './Plane.tsx'
@@ -63,6 +64,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const [matrix, setMatrix] = useState(false)
   /** Which deck the in-window composer is showing, or null for the plane. */
   const [composing, setComposing] = useState<number | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   /** A deck for the BAR's compose button to open — the first grid strip on the
       plane. (A strip's own COMPOSE names its own deck; this is the affordance
       for "I just want the composer".) Inert rather than hidden when there is
@@ -74,6 +76,8 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const loadedDecks = strips.flatMap((s) => (s.element.kind === 'grid' ? [s.element.deck] : []))
   const companionPlay = useCompanion((c) => c.play)
   const companionStop = useCompanion((c) => c.stop)
+  const companionSessions = useCompanion((c) => c.sessions)
+  const companionDecks = useCompanion((c) => c.decks)
   /** The synced strips, resolved through the tempo law, for the master's
       readout. Only the synced ones: a free-running deck has no relation to the
       master and listing it as "1:1 120" would claim one. */
@@ -676,31 +680,23 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         >
           open
         </button>
-        {/* THE SESSION LIBRARY'S DOOR — and without it the merged app is a dead
-            end, which is how this button was found.
-
-            A scoopy session can only be CREATED or IMPORTED in the companion
-            panel, and that panel had no way to be opened here: `openPanelWindow`
-            lost its last caller when compose moved in-window (see the note
-            below). So `WizardMerged` could not make a session, therefore could
-            not put a deck in a strip, therefore could not reach the grid
-            transport or the tempo controls AT ALL — every one of them lives on a
-            grid strip. The whole of P3-1 and P3-2 was unreachable from a clean
-            install, and the strip's "load a session" menu section renders only
-            when the library is non-empty, so it said nothing either.
-
-            This is the first of the P3-4 doors ("every scoopy panel reachable"),
-            pulled forward because the tempo domain cannot be verified without
-            it. A SEPARATE WINDOW is right here, unlike compose: the library is
-            not per-strip, it holds no deck, and it publishes no world — none of
-            the reasons compose had to come in-window apply. */}
+        {/* THE SESSION LIBRARY, ON THE PLANE (P3-L1). This used to open the
+            COMPANION PANEL in a second window — the only surface that could
+            create/import a session, and the door that made the user ask
+            whether we were building on the wrong app. The decree
+            (D-SL-MORPH-01): the companion is the BROWSER's shell, a web
+            bonus, never app-internal. The library's verbs (New · import ·
+            rename · delete) now live in a popover right here, against the
+            same sessionStore both hosts share; LOADING stays the strip
+            menu's gesture. No second window, no second store, no focus
+            round-trip for freshness. */}
         <button
           type="button"
           className="plane-compose"
-          onClick={() => send(link, 'openPanelWindow', { panel: 'companion' })}
-          title="the session library — create, import and manage sessions"
+          onClick={() => setLibraryOpen((v) => !v)}
+          title="the session library — create, import, rename and delete sessions; load them from a strip’s ⋯ menu"
         >
-          sessions ⇱
+          library ▾
         </button>
         {/* THE PANELS MENU (P3-4-2) — the door PANEL-AUDIT.md promised. Every
             compiled-in panel the audit marked mechanical opens from here;
@@ -823,6 +819,20 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           }
         />
       </div>
+
+      {/* The library popover (P3-L1) — a shelf, not a window. The backdrop is
+          the close gesture; every action's outcome lands on the note line. */}
+      {libraryOpen && (
+        <>
+          <div className="plane-library-backdrop" onPointerDown={() => setLibraryOpen(false)} />
+          <Library
+            sessions={companionSessions}
+            decks={companionDecks}
+            refresh={() => useCompanion.getState().refresh()}
+            onNote={setNote}
+          />
+        </>
+      )}
 
       {note && (
         <p className="plane-note warn mono" role="status">

@@ -157,21 +157,24 @@ const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(String(e)))
 await page.addInitScript(INIT)
 
-// ── 1 · Create, in the companion (the "sessions ⇱" surface) ────────────────
-await page.goto('http://localhost:4601/?panel=companion')
-await page.waitForSelector('.cmp-rail-actions', { timeout: 10000 })
-await page.click('.cmp-rail-actions button:has-text("New")')
-await page.waitForSelector('.cmp-session.on', { timeout: 10000 })
+// ── 1 · Create, in the PLANE's own library popover (P3-L1 — the companion is
+//        the browser's shell; the merged app never opens it) ────────────────
+await page.goto('http://localhost:4601/?panel=plane')
+await page.waitForSelector('.plane-bar', { timeout: 10000 })
+await page.click('button:has-text("library ▾")')
+await page.waitForSelector('.plane-library', { timeout: 5000 })
+await page.click('.plane-library-actions button:has-text("New")')
+await page.waitForSelector('.plane-library-row', { timeout: 10000 })
 
-check('created session is listed and open',
-  (await page.textContent('.cmp-session.on'))?.includes('Untitled'))
+check('created session is listed in the plane library',
+  ((await page.textContent('.plane-library-row')) ?? '').includes('Untitled'))
+check('New created WITHOUT loading — no deck was hijacked',
+  (await page.locator('.plane-library-loaded').count()) === 0)
 check('pattern.json landed in the NATIVE library, non-empty',
   (files.get('/sessions/Untitled/pattern.json')?.length ?? 0) > 100,
   `got ${files.get('/sessions/Untitled/pattern.json')?.length ?? 0} bytes`)
 check('the write was the atomic slFiles route, not OPFS',
   [...files.keys()].every((k) => k.startsWith('/sessions/') || k.startsWith('/samples/')))
-check('no companion error line', (await page.$('.cmp-error')) === null,
-  await page.textContent('.cmp-error').catch(() => ''))
 
 // ── 2 · Load, on the plane, through the VISIBLE strip menu ─────────────────
 await page.goto('http://localhost:4601/?panel=plane')
@@ -204,6 +207,25 @@ await page.click('.strip-menu')
 await page.waitForSelector('.ds-menu', { timeout: 5000 })
 check('after a reload the library still lists the session',
   (await page.locator('.ds-menu-item', { hasText: 'Untitled' }).count()) === 1)
+
+// ── 4 · Rename, end to end through the slFiles route (P3-L1) ───────────────
+await page.keyboard.press('Escape') // close the strip menu
+await page.goto('http://localhost:4601/?panel=plane')
+await page.waitForSelector('.plane-bar', { timeout: 10000 })
+await page.click('button:has-text("library ▾")')
+await page.waitForSelector('.plane-library-row', { timeout: 5000 })
+await page.click('.plane-library-row button[title="rename"]')
+await page.fill('.plane-library-rename', 'Beach')
+await page.keyboard.press('Enter')
+await page.waitForFunction(() => {
+  const row = document.querySelector('.plane-library-row')
+  return row && row.textContent.includes('Beach')
+}, { timeout: 10000 })
+
+check('rename moved the directory on the native route',
+  (files.get('/sessions/Beach/pattern.json')?.length ?? 0) > 100 &&
+    !files.has('/sessions/Untitled/pattern.json'),
+  [...files.keys()].join(', '))
 
 check('no page errors', pageErrors.length === 0, pageErrors.join(' | '))
 

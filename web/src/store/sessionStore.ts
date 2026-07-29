@@ -118,6 +118,52 @@ export async function deleteSession(name: string): Promise<void> {
 }
 
 /**
+ * A fresh session ON DISK — created, not loaded (P3-L1). The library's New must
+ * not hijack a deck: `companionEngine.newSession` (create AND open, the
+ * companion's own gesture) now rides this and adds the open.
+ *
+ * The document is the byte-pinned fresh-DESKTOP-save fixture, dynamically
+ * imported (~540 KB nobody pays for until they click New), so a plane-born
+ * session is indistinguishable from a studio-born one.
+ */
+export async function createSession(preferredName?: string): Promise<WorkingSession> {
+  const { default: freshText } = await import("../../fixtures/patternfile/fresh-default.json?raw");
+  const pattern = decodePatternFileAnyVersion(freshText);
+  const taken = new Set((await listSessions()).map((s) => s.name));
+  const base = preferredName?.trim() || "Untitled";
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
+  const session: WorkingSession = {
+    name,
+    pattern,
+    kit: { id: crypto.randomUUID().toUpperCase(), name: "Session Kit", samples: [] },
+    extras: new Map(),
+  };
+  await saveSession(session);
+  return session;
+}
+
+/**
+ * Rename = open → save under the new name → delete the old dir (P3-L1). The
+ * session's SAMPLES stay where they are (`/samples/<import name>/…`) and the
+ * kit's `filePath`s keep pointing at them — a rename moves the identity, never
+ * the audio, so it cannot break a reference.
+ *
+ * Refuses an existing target: silently merging two sessions' directories is a
+ * data loss with a well-formed library listing.
+ */
+export async function renameSession(oldName: string, newName: string): Promise<void> {
+  const target = newName.trim();
+  if (!target) throw new Error("a session needs a name");
+  if (target === oldName) return;
+  const taken = new Set((await listSessions()).map((s) => s.name));
+  if (taken.has(target)) throw new Error(`a session named "${target}" already exists`);
+  const session = await openSession(oldName);
+  await saveSession({ ...session, name: target });
+  await deleteSession(oldName);
+}
+
+/**
  * Autosave. Debounced, because the caller is an edit stream: every nudge of a knob would otherwise
  * re-encode and rewrite the whole document.
  *
