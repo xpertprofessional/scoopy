@@ -57,10 +57,16 @@ in deck 1's document), one `gridPeakPaths`, and `publishTrackPattern` /
    `syncedBpm` from the plane's law, bpm/vol/drive from the document.
 4. HotFrame: stamp `-1` into the `djTrack*` blocks adapter-side until P3-D4-3
    lands real per-deck values.
-5. MasterRow's BPM/VOL/DRV `paramWrite`s are refused by `MergedMain::handleParam`
-   → reroute BPM through `companionEngine.setBpm(bpm, deck)` (the seam
-   PlanePanel already uses); VOL/DRV through the strip channel; or hide the row.
-   NO dead controls in the tile — that is the four-rules line.
+5. ~~MasterRow's BPM/VOL/DRV `paramWrite`s are refused by `MergedMain::handleParam`
+   → reroute BPM / hide the row~~ **RESOLVED BY USER DECISION + P3-D4-1a
+   (2026-07-29): the tile keeps scoopy's FULL row, all three controls REAL.**
+   The user chose neither offered option — "work from the real scoopy
+   perspective; the design adapts to the real version". Built: the session
+   document's masterVolume + clipper block ride the world into the core's
+   per-deck master render (8 keyed snapshot-deck names); the row's writes are
+   document edits via the BrowserLink sessionParam seam → `setBpm` /
+   `setMasterVolume` / `setMasterDrive`. syncedBpm (the sync/nudge resolved-
+   tempo display the user called out) lands with the adapter meta in D4-1/D4-2.
 6. Shared-singleton hazards inherited from DJ mode, accepted and noted:
    `undoStore` keyed by track only (three decks share one ⌘Z timeline).
 

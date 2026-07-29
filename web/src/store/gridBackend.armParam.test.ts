@@ -60,4 +60,27 @@ describe("GridBackend armed cell parameter", () => {
     ]);
     expect(runtimeOf(0).activeCellParameterName).toBe("pitch");
   });
+
+  it("meta serves the DOCUMENT's master volume/drive, not a hardcoded 1/1 (P3-D4-1a)", () => {
+    const { backend, published } = makeBackend();
+    const metaOf = () =>
+      [...published].reverse().find((p) => p.topic === "gridMeta")!.state as {
+        masterVolume: number;
+        masterDrive: number;
+      };
+    // The scaffold pattern above carries no master fields → honest defaults.
+    expect(metaOf().masterVolume).toBe(1);
+    expect(metaOf().masterDrive).toBe(1);
+    // A real document's values reach the row — the MasterRow renders what the
+    // engine will actually play (the same two fields the world publishes).
+    backend.load(
+      { bpm: 120, masterVolume: 0.8, masterClipperDrive: 4, sectionA: [{}] } as unknown as Record<
+        string,
+        unknown
+      >,
+      [{ name: "T1", sampleKey: null, sampleDurationMs: 0, samplePeakGain: 1 }],
+    );
+    expect(metaOf().masterVolume).toBe(0.8);
+    expect(metaOf().masterDrive).toBe(4);
+  });
 });

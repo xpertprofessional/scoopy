@@ -178,6 +178,42 @@ describe("MergedLink routing", () => {
     );
   });
 
+  it("routes the MasterRow's session params to the DOCUMENT owner, not the native lane (P3-D4-1a)", () => {
+    // The merged shell REFUSES sessionBpm/sessionMasterVolume/sessionMasterDrive
+    // by design (kParamMap maps only deckTranspose) — the session document lives
+    // on the companion side. Before this seam, the MasterRow was three live-
+    // looking controls whose every write died in a DBG line.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()! as import("./browserLink.ts").BrowserLink;
+    // The native param lane coalesces per rAF; capture frames so the flush is
+    // OURS — otherwise a mis-routed write would sit unflushed in the queue and
+    // the "nothing leaked" assertion below would pass vacuously.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
+      frames.push(fn);
+      return frames.length;
+    });
+    const flush = () => frames.splice(0).forEach((fn) => fn(0));
+    const landed: [string, number, number][] = [];
+    link.setSessionParamHandler((p, v, deck) => landed.push([p, v, deck]));
+    link.paramWrite("sessionBpm" as never, 128, 1);
+    link.paramWrite("sessionMasterVolume" as never, 0.5, 0);
+    link.paramWrite("sessionMasterDrive" as never, 8, 2);
+    expect(landed).toEqual([
+      ["sessionBpm", 128, 1],
+      ["sessionMasterVolume", 0.5, 0],
+      ["sessionMasterDrive", 8, 2],
+    ]);
+    // …and nothing leaked to the native param lane.
+    flush();
+    expect(sent.filter((s) => s.name === "slParam")).toHaveLength(0);
+    // A deck param still goes native — the seam must not swallow engine control.
+    link.paramWrite("deckTranspose" as never, 3, 0);
+    flush();
+    expect(sent.filter((s) => s.name === "slParam")).toHaveLength(1);
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+  });
+
   it("keeps the GRID DOCUMENT on the companion side", async () => {
     // `MergedMain` implements none of the document methods, and the flip that
     // would move them native is P3. Routing these native would break the grid

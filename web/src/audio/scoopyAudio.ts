@@ -180,6 +180,20 @@ export interface World {
   beatRepeatSubdivision?: number;
   beatRepeatStartSubcell?: number;
   reverseTransport?: boolean;
+  /** The deck's MASTER STAGE (P3-D4-1a) — the session DOCUMENT's own master
+      volume + clipper block, emitted from the pattern so the engine's per-deck
+      master render (deckSnap.masterVolume / deckMasterDrive_) plays the
+      session's settings, not the C++ defaults. Optional: absent = defaults.
+      Consumed by the NATIVE applier; the browser worklet applies masterVolume
+      via setMainGain instead (deck 0 only — see companionEngine.publish). */
+  masterVolume?: number;
+  masterClipperDrive?: number;
+  masterClipperThreshold?: number;
+  masterClipperSoftness?: number;
+  masterClipperCurve?: number;
+  masterClipperCeiling?: number;
+  masterClipperOversample?: number;
+  masterClipperDecoupled?: boolean;
 }
 
 /**

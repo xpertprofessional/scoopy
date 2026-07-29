@@ -76,6 +76,13 @@ juce::var applyWorld(sl_engine* engine, const juce::var& world) {
             "beatRepeatActive",       "beatRepeatStartStep",
             "beatRepeatLength",       "beatRepeatSubdivision",
             "beatRepeatStartSubcell", "reverseTransport",
+            // The deck's master stage (P3-D4-1a) — the session document's own
+            // fields, forwarded when present so the deck plays at ITS master
+            // volume/clipper. Absent = the fresh snapshot's defaults, as above.
+            "masterVolume",           "masterClipperDrive",
+            "masterClipperThreshold", "masterClipperSoftness",
+            "masterClipperCurve",     "masterClipperCeiling",
+            "masterClipperOversample","masterClipperDecoupled",
         };
         for (const char* f : kDeckFields) {
             const auto v = world.getProperty(f, juce::var());

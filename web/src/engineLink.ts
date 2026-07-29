@@ -367,8 +367,13 @@ class MergedLink extends BrowserLink {
     });
   }
 
-  /** Param writes are engine control — they belong to the engine that renders. */
+  /** Param writes are engine control — they belong to the engine that renders.
+      EXCEPT the session-document params (MasterRow BPM/VOL/DRV, P3-D4-1a):
+      the merged shell REFUSES those by design (kParamMap), because the session
+      document lives on the companion side — so they route to the document
+      owner first and reach the engine through the world publish. */
   override paramWrite(p: ParamId, value: number, deck?: number, track?: number): void {
+    if (this.routeSessionParam(p, value, deck)) return;
     this.native.paramWrite(p, value, deck, track);
   }
 

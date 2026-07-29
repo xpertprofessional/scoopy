@@ -52,6 +52,14 @@ class LocalSettings implements BrowserSettings {
 /** 30 Hz — the rate the desktop pushes HotFrames at, so meters behave identically. */
 const HOT_FRAME_INTERVAL_MS = 1000 / 30;
 
+/** The three session-document params the MasterRow writes (P3-D4-1a). */
+export type SessionParam = "sessionBpm" | "sessionMasterVolume" | "sessionMasterDrive";
+const SESSION_PARAMS: ReadonlySet<string> = new Set([
+  "sessionBpm",
+  "sessionMasterVolume",
+  "sessionMasterDrive",
+] satisfies SessionParam[]);
+
 export class BrowserLink implements EngineLink {
   private hotFrameCbs = new Set<(frame: Float64Array) => void>();
   private eventCbs = new Set<(evt: unknown) => void>();
@@ -68,6 +76,18 @@ export class BrowserLink implements EngineLink {
   private rafHandle: number | null = null;
   private lastFrameAt = 0;
   private warnedParamWrite = false;
+
+  /**
+   * The MasterRow's three writes (P3-D4-1a). They are DOCUMENT edits — session
+   * tempo, master volume, clipper drive — so they route to whoever owns the
+   * document (the companion store registers here), exactly like the grid-edit
+   * handlers below. On the desktop Swift owned this; in the merged host the
+   * native side REFUSES these params (kParamMap), so without this seam the
+   * row is three live-looking controls wired to nothing.
+   */
+  private sessionParamHandler:
+    | ((p: SessionParam, value: number, deck: number) => void)
+    | null = null;
 
   private gridEditHandler: GridBackendHooks["onEdit"] | null = null;
   /** Registered by the companion: assign a LIBRARY sample (OPFS path) to a track. */
@@ -112,6 +132,24 @@ export class BrowserLink implements EngineLink {
   /** The companion store registers here so a grid edit reaches the document + engine + autosave. */
   setGridEditHandler(fn: GridBackendHooks["onEdit"]): void {
     this.gridEditHandler = fn;
+  }
+
+  /** The document owner registers here so MasterRow BPM/VOL/DRV writes land. */
+  setSessionParamHandler(fn: (p: SessionParam, value: number, deck: number) => void): void {
+    this.sessionParamHandler = fn;
+  }
+
+  /**
+   * Route a paramWrite that is really a session-document edit. Shared with
+   * `MergedLink.paramWrite` (which must try this BEFORE the native lane — the
+   * shell refuses these three by design; the document lives on this side).
+   * Returns false when the param is not session-scoped or nobody owns the
+   * document yet, so the caller falls through to its own lane.
+   */
+  protected routeSessionParam(p: string, value: number, deck?: number): boolean {
+    if (!SESSION_PARAMS.has(p) || !this.sessionParamHandler) return false;
+    this.sessionParamHandler(p as SessionParam, value, deck ?? 0);
+    return true;
   }
 
   setSampleLoadHandler(fn: (trackIndex: number, path: string) => Promise<void>): void {
@@ -312,9 +350,12 @@ export class BrowserLink implements EngineLink {
     }
   }
 
-  paramWrite(_p: ParamId, _value: number, _deck?: number, _track?: number): void {
-    // Live control writes need a document to land in. Warn ONCE — a per-rAF console storm would be
-    // worse than the silence it is meant to break.
+  paramWrite(p: ParamId, value: number, deck?: number, _track?: number): void {
+    // Session-document params (MasterRow) go to the document owner — the one
+    // param family the browser CAN land, because the document lives here.
+    if (this.routeSessionParam(p, value, deck)) return;
+    // Every other live control write needs an engine to land in. Warn ONCE — a
+    // per-rAF console storm would be worse than the silence it is meant to break.
     if (!this.warnedParamWrite) {
       this.warnedParamWrite = true;
       console.warn("paramWrite: no document in the browser companion yet (THE FLIP, P5-06 step D)");

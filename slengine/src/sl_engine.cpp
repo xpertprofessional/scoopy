@@ -1050,6 +1050,19 @@ const char* const kSnapshotDeckParamNames[] = {
     "beatRepeatSubdivision",  // 3 — 1 whole-step · 2/4/8/16/32 = 1/N rolls
     "beatRepeatStartSubcell", // 4 — sub-cell phase for 1/N windows
     "reverseTransport",       // 5 — bool; whole-session tape reverse
+    // The deck's MASTER STAGE (P3-D4-1a): the session document's own master
+    // volume + clipper block, applied per deck by the DJ render (deckSnap in
+    // renderDJ — each deck drives its own signal pre-sum). Unlike the verbs
+    // above these ARE document fields; they ride the world so the tile's
+    // MasterRow edits what the engine plays.
+    "masterVolume",           // 6
+    "masterClipperDrive",     // 7
+    "masterClipperThreshold", // 8
+    "masterClipperSoftness",  // 9
+    "masterClipperCurve",     // 10 — 0 soft(legacy) 1 tanh 2 hard 3 fold
+    "masterClipperCeiling",   // 11
+    "masterClipperOversample",// 12 — 0 off / 2 / 4
+    "masterClipperDecoupled", // 13 — bool
 };
 constexpr int32_t kSnapshotDeckParamCount =
     static_cast<int32_t>(sizeof(kSnapshotDeckParamNames) / sizeof(kSnapshotDeckParamNames[0]));
@@ -1082,6 +1095,24 @@ void sl_snapshot_deck_set(sl_engine* e, int32_t param, double v) {
         }
         case 4: s.beatRepeatStartSubcell = sz(v); break;
         case 5: s.reverseTransport = v != 0.0; break;
+        case 6: s.masterVolume = v; break;
+        case 7: s.masterClipperDrive = static_cast<float>(v); break;
+        case 8: s.masterClipperThreshold = static_cast<float>(v); break;
+        case 9: s.masterClipperSoftness = static_cast<float>(v); break;
+        case 10: {
+            // Only the four named curves; a wrong curve id would pick DSP the
+            // user never chose — same refusal shape as the subdivision guard.
+            const auto n = sz(v);
+            if (n <= 3) s.masterClipperCurve = static_cast<std::uint8_t>(n);
+            break;
+        }
+        case 11: s.masterClipperCeiling = static_cast<float>(v); break;
+        case 12: {
+            const auto n = sz(v);
+            if (n == 0 || n == 2 || n == 4) s.masterClipperOversample = static_cast<std::uint8_t>(n);
+            break;
+        }
+        case 13: s.masterClipperDecoupled = v != 0.0; break;
         default: break; // unknown key IGNORED, never misread
     }
 }

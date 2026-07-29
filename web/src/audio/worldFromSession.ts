@@ -265,6 +265,27 @@ export interface WorldOptions {
  * Pure: no OPFS, no AudioContext, no engine. That is what makes it testable against the real
  * Swift-written fixture under node, with no browser in sight.
  */
+/** The pattern's master volume + clipper block, each field only when the
+    document actually carries a sane value (absent → the engine's defaults). */
+function masterStage(pattern: PatternFileJson): Partial<World> {
+  const p = pattern as Record<string, unknown>;
+  const out: Record<string, number | boolean> = {};
+  const num = (key: keyof World & string) => {
+    const v = p[key];
+    if (typeof v === "number" && Number.isFinite(v)) out[key] = v;
+  };
+  num("masterVolume");
+  num("masterClipperDrive");
+  num("masterClipperThreshold");
+  num("masterClipperSoftness");
+  num("masterClipperCurve");
+  num("masterClipperCeiling");
+  num("masterClipperOversample");
+  if (typeof p.masterClipperDecoupled === "boolean")
+    out.masterClipperDecoupled = p.masterClipperDecoupled;
+  return out as Partial<World>;
+}
+
 export function worldFromSession(
   pattern: PatternFileJson,
   kit: KitJson,
@@ -516,6 +537,12 @@ export function worldFromSession(
           }
         : {}),
       ...(options.reverseTransport ? { reverseTransport: true } : {}),
+      // The deck's MASTER STAGE (P3-D4-1a) — the DOCUMENT's own fields, not an
+      // option: the pattern format requires them (patternFile.ts) and the scene
+      // projection preserves them, so they are emitted whenever present. Guarded
+      // per field anyway — a hand-built fixture pattern without them must
+      // publish the engine's defaults, never NaN.
+      ...masterStage(pattern),
     },
     missingSamples,
     emptyTracks,

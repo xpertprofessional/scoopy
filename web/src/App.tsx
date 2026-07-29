@@ -32,6 +32,7 @@ import { CapturePanel } from "./panels/CapturePanel.tsx";
 import { CompanionPanel } from "./panels/CompanionPanel.tsx";
 import { PlanePanel } from "./plane/PlanePanel.tsx";
 import { ComposeWindow } from "./plane/ComposeWindow.tsx";
+import { useCompanion } from "./store/companionEngine.ts";
 
 /**
  * Panel host shell: routes ?panel=<name> to its component; the debug view
@@ -53,6 +54,21 @@ export function App() {
   // Merge the persisted theme over the defaults once the link is up.
   useEffect(() => {
     void loadAndApplyTokens(link);
+  }, [link]);
+
+  // MasterRow BPM/VOL/DRV are session-DOCUMENT edits (P3-D4-1a). The document
+  // owner is the companion store, in every host — so the routing is registered
+  // once here at the app root, covering the plane, the compose window and the
+  // browser companion alike. Without this the writes fall to the native lane,
+  // which refuses them by design (MergedMain kParamMap).
+  useEffect(() => {
+    if (!(link instanceof BrowserLink)) return;
+    link.setSessionParamHandler((p, value, deck) => {
+      const c = useCompanion.getState();
+      if (p === "sessionBpm") c.setBpm(value, deck);
+      else if (p === "sessionMasterVolume") c.setMasterVolume(value, deck);
+      else c.setMasterDrive(value, deck);
+    });
   }, [link]);
 
   // Cross-webview theme sync: the Appearance editor lives in its own webview,

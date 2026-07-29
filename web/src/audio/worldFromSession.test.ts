@@ -81,6 +81,27 @@ describe("worldFromSession", () => {
     expect(world.bpm).toBe(120);
   });
 
+  it("emits the document's master stage — and omits fields a pattern does not carry (P3-D4-1a)", () => {
+    // The REAL fixture document carries the full block (patternFile requires
+    // it), so the world must too — these are the fields the engine's per-deck
+    // master render plays, and dropping one silently is the pre-D4-1a bug
+    // (a MasterRow the engine never heard).
+    const { world } = worldFromSession(pattern, kit);
+    const doc = pattern as Record<string, unknown>;
+    expect(world.masterVolume).toBe(doc.masterVolume);
+    expect(world.masterClipperDrive).toBe(doc.masterClipperDrive);
+    expect(world.masterClipperThreshold).toBe(doc.masterClipperThreshold);
+    expect(world.masterClipperSoftness).toBe(doc.masterClipperSoftness);
+    // A hand-built pattern without the block publishes the engine's DEFAULTS —
+    // absent fields, never NaN or an invented number.
+    const bare = worldFromSession(
+      { ...pattern, masterVolume: undefined, masterClipperDrive: undefined } as unknown as PatternFileJson,
+      kit,
+    ).world;
+    expect("masterVolume" in bare).toBe(false);
+    expect("masterClipperDrive" in bare).toBe(false);
+  });
+
   it("only emits tracks whose sample the KIT actually carries", () => {
     const known = new Set(kitSamples(kit).map((s) => s.id));
     const { world } = worldFromSession(bindFirstTrack(), kit);

@@ -52,6 +52,12 @@ export class GridBackend {
   private rows: DocRow[] = [];
   private runtime: TrackRuntimeInfo[] = [];
   private bpm = 120;
+  // The document's master stage (P3-D4-1a). Was hardcoded 1/1 — the MasterRow
+  // rendered a VOL/DRV the session never had, and its edits went nowhere. The
+  // values now come from the loaded pattern (masterVolume / masterClipperDrive,
+  // the same two fields the world publishes to the engine's per-deck master).
+  private masterVolume = 1;
+  private masterDrive = 1;
   private playing = false;
   private selected = 0;
   // The per-track armed cell-parameter lane (which lane a vertical value-drag /
@@ -71,6 +77,8 @@ export class GridBackend {
     this.rows = docRows(pattern);
     this.runtime = runtime;
     this.bpm = typeof pattern.bpm === "number" ? pattern.bpm : 120;
+    this.masterVolume = typeof pattern.masterVolume === "number" ? pattern.masterVolume : 1;
+    this.masterDrive = typeof pattern.masterClipperDrive === "number" ? pattern.masterClipperDrive : 1;
     this.selected = 0;
     this.activeParams = []; // a fresh session arms the default lane (pitch)
     this.publishAll();
@@ -141,8 +149,8 @@ export class GridBackend {
       performActive: false,
       bpm: this.bpm,
       muteGroupActive: false,
-      masterVolume: 1,
-      masterDrive: 1,
+      masterVolume: this.masterVolume,
+      masterDrive: this.masterDrive,
       syncedBpm: null,
       // No deck behind the companion grid — and no focus ring (it never renders
       // beside sibling decks, so there is nothing to disambiguate). No deck also

@@ -97,6 +97,26 @@ describe("deck isolation — the property the increment is for", () => {
     expect(companionDeck(1).session?.pattern.bpm).toBe(174);
   });
 
+  it("setMasterVolume/setMasterDrive edit ONE deck's document, clamped to the row's range (P3-D4-1a)", () => {
+    useCompanion.getState().setMasterVolume(1.5, 1);
+    useCompanion.getState().setMasterDrive(8, 1);
+    const p1 = companionDeck(1).session?.pattern as Record<string, unknown>;
+    const p0 = companionDeck(0).session?.pattern as Record<string, unknown>;
+    expect(p1.masterVolume).toBe(1.5);
+    expect(p1.masterClipperDrive).toBe(8);
+    // Deck isolation — the file's whole property, for the new verbs too.
+    expect("masterVolume" in p0).toBe(false);
+    // Clamps: a runaway drag must not write a value the engine range refuses.
+    useCompanion.getState().setMasterVolume(99, 1);
+    useCompanion.getState().setMasterDrive(0, 1);
+    const p1b = companionDeck(1).session?.pattern as Record<string, unknown>;
+    expect(p1b.masterVolume).toBe(2);
+    expect(p1b.masterClipperDrive).toBe(1);
+    // No session → a refusal-by-no-op, never a crash on an empty deck.
+    useCompanion.getState().setMasterVolume(1, 2);
+    expect(companionDeck(2).session).toBeNull();
+  });
+
   it("selectScene lands on the deck it was aimed at", () => {
     // Stopped, so the switch is immediate (no clock to schedule against).
     useCompanion.getState().selectScene("C", { deck: 1 });

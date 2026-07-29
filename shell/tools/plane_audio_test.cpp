@@ -1294,6 +1294,66 @@ int main() {
             settings, e, &services)));
     }
 
+    // ── THE DECK'S MASTER STAGE THROUGH THE WORLD (P3-D4-1a) ────────────────
+    //
+    // The session document's masterVolume + clipper block now ride the world
+    // into the engine's per-deck master render (deckSnap.masterVolume /
+    // deckMasterDrive_). Before this row the tile's MasterRow showed values the
+    // engine never heard. Absent fields = the engine's defaults — the first
+    // world below deliberately carries none of them.
+    {
+        // Track volume 0.3 keeps the un-driven tone well below the clipper
+        // ceiling, so the drive comparison below has headroom to be audible
+        // whatever the harness tone's absolute level is.
+        auto msWorldFor = [&](const char* extra) {
+            return juce::JSON::parse(juce::String(
+                R"({"action":"publish","world":{"deck":0,"bpm":120,"isPlaying":true,"startStep":0,)")
+                + juce::String(extra) +
+                R"("tracks":[{"sampleId":"tone","steps":[1,1,1,1,1,1,1,1],"volume":0.3}]}})");
+        };
+        auto maxPeak = [&](int blocks) {
+            double p = 0.0;
+            for (int b = 0; b < blocks; ++b) { render(0.0); p = std::max(p, peak(lane[0])); }
+            return p;
+        };
+        CHECK(replyOk(dispatch("slWorld", msWorldFor(""), settings, e, &services)));
+        for (int b = 0; b < 30; ++b) render(0.0);
+        const double atDefault = maxPeak(120);
+        CHECK(atDefault > 0.01); // something to measure against
+        // Half the session's master volume → half the level at main. Legacy
+        // (non-decoupled) mode is a clean pass-through at ≤100%, so the ratio
+        // is linear and the band around 0.5 can be wide but honest.
+        CHECK(replyOk(dispatch("slWorld", msWorldFor(R"("masterVolume":0.5,)"),
+                               settings, e, &services)));
+        for (int b = 0; b < 30; ++b) render(0.0);
+        const double atHalf = maxPeak(120);
+        CHECK(atHalf > atDefault * 0.3);
+        CHECK(atHalf < atDefault * 0.7);
+        // The decoupled clipper: drive is an ALWAYS-ON input gain into the
+        // ceiling (legacy mode only engages above 100% master volume, so
+        // decoupled is the assertable configuration). Drive 16 lifts the modest
+        // tone toward the ceiling where drive 1 passes it through — the same
+        // world otherwise, so anything louder is the drive the document asked for.
+        CHECK(replyOk(dispatch("slWorld",
+            msWorldFor(R"("masterClipperDecoupled":true,"masterClipperCurve":2,)"
+                       R"("masterClipperDrive":1.0,"masterClipperCeiling":1.0,)"),
+            settings, e, &services)));
+        for (int b = 0; b < 30; ++b) render(0.0);
+        const double dryDrive = maxPeak(120);
+        CHECK(replyOk(dispatch("slWorld",
+            msWorldFor(R"("masterClipperDecoupled":true,"masterClipperCurve":2,)"
+                       R"("masterClipperDrive":16.0,"masterClipperCeiling":1.0,)"),
+            settings, e, &services)));
+        for (int b = 0; b < 30; ++b) render(0.0);
+        const double hotDrive = maxPeak(120);
+        CHECK(hotDrive > dryDrive * 1.3);
+        // Restore the section-entry state: deck 0 stopped and empty.
+        CHECK(replyOk(dispatch("slWorld",
+            juce::JSON::parse(R"({"action":"publish","world":{"deck":0,"bpm":120,)"
+                              R"("isPlaying":false,"startStep":0,"tracks":[]}})"),
+            settings, e, &services)));
+    }
+
     // ── OVERDUB THROUGH THE DISPATCHER (P3-U3) ──────────────────────────────
     //
     // Before this path was wired, a punch through the dispatcher layered

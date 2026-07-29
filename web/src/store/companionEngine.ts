@@ -264,6 +264,13 @@ interface CompanionState {
   /** P3-M-1b: whole-session tape reverse (runtime, republishes). */
   setReverse(deck: number, on: boolean): void;
   setBpm(bpm: number, deck?: number): void;
+  /** P3-D4-1a: the session's master volume (document `masterVolume`, 0..2 —
+      >1 drives the master clipper). A document edit like setBpm: republish +
+      autosave; the world carries it to the engine's per-deck master stage. */
+  setMasterVolume(value: number, deck?: number): void;
+  /** P3-D4-1a: the session's master clipper drive (document
+      `masterClipperDrive`, 1..32). Same lane as setMasterVolume. */
+  setMasterDrive(value: number, deck?: number): void;
   /**
    * Switch the active pattern scene. While playing, a plain select SCHEDULES the switch at the
    * next cycle boundary (the desktop's default switch mode); `immediate` runs it now
@@ -739,6 +746,35 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     // into strips, each with its own BPM". Nothing here reaches another deck,
     // and nothing here is the plane's MASTER tempo — a synced strip's ratio is
     // computed against that separately (`sl_deck_set_tempo_sync`).
+    autosaver.schedule(next);
+  },
+
+  setMasterVolume(value, deck = 0) {
+    const session = deckOf(get(), deck).session;
+    if (!session) return;
+    const v = Math.min(2, Math.max(0, value));
+    const next: WorkingSession = {
+      ...session,
+      pattern: { ...session.pattern, masterVolume: v },
+    };
+    set((s) => patchDeck(s, deck, { session: next }));
+    // The publish is what makes the edit AUDIBLE: the world carries
+    // masterVolume to the engine's per-deck master stage (worldFromSession's
+    // masterStage block). Document edit → autosave, like setBpm.
+    publish(get(), deck, deckOf(get(), deck).playing);
+    autosaver.schedule(next);
+  },
+
+  setMasterDrive(value, deck = 0) {
+    const session = deckOf(get(), deck).session;
+    if (!session) return;
+    const v = Math.min(32, Math.max(1, value));
+    const next: WorkingSession = {
+      ...session,
+      pattern: { ...session.pattern, masterClipperDrive: v },
+    };
+    set((s) => patchDeck(s, deck, { session: next }));
+    publish(get(), deck, deckOf(get(), deck).playing);
     autosaver.schedule(next);
   },
 
