@@ -108,11 +108,56 @@ Header verbs (from the TransportPanel DeckBlock, merged-engine-backed only):
   today's menu item promoted)
 - **NUDGE** rides P3-D4-2 via `nudgeBpmDelta` (hold-to-bend, snap-back)
 
-Deliberately NOT folded, reasons named: **OPEN** (the library owns it, P3-L1) ·
+~~Deliberately NOT folded, reasons named: **OPEN** (the library owns it, P3-L1) ·
 **DBL** (a document op with no merged verb — future row if wanted) · **WIN/TR**
 (beat-repeat variants beyond the fused scale — revisit with per-deck playhead) ·
 **C / GRID / select** (multi-deck-view concepts; the plane's selection is the
-strip itself).
+strip itself).~~ **SUPERSEDED — see the amendment below.**
+
+## AMENDMENT 2026-07-29 — the tile IS the whole deck (D-SL-DECKFULL-01)
+
+*The user, on seeing the tile in the real host: the scoopy strip window (deck)
+"will be pretty much exactly the scoopy loops dj deck view WITH its deck
+transport … this way we can be sure our advanced scoopy system functions
+correctly ongoing". The sketch above stands; the "deliberately NOT folded" list
+above does not.*
+
+**Every deferred item folds in**, and the header verbs migrate DOWN into the
+classic rows — one control, one home, which also closes P3-D4-2's recorded SYNC
+deviation. The tile carries all four classic rows (P7-T1..T4):
+
+| row | contents | note |
+|---|---|---|
+| toolbar | OPEN · ■ · ▶ · » · REV · NUDGE · DBL · EJECT · SAVE | OPEN folds back as a library popover ADDRESSED to this strip (P3-L1 owns the library, not the door); DBL needs a new companion pattern-double verb |
+| sync | SYNC ‹pulse› · TR ‹±n› · WIN · BR ‹›  | WIN/TR return — the per-deck playhead they were waiting for landed in P3-D4-3 |
+| scene | pads 1–8 · S · R · CU · SCN · MUTE · GRID/PERF | GRID/PERF ride `GridMetaState`'s `gridHidden`/`performOn`; SCN is the pin latch |
+| master | BPM · VOL · DRV · S1–S4 | BPM/VOL/DRV real since P3-D4-1a; S1–S4 become real in P7-T4 (`masterSends` was `[]`; the lanes exist since P6-3) |
+
+**Rebuild, never mount.** `TransportPanel.tsx::DeckBlock` speaks `deckSection` /
+`transportDeck` / `menuTransport` / `djSetting` and reads the `toolbar` + `dj`
+UiState topics — none of which the merged dispatch answers. That coupling is the
+P3-M-1 measurement and the reason P3-P1 retired those doors. DeckBlock is the
+SOURCE LIST for what each row must do; the rows themselves are rebuilt on
+companion lanes exactly as P3-D4-2 rebuilt the header verbs.
+
+### Full-viewport mode
+
+The user: "strips should be full viewport on command and then be able to tab
+through the individual strips in full size." Two laws:
+
+1. **It is a VIEW state, never a document edit.** The two-size tile (340×196 ⇄
+   `DECK_CELL` 692×612) IS document cell geometry, deliberately — full-viewport
+   is not a third cell size. It must leave `strip.cell` untouched so a map saved
+   while a strip is maximized reopens with its plane geometry intact. The
+   mechanism (plane transform vs. an overlay mount) is measured in P7-K0.
+2. **Tab cycles strips at full size**, on the same single-focused-strip model the
+   keymap uses (D-SL-NAV-01, P7-N1/N2), and one key drops back to the map.
+   Compose stays reachable from the full-viewport face. Looper strips maximize
+   too — they simply show the channel face, no grid.
+
+This retires the "no cross-tile arrow ring" limit noted in P3-D4-1 by replacing
+its premise: there are no fixed `djSlotIndex` slots, but there IS now a focus
+ring, which is what the arrow/Tab vocabulary binds to.
 
 ## Row sizing
 

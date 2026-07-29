@@ -13,9 +13,9 @@ door build (P3-4-2) fixes that alongside the menu.
 
 | panel | job | door |
 |---|---|---|
-| plane | THE app — the merged main surface | ✅ is the main window |
+| plane | THE app — the merged main surface | ✅ is the main window — **but no longer the unconditional one (D-SL-LAUNCH-01, 2026-07-29): boot offers PLANE or COMPOSE, row P7-L2** |
 | companion | session library, import/export; embeds filebrowser + grid | ~~✅ `sessions ⇱`~~ **RETIRING (D-SL-MORPH-01, user decree 2026-07-29): the companion is the BROWSER's shell only — a web bonus, never app-internal.** Its library job rehomes to the plane's `library ▾` (P3-L1); the `sessions ⇱` door is deleted with it |
-| grid | the composer (sequencer editing) | ✅ per-strip `COMPOSE ⇱` + bar `compose` (in-window) |
+| grid | the composer (sequencer editing) | ✅ per-strip `COMPOSE ⇱` + bar `compose` (in-window) · **+ a LAUNCH door and its own session open/new/save UI (D-SL-LAUNCH-01, rows P7-L1/L2) — reachable with no map alive at all** |
 | filebrowser | the sample library browser | ✅ embedded in companion; no separate door needed now |
 | **fxslot** | **the return-FX editor — the CONFIG path P3-3-1 is blocked on** | MECHANICAL, FIRST: menu entry per return slot + `__slPanelArg` injection. Unblocks the returns flip |
 | transport | scoopy's master transport (beat-repeat, launch quantize, tempo ramp, keyboard, LCM bar) | **RETIRED (D-SL-MORPH-01, 2026-07-29)**: its window hangs on WaitingForState in the merged host (desktop-shell-coupled topics, the P3-M-1 measurement); its signature verbs already live on the plane's master (P3-M-1b); the rest lands with the deck tile (P3-D4-2). Door removed by P3-P1; code stays routed |
@@ -51,3 +51,17 @@ controls should eventually be available through the plane … the panels menu ma
 no sense" — the menu is interim scaffolding; each remaining row dissolves as its
 job rehomes onto the plane. Capture rehoming, audio-panel reconciliation and
 spectral's home remain open D-5 items.
+
+## Launch is a door too (2026-07-29, D-SL-LAUNCH-01)
+
+This table measured doors reachable *from inside the app*, assuming the app is the
+plane — `MergedMain.cpp:334` opened `plane` unconditionally as the main window.
+It no longer does. **Boot itself is a door build:** the user is prompted PLANE or
+COMPOSE, and the COMPOSE path is **mapless** — the compose window opens on deck 0
+with no map document created, carrying its own session open/new/save UI (rows
+P7-L1, P7-L2). Two consequences for this audit's accounting: `grid` gains a door
+that does not pass through the plane, and P3-C2's single-publisher lock is
+trivially satisfied on that path because there is no plane contending for the
+deck. The `transport` row's retired verbs, meanwhile, are not gone — they rehome
+into the deck tile's classic rows in P7-T1..T4 (D-SL-DECKFULL-01), which is the
+"job REHOMED somewhere reachable" clause finally being paid off for that panel.

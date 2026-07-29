@@ -132,3 +132,101 @@ That keeps "record this strip" meaning one unambiguous thing, and leaves "record
 the wet too" reachable without a second tap-point mode to explain. Capturing the
 whole processed sum, returns included, is a *different verb* with its own record
 source kind — `mainMix`, already built and fixtured (SL-ABI-V3 §5).
+
+## AMENDMENT 2026-07-29 — build-state audit, and the authoring order (D-SL-RECFROM-01 · D-WZ-VDEV-02)
+
+*Measured against the built tree when the user asked "how good is the backend for
+this already?" — now that strips are one-kind-each (D-SL-MORPH-01), routing is
+the connective tissue that separation demands. Verdict: **the engine is strong and
+the gaps are authoring UI.** Build record: the P9 queue in `P3-LEDGER.md`.*
+
+### What is built and proven
+
+`sl_route_*` (ABI in `slengine/include/sl_engine.h`, render in
+`slengine/src/sl_channel.cpp::mixInto`) carries 128 route slots; sources
+`channelOut` · `channelSend` · `deviceInput` · `fxReturn`; destinations
+`channelIn` · `sendBus` · `main`; the 40 boot defaults as ordinary removable
+routes. This document's scheduling section is implemented as specified: Kahn
+topological order (published as ONE packed `uint64_t`, because eight separate
+stores could be read torn into a non-permutation), tap-by-order at zero added
+latency, cycles refused at edit time, feedback edges the only ones allowed to
+close a loop at exactly one block. Every gain change is ramped.
+`slengine/tools/sl_route_test.cpp` proves it with measured audio — impulse
+arrival at frame 0 through an A→B→C chain, the feedback edge measured one block
+late with no regenerating tail, click-freedom at `maxStep < 0.05`, routing
+surviving a sample-rate change, order a permutation across 64 topologies, and a
+43-route enumerate → wipe → rebuild round-trip to bit-identical output.
+
+**Including the exact path the user asked about:** a **send tap into another
+strip's input** (`sl_route_test:244-266` — send 3 → channel 6, riding the send
+fader moves the result, so the level stayed with the channel while the
+destination did not). This document's "send 3 into another strip's input to feed
+its looper, for instance" is real at the engine. **Nothing in the UI can author
+one**: `patchDrag` is always constructed with `send: null`, so no gesture creates
+a `channelSend` route. That is the shape of every gap below — surface, not engine.
+
+### The authoring order (signed)
+
+1. **`record from ▸` first** (row P9-1). The looper's source is chosen through the
+   per-strip ⋯ menu that already lists device inputs and other strips' buses,
+   grown to send taps S1–S4 and FX returns (the record-the-wet path this
+   document's settled sub-question describes), and virtual pairs when they exist.
+   One gesture, plane-native, already learned.
+2. **The matrix grid second** (row P9-2). `Matrix.tsx` today is a read-only
+   *ledger* — live engine graph, render order in the footer, defaults hidden
+   behind a checkbox, one ✕ per row. The sources × destinations grid this
+   document's UI section asks for is what it grows into, and it becomes the home
+   for route-gain editing (`slRoute/setGain` is dispatch-live with zero web
+   callers, so every UI-created route is unity today) and the feedback toggle.
+
+### Debt this document already specified, measured as unpaid (row P9-3)
+
+- **Feedback edges are NOT created muted.** The precedent above is explicit —
+  "an unmuted unity loopback is an instant sustained feedback path" — and
+  `commitPatch` sends gain 1.
+- **`feedbackMs()` hardcodes 512/48000**, so the `+10.7 ms` shown on every cable
+  and in the consent menu is wrong at any other block size. The price you cannot
+  see is the thing that burns you; a price that lies is worse.
+- **The duplicate-cable guard exists only in `onRecordFromStrip`.** A repeated
+  shift-drag creates a parallel cable, and destinations `+=` with no dedupe or
+  normalization in the engine, so the gain silently doubles.
+- **Guard G4 is half-built** (row P9-4): per-cable latency is shown, *accumulated
+  per-path* latency is not — the exact thing `pd-modular-routing.md` §1.3 called
+  the failure that will actually burn a user. It has a live customer already: the
+  tape-strip `hostSendFeed` seam puts a tape's send one block behind a grid's
+  into the same plugin (P6-3's measured law 1, P6-6's territory).
+
+### Recorded as designed-not-queued
+
+- **Cue bus and per-deck outs.** The core produces `cueLeft/cueRight` and
+  `deckA/B/C_L/R` lanes; `LaneMap` does not expose them and no `SourceEndpoint` /
+  `DestEndpoint` names them, so routing cannot reach lanes that already exist.
+- **Multiple hardware output pairs** (`slDevices` has no `setOutput`) and with
+  them **guard G1**, the per-hardware-output leaky-RMS detector + limiter this
+  document says ships with them. The watchdog is main-bus-only; giving outputs an
+  owner without a limiter is worse than doing neither, so these two stay paired.
+- **`extRouting`** (EXT hardware round-trip + trim) — one line in the fx-slot
+  draft at MAP-SCHEMA.md, nothing else anywhere.
+
+These open on the user's call, not on the loop's.
+
+### Other-app audio: the interim path is now acknowledged (D-WZ-VDEV-02)
+
+The **Virtual interface pairs** source above is signed (D-WZ-VDEV-01) and
+entirely absent from this engine: the capture ABI exists
+(`host/include/wz_capture.h`) but only `CaptureFake.cpp` backs it, and
+`sl_route_*` has no `virtualDeviceInput` kind at all — that machinery belongs to
+the legacy `wz_engine` world. Native **Wizard Out** is unparked and earmarked as
+phase P10. Meanwhile the path that WORKS TODAY is documented rather than left for
+users to discover: a third-party virtual device (BlackHole, Loopback) selected
+through `slDevices/setInput`, then an ordinary `deviceInput` route — plus a hint
+in the input picker (row P9-5, no engine code).
+
+### One defect, hoisted out of this phase
+
+**A grid strip's `channelOut` is silent** — `mixInto` mixes the element for
+`ChannelSourceKind::tape` only, so the "Strip outputs" source kind above is a
+half-truth: a grid strip's cable carries only what is routed INTO it. Since
+D-SL-MORPH-01 made two routed strips the ONLY way to loop a deck, this
+invalidates a signed decision rather than merely missing a feature. It is row
+**P3.5-E3** (D-SL-DECKOUT-01), hoisted ahead of P7 — not P9.

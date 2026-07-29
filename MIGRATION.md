@@ -13,6 +13,14 @@
 > pre-merge record. The repo is now the MERGED tree (P3-ROADMAP "the collapse")
 > and the active queue is **`docs/merge/P3-LEDGER.md`** — orient there. Open
 > decisions for the user: `docs/merge/MORNING-DECISIONS-2.md`.
+>
+> **2026-07-29 — the merged tree's live phases are P6 · P7 · P8 · P9 (+P10
+> earmarked)**, all in `docs/merge/P3-LEDGER.md`: plugins on the returns · the
+> deck, whole · the map holds the performance · broad routing · the virtual
+> interface. **The capture/virtual-device rows below (P2-05 · P2-06 · P2-07, and
+> P5-01) are UNPARKED by D-WZ-VDEV-02** — their live plan is P10, and the interim
+> path (a third-party virtual device selected as the input) is row P9-5. Nothing
+> else in this file has been re-dated; it remains the pre-merge record.
 
 - **P1 mixer slice CLOSED (P1-G1 signed 2026-07-23 — user confirmed mic + deck playback).**
   Same-clock console: hardware inputs + decks summed with real DSP (pan/fader/ramps per

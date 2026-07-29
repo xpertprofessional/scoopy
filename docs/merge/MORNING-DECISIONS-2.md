@@ -23,6 +23,41 @@
 > Still open inside D-4's old scope: the nudge FEEL ships as hold-to-bend in
 > P3-D4-2 (provisional, veto re-tunes); "playful" veto vocabulary — unasked, queue
 > stays. The P3.5 queue in `P3-LEDGER.md` is the build record.
+>
+> ## ✅ D-6 … D-12 SIGNED 2026-07-29 (user, live — AskUserQuestion, two rounds)
+> Ratified as **D-SL-DECKFULL-01 · D-SL-LAUNCH-01 · D-SL-NAV-01 · D-SL-MAPPERF-01 ·
+> D-SL-DECKOUT-01 · D-SL-RECFROM-01 · D-WZ-VDEV-02** in `docs/DECISIONS.md`. The
+> user's redirection, in their own frame: a strip no longer holds all items at
+> once — the scoopy strip (deck) IS the scoopyloops dj deck view WITH its deck
+> transport, looper/tape stays its own strip, and routing becomes the connective
+> tissue that separation demands.
+> 1. **D-6 DECKFULL** — the expanded strip carries the WHOLE classic deck incl.
+>    transport (toolbar · SYNC/TR/WIN/BR · scene row · master row); it stays a
+>    plane tile and gains **full-viewport mode** (fill on command, Tab cycles
+>    strips full-size, one key back to the map). Looper transport parity (fixed-
+>    value rate slider, per the user's own example) queued for later, not now.
+> 2. **D-7 LAUNCH** — boot chooser PLANE / COMPOSE; the compose path is **mapless**
+>    (deck 0, session open/new/save UI, no map document created).
+> 3. **D-8 NAV** — the full keymap goes live in the merged host via a JS dispatch
+>    layer; deck-A/B pairs collapse to **focused-strip** semantics; visible strip-
+>    focus highlight; Tab cycles. Digit allocation (scenes vs focus-jump) is the
+>    one open detail — NAV-SHORTCUTS.md settles it provisional, veto re-tunes.
+> 4. **D-9 MAPPERF** — per-(strip,session) **performance overlay**; write-routing
+>    law (plane → overlay, compose → session); re-applied at load and after
+>    republish. Settles BOTH MAP-SCHEMA hazards; devices/hardware routings and
+>    MIDI deliberately excluded.
+> 5. **D-10 DECKOUT** — a grid strip's channel bus MUST carry its deck; today's
+>    silence is a defect against shipped P3-R3, **hoisted as P3.5-E3** ahead of
+>    P7. Broad routing opens as P9 after P7/P8.
+> 6. **D-11 RECFROM** — looper source choice = `record from ▸` grown to every
+>    source kind (bus, **send taps**, FX returns, inputs, virtual pairs later);
+>    the Matrix's sources×destinations grid editor follows, second.
+> 7. **D-12 VDEV-02** — third-party virtual devices (BlackHole/Loopback) are the
+>    acknowledged interim path for other-app audio (docs + picker hint, no engine
+>    code); the native Wizard Out device is **unparked** and earmarked as P10.
+>
+> The build record is the P7 · P8 · P9 queues (and the P10 earmark) in
+> `P3-LEDGER.md`. Nothing here is provisional except D-8's digit allocation.
 
 *Queued by the Fable 5 review session. Same contract as `docs/MORNING-DECISIONS.md`:
 each entry is the question, the options with trade-offs, and a recommendation.

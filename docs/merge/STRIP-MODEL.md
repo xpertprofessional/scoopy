@@ -135,6 +135,19 @@ mono tape lanes.
 - **Loop-length ↔ tempo quantize on capture:** deferred with SL-ABI-V3 §7 (the
   master transport). P2 ships immediate capture, which is wizard's proven
   behaviour; bar-exact capture needs a beat clock to be exact against.
+- **Looper transport parity (queued 2026-07-29, D-SL-DECKFULL-01):** one-kind
+  strips stand unchanged — the looper/tape strip stays its own strip, as it is
+  today. What it gains LATER is deck-like transport: the user's own example was
+  "same transport possibilities like scoopy transport (i.e. rate slider with
+  fixed values)". This is the channel's "transport + time-stretch" promise above
+  made concrete for tapes, deliberately deferred rather than dropped — row P7-P1,
+  `blocked(user-deferred)`, opening on the user's call.
+- **A grid strip's channel bus must carry its deck (defect, 2026-07-29):** this
+  document's closing argument — "there is no special-case recorder … recording is
+  always capture this strip's **channel bus**" — is not yet TRUE for grid strips.
+  `ChannelBank::mixInto` mixes the element for tapes only, so a grid strip's bus
+  is silent and the two-routed-strips path that D-SL-MORPH-01 made the ONLY way
+  to loop a deck records nothing. Hoisted as row P3.5-E3 (D-SL-DECKOUT-01).
 
 ## Engine status against this model
 - **Grid (§6):** built — multi-deck sessions, per-deck BPM, master sync

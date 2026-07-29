@@ -146,7 +146,7 @@ strip.element.grid.perfBySession: Record<sessionId, {
 }>
 ```
 
-### ⚠️ The sharper hazard: unpinned edits bleed across maps
+### ⚠️ The sharper hazard: unpinned edits bleed across maps — **SETTLED 2026-07-29 (D-SL-MAPPERF-01), see the amendment below**
 
 With the latch OFF, an edit is **global to the session** — so a tweak made while
 performing from one map propagates to every other map using that session. This is
@@ -179,7 +179,7 @@ strip, its reference and its record button all survive — see `takeLibrary.ts`)
 An explicit "collect" produces a self-contained map for travel. Collecting is
 then something the user DID, not something they have to trust happened.
 
-### ⚠️ The hazard to design in, not discover
+### ⚠️ The hazard to design in, not discover — **SETTLED 2026-07-29 (D-SL-MAPPERF-01), see the amendment below**
 
 A compose edit republishes that deck's world, and the core's epoch gate hands
 control back to the snapshot when a republish carries different values — so a
@@ -247,6 +247,70 @@ the whole graph, wipe it, rebuild from what was read, and assert the rendered
 audio is identical (43 routes, main 2.7692 → 2.7692). The map's own save/load
 gate should mirror that shape — a save/load that quietly drops one cable is the
 failure that only shows up on stage.
+
+## AMENDMENT 2026-07-29 — the performance overlay (D-SL-MAPPERF-01)
+
+*The user: "a map should basically hold all settings saved, but be flexible on
+devices and hardware routings of course. anything that is worth storing so it can
+be restored easily for a performance." This amendment answers that AND both ⚠️
+hazards above, which are marked settled where they stand. Build record: the P8
+queue in `P3-LEDGER.md`.*
+
+### The overlay generalizes `perfBySession`
+
+`strip.sessionPerf` today holds four fields per (strip, sessionId) — currentScene,
+switchMode, queuedScenes, queueLoop — deliberately narrow because scoopy's PIN
+mechanism (CM-3) owns per-track mute/volume/FX. It **generalizes into a
+performance overlay** carrying every session-level setting worth restoring for a
+performance, on the same (strip, sessionId) key for the same reason: a strip can
+swap sessions and swap back, and the tweaks must return. Field shape and the
+migration from the four-field form are P8-1's deliverable.
+
+### The write-routing law (this is what settles the bleed hazard)
+
+> **Plane-surface edits to session parameters land in the OVERLAY. Compose edits
+> land in the SESSION.**
+
+The session file stays canonical and shared; nothing a performance does reshapes
+it, so last night's set cannot leak into every other map that references it. The
+hazard section above demanded this be settled *before the plane UI exposes any
+session-parameter control* — that line was crossed by P3-D4-1a, when the deck
+tile's MasterRow BPM/VOL/DRV became real document writes at the user's direction
+("work from the real scoopy perspective"). D-SL-MAPPERF-01 legalizes it
+retroactively and row **P8-4** moves where the value lands. The control's
+behaviour does not change; only its persistence target does.
+
+### Re-apply is law, not a hope (this is what settles the stomp hazard)
+
+The overlay is re-applied **at map load AND after any compose republish of that
+deck**. That is the fix the hazard section proposed itself — "it already does
+exactly this at load (`planApply`), so it is the same code on a different
+trigger" — now signed and built as row **P8-3**, hanging off P3-C2's republish /
+`handlePanelClosed` lane.
+
+### What the map must also restore
+
+- **FX-slot state** — plugin identifier + opaque state blob + mode/output per
+  return, the shape already drafted in the send-slot table above. Unchanged, and
+  already queued as **P6-5**; P8-6's round-trip gate needs it.
+- **Tape audio** — `tapeLoadTake` is a documented no-op (`mapStore.ts:220`), so a
+  reopened map's tape comes back as a reference with no sound behind it. Row
+  **P8-5** builds the ABI path. Until then "the map remembers" has a hole in it.
+- **Sync information** — already complete, recorded here so nobody re-queues it:
+  per element `bpm` (nullable on tapes, the D-2 honesty guard), `syncToMaster`,
+  `tempoMode`, `pulseRelation`, `transpose`, `rate`, `loop`, `takeRef`, plus
+  `transport.masterBpm`.
+
+### Deliberately still NOT persisted
+
+- **Devices and hardware routings** — the user's own carve-out ("flexible on
+  devices and hardware routings of course"). A map that pinned an interface would
+  be a map that only opens in one room.
+- **MIDI mappings** — blocked, not deferred by taste: the merged shell publishes
+  no `midiLearn` topic (`attachMidiLearn` subscribes to nothing; `midiHardware:
+  false`), so there is nothing to save. Row **P8-P1**, `blocked`, opens when the
+  shell grows the topic. A persisted field with nothing behind it is the document
+  equivalent of dead ABI.
 
 ## Compatibility rules
 

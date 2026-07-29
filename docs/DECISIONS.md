@@ -686,3 +686,136 @@ IS the hosted plugin. The P6 queue (P3-LEDGER.md): vendor `NativePluginHost.mm` 
 plugin audible on a return (returnFx flips true) → JUCE-hosted editor windows (replacing
 FxSlotWindowController.swift's job) → fx-slot state (identifier + state blob) persisted per
 return in the `.scoopyMap` → per-channel latency surfacing per this decision.
+
+## D-SL-DECKFULL-01 · 2026-07-29 · The expanded strip is the WHOLE deck, and it goes full-viewport (extends D-SL-MORPH-01)
+**Decision:** (1) the expanded grid tile carries the classic scoopy deck **transport in full** —
+the toolbar row (OPEN · ■ · ▶ · » · REV · NUDGE · DBL · EJECT · SAVE), the SYNC/pulse + TR ·
+WIN · BR row, the scene row (pads 1–8 · S R CU · SCN · MUTE · GRID/PERF) and the master row
+(BPM · VOL · DRV · S1–S4) — every verb REBUILT on merged companion lanes (the P3-D4-2 pattern),
+never mounted from `TransportPanel`'s `DeckBlock` as-is. (2) It stays a **plane tile** rather
+than becoming a per-strip window, and gains **full-viewport mode**: the focused strip fills the
+viewport on command, Tab cycles strips at full size, one key drops back to the map; compose
+stays reachable from the tile. (3) Looper (tape) strips LATER gain deck-like transport
+possibilities (a fixed-value rate slider, transport verbs) — queued, deliberately not now.
+**Rationale:** the user's words — the deck window should be "pretty much exactly the scoopy
+loops dj deck view WITH its deck transport … this way we can be sure our advanced scoopy
+system functions correctly ongoing". Validating the advanced system in place is the point; a
+separate window per strip would turn strip-tabbing into window-switching.
+**Consequences:** P7 opens as "the deck, whole". STRIP-DECK.md's "Deliberately NOT folded"
+list is superseded item by item (OPEN · DBL · WIN/TR · GRID/PERF all fold in), and D4-2's
+header verbs migrate DOWN into the classic rows — one control, one home, which also closes
+that row's recorded SYNC deviation. `DeckBlock`'s verb set (`deckSection` / `transportDeck` /
+`menuTransport` / `djSetting`, the desktop-shell coupling the P3-M-1 measurement found) is the
+REHOMING SOURCE LIST, not a mount target. Full-viewport is a VIEW-layer state and must never
+write the document's cell geometry.
+
+## D-SL-LAUNCH-01 · 2026-07-29 · Launch chooser: PLANE or mapless COMPOSE
+**Decision:** app launch offers **PLANE** (today's behaviour, `openPanel("plane")`) or
+**COMPOSE** — and the compose path is **MAPLESS**: the compose window boots on deck 0 with no
+map document created at all, and `ComposeWindow` gains explicit session **open / new / save**
+UI.
+**Rationale:** the user — "at app launch we are prompted for PLANE or COMPOSE and via this path
+we can launch a compose window with all possibilities (load and save) without having to open
+the map / plane first." `sessionStore` already owns every verb (save/open/create/rename/
+delete/import/export); autosave-only UI was the gap, not the machinery.
+**Consequences:** `MergedMain.cpp`'s unconditional `openPanel("plane", "", isMain)` branches;
+PANEL-AUDIT gains a launch note. The single-publisher rule (P3-C2, `composingDecks`) is
+trivially satisfied on the mapless path — there is no plane to contend for the deck.
+
+## D-SL-NAV-01 · 2026-07-29 · One keymap, live in the merged host — focused-strip semantics
+**Decision:** the full keymap (`web/src/commands/keymap.ts`) actually DISPATCHES in
+WizardMerged via a **JS dispatch layer** — HotkeyManager's job rehomed, because that Swift
+class does not exist here and ~90 of ~100 entries are `owner:"native"`, i.e. declared,
+documented, generated into a Help window, and dead. The keymap's own header already names
+"the TS dispatcher" as the deferred plan; this signs it. Deck-A/B key PAIRS (Q/W/E vs A/S/D,
+`-` switch active deck, ⌘⇧1/2/3 send-to-deck) **collapse to one set targeting the FOCUSED
+strip**; Tab moves strip focus; focus is a visible highlight wired into the existing
+`focusModel` / `claimKeyboard` arbitration. One open detail, spec'd provisional in
+NAV-SHORTCUTS.md: digits as scene-launch-on-the-focused-strip (scoopy muscle memory) versus
+focus-jump — the recommendation being digits = scenes, modifier+digits = focus jump,
+Tab/⇧Tab = cycle.
+**Rationale:** the user — "the list is long and should work fully, so we need to be able to
+high decks and strip to use our navigation system". A/B pairs are a two-deck vocabulary; a
+plane holds up to eight strips, so focus is the only model that scales without inventing a
+second one.
+**Consequences:** the `forwardKey` / `useNativeKeyForwarding` lane retires (nothing in
+`shell/` ever handled it); `context:"dj"` entries re-context onto the focused strip; the
+collision tests extend per-context; `Generated/ShortcutList.swift` emission is kept honest or
+retired in the same commit, because `protocol:check` gates its drift. Full-viewport Tab
+cycling (D-SL-DECKFULL-01) rides this same focus model. `docs/merge/NAV-SHORTCUTS.md` becomes
+the normative spec, produced by row P7-K0.
+
+## D-SL-MAPPERF-01 · 2026-07-29 · The map holds the performance: the overlay layer (ratifies both MAP-SCHEMA hazards)
+**Decision:** `sessionPerf` / `perfBySession` generalizes into a per-(strip, session)
+**performance overlay** carrying every session-level setting worth restoring for a
+performance. It is re-applied at map load AND after any compose republish of that deck. The
+write-routing law: **plane-surface edits to session parameters land in the OVERLAY; compose
+edits land in the SESSION.** Maps must also restore FX-slot state (already queued as P6-5) and
+tape audio (the `tapeLoadTake` no-op becomes a row). Deliberately NOT persisted: device and
+hardware routings (the user: "flexible on devices and hardware routings of course") and MIDI
+mappings (blocked — the merged shell publishes no `midiLearn` topic).
+**Rationale:** the user — "a map should basically hold all settings saved, but be flexible on
+devices and hardware routings … anything that is worth storing so it can be restored easily
+for a performance."
+**Consequences:** both of MAP-SCHEMA's ⚠️ hazards are settled by construction. The *bleed*
+hazard ("unpinned edits bleed across maps", which said **settle this before the plane UI
+exposes any session-parameter control**) is answered by the write-routing law — and this
+RETROACTIVELY legalizes P3-D4-1a, which crossed that line when MasterRow's BPM/VOL/DRV became
+real document writes; the control's behaviour is unchanged, only its persistence target moves
+(row P8-4). The *stomp* hazard is answered by re-apply-after-republish becoming law — the
+document's own proposed fix, now signed (row P8-3). P8 opens.
+
+## D-SL-DECKOUT-01 · 2026-07-29 · A grid strip's channel bus must carry its deck (a defect, hoisted)
+**Decision:** a grid-deck strip's `channelOut` MUST carry that deck's mix. Today it carries
+only what is routed INTO it: `ChannelBank::mixInto` sets `elemL/elemR` for
+`ChannelSourceKind::tape` alone (`slengine/src/sl_channel.cpp:598-604`), and `sl_channel.h`
+states outright that a gridDeck channel's meter reads 0 because "this bank deliberately mixes
+nothing for it". This is a **defect against shipped behaviour**, not a new feature: P3-R3's
+signed gesture (REC on a grid strip spawns a looper patched from the source's bus) records
+silence, and `channelBus` capture of a grid strip does too. It is hoisted as **P3.5-E3**,
+ahead of P7. The fix mechanism is measured in the row — a deck-out lane read inside `mixInto`
+versus a new `SourceEndpoint::deckOut` naming the core's existing `AudioLane::deckA/B/C`.
+**Rationale:** the two-routed-strips model (D-SL-MORPH-01) is the ONLY way to loop a deck now
+that strips are one-kind-each, so a silent deck bus does not merely lose a feature — it
+invalidates the decision that replaced the composite strip.
+**Consequences:** the P3.5-AUDIT user gate's outstanding "looper routing (two strips)" walk
+would today pass only if nobody listened back; the gate row is annotated to wait for E3. The
+audible ctest fixture extends the `sl_route_test` / `plane_audio_test` shape: a grid strip's
+bus carries its deck, and chained into a looper it records sound.
+
+## D-SL-RECFROM-01 · 2026-07-29 · Looper inputs: the `record from ▸` menu first, the matrix grid second
+**Decision:** a looper strip picks its source through the existing per-strip ⋯ **`record from ▸`**
+menu, grown to every source kind the engine already has — other strips' bus (built), other
+strips' **send taps** S1–S4 (engine-proven at `sl_route_test:244-266`, with **no UI able to
+author one** today: `patchDrag` is always constructed with `send: null`), **FX returns** (the
+record-the-wet path STRIP-MODEL names), device inputs (built), and virtual pairs when they
+exist. The Matrix then grows the dense **sources × destinations grid editor**
+(ROUTING-MATRIX's second view) as the precise surface, and with it route-gain editing
+(`slRoute/setGain` is dispatch-live with zero web callers) and the feedback toggle honouring
+the create-muted precedent.
+**Rationale:** the user asked for "intuitive ways to choose audio inputs for looper (via fx
+send from a deck e.g. …)". One gesture, plane-native and already learned, beats a new surface;
+the grid follows for when a table beats spaghetti. Broad routing opens as phase **P9**, after
+P7 and P8.
+**Consequences:** no engine work for the send-tap path — this is authoring UI over a proven
+graph. The recorded routing debt rides P9 with it: the duplicate-cable guard exists only in
+`onRecordFromStrip` (a repeated shift-drag silently doubles gain), feedback edges are created
+at unity against ROUTING-MATRIX's own precedent, and `feedbackMs()` hardcodes 512/48000 so the
+price shown on every cable is wrong at any other block size. Cue bus, per-deck outs and
+multi-hardware-output stay designed-not-queued.
+
+## D-WZ-VDEV-02 · 2026-07-29 · Other-app audio: third-party interim now, the native device unparked (amends D-WZ-VDEV-01)
+**Decision:** third-party virtual devices (BlackHole, Loopback) selected as the input device
+are the **acknowledged interim path** for getting another app's audio into a session — it
+works today through `slDevices/setInput` + a `deviceInput` route, and costs documentation plus
+a hint in the input picker, no engine code. The native **Wizard Out** device (16 ch / 8 stereo
+pairs, D-WZ-VDEV-01) is **UNPARKED** and earmarked as phase **P10**, opening after P9.
+**Rationale:** the user wants "the virtual interface that would allow other app audio right in
+the session". The design is signed and the capture ABI exists — but only `CaptureFake.cpp`
+backs it, the real path is CoreAudio process-tap plus an AudioServerPlugIn loopback driver
+(macOS 14.4 floor), and `sl_route_*` has no `virtualDeviceInput` source kind at all. That is
+weeks of platform work; naming the interim path costs a paragraph and unblocks users now.
+**Consequences:** MIGRATION.md's PARKED P2-05 / P2-06 / P2-07 rows gain an unparked-by-this-
+decision note pointing at P10. P10's genuinely new work is the `sl_route_*` `virtualDeviceInput`
+kind and wiring a real backend where the fake stands; `host/include/wz_capture.h` and
+ARCHITECTURE.md's macOS tap design stand as written. Nothing in P9 waits on it.
