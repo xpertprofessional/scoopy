@@ -739,6 +739,82 @@ int main() {
         CHECK(maxStep < 0.2);
     }
 
+    // ── 11b. CHAIN → RECORD IS AUDIBLY TRUE (P3-R1) ──────────────────────────
+    //
+    // The user's looper wish, as an assertion: route one strip into another,
+    // set the destination's record tap to ITS BUS, press REC — the take (and
+    // the tape) must carry the ROUTED signal. ROUTING-MATRIX has claimed this
+    // on paper since P2 ("a strip's record tap — record any routed signal");
+    // nothing had ever driven it end to end. With one-kind-per-strip signed
+    // (D-SL-MORPH-01), this chain IS how "the looper records the deck's own
+    // output" works — so it being paper-only was a hole under the decision.
+    {
+        // Fresh ground: §11 left a consented feedback loop and a send cable.
+        for (uint32_t id = 0; id < sl_route_capacity(); ++id)
+            if (sl_route_active(e, id) != 0) sl_route_remove(e, id);
+        for (int b = 0; b < 32; ++b) render(0.0);
+
+        // The wish's shape: input → strip 0 (the "session" stand-in) →
+        // strip 1 (the looper), strip 1 → main for the playback proof.
+        CHECK(replyOk(cmd("slRoute",
+            R"({"action":"add","srcKind":2,"srcIndex":0,"srcSub":1,"dstKind":0,"dstIndex":0,"gain":1.0})")));
+        CHECK(replyOk(cmd("slRoute",
+            R"({"action":"add","srcKind":0,"srcIndex":0,"dstKind":0,"dstIndex":1,"gain":1.0})")));
+        CHECK(replyOk(cmd("slRoute",
+            R"({"action":"add","srcKind":0,"srcIndex":1,"dstKind":2,"dstIndex":0,"gain":1.0})")));
+
+        // The looper strip's channel SOURCES its tape — the same
+        // `setSource {kind:1}` Strip.onRecord sends before slRecord (§5's
+        // sequence): without it the captured tape would play into NOTHING and
+        // the proof below would be assert-silence-forever.
+        CHECK(replyOk(cmd("slChannel", R"({"action":"setSource","channel":1,"kind":1,"index":1})")));
+
+        // REC on the looper strip, tap = ITS BUS (recordTapFor's 'bus' →
+        // RECORD_SOURCE.channelBus kind 2, chan0 = the CHANNEL index).
+        const auto takesBefore = recorder.takes().size();
+        CHECK(replyOk(cmd("slRecord",
+            R"({"action":"start","tape":1,"sourceKind":2,"chan0":1,"chan1":-1,"sourceDesc":"chain: strip 0 → strip 1 bus"})")));
+        for (int b = 0; b < 48; ++b) render(0.5); // the tone flows the chain
+        const auto stopped = cmd("slRecord", R"({"action":"stop","tape":1})");
+        CHECK(replyOk(stopped));
+        CHECK(recorder.takes().size() == takesBefore + 1);
+
+        // The tape now holds what was ROUTED IN — play it with the input dead:
+        // anything audible on main came from the capture, not the live chain.
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":1,"mode":0})")));
+        for (int b = 0; b < 8; ++b) render(0.0);
+        double captured = 0.0;
+        for (int b = 0; b < 24; ++b) { render(0.0); captured = std::max(captured, peak(lane[0])); }
+        CHECK(captured > 0.05);
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":1,"mode":2})")));
+
+        // The negative half: unpatch the chain, record again — the bus is
+        // silent now, so the new capture must be too. A tap that still heard
+        // the old cable would be recording the ROUTING TABLE, not the signal.
+        int chainId = -1;
+        for (uint32_t id = 0; id < sl_route_capacity(); ++id)
+            if (sl_route_active(e, id) != 0 && sl_route_source_kind(e, id) == 0 &&
+                sl_route_source_index(e, id) == 0)
+                chainId = static_cast<int>(id);
+        CHECK(chainId >= 0);
+        sl_route_remove(e, static_cast<uint32_t>(chainId));
+        for (int b = 0; b < 32; ++b) render(0.5); // ramps out; input stays live
+
+        CHECK(replyOk(cmd("slRecord",
+            R"({"action":"start","tape":1,"sourceKind":2,"chan0":1,"chan1":-1,"sourceDesc":"chain, unpatched"})")));
+        for (int b = 0; b < 48; ++b) render(0.5);
+        CHECK(replyOk(cmd("slRecord", R"({"action":"stop","tape":1})")));
+
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":1,"mode":0})")));
+        for (int b = 0; b < 8; ++b) render(0.0);
+        double silent = 0.0;
+        for (int b = 0; b < 24; ++b) { render(0.0); silent = std::max(silent, peak(lane[0])); }
+        CHECK(silent < 1e-3);
+        CHECK(replyOk(cmd("slTape", R"({"action":"trigger","tape":1,"mode":2})")));
+        // The input and strip1→main cables stay standing: §12's ledger census
+        // needs at least one active route to remove by id.
+    }
+
     // ── 12. THE LEDGER'S DATA (increment 4) ──────────────────────────────────
     //
     // `slRouteList` is what the routing matrix reads, and it has to answer two
