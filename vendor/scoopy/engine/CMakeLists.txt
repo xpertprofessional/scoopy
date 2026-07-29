@@ -69,14 +69,60 @@ target_include_directories(scoopy_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../ThirdParty/Signalsmith
 )
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# P6-1 — the AU/VST3 plugin host compiles IN (D-WZ-PDC-01 opened the gate).
+#
+# The flag is PUBLIC because it changes the core's class layout (the return/instrument slot
+# members exist only when set), so every TU in a binary must agree on it. ON by default only
+# where the host can exist: a native Apple build. A browser cannot host an AU (EMSCRIPTEN
+# stays OFF and ships the complete no-op fallback, as before), and the .mm is Obj-C++
+# (Windows/Linux CI stays OFF, exactly the configuration the soak target always proved).
+#
+# The LIBRARY stays JUCE-free either way. With the flag ON, the core calls into the
+# NativePluginSlot/NativeInstrumentSlot surface, whose symbols come from one of TWO builds of
+# the SAME ScoopyLoops/NativePluginHost.mm:
+#   • the app target (shell/) compiles it as Obj-C++ with SCOOPY_PLUGIN_HOST=1 + JUCE — real.
+#   • scoopy_plugin_host_stub (below) compiles its #else branch as plain C++ — every method a
+#     no-op, byte-for-byte the audio behavior the flag-OFF build had (host-mode returns render
+#     silence with no plugin loaded; the DSP gates were re-run to prove it).
+# The stub rides scoopy_engine's PUBLIC link interface, so lazy archive semantics do the
+# dispatch: the app's real object file defines the symbols first and the stub is never pulled;
+# the headless gate tools have no real object, pull the stub, and link without JUCE.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+if(APPLE AND NOT EMSCRIPTEN)
+    set(_scoopy_plugin_host_default ON)
+else()
+    set(_scoopy_plugin_host_default OFF)
+endif()
+option(SCOOPY_PLUGIN_HOST_ENABLED
+    "Compile the core with the AU/VST3 plugin-host surface (Apple native only)"
+    ${_scoopy_plugin_host_default})
+
+if(SCOOPY_PLUGIN_HOST_ENABLED)
+    set(_scoopy_plugin_host 1)
+else()
+    set(_scoopy_plugin_host 0)
+endif()
+
 target_compile_definitions(scoopy_engine PUBLIC
-    # No AU/VST3 host. A browser cannot host one, and the complete no-op fallback already ships.
-    SCOOPY_PLUGIN_HOST=0
+    SCOOPY_PLUGIN_HOST=${_scoopy_plugin_host}
     # No CoreMIDI. Same idea, same shape: the engine keeps calling `sendRaw` and the bytes go
     # nowhere. WebMIDI is Chromium-only and sending clock to hardware is not part of composing
     # away from the studio.
     SCOOPY_MIDI_HARDWARE=0
 )
+
+if(SCOOPY_PLUGIN_HOST_ENABLED)
+    # The no-op fallback half of NativePluginHost.mm, compiled as plain C++ (the #else branch
+    # has no Obj-C and no JUCE) with the flag forced OFF for this one TU. Deliberately NOT
+    # linked against scoopy_engine — that would re-import the PUBLIC =1 define and select the
+    # JUCE branch this target exists to avoid.
+    add_library(scoopy_plugin_host_stub STATIC ${SRC}/NativePluginHost.mm)
+    set_source_files_properties(${SRC}/NativePluginHost.mm PROPERTIES LANGUAGE CXX)
+    target_compile_definitions(scoopy_plugin_host_stub PRIVATE SCOOPY_PLUGIN_HOST=0)
+    target_include_directories(scoopy_plugin_host_stub PRIVATE ${SRC})
+    target_link_libraries(scoopy_engine PUBLIC scoopy_plugin_host_stub)
+endif()
 
 # See the header: this is a CORRECTNESS flag for cross-platform null-testing, not an optimisation
 # preference. `-ffast-math` is banned outright.

@@ -5,6 +5,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Obj-C++ is a first-class language of this build (P6-1: the vendored
+# NativePluginHost.mm compiles into WizardMerged as real Obj-C++). Enabled HERE,
+# not in shell/ — enable_language() in a subdirectory loads the language's rule
+# variables into that scope only, and every directory that links a JUCE module
+# compiles that module's .mm sources, so a subdirectory enable breaks their
+# generate step (CMAKE_OBJCXX_COMPILE_OBJECT not set).
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # enable_testing() must run in the TOP-LEVEL build so ctest aggregates tests
 # from every subdirectory; calling it only in a subdirectory yields
 # "No tests were found" at the root (parlante lesson).

@@ -134,6 +134,28 @@ target_link_libraries(WizardMerged PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
+# P6-1 — the REAL plugin host (scoopyloops' own NativePluginHost.mm) compiles into the app
+# target, exactly as the shipping app does it: the core (built flag=1 via scoopy_engine's
+# PUBLIC define) calls the slot surface, and THIS object file supplies the JUCE-backed
+# implementation — so the no-op stub on scoopy_engine's link interface is never pulled here.
+# juce_audio_processors brings the AU + VST3 format code; the two JUCE_PLUGINHOST defines
+# turn those formats on for every module TU this target compiles.
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    target_sources(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
+    set_target_properties(WizardMerged PROPERTIES
+        OBJCXX_STANDARD 20
+        OBJCXX_STANDARD_REQUIRED ON)
+    target_include_directories(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(WizardMerged PRIVATE
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_VST3=1)
+    # CoreAudioKit explicitly: JUCE's module metadata only auto-links the frameworks its
+    # DEFAULT config needs, and the AU-host code (AUGenericView) is behind our define.
+    target_link_libraries(WizardMerged PRIVATE
+        juce::juce_audio_processors
+        "-framework CoreAudioKit")
+endif()
+
 if(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
