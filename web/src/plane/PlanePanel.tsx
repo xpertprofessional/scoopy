@@ -55,6 +55,21 @@ import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import './plane.css'
 
+/**
+ * The ≡ menu's surface rows (P3-4-2, pruned by P3-P1). Exported so the test
+ * can pin what P3-P1 retired: djmode / deckmixer / transport opened windows
+ * that hang on "waiting for state" in the merged host — pushed-topic surfaces
+ * whose publishers were the carved-off Swift shell. Their jobs live on the
+ * plane (master bar, the deck tile); the panels stay routed in App.tsx.
+ */
+export const PANEL_MENU_SURFACES = [
+  ['spectral', 'spectral — texture, warp, gesture'],
+  ['paintmode', 'paint mode'],
+  ['midi', 'MIDI mapping'],
+  ['perf', 'performance monitor'],
+  ['capture', 'capture'],
+] as const
+
 export function PlanePanel({ link }: { link: EngineLink | null }) {
   const strips = useMapStore((s) => s.map.strips)
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
@@ -701,7 +716,16 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         {/* THE PANELS MENU (P3-4-2) — the door PANEL-AUDIT.md promised. Every
             compiled-in panel the audit marked mechanical opens from here;
             "nothing lost" stops depending on knowing a panel's name. fxslot
-            leads: it is the return-FX config path P3-3-1 is blocked on. */}
+            leads: it is the return-FX config path P3-3-1 is blocked on.
+
+            P3-P1 (D-SL-MORPH-01): djmode, deckmixer and transport are GONE
+            from this menu — their windows hung on "waiting for state" forever
+            (they wait on pushed UiState topics only the old Swift shell
+            served; the M-1 measurement), and their jobs live on the plane now
+            (master bar verbs via P3-M-1b, the deck tile via P3-D4). A door
+            that opens a tombstone is worse than no door. The panels stay
+            routed in App.tsx; the user's direction is that this whole menu is
+            interim scaffolding, dissolving as the remaining jobs rehome. */}
         <button
           type="button"
           className="plane-compose"
@@ -717,18 +741,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
                 })),
                 { kind: 'sep' },
                 { kind: 'info', label: 'surfaces' },
-                ...(
-                  [
-                    ['transport', 'transport — beat repeat, quantize, ramp, keyboard'],
-                    ['spectral', 'spectral — texture, warp, gesture'],
-                    ['paintmode', 'paint mode'],
-                    ['midi', 'MIDI mapping'],
-                    ['perf', 'performance monitor'],
-                    ['capture', 'capture'],
-                    ['deckmixer', 'deck mixer'],
-                    ['djmode', 'DJ mode'],
-                  ] as const
-                ).map(([panel, label]) => ({
+                ...PANEL_MENU_SURFACES.map(([panel, label]) => ({
                   kind: 'item' as const,
                   label: `${label} ⇱`,
                   onSelect: () => send(link, 'openPanelWindow', { panel }),
