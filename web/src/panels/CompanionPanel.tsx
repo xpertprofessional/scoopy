@@ -85,9 +85,14 @@ export function CompanionPanel({ link }: { link: EngineLink | null }) {
       browserLink.setGridPeakPaths(gridPeakPaths());
       // The grid shows (and edits) the ACTIVE SCENE's projection — what you see is what you hear.
       // The write path splits the edited row back into scene section vs sectionA (applyGridRow).
+      // The third argument is the DOCUMENT'S IDENTITY (P3.5-E8g-e). This effect is keyed on the
+      // session OBJECT, which every document edit replaces — so without it the grid cursor was
+      // sent home to track 0 on every cell edit, and the next FILES double-click landed on the
+      // wrong row (`fileBrowser load` targets `grid.selectedIndex`).
       browserLink.gridBackend.load(
         projectScene(s.session.pattern, s.scene) as Record<string, unknown>,
         gridRuntimeInfos(),
+        s.session.name,
       );
     } else {
       browserLink.gridBackend.clear();

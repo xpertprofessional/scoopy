@@ -115,9 +115,11 @@ export function useDeckTileBinding(
       return
     }
     browserLink.setGridPeakPaths(gridPeakPaths(deck), deck)
+    // Document identity, so an edit does not send this tile's cursor home (P3.5-E8g-e).
     backend.load(
       projectScene(session.pattern, scene) as Record<string, unknown>,
       gridRuntimeInfos(deck),
+      session.name,
     )
   }, [browserLink, session, scene, deck])
 

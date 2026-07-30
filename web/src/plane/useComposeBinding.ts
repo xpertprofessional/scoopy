@@ -69,9 +69,13 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
     // section vs sectionA (applyGridRow). `scene` is a dependency for that
     // reason: without a reload the grid would show scene A's pattern while the
     // engine played scene C.
+    // `session.name` is the DOCUMENT'S IDENTITY (P3.5-E8g-e) — this effect re-runs on every
+    // document edit, and without it the reload sent the grid cursor home to track 0 each time.
+    // A scene switch keeps the cursor deliberately: same document, same tracks.
     browserLink.gridBackend.load(
       projectScene(session.pattern, scene) as Record<string, unknown>,
       gridRuntimeInfos(deck),
+      session.name,
     )
   }, [browserLink, session, scene, deck])
 

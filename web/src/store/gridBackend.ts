@@ -107,6 +107,14 @@ export class GridBackend {
   private masterDrive = 1;
   private playing = false;
   private selected = 0;
+  /**
+   * WHICH DOCUMENT the rows currently came from (P3.5-E8g-e) — the caller's own
+   * identity string, compared only for equality; this class never interprets it.
+   * `undefined` means "the caller did not say", which is read as a different
+   * document, so a caller that never passes one keeps the old reset-always
+   * behaviour rather than silently inheriting a stale cursor.
+   */
+  private docId: string | undefined = undefined;
   // The per-track armed cell-parameter lane (which lane a vertical value-drag /
   // ö-ä edits). RUNTIME UI state, not a pattern-wire field, so it has no home
   // in the document — the browser must remember it here or per-cell editing has
@@ -136,15 +144,47 @@ export class GridBackend {
   /**
    * Load a session's document. Projects every track and publishes all three topics, so a panel that
    * mounts after this — or calls `getUiState` on mount — gets a complete grid.
+   *
+   * `docId` IDENTIFIES THE DOCUMENT, and it is what makes this safe to call on every edit
+   * (P3.5-E8g-e). The bindings' reload effect is keyed on the session OBJECT, and every document
+   * edit replaces that object — so this runs constantly, not just when a session opens. It used
+   * to reset the cursor to track 0 unconditionally, which produced a defect nobody had reported
+   * because nobody walks two doors in a row:
+   *
+   *   select track 5 → edit any cell → double-click a file in FILES → IT LANDS ON TRACK 1
+   *
+   * because `fileBrowser load` with no explicit `trackIndex` targets `grid.selectedIndex`
+   * (browserLink.ts:392), and the cell edit had silently moved it home. The armed cell-parameter
+   * lane was lost the same way, so every value-drag fell back to pitch after one edit.
+   *
+   * So the reset is now conditional on the document actually CHANGING. A genuinely new document
+   * must still reset: a cursor pointing at "track 5" means nothing once track 5 is a different
+   * track, and carrying it over would put the next dropped sample on a row the user never chose.
+   * The caller passes `session.name`, which is the session's identity on disk (unique by
+   * construction — `createSession` de-duplicates and `renameSession` refuses a collision). A SCENE
+   * switch deliberately keeps the cursor: same document, same tracks, only the pattern-scoped
+   * fields differ.
    */
-  load(pattern: Record<string, unknown>, runtime: TrackRuntimeInfo[]): void {
+  load(pattern: Record<string, unknown>, runtime: TrackRuntimeInfo[], docId?: string): void {
+    // Compared BEFORE the rows are swapped, and `undefined !== undefined` is not the test — an
+    // absent id must count as a different document in both directions, so a caller that never
+    // opts in behaves exactly as it did before this parameter existed.
+    const sameDocument = docId !== undefined && docId === this.docId;
     this.rows = docRows(pattern);
     this.runtime = runtime;
+    this.docId = docId;
     this.bpm = typeof pattern.bpm === "number" ? pattern.bpm : 120;
     this.masterVolume = typeof pattern.masterVolume === "number" ? pattern.masterVolume : 1;
     this.masterDrive = typeof pattern.masterClipperDrive === "number" ? pattern.masterClipperDrive : 1;
-    this.selected = 0;
-    this.activeParams = []; // a fresh session arms the default lane (pitch)
+    // Clamped even when the document is the same: an edit that DELETES tracks can leave the
+    // cursor past the end, and a `selectedIndex` no row answers to is where a dropped sample
+    // would vanish. `selectTrack` already refuses an out-of-range index; this is the same rule
+    // applied to an index that was in range when it was set.
+    this.selected = sameDocument ? Math.min(this.selected, Math.max(0, this.rows.length - 1)) : 0;
+    // The armed lanes ride with the cursor for the same reason — they are per-track UI state
+    // about the document that is open, not about the session file. A fresh session arms the
+    // default lane (pitch).
+    if (!sameDocument) this.activeParams = [];
     this.publishAll();
   }
 
