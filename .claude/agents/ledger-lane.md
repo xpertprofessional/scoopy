@@ -119,8 +119,13 @@ default is, or how a door behaves when it cannot do the thing — **check whethe
 the original already answered it** rather than deriving it. Most rows that read
 like design questions are ports.
 
-- Read `../scoopyloops/ScoopyLoops` (the app) and `../scoopyloops/ScoopyLoopsTests`
-  (pinned behaviour). `attic/` is retired code — history, never a spec.
+- Read `../scoopyloops/ScoopyLoops/*.swift` (the donor) and
+  `../scoopyloops/ScoopyLoopsTests` (pinned behaviour). `WebEngineLink.swift:365-559`
+  is the index — an exhaustive switch over all 84 protocol methods.
+- ⚠️ **`../scoopyloops/web/**` is NOT the donor.** It is this project's own web
+  tier frozen at 2026-07-27; that repo took four merge commits before the P3-0
+  collapse, so citing its TypeScript as "what the original did" is **circular**.
+  Only the Swift is evidence. `attic/` is history, never a spec.
 - **READ-ONLY. Never write to that repo, never commit in it, never run its build.**
 - Say in your handoff what the original did and whether you followed it. If you
   deliberately diverge, say why — a divergence the user did not ask for is a

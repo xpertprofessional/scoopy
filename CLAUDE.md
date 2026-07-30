@@ -36,9 +36,22 @@ or document layer came across**, so a row that reads like a design question is
 usually a port whose reference is sitting right there. Ask the user to run it
 when reading is ambiguous; they can compare directly.
 
-Search it scoped and read-only — `../scoopyloops/ScoopyLoops` for the app,
-`../scoopyloops/ScoopyLoopsTests` for pinned behaviour. `attic/` is retired code:
-useful as history, never as a spec. **Never write to that repo.**
+⚠️ **Only the SWIFT is the donor.** `../scoopyloops/web/**` is **this project's
+own web tier, frozen at 2026-07-27** — that repo took four merge commits
+(`P0-A` · `P1` · `P2-4` · `P2-5`) before the P3-0 collapse moved everything here,
+so citing its TypeScript as "what the original did" is circular. Its 370-commit
+history also shows the app was pure SwiftUI first and was *itself* mid-migration
+to a web UI ("Migration P0-04: web workspace scaffold"), so for anything older
+than that migration the SwiftUI views are the reference.
+
+Search it scoped and read-only:
+- `../scoopyloops/ScoopyLoops/*.swift` — **the donor**, ~100 files / 64k LOC.
+  `WebEngineLink.swift:365-559` is the index: an exhaustive dispatch `switch`
+  over all 84 protocol methods, which Swift enforces has no `default`.
+- `../scoopyloops/ScoopyLoopsTests/` — pinned behaviour, often the fastest answer.
+- `attic/` — retired code: history, never a spec.
+
+**Never write to that repo, never commit in it, never run its build.**
 
 **The four rules:** tests pass ≠ it works ≠ it shipped ≠ you can reach it. Green gates
 in Chromium repeatedly missed features unreachable in the real app — every UI claim
