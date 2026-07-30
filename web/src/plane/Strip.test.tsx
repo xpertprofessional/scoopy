@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Strip, formatGain, formatRate, waveWidth } from './Strip.tsx'
+import { Strip, formatGain, formatRate, inputDeviceMenuItems, waveWidth } from './Strip.tsx'
+import type { MenuItem } from '../design/ContextMenu.tsx'
 import { newGridElement, newStrip, newTapeElement } from './stripOps.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 
@@ -432,5 +433,64 @@ describe('the deck verbs in the tile header (P3-D4-2)', () => {
     // Every sdv button except SAVE renders disabled under the lock.
     const disabledCount = (html.match(/class="sdv mono[^"]*" disabled=""/g) ?? []).length
     expect(disabledCount).toBeGreaterThanOrEqual(5)
+  })
+})
+
+/**
+ * P9-5a — the hint in the input picker.
+ *
+ * ⚠️ WHAT THESE PINS CANNOT SEE. The menu is built inside `openSourceMenu`'s
+ * event handler and rendered by `useContextMenu`'s portal, so no static render
+ * can reach it — there is no jsdom here. These assert the pure section builder
+ * only. That the ⋯ menu on a real strip actually shows the section is a
+ * REAL-HOST claim and rides P9-G1's walk, not this file.
+ */
+describe('P9-5a · the input device section', () => {
+  const labels = (items: MenuItem[]) => items.map((i) => (i.kind === 'sep' ? '—' : i.label))
+  const HINT = 'another app’s audio → a virtual device (BlackHole/Loopback)'
+
+  it('names the virtual-device path with ONE device — the case the old gate hid', () => {
+    // The whole defect: `devices.length > 1` meant the person who has installed
+    // nothing, and therefore has exactly one device, saw no section at all.
+    const items = inputDeviceMenuItems(['Built-in Microphone'], 'Built-in Microphone', () => {})
+    expect(labels(items)).toContain('input device')
+    expect(labels(items)).toContain(HINT)
+  })
+
+  it('names it with NO devices too — an empty list is not a reason to say nothing', () => {
+    expect(labels(inputDeviceMenuItems([], '', () => {}))).toContain(HINT)
+  })
+
+  it('carries the hint ABOVE the list when there is more than one', () => {
+    const items = inputDeviceMenuItems(['Built-in', 'BlackHole 2ch'], 'Built-in', () => {})
+    const l = labels(items)
+    expect(l.indexOf(HINT)).toBeLessThan(l.indexOf('BlackHole 2ch'))
+    expect(l).toEqual(['—', 'input device', HINT, 'Built-in', 'BlackHole 2ch'])
+  })
+
+  it('offers no pickable row unless there is a choice to make', () => {
+    const pickable = (d: string[]) =>
+      inputDeviceMenuItems(d, d[0] ?? '', () => {}).filter((i) => i.kind === 'item')
+    expect(pickable([])).toHaveLength(0)
+    expect(pickable(['Built-in'])).toHaveLength(0)
+    expect(pickable(['Built-in', 'BlackHole 2ch'])).toHaveLength(2)
+  })
+
+  it('the one-device line names the relaunch caveat — the OTHER reason the list is short', () => {
+    // `refreshDevices` runs once at boot and `slDevices` has no rescan, so a
+    // driver installed while the app is open cannot appear (spec §2c).
+    const l = labels(inputDeviceMenuItems(['Built-in'], 'Built-in', () => {}))
+    expect(l.some((s) => s.includes('relaunch'))).toBe(true)
+  })
+
+  it('ticks the current device and picks by name', () => {
+    const picked: string[] = []
+    const items = inputDeviceMenuItems(['Built-in', 'BlackHole 2ch'], 'BlackHole 2ch', (d) =>
+      picked.push(d),
+    )
+    const rows = items.flatMap((i) => (i.kind === 'item' ? [i] : []))
+    expect(rows.map((r) => r.checked)).toEqual([false, true])
+    for (const r of rows) r.onSelect()
+    expect(picked).toEqual(['Built-in', 'BlackHole 2ch'])
   })
 })

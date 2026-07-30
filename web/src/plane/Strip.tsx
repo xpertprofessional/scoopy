@@ -113,6 +113,60 @@ function snapUnity(rate: number): number {
   return rate
 }
 
+/**
+ * THE INPUT DEVICE SECTION of the ⋯ menu (P9-5a).
+ *
+ * ⚠️ THE SECTION IS ALWAYS RENDERED, and — exactly as with the session list
+ * above — the empty case is the reason. It used to be gated on
+ * `devices.length > 1`, so a machine with one input device showed no device
+ * section at all, no heading and no hint. **The gate WAS the defect**: the
+ * person who needs to hear about a virtual device is precisely the one who has
+ * installed nothing and therefore has one device, so the gate hid the answer
+ * from everybody who had the question. A control that is absent teaches
+ * nothing; one that says what it needs teaches the next step.
+ *
+ * The info line is the whole of the interim other-app-audio path
+ * (`docs/specs/other-app-audio.md`, D-WZ-VDEV-02): route another app into a
+ * virtual device and pick it here. Nothing downstream knows the device is
+ * virtual, which is why that path costs a sentence rather than code.
+ *
+ * The one-device line names the relaunch caveat because it is the other half of
+ * why the list is short: `refreshDevices` runs once from the plane's boot
+ * effect (`PlanePanel.tsx:453-458`) and `slDevices` has no rescan action, so a
+ * driver installed while the app is open is invisible until it restarts
+ * (spec §2c).
+ *
+ * Exported and pure so the section is assertable without a DOM — the same
+ * shape `panelsMenuItems`/`mapMenuItems` use in `PlanePanel.tsx`, and the only
+ * way a menu built inside an event handler can be tested at all.
+ */
+export function inputDeviceMenuItems(
+  devices: readonly string[],
+  currentDevice: string,
+  onPick: (name: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [
+    { kind: 'sep' },
+    { kind: 'info', label: 'input device' },
+    { kind: 'info', label: 'another app’s audio → a virtual device (BlackHole/Loopback)' },
+  ]
+  if (devices.length > 1) {
+    for (const d of devices)
+      items.push({ kind: 'item', label: d, checked: d === currentDevice, onSelect: () => onPick(d) })
+  } else if (devices.length === 1) {
+    items.push({ kind: 'info', label: `only “${devices[0]}” — install one, then relaunch` })
+  } else {
+    // Empty means the host answered with nothing OR was never asked — the
+    // browser dev host has no device layer at all (spec §1) and its refusal
+    // leaves the store empty. `useDeviceStore.loaded` is the field that tells
+    // those apart; this line is deliberately true of both, because neither can
+    // be picked from and guessing which would be the kind of confident wrong
+    // label the status line exists to prevent.
+    items.push({ kind: 'info', label: 'no input devices reported' })
+  }
+  return items
+}
+
 export function Strip({
   strip,
   link,
@@ -621,18 +675,10 @@ export function Strip({
       })
     }
 
-    if (devices.length > 1) {
-      items.push({ kind: 'sep' })
-      items.push({ kind: 'info', label: 'input device' })
-      for (const d of devices) {
-        items.push({
-          kind: 'item',
-          label: d,
-          checked: d === currentDevice,
-          onSelect: () => void setInputDevice(link, d),
-        })
-      }
-    }
+    if (onPickInput)
+      items.push(
+        ...inputDeviceMenuItems(devices, currentDevice, (d) => void setInputDevice(link, d)),
+      )
     openMenu(items, ev.clientX, ev.clientY)
   }
 
