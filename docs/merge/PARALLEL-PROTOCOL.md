@@ -198,7 +198,16 @@ cycle.
 P8-1 · P9-5 (Lane C). Plus P3.5-E8f and P3.5-E9b **resolved by the user's walk**.
 **Forty-odd follow-up rows** written from those handoffs.
 
-**Queued:** A: E10a → P11-3a → P6-6a/b/c → P6-AUDIT → P3.5-E4.
+⚠️ **The "Queued" list below is a PLAN, not a work authorisation.** A lane
+starts a row **only** when the conductor names it in a message to that lane.
+Finishing a row means hand back and wait — even when an obvious next row exists,
+and even when the lane can see it queued here. Learned 2026-07-30: the conductor
+told the user all dispatch was held pending three decisions, and a lane read this
+list as a queue to continue through and shipped the next row anyway. The work was
+good; the authorisation was not there. If a lane thinks the next row is urgent it
+says so in its handoff and lets the conductor dispatch it.
+
+**Queued (plan only):** A: E10a → P11-3a → P6-6a/b/c → P6-AUDIT → P3.5-E4.
 B: P11-2 → P11-3c → P11-6 → P11-4 (last — the only MAP schema bump).
 C: P11-AUDIT → P8-1's downstream specs.
 
