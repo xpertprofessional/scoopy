@@ -19,7 +19,7 @@ Four tiers, identical in spirit to parlante-next:
 
 | Tier | Contents | May contain |
 |---|---|---|
-| `engine/` | Portable C++20 core: routing graph, channels, decks, ASRC, recorder drains, loopback, watchdog, metering. Static lib `wz_engine` behind C ABI `wz_engine.h`. | No device code, no file-format code, no platform headers. RT-safe render path: no locks, no allocation, no IO. |
+| `engine/` | ⚠️ **RETIRED at H2a (D-SL-ONEHOST-01).** Held wizard's portable core — routing graph, channels, decks, ASRC, recorder drains, loopback, watchdog, metering — as static lib `wz_engine` behind C ABI `wz_engine.h`. The P3 flip made scoopy's core the survivor and by 2026-07-30 nothing but its own tests reached it. The directory now holds ONLY the vendored libsamplerate, which `wz_decode` links. **The live core is `vendor/` + `slengine/` behind SL ABI v3 — see `docs/merge/SL-ABI-V3.md`.** | No device code, no file-format code, no platform headers. RT-safe render path: no locks, no allocation, no IO. |
 | `host/` | JUCE 8: duplex device IO, decode/encode, **capture backends** (process taps, PipeWire), crash-safe WAV writers, plugin hosting + out-of-process scanner. | Platform code lives here and only here. |
 | `shell/` | JUCE 8 `WebBrowserComponent` app. **Shell law (verbatim from parlante):** a shell may contain ONLY EngineLink transport, window/menu chrome, file dialogs, lifecycle/permissions. Anything else is a bug. Wizard adds exactly two shell items: window min/max constraints for the two display modes, and an always-on-top toggle. | |
 | `web/` | React 18 + TS + Vite + Zustand + Zod. Owns the **Patch** document. Committed `webdist/` bundle. | |
@@ -63,7 +63,17 @@ float blocks pushed into source rings.
 
 ---
 
-## 3. C ABI — `engine/include/wz_engine.h`
+## 3. C ABI — `engine/include/wz_engine.h` ⚠️ HISTORICAL
+
+> **THIS ABI NO LONGER EXISTS.** `engine/include/wz_engine.h` was deleted at H2a
+> (D-SL-ONEHOST-01) along with the engine behind it. **The live ABI is SL ABI v3 —
+> `slengine/include/sl_engine.h`, specified in `docs/merge/SL-ABI-V3.md`, which is the
+> document to read and to change.** This section is kept, unedited below, because the
+> CONVENTIONS it states are the ones v3 inherited (keyed-not-positional params resolved
+> by name at boot, RT-safety annotated per function, nothrow, no C++ types across the
+> boundary) and because several v3 units are transplants whose provenance notes still
+> point here — e.g. `slengine/src/sl_tape.cpp:1`. Read it as the donor's record, never as
+> a description of code you can call.
 
 Conventions from `parlante-next/engine/include/pl_engine.h`: keyed-not-positional params
 (resolved by name once at boot; adding a field is a new key, never a re-layout), RT-safety

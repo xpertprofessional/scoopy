@@ -1,9 +1,15 @@
-// Deck decode path (P1-07): write a known WAV at 44.1k, decode + SINC_BEST
-// resample to a 48k engine (D-WZ-DECKSRC-01), load into a deck, and verify the
-// engine plays it back — headless, no device.
+// Decode path (P1-07): write a known WAV at 44.1k, then decode + SINC_BEST
+// resample it to the 48k engine rate (D-WZ-DECKSRC-01) — headless, no device.
+//
+// ⚠️ COVERAGE THIS FILE USED TO CARRY AND NO LONGER DOES (H2a). It ended by
+// loading the decoded audio into a `wz_engine` deck and asserting the engine
+// PLAYED it — peak level through a unity strip, and the deck's HotFrame block.
+// That engine is retired, and the surviving one has no load path to point this
+// at yet: giving audio to a tape IS P8-5 (`tapeLoadTake` becomes REAL), whose
+// gate is already written as "save a map with a looper take, reopen, hear it
+// play". So the played-back claim is not dropped, it is P8-5's to make. What
+// remains here is the half P8-5 will depend on: the bytes come back correct.
 #include "Decoder.h"
-
-#include "wz_engine.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -60,43 +66,17 @@ int main() {
     for (const auto& ch : audio.data)
         for (const auto s : ch) CHECK(std::isfinite(s));
 
-    // Load into a deck and render through a unity strip: the engine plays it.
-    wz_engine* e = wz_engine_create(48000.0, 256, 5);
-    CHECK(e != nullptr);
-    std::vector<const float*> planar = {audio.data[0].data(), audio.data[1].data()};
-    CHECK(wz_deck_load(e, 0, audio.channels, ef,
-                       const_cast<const float* const*>(planar.data()), 48000.0) == 1);
-    CHECK(wz_deck_frames(e, 0) == ef);
+    // The resample is CORRECT, not merely finite. A SINC_BEST conversion of a
+    // 441 Hz sine must still peak at the source amplitude (0.5 on L, 0.25 on R,
+    // where the channels were deliberately made distinguishable) — a decoder
+    // that silently returned zeros, or swapped the channels, would satisfy
+    // every check above and fail here.
+    double peakL = 0.0, peakR = 0.0;
+    for (const auto s : audio.data[0]) peakL = std::max(peakL, std::abs((double) s));
+    for (const auto s : audio.data[1]) peakR = std::max(peakR, std::abs((double) s));
+    CHECK(peakL > 0.49 && peakL < 0.51);
+    CHECK(peakR > 0.24 && peakR < 0.26);
 
-    wz_world_begin(e);
-    wz_world_channel_begin(e, "deck-strip");
-    wz_world_channel_set(e, wz_world_key_for_name("srcKind"), 2); // deck
-    wz_world_channel_set(e, wz_world_key_for_name("deckIndex"), 0);
-    wz_world_channel_set(e, wz_world_key_for_name("gain"), 0.75);
-    wz_world_channel_end(e);
-    wz_world_set_deck_count(e, 1);
-    wz_world_commit(e);
-
-    wz_deck_trigger(e, 0, 0); // loop
-    std::vector<float> l(256), r(256), cl(256), cr(256);
-    float* outs[4] = {l.data(), r.data(), cl.data(), cr.data()};
-    double peak = 0.0;
-    for (int b = 0; b < 100; ++b) { // ~0.53 s: crosses the loop wrap
-        wz_engine_render(e, outs, 4, 256);
-        for (int i = 0; i < 256; ++i) peak = std::max(peak, std::abs(static_cast<double>(l[i])));
-    }
-    // 0.5 amp × cos(π/4) pan × unity fader ≈ 0.3536 — the sine peak reaches it.
-    CHECK(peak > 0.34 && peak < 0.37);
-    for (int i = 0; i < 256; ++i) CHECK(std::isfinite(l[i]) && std::isfinite(r[i]));
-
-    // HotFrame now carries 1 channel + 1 deck block.
-    CHECK(wz_engine_hotframe_length(e) == 8 + 7 + 8); // deck block grew to 8 (recordCapReached)
-    std::vector<double> hot(8 + 7 + 8, 0.0);
-    CHECK(wz_engine_hotframe(e, hot.data(), 8 + 7 + 8) == 8 + 7 + 8);
-    CHECK(hot[8 + 7 + 0] == 1.0); // deck state: looping
-    CHECK(hot[8 + 7 + 4] == 1.0); // rate 1.0 until P4
-
-    wz_engine_destroy(e);
     dir.deleteRecursively();
     std::printf("decode_test OK\n");
     return 0;

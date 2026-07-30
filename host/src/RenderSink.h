@@ -1,10 +1,16 @@
 // The seam between the device layer and whichever engine is rendering.
 //
-// P1 of the merge runs TWO engines side by side: wizard's wz_engine (the donor)
-// and the merged SL ABI v3 over scoopy's core (the survivor). The device layer
-// is identical for both — same duplex callback, same chunking, same clock — so
-// it is parameterised on this interface rather than duplicated, and the P3
-// ownership flip becomes a change of which sink is constructed.
+// ⚠️ THE REASON THIS EXISTS CHANGED AT H2a. It was built because P1 of the merge
+// ran TWO engines side by side — wizard's wz_engine (the donor) and the merged
+// SL ABI v3 over scoopy's core (the survivor) — so the P3 ownership flip could
+// be a change of which sink is constructed. That flip happened and the donor is
+// retired; SlRenderSink is the only implementation left.
+//
+// It stays because the seam is also what keeps wz_audio_io ABI-free: the device
+// library names no engine, so it links none (H2a deleted a `PRIVATE wz_engine`
+// that had already been vestigial for exactly this reason). It is additionally
+// what render_sink_test drives — the chunking, offsetting and channel-ceiling
+// arithmetic is tested against a spy sink, with no engine and no device at all.
 //
 // Deliberately NOT a template: AudioIO is compiled once, and the cost is one
 // virtual call per CHUNK (not per sample), which is noise next to a render.

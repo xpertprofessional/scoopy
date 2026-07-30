@@ -1,6 +1,6 @@
 // Host audio IO: owns the DUPLEX device (JUCE AudioDeviceManager, input +
-// output in one callback) and drives wz_engine_render from it — the engine core
-// never touches device APIs.
+// output in one callback) and drives a RenderSink from it — the engine core
+// never touches device APIs, and this layer never names an engine (H2a).
 //
 // D-WZ-RATE-01 (docs/DECISIONS.md): the engine graph runs at the OUTPUT DEVICE
 // rate. Hardware inputs arrive in this same callback → same clock → zero SRC on

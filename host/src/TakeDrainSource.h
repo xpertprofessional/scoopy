@@ -1,19 +1,24 @@
 // The seam between the take-writing service and whichever engine holds the
 // drain rings.
 //
-// Same shape, and the same reason, as RenderSink: the merge runs TWO engines
-// side by side — wizard's wz_engine (the donor) and the merged SL ABI v3 over
-// scoopy's core (the survivor) — and the drain-to-disk logic is identical for
-// both. A take is a take: the crash-safe writer, the sidecar, the naming, the
-// Law C-2 stamp handling and the thread that never blocks the render do not
-// care which engine captured the audio. So the service is parameterised on this
-// interface rather than duplicated, and the P3 ownership flip becomes a change
-// of which source is constructed.
+// ⚠️ THE REASON THIS EXISTS CHANGED AT H2a — read the new one before deleting it
+// as a one-implementation abstraction.
 //
-// This header names NO engine, which is the point: wz_record can then link
-// neither of them, and a host drags only the engine it actually constructs onto
-// its link line (P1-STATUS decision 4 — a combined header once made the shell
-// pull in a whole core just to name a type it did not use).
+// It was built because the merge ran TWO engines side by side (wizard's
+// wz_engine and the merged SL ABI v3 over scoopy's core) with identical
+// drain-to-disk logic, so the P3 ownership flip could be a change of which
+// source is constructed. That flip happened, the donor is retired, and exactly
+// one implementation (SlTakeDrainSource) remains.
+//
+// What survives is the second, independent reason, and it is the stronger one:
+// THIS HEADER NAMES NO ENGINE. That is what lets wz_record link no ABI at all
+// and stay free of JUCE — the stated precondition for a future WASM/companion
+// build reusing the crash-safe writer, the sidecar, the naming and the Law C-2
+// stamp handling verbatim rather than reimplementing them. Collapsing this seam
+// into a direct sl_* call would buy one virtual call per ~20 ms drain tick and
+// spend the portability it was also protecting (P1-STATUS decision 4 — a
+// combined header once made the shell pull in a whole core to name a type it
+// did not use).
 //
 // Deliberately NOT a template: the service is compiled once, and the cost is one
 // virtual call per DRAIN TICK (~20 ms), which is not a measurable thing.

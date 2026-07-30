@@ -3,10 +3,9 @@
 // renderChunked is the part of AudioIO that can be wrong in ways nobody hears
 // until a specific device shows up: a device block bigger than the engine's
 // render block, a channel count past the callback ceiling, an engine that is
-// not configured yet. It also proves the SL v3 engine renders through the same
-// path wizard's own engine does — which is the whole point of the sink seam.
+// not configured yet. The final case drives the REAL SlRenderSink through the
+// same path, so the seam is proven by the engine that ships, not by a spy alone.
 #include "SlRenderSink.h"
-#include "WzRenderSink.h"
 #include "RenderSink.h"
 
 #include <cmath>

@@ -4,10 +4,13 @@
 # P2/P3.
 add_library(wz_audio_io STATIC src/AudioIO.cpp src/RenderSink.cpp)
 target_include_directories(wz_audio_io PUBLIC src)
+# It linked wz_engine PRIVATE until H2a. That was already vestigial: AudioIO.h
+# names wz_engine only in a comment, and neither AudioIO.cpp nor RenderSink.cpp
+# ever referenced it — the device layer talks to the RenderSink interface, which
+# is the entire point of that seam.
 target_link_libraries(wz_audio_io
     PUBLIC juce::juce_audio_devices   # AudioIO.h uses JUCE types in its interface
-    PRIVATE wz_engine                 # header only forward-declares wz_engine
-            juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 # Host file decode for deck loading (JUCE backend + vendored libsamplerate for
 # the D-WZ-DECKSRC-01 load-time SINC_BEST conversion). Backend-neutral surface.
@@ -19,7 +22,7 @@ target_link_libraries(wz_decode
             juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 add_executable(decode_test tools/decode_test.cpp)
-target_link_libraries(decode_test PRIVATE wz_decode wz_engine juce::juce_audio_formats)
+target_link_libraries(decode_test PRIVATE wz_decode juce::juce_audio_formats)
 add_test(NAME decode_test COMMAND decode_test)
 
 # P1-11: the progress + cancellation contract the async shell wiring relies on.
@@ -48,23 +51,26 @@ target_link_libraries(wav_killtest PRIVATE wz_wav)
 add_test(NAME wav_killtest COMMAND wav_killtest)
 
 # RecordService (P3-05): drain thread engine -> WavWriter. No JUCE (this tier
-# stays portable) and, since the merge, NO ENGINE either: the engine sits behind
-# TakeDrainSource, so this one implementation serves wizard's decks and the
-# merged engine's tapes, and a host drags only the engine it constructs.
+# stays portable) and NO ENGINE either — the engine sits behind TakeDrainSource.
+# H2a removed the second implementation of that seam (wizard's decks), so it now
+# has exactly one caller. IT STAYS A SEAM ANYWAY, and not out of sentiment: the
+# indirection is what keeps this library free of both JUCE and any ABI, which is
+# the stated precondition for a future WASM/companion build reusing the
+# crash-safe take writer verbatim. See host/src/TakeDrainSource.h.
 add_library(wz_record STATIC src/RecordService.cpp src/TakeScan.cpp)
 target_include_directories(wz_record PUBLIC src)
 target_link_libraries(wz_record PUBLIC wz_wav)
 
-# The wizard-engine binding of that seam, end to end (deck -> drain -> WAV).
 # Finding takes from PREVIOUS sessions — what makes "reloadable into a tape
 # later" survive a restart. Enumeration only; the document layer parses.
 add_executable(take_scan_test tools/take_scan_test.cpp)
 target_link_libraries(take_scan_test PRIVATE wz_record)
 add_test(NAME take_scan_test COMMAND take_scan_test)
 
-add_executable(recorder_drain_test tools/recorder_drain_test.cpp)
-target_link_libraries(recorder_drain_test PRIVATE wz_record wz_engine)
-add_test(NAME recorder_drain_test COMMAND recorder_drain_test)
+# `recorder_drain_test` (wizard's deck -> drain -> WAV) went with H2a. Its claim
+# is not lost: sl_take_drain_test below drives the identical seam on the engine
+# that ships, and additionally pins the Law C-2 stamp chain, which the wizard
+# one never did.
 
 # The MERGED-engine binding of the same seam, and the fixture that pins the
 # LAW C-2 STAMP CHAIN end to end: two staggered tape takes, with the delta read
@@ -101,9 +107,11 @@ add_executable(package_store_test tools/package_store_test.cpp)
 target_link_libraries(package_store_test PRIVATE wz_package)
 add_test(NAME package_store_test COMMAND package_store_test)
 
-# The device callback's arithmetic (chunking, offsetting, ceilings) plus proof
-# that SL ABI v3 renders through the same seam wizard's engine does. Links both
-# engines because it drives both sinks — the ONE place that is legitimate.
+# The device callback's arithmetic (chunking, offsetting, ceilings), plus the
+# real SlRenderSink driving the D-WZ-RATE-01 stop→set→start rebuild. It used to
+# link wizard's engine too, to prove both sinks shared this seam; it only ever
+# INCLUDED WzRenderSink.h and never instantiated one, so H2a cost this file
+# nothing but a header.
 add_executable(render_sink_test tools/render_sink_test.cpp)
-target_link_libraries(render_sink_test PRIVATE wz_audio_io wz_engine wz_sl_engine)
+target_link_libraries(render_sink_test PRIVATE wz_audio_io wz_sl_engine)
 add_test(NAME render_sink_test COMMAND render_sink_test)

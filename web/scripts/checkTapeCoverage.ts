@@ -15,9 +15,16 @@
  * changed (a record SOURCE KIND replaced a pair of channel indices). What can
  * still be mechanised is the COVERAGE, so that is what this gates:
  *
- *   authority : engine/include/wz_engine.h   — every wz_deck_* declaration
- *   ported    : slengine/include/sl_engine.h — every sl_tape_* declaration
+ *   authority : slengine/tape-donor-surface.json — the frozen wz_deck_* list
+ *   ported    : slengine/include/sl_engine.h     — every sl_tape_* declaration
  *   waivers   : slengine/tape-not-carried.json
+ *
+ * ⚠️ THE AUTHORITY MOVED AT H2a. It used to be parsed live out of
+ * `engine/include/wz_engine.h`. D-SL-ONEHOST-01 retired that header and the
+ * engine behind it, and this gate died with an ENOENT stack trace — a gate
+ * whose authority can vanish is a gate that stops asking rather than one that
+ * fails. The donor surface is now a SNAPSHOT, which is the honest shape: a
+ * retired donor cannot drift, so those 21 names are a historical constant.
  *
  * The rule is symmetric, which is the point. Every donor entry point must be
  * carried under its sl_tape_ name or waived WITH A REASON; and every sl_tape_
@@ -32,7 +39,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const donorPath = resolve(appRoot, 'engine/include/wz_engine.h')
+const donorPath = resolve(appRoot, 'slengine/tape-donor-surface.json')
 const portedPath = resolve(appRoot, 'slengine/include/sl_engine.h')
 const waiverPath = resolve(appRoot, 'slengine/tape-not-carried.json')
 
@@ -52,6 +59,29 @@ function declarations(path: string, prefix: string): string[] {
   const names = [...source.matchAll(re)].map((m) => m[1]!)
   if (names.length === 0) throw new CoverageFailed(`no ${prefix}* declarations found in ${path}`)
   return [...new Set(names)].sort()
+}
+
+/** The frozen donor surface (see slengine/tape-donor-surface.json). Validated
+    rather than trusted: this file replaced a parsed header, and a snapshot that
+    silently read as empty would turn every coverage question below into a
+    vacuous pass — the exact failure mode the ENOENT it replaced could not have. */
+function donorSurface(path: string): string[] {
+  let parsed: { donor?: unknown }
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as { donor?: unknown }
+  } catch (e) {
+    throw new CoverageFailed(
+      `${path} is missing or not valid JSON — it is the frozen wz_deck_* donor surface ` +
+        `this gate checks against (${(e as Error).message})`,
+    )
+  }
+  const donor = parsed.donor
+  if (!Array.isArray(donor) || donor.length === 0)
+    throw new CoverageFailed(`${path} has no non-empty "donor" array — the gate has nothing to check against`)
+  for (const name of donor)
+    if (typeof name !== 'string' || !/^wz_deck_[a-z0-9_]+$/.test(name))
+      throw new CoverageFailed(`${path}: "${String(name)}" is not a wz_deck_* entry point name`)
+  return [...new Set(donor as string[])].sort()
 }
 
 type Waivers = {
@@ -80,7 +110,7 @@ function readWaivers(): Waivers {
 }
 
 try {
-  const donor = declarations(donorPath, 'wz_deck_')
+  const donor = donorSurface(donorPath)
   const ported = declarations(portedPath, 'sl_tape_')
   const waivers = readWaivers()
 
