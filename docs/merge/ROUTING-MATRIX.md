@@ -222,6 +222,14 @@ users to discover: a third-party virtual device (BlackHole, Loopback) selected
 through `slDevices/setInput`, then an ordinary `deviceInput` route — plus a hint
 in the input picker (row P9-5, no engine code).
 
+**Written up 2026-07-30 as `docs/specs/other-app-audio.md`** (P9-5's spec half):
+install → select → route → hear → record, measured against HEAD, with a
+troubleshooting ladder for a silent chain and an honest section on where the
+interim path is worse than P10's. The hint itself is still unbuilt (row P9-5a),
+and the write-up found three produced-but-unrendered failure reports on this
+exact path — including a failed `setInput` that leaves the render callback
+DETACHED and says nothing (rows P9-5b/c/d).
+
 ### One defect, hoisted out of this phase
 
 **A grid strip's `channelOut` is silent** — `mixInto` mixes the element for
