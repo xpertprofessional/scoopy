@@ -1,7 +1,7 @@
 /**
  * Strip — the ONE player object on the plane (merge P2 step 4).
  *
- * Built to `apps/wizard/docs/specs/pd-strip-anatomy.md`, deliberately NOT
+ * Built to `apps/wizard/docs/archive/pd-strip-anatomy.md`, deliberately NOT
  * ported from wizard's own Strip.tsx, which that spec critiques with fourteen
  * numbered defects. Its thesis, and this file's:
  *

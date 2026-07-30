@@ -28,7 +28,7 @@ std::optional<Payload> load(const juce::File& root, const juce::String& path);
     An ALLOWLIST — the app itself and nothing else. Without this, dropping a
     file on the window NAVIGATES the browser to that file, silently replacing
     the running app and losing every bit of UI state (found by the P1 spike's
-    human pass, docs/merge/P1-SPIKE-JUCE-WEBVIEW.md §Q3). `preventDefault()` in
+    human pass, docs/archive/P1-SPIKE-JUCE-WEBVIEW.md §Q3). `preventDefault()` in
     the page does NOT stop it — the decision is made above the DOM, so it has to
     be made here.
 

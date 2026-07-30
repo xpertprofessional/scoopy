@@ -171,7 +171,7 @@ double sl_param_get(const sl_engine* e, uint32_t deck, int32_t id);
  * A TAPE is a continuous audio buffer with a playhead: record / scrub /
  * varispeed / loop-region / overdub, draining to crash-safe stamped takes.
  * It is the looper, the recorder AND the file player — one object, different
- * fills (docs/merge/STRIP-MODEL.md).
+ * fills (docs/archive/STRIP-MODEL.md).
  *
  * NAMING — this AMENDS SL-ABI-V3 §5, which listed these as `sl_deck_*`. §6 had
  * already spent `sl_deck_*` on scoopy's GRID decks (sequenced sampler sessions,
@@ -473,7 +473,7 @@ double sl_channel_peak_r(sl_engine* e, uint32_t channel);
  * which needs no scheduler. That was amended (2026-07-25) because with strip →
  * strip chaining the per-hop delay ACCUMULATES and parallel paths of different
  * depth comb-filter — silent, undiagnosable, and the failure
- * docs/specs/pd-modular-routing.md §1.3 flags as the one that will actually
+ * docs/archive/pd-modular-routing.md §1.3 flags as the one that will actually
  * burn a user.
  *
  * Every route gain is RAMPED: patching fades in, unpatching fades out and is

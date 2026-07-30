@@ -6,7 +6,7 @@
    dig there only when a specific done row's detail matters. (`/MIGRATION.md` is
    wizard's pre-merge record — historical, do not orient on it.)
 2. `docs/ARCHITECTURE.md` §11 — the loop protocol every session follows.
-3. `docs/merge/MORNING-DECISIONS-2.md` — open user decisions; rows marked
+3. `docs/archive/MORNING-DECISIONS-2.md` — open user decisions; rows marked
    `awaiting-decision` are skipped, `provisional(D-n)` may build the recommendation.
 4. `docs/merge/PARALLEL-PROTOCOL.md` — read this if more than one agent is working
    the ledger. It names who may bundle, commit, run `ctest` and run the walks, and

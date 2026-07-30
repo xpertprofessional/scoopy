@@ -42,7 +42,7 @@ AU + VST3) is compiled in and being wired up (phase P6).
 |---|---|
 | [docs/merge/P3-LEDGER.md](docs/merge/P3-LEDGER.md) | **The work ledger — orient here first.** One row per increment; the open phase queue is at the bottom (currently P6: plugins on the returns) |
 | [docs/merge/STRIP-DECK.md](docs/merge/STRIP-DECK.md) | The strip-as-deck spec (the expandable deck tile) |
-| [docs/merge/STRIP-MODEL.md](docs/merge/STRIP-MODEL.md) | What a strip is — one element kind each, routing, record taps |
+| [docs/archive/STRIP-MODEL.md](docs/archive/STRIP-MODEL.md) | What a strip is — one element kind each, routing, record taps |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Tier split, ABI shapes, HotFrame, gates, **loop protocol** |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Signed decisions — buildable without re-asking |
 

@@ -22,7 +22,7 @@ export type Cell = Strip['cell']
 export type Plane = PlaneMap['plane']
 
 /** The strip's default box. A BUDGET, not a placeholder: the strip anatomy
-    (wizard `docs/specs/pd-strip-anatomy.md` §4.1) closes to the pixel at this
+    (wizard `docs/archive/pd-strip-anatomy.md` §4.1) closes to the pixel at this
     size, so changing it means re-deriving the interior. */
 export const DEFAULT_CELL: Cell = { x: 0, y: 0, w: 340, h: 196 }
 

@@ -3,7 +3,7 @@
 // A tape is a CONTINUOUS audio buffer with a playhead: record / scrub /
 // varispeed / loop-region / overdub, draining to crash-safe takes. It is the
 // looper, the recorder and the file player — one object, different fills
-// (docs/merge/STRIP-MODEL.md: "a file player is just a tape loaded from a file").
+// (docs/archive/STRIP-MODEL.md: "a file player is just a tape loaded from a file").
 //
 // NAMING (amends SL-ABI-V3 §5's `sl_deck_*` list). §6 already spends `sl_deck_*`
 // on scoopy's GRID decks — sequenced sampler sessions, a different index space
@@ -386,7 +386,7 @@ struct Tape {
     Splitting 2 from 5 is what makes a mix-sourced take stamp HONESTLY: it
     captures this block's mix under this block's stamp, where a single top-of-
     block pass would have had to read the previous block and be ~10 ms early
-    (the error flagged in docs/specs/pd-global-record-as-strip.md §1). */
+    (the error flagged in docs/archive/pd-global-record-as-strip.md §1). */
 class TapeBank {
 public:
     /** Size all scratch for (rate, block). Safe to call again on reconfigure;

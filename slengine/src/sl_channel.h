@@ -132,7 +132,7 @@ enum class DestEndpoint : uint32_t {
     needs no scheduler at all. It was rejected because with strip→strip chaining
     — an explicit want — per-hop delay ACCUMULATES, and two parallel paths of
     different depth then comb-filter: not an error, nothing warns, it just
-    sounds hollow. That is the failure `docs/specs/pd-modular-routing.md` §1.3
+    sounds hollow. That is the failure `docs/archive/pd-modular-routing.md` §1.3
     calls the one that will actually burn a user. */
 struct Route {
     std::atomic<uint32_t> active{0}; // 0 free · 1 live · 2 ramping out

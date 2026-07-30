@@ -5,7 +5,7 @@
 // different moments can be realigned by pure subtraction: drop both files at
 // 0:00 in a DAW and the session reproduces. That promise passes through four
 // hands — engine stamp → drain → WavWriter's bext TimeReference → sidecar — and
-// it has been dropped in transit before (docs/specs/pd-global-record-as-strip.md
+// it has been dropped in transit before (docs/archive/pd-global-record-as-strip.md
 // §4 found every take shipping TimeReference = 0, which made align a no-op).
 // The engine's stamp is proven by sl_tape_record_test and the writer by
 // wav_killtest; NOTHING covered the hand-off, which is precisely where the value

@@ -964,3 +964,21 @@ for, and pairing them would block the verb people actually need behind the one t
 **Consequences:** row P11-6. Lands beside the takes a looper already writes, through the same
 recorder — the take machinery exists (P3-F3's stereo-bus fix applies directly), what is missing is a
 main-mix source and a door. `activeIsBouncing` stays unimplemented and is recorded as such.
+
+## D-SL-ARCHIVE-01 · 2026-07-30 · The history moves to docs/archive, and the pd-* question closes
+**Decision:** a `docs/archive/` directory now holds the zero-citation historical record —
+`/MIGRATION.md`, both MORNING-DECISIONS files (every decision in them signed), the P1/P2
+kickoff+status docs, `P1-SPIKE-JUCE-WEBVIEW.md`, `P3-ROADMAP.md`, `STRIP-MODEL.md`
+(superseded by D-SL-MORPH-01), and the eleven wizard-era `pd-*.md` plane design studies.
+The pd-* move settles the question D-4 left open on 2026-07-28: the user chose **archive**
+(this session, via direct question). Signed live.
+**Rationale:** ~300 KB of pre-merge history sat in the orientation path; sessions kept
+re-reading documents whose every open question had since been signed into this file. The
+pd-* studies predate the merge and are superseded where D-SL-MORPH-01 / D-SL-DECKFULL-01
+speak; nothing cited them as open intent. Archiving is `git mv` — content byte-identical,
+recoverable, still citable by name from source comments (paths rewritten to
+`docs/archive/`).
+**Consequences:** `docs/archive/README.md` states the contract (write-once, never a spec).
+`P3-LEDGER-ARCHIVE.md` stays in `docs/merge/` (already correctly parked, and its rows'
+old-path citations stay byte-identical). DECISIONS.md's own historical citations are NOT
+rewritten — this file is append-only law.

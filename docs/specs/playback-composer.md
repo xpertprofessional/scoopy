@@ -3,7 +3,7 @@
 *Governs P4-02..P4-09. Laws: CONCEPT §2 (C-1 no timeline · C-3 instant turnaround)
 and §4 (spatial playback falls out of the bus map). Signed inputs: D-WZ-DSP-01,
 D-WZ-RAMP-01, D-WZ-DECKSRC-01. Two P4 values are PROVISIONAL pending user sign-off —
-see §7 and `docs/MORNING-DECISIONS.md`.*
+see §7 and `docs/archive/MORNING-DECISIONS.md`.*
 
 This is the phase where Wizard becomes an instrument rather than a mixer: record a
 phrase, have it loop the instant you stop (already true — Law C-3, P3), then **bend it

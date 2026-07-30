@@ -1,6 +1,6 @@
 // The native half of the Option-B play path: a flat World -> v3 snapshot.
 //
-// ARCHITECTURE (docs/merge/P1-STATUS.md, Option B). Scoopy's document -> engine
+// ARCHITECTURE (docs/archive/P1-STATUS.md, Option B). Scoopy's document -> engine
 // is a 505-line load-bearing translation (worldFromSession.ts: scene
 // projection, kit join, ~90 fields, enum orderings). That stays in TS — its one
 // tested home. The merged host's web layer runs it, then publishes the flat

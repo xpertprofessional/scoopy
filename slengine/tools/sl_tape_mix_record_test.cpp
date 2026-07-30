@@ -6,7 +6,7 @@
 // Wizard could only record device input channels (recSrcChan0/1 indexed the
 // raw input array), so capturing the sum meant a post-fader LOOPBACK snapshot
 // of the PREVIOUS block — audio ~10 ms older than the stamp written beside it
-// (the error flagged in docs/specs/pd-global-record-as-strip.md §1). This
+// (the error flagged in docs/archive/pd-global-record-as-strip.md §1). This
 // fixture pins the fix: the mix capture runs AFTER the lanes are summed, so
 // the take is THIS block's mix under THIS block's stamp.
 //

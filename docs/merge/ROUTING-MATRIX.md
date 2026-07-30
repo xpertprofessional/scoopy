@@ -35,7 +35,7 @@ feel intuitive.
 > **AMENDED 2026-07-25 (decided with the user at P2 planning).** This section
 > originally said every route is inherently one block delayed and no cycle
 > detection is needed. That is cheap to build and wrong to ship, because it
-> contradicts the analysis already signed in `docs/specs/pd-modular-routing.md`:
+> contradicts the analysis already signed in `docs/archive/pd-modular-routing.md`:
 > with strip→strip chaining and sub-mixing — both explicit wants above — a
 > per-hop delay makes latency **accumulate** (one block per hop) and makes two
 > parallel paths of different depth **comb-filter**. §1.3 of that document calls

@@ -3,7 +3,7 @@
  *
  * `Strip.test.tsx` asserts which elements exist; nothing asserted how big they
  * are, and the strip's whole design rests on a pixel budget that closes exactly
- * at 340 × 196 (wizard docs/specs/pd-strip-anatomy.md §4.1). A CSS change that
+ * at 340 × 196 (wizard docs/archive/pd-strip-anatomy.md §4.1). A CSS change that
  * puts one row a few pixels over does not fail any unit test — it silently
  * pushes the last row out of a box with `overflow: hidden`, and the control is
  * simply gone.

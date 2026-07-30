@@ -156,7 +156,7 @@ block (so a stop-with-loop plays in that same block); device-input capture runs 
 anything renders; the mix capture runs *after* the lanes are summed. That last split is
 what makes a mix take stamp honestly — this block's mix under this block's stamp, rather
 than the previous block's audio beside a current stamp, which is the ~10 ms error
-`docs/specs/pd-global-record-as-strip.md` §1 flagged in the loopback approach.
+`docs/archive/pd-global-record-as-strip.md` §1 flagged in the loopback approach.
 
 Consequence to know: overdub reads its input during the *playback* pass, which runs
 before the mix exists, so a mix-sourced overdub is **refused** rather than silently

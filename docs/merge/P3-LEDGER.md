@@ -128,7 +128,7 @@ Push (P3-PUSH) after every green commit.
 
 ## Decisions queued (do not block)
 
-See `docs/merge/MORNING-DECISIONS-2.md`: D-1 session store flip (veto window),
+See `docs/archive/MORNING-DECISIONS-2.md`: D-1 session store flip (veto window),
 D-2 tape beat inference, D-3 tape stretch latency policy, D-4 the playful strip
 morph / visual direction, D-5 panel hosting taste calls from the audit.
 

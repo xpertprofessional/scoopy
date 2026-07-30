@@ -4,7 +4,7 @@
  * rejects a hex literal, an rgb()/hsl() literal, a px font-size, a radius
  * literal, a raw z-index, a raw duration and a dangling var(). GEOMETRY does
  * not: the 48/22/12/10/3 numbers below are the strip's pixel budget
- * (wizard docs/specs/pd-strip-anatomy.md §4.1), which closes exactly at
+ * (wizard docs/archive/pd-strip-anatomy.md §4.1), which closes exactly at
  * 340 × 196, and they belong here rather than in a token file where nobody
  * would find them.
  *

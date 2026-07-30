@@ -1,4 +1,4 @@
-// The output watchdog — guard G1 from docs/specs/pd-modular-routing.md §5,
+// The output watchdog — guard G1 from docs/archive/pd-modular-routing.md §5,
 // carried forward from D-WZ-WATCHDOG-01.
 //
 // WHY THIS IS NEEDED HERE SPECIFICALLY, and it is not a theoretical guard:
