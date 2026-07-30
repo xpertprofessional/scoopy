@@ -424,6 +424,13 @@ public:
             } else if (editorWindow != nullptr) {
                 editorWindow->setVisible(false);
             }
+            // Publish what ACTUALLY happened, from inside the marshalled work
+            // (P6-4). A request is not a state: `visible = true` on a plugin with
+            // no editor changes nothing, and a UI that echoed its own request
+            // would light an EDIT lamp over a window that never opened — the same
+            // display-what-is-TRUE rule the monitor switch exists for.
+            editorShown.store(editorWindow != nullptr && editorWindow->isVisible(),
+                              std::memory_order_release);
         });
     }
 
@@ -432,7 +439,30 @@ public:
         juce::MessageManager::callAsync([this]() { closeEditorInternal(); });
     }
 
-    void closeEditorInternal() { editorWindow.reset(); }
+    void closeEditorInternal()
+    {
+        editorWindow.reset();
+        // The window's own close box lands here too (PluginEditorWindow's
+        // callback), which is exactly why the lamp reads this mirror rather than
+        // the last request: closing the editor by hand must un-light EDIT.
+        editorShown.store(false, std::memory_order_release);
+    }
+
+    /** Does the LOADED plugin have an editor at all? Lock-free mirror, published
+        with `loaded` and by the same discipline — a UI needs this to disable EDIT
+        with a reason ("this plugin has no editor") instead of offering a button
+        that is a documented no-op. */
+    bool editorAvailableLockFree() const noexcept
+    {
+        return editorAvail.load(std::memory_order_acquire);
+    }
+
+    /** Is an editor window on screen right now? Lock-free, and it follows the
+        window rather than the request (see setEditorVisible / closeEditorInternal). */
+    bool editorVisibleLockFree() const noexcept
+    {
+        return editorShown.load(std::memory_order_acquire);
+    }
 
     void prepare(double sr, int maxBlock)
     {
@@ -573,6 +603,11 @@ public:
             old.reset(); // old plugin's destructor (releaseResources/deactivate) may pump
                          // the message loop — must run without the slot mutex held.
             latency.store(lat, std::memory_order_release);
+            // Asked ON the message thread, where `instance` is stable, and cached
+            // for lock-free readers (P6-4). Publishing it beside `loaded` is what
+            // makes "loaded but no editor" a state the UI can state honestly.
+            editorAvail.store(instance != nullptr && instance->hasEditor(),
+                              std::memory_order_release);
             loaded.store(true, std::memory_order_release);
             if (completion) completion(true, nm);
         });
@@ -585,6 +620,7 @@ public:
             closeEditorInternal(); // the editor references the instance we're dropping
             std::unique_ptr<juce::AudioPluginInstance> old;
             { std::lock_guard<std::mutex> lock(mutex); old = std::move(instance); loadedIdentifier.clear(); }
+            editorAvail.store(false, std::memory_order_release);
             loaded.store(false, std::memory_order_release);
             if (old != nullptr) old->releaseResources();
             latency.store(0, std::memory_order_release);
@@ -608,6 +644,8 @@ public:
             loadedIdentifier.clear();
         }
         oldEditor.reset();              // destroy the editor window first (it references the instance)
+        editorShown.store(false, std::memory_order_release);
+        editorAvail.store(false, std::memory_order_release);
         loaded.store(false, std::memory_order_release);
         if (old != nullptr) old->releaseResources();
         old.reset();                    // run the plugin ~dtor outside the lock
@@ -666,6 +704,12 @@ public:
     mutable std::mutex mutex;
     std::unique_ptr<juce::AudioPluginInstance> instance;
     std::unique_ptr<PluginEditorWindow> editorWindow; // message-thread only
+    /** Lock-free mirrors OF the message-thread editor state (P6-4), so a control
+        thread can read it without touching `editorWindow` — which is
+        message-thread-only, and a cross-thread peek at a unique_ptr is a data
+        race however harmless it looks. Published exactly where `loaded` is. */
+    std::atomic<bool> editorAvail { false };
+    std::atomic<bool> editorShown { false };
     HostPlayHead playHead;
     std::string loadedIdentifier;
     double sampleRate = 44100.0;
@@ -744,6 +788,8 @@ std::string NativePluginSlot::loadedName() const { return impl_->name(); }
 void NativePluginSlot::openEditor() { impl_->openEditor(); }
 void NativePluginSlot::closeEditor() { impl_->closeEditor(); }
 void NativePluginSlot::setEditorVisible(bool visible) { impl_->setEditorVisible(visible); }
+bool NativePluginSlot::editorAvailable() const noexcept { return impl_->editorAvailableLockFree(); }
+bool NativePluginSlot::editorVisible() const noexcept { return impl_->editorVisibleLockFree(); }
 
 // ============================================================================
 // NativeInstrumentSlot
@@ -972,6 +1018,10 @@ std::string NativePluginSlot::loadedName() const { return {}; }
 void NativePluginSlot::openEditor() {}
 void NativePluginSlot::closeEditor() {}
 void NativePluginSlot::setEditorVisible(bool) {}
+// The stub host has no plugins, so it has no editors — and saying so is what
+// makes the headless dispatcher's refusal honest rather than a silent false.
+bool NativePluginSlot::editorAvailable() const noexcept { return false; }
+bool NativePluginSlot::editorVisible() const noexcept { return false; }
 
 class NativeInstrumentSlot::Impl {};
 NativeInstrumentSlot::NativeInstrumentSlot() = default;

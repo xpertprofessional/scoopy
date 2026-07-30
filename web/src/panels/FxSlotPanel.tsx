@@ -118,6 +118,39 @@ export function FxSlotPanel({ link }: { link: EngineLink | null }) {
             setTimeout(fetchPlugins, 1500);
           }}
         />
+        {/* THE EDITOR DOOR (P6-4).
+
+            ⚠️ IT LIVES HERE BECAUSE THIS IS THE ONLY FX WINDOW A PERSON CAN
+            OPEN. The desktop kept EDIT on the mixer strip (DeckMixerPanel's VIEW
+            button, still in this tree) and that panel is deliberately DOORLESS in
+            the merged host — P3-P1 retired its ≡ row because it hangs waiting on
+            topics the carved-off Swift shell used to publish. So without this
+            button the editor is unreachable, which is the one failure the four
+            rules exist to prevent: shipped, tested, and impossible to get to.
+            When the strip-integrated mixer lands (P7-MIX-0) this rehomes there
+            with the rest — one control, one home.
+
+            `active` and `disabled` both come from the ENGINE's pushed state, not
+            from what we last clicked: the window can be closed by its own close
+            box, and a plugin without an editor makes the request a no-op. */}
+        <Button
+          label="EDIT"
+          active={slot.editorVisible}
+          disabled={!(slot.editorAvailable ?? slot.pluginName !== null)}
+          title={
+            slot.pluginName === null
+              ? 'load a plugin first — an editor belongs to a plugin'
+              : slot.editorAvailable === false
+                ? `${slot.pluginName} has no editor of its own`
+                : slot.editorVisible
+                  ? `hide ${slot.pluginName}'s editor window`
+                  : `open ${slot.pluginName}'s editor window`
+          }
+          onClick={() => {
+            // No local echo: the toolbar push (~2 Hz) reports the window itself.
+            link?.command('fxSlot', { returnIndex, op: 'toggleEditor' }).catch(() => {});
+          }}
+        />
         {plugins?.scanning && <span className="dim ds-value">scanning…</span>}
         {/* Reported plugin latency — a readout about the LOADED plugin, so it
             stays beside the list that loads one. */}

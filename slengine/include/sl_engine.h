@@ -661,6 +661,35 @@ uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out,
 /** Plugin-reported latency for the slot, in milliseconds at the engine's
     configured rate. 0 when empty. */
 double sl_fx_plugin_latency_ms(const sl_engine* e, int returnIndex);
+/** THE PLUGIN'S OWN EDITOR, per return (P6-4) — the job the desktop's
+    FxSlotWindowController did, done by the JUCE host that already owns the
+    plugin instance.
+
+    `sl_fx_editor_set_visible` shows or hides a standalone always-on-top window
+    holding the plugin's editor. Hiding does NOT destroy it (nor the plugin), so
+    re-showing is instant with the editor's own state intact. Marshalled to the
+    JUCE message thread and returns IMMEDIATELY — plugin lifecycle calls are not
+    safe anywhere else — so the state it produces is readable a moment later,
+    never synchronously.
+
+    ⚠️ THEREFORE: DISPLAY `sl_fx_editor_visible`, NEVER THE REQUEST. It follows
+    the window, not the ask, and the three ways those differ are all reachable:
+    a plugin with no editor makes "show" a no-op, a slot with nothing loaded
+    likewise, and the user can close the window by its own close box at any time
+    — which no caller is told about. Echoing the request lights an EDIT lamp over
+    a window that is not there. Same rule, same reason as
+    `sl_channel_set_monitor` / `sl_channel_monitor`.
+
+    `sl_fx_editor_available` is 1 only when a plugin is loaded AND has an editor
+    of its own, so a UI can disable the door with a reason instead of offering a
+    button that silently does nothing.
+
+    All three are 0/no-ops for an out-of-range return, on a build without the
+    plugin host compiled in, and on the headless/stub host. */
+int  sl_fx_editor_available(const sl_engine* e, int returnIndex);
+int  sl_fx_editor_visible(const sl_engine* e, int returnIndex);
+void sl_fx_editor_set_visible(sl_engine* e, int returnIndex, int visible);
+
 /** Synchronous plugin teardown — MAIN/MESSAGE THREAD ONLY, call during app
     shutdown BEFORE the engine is destroyed (a plugin destructor may pump the
     message loop; the async unload path never runs once the loop is stopping). */

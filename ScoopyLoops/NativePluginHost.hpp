@@ -137,6 +137,22 @@ public:
     // so a hidden editor re-shows instantly with state intact. Creates lazily on first show.
     void setEditorVisible(bool visible);
 
+    // Lock-free editor state (P6-4), safe from any thread.
+    //
+    // ⚠️ THEY ANSWER ABOUT THE WINDOW, NOT ABOUT THE LAST REQUEST, and that is the
+    // point. setEditorVisible() marshals its work to the JUCE message thread and
+    // returns immediately, so a caller that displayed what it just asked for would
+    // light an EDIT lamp over a window that never opened — a plugin with no editor
+    // makes `setEditorVisible(true)` a documented no-op, and the user's own click on
+    // the window's close box is invisible to the asker entirely. A UI must display
+    // these, the same discipline sl_channel_monitor exists for.
+    //
+    // `editorAvailable()` is false with no plugin loaded, and false for a plugin
+    // that has no editor of its own — which is what lets a button be disabled with
+    // a reason instead of being offered and doing nothing.
+    bool editorAvailable() const noexcept;
+    bool editorVisible() const noexcept;
+
     class Impl;
 
 private:

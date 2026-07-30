@@ -215,6 +215,38 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         return ok(emptyObject());
     }
 
+    // The FX slot's per-return controls. Only the EDITOR is backed here (P6-4);
+    // the other three ops belong to controls whose home is the mixer strip, and
+    // the merged host has no mixer yet (P7-MIX-0, blocked on P6-AUDIT). They are
+    // refused BY NAME rather than swallowed: a UI that sent `toggleMode` and got
+    // a silent `{}` would draw a mode it is not in, which is worse than a
+    // refusal the note line can show (P3-U6 puts these on screen).
+    if (method == "fxSlot") {
+        if (engine == nullptr) return fail("fxSlot: no engine on this host");
+        const int returnIndex = static_cast<int>(params.getProperty("returnIndex", 0));
+        if (returnIndex < 1 || returnIndex > 4)
+            return fail("fxSlot: returnIndex must be 1–4");
+        const auto op = params.getProperty("op", juce::var()).toString();
+        if (op == "toggleEditor") {
+            if (services == nullptr || services->pluginScanner == nullptr)
+                return fail("fxSlot: no plugin host on this build");
+            // TOGGLE reads the ENGINE's state, never a client's idea of it: the
+            // window can be closed by its own close box, so a caller flipping its
+            // own last request would need two clicks to reopen it.
+            if (sl_fx_editor_available(engine, returnIndex) == 0)
+                return fail("fxSlot: no plugin with an editor on FX "
+                            + juce::String(returnIndex));
+            const bool shown = sl_fx_editor_visible(engine, returnIndex) != 0;
+            sl_fx_editor_set_visible(engine, returnIndex, shown ? 0 : 1);
+            // The reply carries no state on purpose — the work is marshalled to
+            // the JUCE message thread and has not happened yet. The ~2 Hz toolbar
+            // push is what reports the window, and it reports the WINDOW.
+            return ok(emptyObject());
+        }
+        return fail("fxSlot: '" + op + "' is not implemented in the merged host yet "
+                    "(the mixer strip's controls arrive with P7-MIX-0)");
+    }
+
     // ── The plane (merge P2 step 4) ──────────────────────────────────────────
     //
     // The merged engine's strip surface, reached by NOUN with an `action` verb
@@ -1064,7 +1096,14 @@ juce::var toolbarState(sl_engine* engine, HostServices* services) {
         slot->setProperty("mode", "host");
         slot->setProperty("pluginName", loaded ? juce::var(juce::String(juce::CharPointer_UTF8(name)))
                                                : juce::var());
-        slot->setProperty("editorVisible", false); // P6-4
+        // THE WINDOW, not the last request (P6-4) — this push is how a UI learns
+        // that the user closed the editor by its own close box, or that "show"
+        // did nothing because the plugin has no editor of its own.
+        slot->setProperty("editorVisible",
+                          engine != nullptr && sl_fx_editor_visible(engine, i) != 0);
+        // Whether the door should be offered at all: loaded AND has an editor.
+        slot->setProperty("editorAvailable",
+                          engine != nullptr && sl_fx_editor_available(engine, i) != 0);
         slot->setProperty("hostToHardware", false);
         slot->setProperty("postFader", false);
         slot->setProperty("latencyMs", engine != nullptr ? sl_fx_plugin_latency_ms(engine, i) : 0.0);

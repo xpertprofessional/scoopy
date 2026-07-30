@@ -38,6 +38,10 @@ public:
 
 bool replyOk(const juce::var& r) { return r.getProperty("ok", false); }
 juce::var result(const juce::var& r) { return r.getProperty("result", juce::var()); }
+/** A refusal's MESSAGE. Asserted on (not just `!ok`) wherever the point of the
+    refusal is that it says which thing it refused — a caller can only act on a
+    named reason, and P3-U6 puts these on the plane's note line verbatim. */
+juce::String errorOf(const juce::var& r) { return r.getProperty("error", juce::var()).toString(); }
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -567,12 +571,63 @@ int main(int argc, char* argv[]) {
               == (int) (sizeof(kToolbarKeys) / sizeof(kToolbarKeys[0])));
 
         static const char* kFxSlotKeys[] = {
-            "mode", "pluginName", "editorVisible", "hostToHardware", "postFader",
-            "latencyMs", "sendMasterGain", "returnLevel", "muted", "soloed",
+            "mode", "pluginName", "editorVisible", "editorAvailable", "hostToHardware",
+            "postFader", "latencyMs", "sendMasterGain", "returnLevel", "muted", "soloed",
             "externalAvailable", "channelLabel", "outputChannel"};
         for (const char* key : kFxSlotKeys) CHECK(fxSlots[0].hasProperty(key));
         CHECK(fxSlots[0].getDynamicObject()->getProperties().size()
               == (int) (sizeof(kFxSlotKeys) / sizeof(kFxSlotKeys[0])));
+
+        // ── The EDITOR door (P6-4) ──────────────────────────────────────────
+        //
+        // ⚠️ WHAT THIS BINARY CAN AND CANNOT PROVE, stated rather than blurred.
+        // It links the JUCE-LESS STUB host and runs with no message loop, so a
+        // real editor WINDOW cannot appear here and its appearance is a real-host
+        // check (P6-AUDIT's walk). What IS provable headlessly is the whole
+        // contract around it — the refusals, and the fact that the reported state
+        // is the ENGINE's rather than an echo — and those are exactly the parts
+        // that were wrong often enough to earn a gate (see P6-2b).
+        {
+            // No engine: the slots live in the core, so there is nothing to ask.
+            CHECK(!replyOk(dispatch("fxSlot",
+                juce::JSON::parse(R"({"returnIndex":1,"op":"toggleEditor"})"),
+                settings, nullptr, &services)));
+            // Out-of-range returns refuse rather than clamping onto return 1 —
+            // the P6-2b lesson, pinned at the dispatcher this time.
+            for (const char* bad : {R"({"returnIndex":0,"op":"toggleEditor"})",
+                                    R"({"returnIndex":5,"op":"toggleEditor"})",
+                                    R"({"returnIndex":-1,"op":"toggleEditor"})"})
+                CHECK(!replyOk(dispatch("fxSlot", juce::JSON::parse(bad), settings,
+                                        engine, &services)));
+            // With an engine and a scanner but NOTHING LOADED: refused BY NAME.
+            // A silent ok() here is the failure mode that matters — the caller
+            // would light an EDIT lamp over a window that never opens.
+            const auto noPlugin = dispatch("fxSlot",
+                juce::JSON::parse(R"({"returnIndex":1,"op":"toggleEditor"})"),
+                settings, engine, &services);
+            CHECK(!replyOk(noPlugin));
+            CHECK(errorOf(noPlugin).contains("editor"));
+            // The three ops the merged host does NOT back are refused by name
+            // too, not swallowed: their home is the mixer strip (P7-MIX-0).
+            for (const char* op : {"toggleMode", "toggleHostOutput", "togglePostFader"}) {
+                const auto r = dispatch("fxSlot",
+                    juce::JSON::parse(juce::String(R"({"returnIndex":1,"op":")")
+                                      + op + R"("})"),
+                    settings, engine, &services);
+                CHECK(!replyOk(r));
+                CHECK(errorOf(r).contains(op)); // names the op it refused
+            }
+            // And the ABI reads false on this host rather than guessing — which
+            // is what makes the panel disable its door instead of offering it.
+            CHECK(sl_fx_editor_available(engine, 1) == 0);
+            CHECK(sl_fx_editor_visible(engine, 1) == 0);
+            // Boundaries are answers, not crashes.
+            CHECK(sl_fx_editor_available(nullptr, 1) == 0);
+            CHECK(sl_fx_editor_visible(engine, 0) == 0);
+            CHECK(sl_fx_editor_visible(engine, 5) == 0);
+            sl_fx_editor_set_visible(nullptr, 1, 1); // must not crash
+            sl_fx_editor_set_visible(engine, 9, 1);
+        }
 
         sl_engine_destroy(engine);
     }

@@ -889,6 +889,42 @@ double sl_fx_plugin_latency_ms(const sl_engine* e, int returnIndex) {
 #endif
 }
 
+/* The plugin's own editor window, per return (P6-4). The lifecycle already
+   existed in NativePluginHost (PluginEditorWindow + lazy create + the window's
+   own close box); these are the door to it, and the two READS are what let a UI
+   show the window's real state rather than the last request — see sl_engine.h. */
+
+int sl_fx_editor_available(const sl_engine* e, int returnIndex) {
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    return slot.editorAvailable() ? 1 : 0;
+#else
+    (void) e; (void) returnIndex;
+    return 0;
+#endif
+}
+
+int sl_fx_editor_visible(const sl_engine* e, int returnIndex) {
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    return slot.editorVisible() ? 1 : 0;
+#else
+    (void) e; (void) returnIndex;
+    return 0;
+#endif
+}
+
+void sl_fx_editor_set_visible(sl_engine* e, int returnIndex, int visible) {
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return;
+    e->core.returnPluginSlot(returnIndex).setEditorVisible(visible != 0);
+#else
+    (void) e; (void) returnIndex; (void) visible;
+#endif
+}
+
 void sl_fx_teardown(sl_engine* e) {
 #if SCOOPY_PLUGIN_HOST
     if (e != nullptr) e->core.teardownPluginsNow();
