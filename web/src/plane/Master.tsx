@@ -16,11 +16,13 @@
  * HotFrame scalars, never through React state — the same rule every meter here
  * follows.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { GeoRange } from '../design/controls.tsx'
 import { HealthReadout } from '../design/HealthReadout.tsx'
+import { useCapabilities } from '../state/capabilitiesStore.ts'
+import { externalClockState, tapTempo } from './masterClock.ts'
 import { send } from './send.ts'
 
 const METER_W = 90
@@ -71,6 +73,25 @@ export function Master({
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const lampRef = useRef<HTMLSpanElement | null>(null)
+
+  // THE TAP SERIES (P11-2). Transient by nature — a hand gesture, never the
+  // document — so it lives here rather than in the map: the only thing tapping
+  // WRITES is the master tempo, through the same `onBpm` the steppers use.
+  // The count is state (the button shows it) while the timestamps are a ref
+  // (they change on every press and nothing renders from them).
+  const tapsRef = useRef<number[]>([])
+  const [tapCount, setTapCount] = useState(0)
+  const clock = externalClockState(useCapabilities())
+
+  const onTap = () => {
+    const { taps, bpm } = tapTempo(tapsRef.current, Date.now())
+    tapsRef.current = taps
+    setTapCount(taps.length)
+    // null while a series cannot honestly say (the first tap, or a fumble that
+    // implies a tempo outside the box's range). Writing nothing is the point:
+    // the tempo must not lurch because one press landed badly.
+    if (bpm !== null) onBpm(bpm)
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -282,6 +303,59 @@ export function Master({
           </button>
           bpm
         </label>
+        {/* THE CLOCK SOURCE + TAP (P11-2). Beside the tempo because it answers
+            the question the tempo box raises: where does that number come from,
+            and how do I set it without typing.
+
+            ⚠️ `clock`, NEVER `sync`. SYNC is a DECK control — whether that deck
+            follows the master — and it stays on the strip row. The master owns
+            no SYNC, because a master control that meant "follow" would be a
+            second source of truth about the decks, which is exactly the lie
+            P11-0 had to unpick. Two scopes, two words. */}
+        <span className="master-clock" role="group" aria-label="master clock source">
+          <span className="mono dim">clock</span>
+          {/* INT is the source, and it is the ONLY one — so it renders as the
+              settled state rather than as a choice. Disabled because pressing
+              "the thing that is already true" is not a verb; the latched face
+              says which of the pair is live. */}
+          <button
+            type="button"
+            className="clock-src mono latched"
+            disabled
+            aria-pressed
+            title="internal — the master tempo beside this, set by the steppers, the box or TAP"
+          >
+            INT
+          </button>
+          {/* EXT IS DEAD IN THIS BUILD AND SAYS SO. Measured at three layers —
+              the shell answers `midiHardware:false` ("not built"), it
+              implements no clock method though the schema fully specifies
+              `getMidiClockStatus`, and that method is not even routed natively.
+              Rendering it live would be the four rules' exact failure, so it is
+              disabled with the reason ON the control rather than hidden: a
+              missing EXT teaches that the app cannot do it, while a disabled
+              one that explains itself teaches that it is not built YET. */}
+          <button
+            type="button"
+            className="clock-src mono"
+            disabled
+            title={clock.reason}
+          >
+            EXT
+          </button>
+          {/* TAP — the live one. Shows the tap count so the FIRST press has
+              visible effect: one tap cannot imply a tempo, and a button that
+              looks inert until the second press teaches that it is broken
+              (P3-U5). From the second tap the tempo box itself is the feedback. */}
+          <button
+            type="button"
+            className={`clock-tap mono${tapCount > 0 ? ' latched' : ''}`}
+            onClick={onTap}
+            title="tap the beat — four taps, and a fumbled one is out-voted"
+          >
+            {tapCount > 0 ? `TAP ${tapCount}` : 'TAP'}
+          </button>
+        </span>
         {/* WHAT THE MASTER IS ACTUALLY DOING TO THE DECKS. A master tempo with no
             readout is a number you have to trust; this says which decks are
             following it and at what relation, which is the difference between a

@@ -1393,3 +1393,50 @@
   color: var(--bg);
 }
 .master-br:disabled { opacity: 0.4; cursor: default; color: var(--text-dim); }
+
+/* THE MASTER CLOCK (P11-2) — source + TAP, beside the tempo it explains.
+
+   Deliberately the SAME button language as BR/REV next door rather than a new
+   one: they are all master-scope verbs on one bar, and a second visual dialect
+   would be a second thing to learn for no gain. */
+.master-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clock-src,
+.clock-tap {
+  height: 22px;
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--type-caption-size);
+  cursor: pointer;
+}
+
+.clock-tap:hover:not(:disabled) { background: var(--bg-raised); }
+
+/* INT latched reads as "this is the source", the same fill BR uses for "this is
+   happening". TAP latched means a series is in progress. */
+.clock-src.latched,
+.clock-tap.latched {
+  background: var(--hot);
+  border-color: var(--hot);
+  color: var(--bg);
+}
+
+/* ⚠️ A DISABLED CONTROL HERE IS LOAD-BEARING, NOT LEFTOVER. EXT is dimmed
+   because this build has no external clock to follow, and its `title` says
+   which layer is missing. It must stay VISIBLY a control — dimming it into
+   invisibility would teach that the app cannot do it at all, when the truth is
+   that it is not built yet. Same dim as the transport's own disabled state, so
+   "off" means one thing on this bar. */
+.clock-src:disabled,
+.clock-tap:disabled { opacity: 0.4; cursor: default; color: var(--text-dim); }
+
+/* …except INT, which is disabled AND latched: it is the settled state, not an
+   unavailable one, so it keeps its fill and only loses the pointer. */
+.clock-src.latched:disabled { opacity: 1; color: var(--bg); cursor: default; }
