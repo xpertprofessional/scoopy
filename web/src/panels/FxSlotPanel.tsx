@@ -23,11 +23,34 @@ import "./deckmixer.css";
  */
 type PluginList = ReturnType<typeof COMMANDS.listPlugins.result.parse>;
 
+/**
+ * The window's address, resolved and VALIDATED (P6-2b).
+ *
+ * `raw` is whatever arrived as `__slPanelArg` / `?arg=`; the answer is a 1-based
+ * return index, or null for "this window was addressed to something that is not
+ * a return". Null is a real answer the panel renders as a refusal — it used to
+ * be impossible to distinguish from a slow engine:
+ *
+ * the plane's ≡ menu passed the 0-based menu ROW as the arg, so `FX 1` sent
+ * "0"; `fxSlots[0 - 1]` is `fxSlots[-1]` → undefined → the panel fell through to
+ * `WaitingForState` and sat on "waiting for state" forever. Meanwhile `FX 2`…
+ * `FX 4` addressed returns 1…3, and return 4 had no door at all.
+ *
+ * Absent is NOT an error: an unaddressed window opens on return 1, which is
+ * what the old `?? 1` fallback meant and is still useful in the browser dev
+ * host. Only a PRESENT-but-invalid address is refused.
+ */
+export function addressedReturn(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw === "") return 1;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 4) return null;
+  return n;
+}
+
 export function FxSlotPanel({ link }: { link: EngineLink | null }) {
-  const returnIndex = Number(
+  const returnIndex = addressedReturn(
     (window as { __slPanelArg?: string }).__slPanelArg ??
-      new URLSearchParams(location.search).get("arg") ??
-      1,
+      new URLSearchParams(location.search).get("arg"),
   );
 
   const [state, setState] = useState<ToolbarUiState | null>(null);
@@ -59,6 +82,17 @@ export function FxSlotPanel({ link }: { link: EngineLink | null }) {
     void fetchPlugins();
     return off;
   }, [link]);
+
+  // A REFUSAL, not an eternal spinner (see addressedReturn). The panel must not
+  // depend on every future caller getting the base right.
+  if (returnIndex === null) {
+    return (
+      <main className="fxslot-panel mono dim">
+        <PanelTitle>FX · not addressed</PanelTitle>
+        <p className="ds-value">this window was not opened for a return — returns are 1–4</p>
+      </main>
+    );
+  }
 
   const slot: FxSlotState | undefined = state?.fxSlots[returnIndex - 1];
   if (!slot) {

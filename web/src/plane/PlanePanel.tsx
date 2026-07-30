@@ -75,6 +75,19 @@ export const PANEL_MENU_SURFACES = [
   ['capture', 'capture'],
 ] as const
 
+/**
+ * The ≡ menu's FX rows: `[label, arg]` per return (P6-2b).
+ *
+ * Exported so a test can pin the thing that broke — the LABEL and the ARG must
+ * be the same number, because the arg is a 1-based `returnIndex` (what
+ * FxSlotPanel and every `fxSlot`/`selectFxPlugin` param mean), not the row's
+ * 0-based position. Passing the position made `FX 1` address return 0, which
+ * the panel could only render as an eternal "waiting for state".
+ */
+export const FX_MENU_RETURNS: ReadonlyArray<readonly [string, string]> = [1, 2, 3, 4].map(
+  (returnIndex) => [`FX ${returnIndex} ⇱`, String(returnIndex)] as const,
+)
+
 export function PlanePanel({ link }: { link: EngineLink | null }) {
   const strips = useMapStore((s) => s.map.strips)
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
@@ -899,11 +912,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
             openMenu(
               [
                 { kind: 'info', label: 'FX returns' },
-                ...[0, 1, 2, 3].map((slot) => ({
+                // ⚠️ THE ARG IS THE RETURN INDEX, 1-BASED (P6-2b). This used to
+                // pass the 0-based menu slot, and FxSlotPanel reads the arg as a
+                // returnIndex — so `FX 1` sent "0", the panel indexed
+                // `fxSlots[-1]`, found undefined and sat on "waiting for state"
+                // FOREVER, while `FX 2`…`FX 4` quietly addressed returns 1…3 and
+                // return 4 was unreachable. Every fxSlot/selectFxPlugin param is
+                // 1-based too, so 0 also failed schema validation on the wire.
+                // The label and the arg are now the same number — which is the
+                // only arrangement that cannot drift again.
+                ...FX_MENU_RETURNS.map(([label, arg]) => ({
                   kind: 'item' as const,
-                  label: `FX ${slot + 1} ⇱`,
-                  onSelect: () =>
-                    send(link, 'openPanelWindow', { panel: 'fxslot', arg: String(slot) }),
+                  label,
+                  onSelect: () => send(link, 'openPanelWindow', { panel: 'fxslot', arg }),
                 })),
                 { kind: 'sep' },
                 { kind: 'info', label: 'surfaces' },
