@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { captureRoutes, planApply, type EngineOp, type LiveRoute } from './mapApply'
-import { emptyMap, rememberPerf, type PlaneMap, type Strip } from './mapDocument'
+import { emptyMap, rememberPerf, RouteSourceSchema, type PlaneMap, type Strip } from './mapDocument'
 
 function strip(over: Partial<Strip> = {}): Strip {
   return {
@@ -441,6 +441,15 @@ describe('captureRoutes', () => {
           gain: 0.25,
           feedback: true,
         },
+        {
+          // P3.5-E3's cable — a grid DECK into a looper's channel. It was the
+          // one shape this fixture did not carry, which is exactly why its
+          // capture side could go missing unnoticed.
+          src: { kind: 'deckOut', index: 1, sub: null },
+          dst: { kind: 'channelIn', index: 2 },
+          gain: 1,
+          feedback: false,
+        },
       ],
     }
     const planned = planApply(map).filter((o) => o.op === 'routeAdd')
@@ -459,6 +468,50 @@ describe('captureRoutes', () => {
         : (undefined as never),
     )
     expect(captureRoutes(asLive)).toEqual(map.routes)
+  })
+
+  it('EVERY source kind the schema admits survives a save', () => {
+    // The pin this file was missing. `deckOut` shipped in the write direction
+    // (P3.5-E3) and never arrived in the read direction, so `captureRoutes`
+    // hit its deliberate skip-the-unknown branch and every save — including
+    // the 4 s autosave — quietly erased the deck→looper cable. Nothing failed:
+    // the round-trip fixture above simply had no route of that kind.
+    //
+    // Driving the list from the SCHEMA means the next kind added to the enum
+    // fails here until both directions know it, rather than shipping and
+    // disappearing on reload.
+    const kinds = RouteSourceSchema.shape.kind.options
+    expect(kinds).toContain('deckOut')
+
+    for (const kind of kinds) {
+      // `channelSend` is the one kind carrying a sub (the send index); the
+      // rest write NO_INDEX and read back null.
+      const sub = kind === 'channelSend' ? 2 : null
+      const map: PlaneMap = {
+        ...emptyMap(),
+        routes: [
+          { src: { kind, index: 1, sub }, dst: { kind: 'channelIn', index: 0 }, gain: 0.5, feedback: false },
+        ],
+      }
+      const asLive: LiveRoute[] = planApply(map)
+        .filter((o) => o.op === 'routeAdd')
+        .map((o) =>
+          o.op === 'routeAdd'
+            ? {
+                active: true,
+                srcKind: o.srcKind,
+                srcIndex: o.srcIndex,
+                srcSub: o.srcSub,
+                dstKind: o.dstKind,
+                dstIndex: o.dstIndex,
+                gain: o.gain,
+                feedback: o.feedback,
+              }
+            : (undefined as never),
+        )
+      expect(asLive, `${kind} was never planned`).toHaveLength(1)
+      expect(captureRoutes(asLive), `${kind} did not survive capture`).toEqual(map.routes)
+    }
   })
 })
 

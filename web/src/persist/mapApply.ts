@@ -245,17 +245,24 @@ export type LiveRoute = {
   feedback: boolean
 }
 
-const SRC_KIND_NAME: Record<number, Route['src']['kind']> = {
-  0: 'channelOut',
-  1: 'channelSend',
-  2: 'deviceInput',
-  3: 'fxReturn',
+/**
+ * The read direction, DERIVED from the write maps rather than written twice.
+ *
+ * This was two hand-written literals, and they drifted the day `deckOut` (kind
+ * 4, P3.5-E3) was added to `SRC_KIND` above and not to its twin below: an
+ * unknown kind is deliberately SKIPPED by `captureRoutes`, so every save — and
+ * every 4 s autosave — silently erased the one cable that carries a grid deck
+ * into a looper. The write maps are exhaustive over the route-kind unions BY
+ * TYPE, so inverting them means a kind that can be issued is a kind that can be
+ * captured, by construction, and no future kind can repeat this.
+ */
+function invertKinds<K extends string>(m: Record<K, number>): Record<number, K> {
+  const out: Record<number, K> = {}
+  for (const name of Object.keys(m) as K[]) out[m[name]] = name
+  return out
 }
-const DST_KIND_NAME: Record<number, Route['dst']['kind']> = {
-  0: 'channelIn',
-  1: 'sendBus',
-  2: 'main',
-}
+const SRC_KIND_NAME = invertKinds(SRC_KIND)
+const DST_KIND_NAME = invertKinds(DST_KIND)
 
 /**
  * Turn what the engine reports back into document routes, so a save captures

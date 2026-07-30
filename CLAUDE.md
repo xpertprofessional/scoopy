@@ -38,6 +38,15 @@ Scope searches to the hand-written source: `web/src`, `shell/`, `slengine/`,
 
 ## Verify (the gate for every increment)
 - C++: `ctest --test-dir build --output-on-failure`
-- Web (in `web/`): `npm run typecheck && npm test && npm run protocol:check`
+- Web (in `web/`): `npm run typecheck && npm test`
+- **Drift gates — run all eight every session, not only when a row names one**
+  (2026-07-29: two were RED at HEAD and one uncovered two real UI defects):
+  `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` ·
+  `tape:check` · `trackparams:check` · `webdist:check` · `check:tokens`.
+  `engine:check` drift is pre-existing and recorded in P6-3.
+  ⚠️ **There is no `protocol:check` script** — older docs and ledger gate lines
+  name it; `web/package.json` is the authority.
+- `npm run bundle` must be the LAST step before `git add`, or `.buildhash`
+  records a tree that no longer exists (the P3-X4 lesson).
 - Bundle + `webdist/` freshness and the Chromium walk gates per the ledger row's gate
   line. Never commit a red tree; one ledger item per commit.
