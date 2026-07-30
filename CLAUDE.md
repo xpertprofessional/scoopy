@@ -70,16 +70,21 @@ Scope searches to the hand-written source: `web/src`, `shell/`, `slengine/`,
 ## Verify (the gate for every increment)
 - C++: `ctest --test-dir build --output-on-failure`
 - Web (in `web/`): `npm run typecheck && npm test`
-- **Drift gates — run all NINE every session, not only when a row names one**
+- **Drift gates — run all TEN every session, not only when a row names one**
   (2026-07-29: two were RED at HEAD and one uncovered two real UI defects):
   `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` ·
   `tape:check` · `trackparams:check` · `webdist:check` · `check:tokens` ·
-  `schema:check`.
+  `schema:check` · `nativemethods:check`.
   `schema:check` is the newest (H5-a, 2026-07-30) and was added because three
   hosts were reporting three different protocol versions — schema.ts 96,
   `getCapabilities` 92, `kScoopySchemaVersion` 88 — while `sl_dispatch_test`
   **asserted the stale 92**, so ctest defended the drift for four bumps.
   Older docs and ledger rows say "eight"; this list is the count.
+  `nativemethods:check` is the newest (2026-07-30) and exists because the same
+  defect shipped TWICE: a method the shell implements but `MergedLink.NATIVE_METHODS`
+  omits falls through to `BrowserLink` and throws, and callers swallow it — so the
+  feature is silently unreachable **in the real host only**. It caught `fxSlot`
+  (v95's headline) and `getFxSlotState` (v96) already shipped broken.
   `engine:check` drift is pre-existing and recorded in P6-3.
   ⚠️ **There is no `protocol:check` script** — older docs and ledger gate lines
   name it; `web/package.json` is the authority.

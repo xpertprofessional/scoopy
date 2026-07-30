@@ -325,6 +325,25 @@ class MergedLink extends BrowserLink {
     "listInstruments",
     "rescanPlugins",
     "selectFxPlugin",
+    // ⚠️ AND THEN IT HAPPENED AGAIN. The block above warns that a method
+    // missing from this list is "invisible until someone needs it"; these two
+    // were missing for the two schema bumps that shipped them.
+    //
+    //   fxSlot           SlDispatch.cpp:289 (P6-4, v95 — "THE PLUGIN EDITOR IS
+    //                    REACHABLE"). `FxSlotPanel.tsx:151` sends it behind
+    //                    `.catch(() => {})`, so the editor button threw into a
+    //                    swallowed promise and did nothing at all.
+    //   getFxSlotState   SlDispatch.cpp:243 (P6-5a, v96). `mapStore.ts:548`
+    //                    asks on EVERY map save; `ask()` answers null on a
+    //                    refusal and the `Array.isArray` guard then skips the
+    //                    write — so plugin state was silently never persisted
+    //                    into the `.scoopyMap`.
+    //
+    // Both were implemented in the shell, called by reachable UI, and thrown
+    // away here. A comment warning was not enough twice; `nativemethods:check`
+    // now compares this set against what SlDispatch actually handles.
+    "fxSlot",
+    "getFxSlotState",
     // The library filesystem (P3-SES-1). On this host the session/sample
     // library is native disk — OPFS can be LISTED but not WRITTEN in the
     // WKWebView, so `opfs.ts` routes every I/O call here.
