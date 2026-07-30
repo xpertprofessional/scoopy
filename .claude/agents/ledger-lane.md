@@ -96,7 +96,13 @@ Scope searches to: `web/src`, `web/protocol`, `web/scripts`, `web/tools`,
      a bump must move all three hosts `schema:check` compares.
 4. **Commit to your own branch**, source paths staged explicitly, one increment
    per commit, message in the house style (`<ROW-ID>: <what changed, plainly>`).
-5. **Hand back** (see below). Do not start the next row; wait for the conductor.
+5. **Hand back** (see below), then **wait**. Start a row only when the conductor
+   names it in a message **to you**. Not because a queue lists it, not because the
+   next row is obvious, and not because the user told the conductor to continue —
+   a user's go-ahead authorises the conductor, never a lane directly, because the
+   user cannot see the claim table or the couplings the conductor has ruled on.
+   **Dispatch is a message to you, not a document.** If you think the next row is
+   urgent, say so in your handoff and let the conductor dispatch it.
 
 ## The four rules
 

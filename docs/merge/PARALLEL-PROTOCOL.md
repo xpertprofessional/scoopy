@@ -207,6 +207,15 @@ list as a queue to continue through and shipped the next row anyway. The work wa
 good; the authorisation was not there. If a lane thinks the next row is urgent it
 says so in its handoff and lets the conductor dispatch it.
 
+**The rule, in one line: dispatch is a MESSAGE TO THE LANE, not a document.**
+(Lane B's own formulation after the incident, and it is the load-bearing part —
+better than the wording fix above, because it holds no matter what any table
+says.) The compounding factor was subtler than a misread table: the user said
+"continue the work" to the *conductor*, and the lane treated that as standing
+permission to keep pulling from the queue. **A user's go-ahead authorises the
+conductor, never a lane directly** — it cannot, because the user cannot see the
+claim table, the couplings, or what the conductor has already ruled.
+
 **Queued (plan only):** A: E10a → P11-3a → P6-6a/b/c → P6-AUDIT → P3.5-E4.
 B: P11-2 → P11-3c → P11-6 → P11-4 (last — the only MAP schema bump).
 C: P11-AUDIT → P8-1's downstream specs.
