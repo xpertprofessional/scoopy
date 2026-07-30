@@ -32,7 +32,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright";
+import { openEngine } from "./lib/engines.mjs";
 import { createServer } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +54,7 @@ await server.listen();
 const base = server.resolvedUrls.local[0].replace(/\/$/, "");
 console.log(`vite: ${base}`);
 
-const browser = await chromium.launch({ channel: "chrome" });
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage();
 await page.route("**/favicon.ico", (r) => r.fulfill({ status: 204, body: "" }));
 page.on("console", (m) => {
@@ -227,6 +227,6 @@ check("the SEQUENCER ran — distinct hits, not a drone", result.onsets >= 6 && 
 
 console.log(`\n${failures === 0 ? "COMPANION AUDIO GATE PASSED" : `FAILED — ${failures} check(s)`}`);
 
-await browser.close();
+await cleanup();
 await server.close();
 process.exit(failures === 0 ? 0 : 1);

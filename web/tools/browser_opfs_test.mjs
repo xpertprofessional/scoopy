@@ -25,7 +25,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright";
+import { openEngine } from "./lib/engines.mjs";
 import { createServer } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -49,12 +49,7 @@ await server.listen();
 const base = server.resolvedUrls.local[0].replace(/\/$/, "");
 console.log(`vite: ${base}`);
 
-const browser = await chromium.launch({
-  channel: "chrome",
-  // An AudioContext must not be blocked: the audition IS the thing under test, and while a
-  // playwright click is a trusted gesture, headless Chrome is stricter than it needs to be here.
-  args: ["--autoplay-policy=no-user-gesture-required"],
-});
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage();
 // Chrome asks for /favicon.ico on its own and the dev server has none. It is a browser-internal
 // request, so it never reaches the `response` hook — it only shows up as a console error, where it
@@ -131,7 +126,25 @@ console.log("\nTHE PANEL, OVER OPFS");
   const rows = await page.$$eval(".br-row .br-name", (els) => els.map((e) => e.textContent));
   check("lists the OPFS library", rows.includes("sine.wav") && rows.includes("Kicks"), rows.join(", "));
   check("hides non-audio", !rows.includes("readme.txt"));
-  check("directories sort first", rows[0] === "Kicks");
+
+  // ⚠️ THIS USED TO BE `rows[0] === "Kicks"`, which asserted the ORDERING by
+  // asserting one name — true only while exactly one directory existed. H4 gave
+  // every walk a persistent profile (WebKit needs one for OPFS at all), the app
+  // then had somewhere to keep its `Demo` folder, and a correct listing of
+  // "Demo, Kicks, sine.wav" failed a check about sorting. The claim is that
+  // DIRECTORIES PRECEDE FILES, so assert that, off the row icons the panel
+  // actually renders (▸ directory, ~ file — FileBrowserPanel.tsx:320) rather
+  // than off a name that happened to be first.
+  const kinds = await page.$$eval(".br-row .br-icon", (els) =>
+    els.map((e) => (e.textContent?.trim() === "▸" ? "dir" : "file")),
+  );
+  const firstFile = kinds.indexOf("file");
+  const lastDir = kinds.lastIndexOf("dir");
+  check(
+    "directories sort first",
+    kinds.length > 0 && (firstFile === -1 || lastDir === -1 || lastDir < firstFile),
+    `${rows.join(", ")}  [${kinds.join(", ")}]`,
+  );
 }
 
 // ── selection → the waveform. A real click on a real row. ─────────────────────────────────────
@@ -285,6 +298,6 @@ console.log("\nTHE IMPORTED SESSION'S SAMPLES ARE BROWSABLE");
 
 console.log(`\n${failures === 0 ? "P8-6 GATE PASSED" : `P8-6 GATE FAILED — ${failures} check(s)`}`);
 
-await browser.close();
+await cleanup();
 await server.close();
 process.exit(failures === 0 ? 0 : 1);

@@ -35,7 +35,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { zipSync } from "fflate";
-import { chromium, firefox, webkit } from "playwright";
+import { ENGINES } from "./lib/engines.mjs";
 import { build } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -88,36 +88,10 @@ await new Promise((r) => server.listen(0, r));
 const base = `http://127.0.0.1:${server.address().port}`;
 console.log(`serving: ${base}\n`);
 
-/**
- * ⚠️ EVERY ENGINE GETS A PERSISTENT PROFILE, and that is not incidental.
- *
- * With an ephemeral context, WebKit's OPFS throws `UnknownError: The operation failed for an unknown
- * transient reason` on the very FIRST `getDirectoryHandle` — before any of our code runs. Read
- * casually, that says "Safari cannot do OPFS" and would have had us building a fallback store for a
- * problem that does not exist. Given a real profile to write into, WebKit supports OPFSfully,
- * `createWritable` included. The origin private file system needs an origin with somewhere to put
- * itself; a throwaway context has nowhere.
- *
- * Chromium and Firefox happen to tolerate the ephemeral case. That is exactly why this was worth
- * pinning down rather than concluding from the one engine that complained.
- */
-const ENGINES = {
-  chromium: (dir) =>
-    chromium.launchPersistentContext(dir, {
-      channel: "chrome",
-      args: ["--autoplay-policy=no-user-gesture-required"],
-    }),
-  webkit: (dir) => webkit.launchPersistentContext(dir, {}),
-  firefox: (dir) =>
-    // Firefox blocks an AudioContext that was not born in a gesture. Our clicks ARE gestures, but
-    // headless Firefox is stricter about it than it needs to be.
-    firefox.launchPersistentContext(dir, {
-      firefoxUserPrefs: {
-        "media.autoplay.default": 0,
-        "media.autoplay.blocking_policy": 0,
-      },
-    }),
-};
+// The engine table lives in ./lib/engines.mjs since H4 — this file was the only
+// walk that ever ran more than Chromium, so it was where the WebKit persistent-
+// profile lesson was learned, and the other seven walks now inherit it. This
+// gate still runs ALL THREE: it is the release ship gate, not a feature walk.
 
 const only = process.argv[2];
 const names = only ? [only] : Object.keys(ENGINES);

@@ -21,7 +21,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright";
+import { openEngine } from "./lib/engines.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const audioDir = resolve(here, "../src/audio");
@@ -52,7 +52,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 // Use the SYSTEM Chrome rather than downloading a browser: it is already here, and testing the
 // worklet in the browser people actually use is more honest than testing it in a pinned build.
-const browser = await chromium.launch({ channel: "chrome" });
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage();
 page.on("console", (m) => {
   const t = m.text();
@@ -163,7 +163,7 @@ const result = await page.evaluate(async ({ base, SR, SECONDS }) => {
   };
 }, { base, SR, SECONDS });
 
-await browser.close();
+await cleanup();
 server.close();
 
 if (result.procErrors?.length) console.log("PROCESSOR ERRORS:", result.procErrors);

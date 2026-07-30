@@ -14,7 +14,7 @@
  *
  *   node tools/browser_plane_test.mjs [dist]
  */
-import { chromium } from 'playwright'
+import { openEngine } from "./lib/engines.mjs"
 import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { join, extname } from 'node:path'
@@ -41,7 +41,7 @@ const server = createServer((req, res) => {
 })
 await new Promise((r) => server.listen(4599, r))
 
-const browser = await chromium.launch()
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
 const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(String(e)))
@@ -407,7 +407,7 @@ await page.waitForTimeout(200)
 const closed = await page.evaluate(() => !document.querySelector('.plane-matrix'))
 check('Escape closes it', closed)
 
-await browser.close()
+await cleanup()
 server.close()
 
 if (failures.length) {

@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright";
+import { openEngine } from "./lib/engines.mjs";
 import { createServer } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,11 +47,7 @@ await server.listen();
 const base = server.resolvedUrls.local[0].replace(/\/$/, "");
 console.log(`vite: ${base}`);
 
-const profile = await mkdtemp(join(tmpdir(), "scoopy-grid-"));
-const browser = await chromium.launchPersistentContext(profile, {
-  channel: "chrome",
-  args: ["--autoplay-policy=no-user-gesture-required"],
-});
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage();
 await page.route("**/favicon.ico", (r) => r.fulfill({ status: 204, body: "" }));
 page.on("pageerror", (err) => {
@@ -151,7 +147,12 @@ const meterNow = () =>
   page.evaluate(() => parseFloat(document.querySelector(".cmp-meter-fill")?.style.width || "0"));
 {
   let m = 0;
-  for (let i = 0; i < 30 && m === 0; i++) { m = await meterNow(); await page.waitForTimeout(100); }
+  // 10 s, not 3 (H4). The loop exits the moment the meter moves, so a healthy
+  // run is not one tick slower — but the matrix runs walks back to back, and an
+  // AudioContext coming up under that load can take longer than three seconds.
+  // This check flaked roughly one run in three there, always here, and a gate
+  // that cries wolf at that rate is one people learn to re-run instead of read.
+  for (let i = 0; i < 100 && m === 0; i++) { m = await meterNow(); await page.waitForTimeout(100); }
   check("the session plays before the edit", m > 0, `meter ${m}%`);
 }
 
@@ -188,7 +189,12 @@ console.log("\nTHE EDIT CHANGED THE SOUND");
   // 4 s at 120 BPM = the 16-step pattern twice. 1 hit → ~2 onsets; every-2nd-step (8 hits) → ~16.
   // We just check the meter is still alive after the edit and the engine did not fall over.
   let m = 0;
-  for (let i = 0; i < 30 && m === 0; i++) { m = await meterNow(); await page.waitForTimeout(100); }
+  // 10 s, not 3 (H4). The loop exits the moment the meter moves, so a healthy
+  // run is not one tick slower — but the matrix runs walks back to back, and an
+  // AudioContext coming up under that load can take longer than three seconds.
+  // This check flaked roughly one run in three there, always here, and a gate
+  // that cries wolf at that rate is one people learn to re-run instead of read.
+  for (let i = 0; i < 100 && m === 0; i++) { m = await meterNow(); await page.waitForTimeout(100); }
   check("the engine still plays after the edit", m > 0, `meter ${m}%`);
   const err = await page.textContent(".cmp-error").catch(() => null);
   check("no engine/publish error surfaced", !err, String(err));
@@ -221,7 +227,6 @@ console.log("\nTHE EDIT PERSISTS (autosave → OPFS → reload)");
 
 console.log(`\n${failures === 0 ? "P8-12 GRID GATE PASSED — the browser composes" : `FAILED — ${failures} check(s)`}`);
 
-await browser.close();
-await rm(profile, { recursive: true, force: true });
+await cleanup();
 await server.close();
 process.exit(failures === 0 ? 0 : 1);

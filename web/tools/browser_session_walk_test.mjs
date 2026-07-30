@@ -17,7 +17,7 @@
  *
  *   node tools/browser_session_walk_test.mjs [dist]
  */
-import { chromium } from 'playwright'
+import { openEngine } from "./lib/engines.mjs"
 import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { join, extname } from 'node:path'
@@ -160,7 +160,7 @@ window.__JUCE__ = { backend: (() => {
 })() }
 `
 
-const browser = await chromium.launch()
+const { browser, cleanup } = await openEngine()
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
 const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(String(e)))
@@ -321,7 +321,7 @@ check('the lock released on slPanelClosed', true)
 
 check('no page errors', pageErrors.length === 0, pageErrors.join(' | '))
 
-await browser.close()
+await cleanup()
 server.close()
 
 if (failures.length > 0) {

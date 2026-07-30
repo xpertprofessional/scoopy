@@ -21,6 +21,7 @@
     "tape:check": "node --experimental-strip-types scripts/checkTapeCoverage.ts",
     "test": "vitest run --passWithNoTests",
     "test:browser": "node tools/browser_opfs_test.mjs",
+    "walks": "node tools/walks.mjs",
     "trackparams:check": "node --experimental-strip-types scripts/generateTrackParams.ts --check",
     "trackparams:generate": "node --experimental-strip-types scripts/generateTrackParams.ts",
     "typecheck": "tsc --noEmit",
