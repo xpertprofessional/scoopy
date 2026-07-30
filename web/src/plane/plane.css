@@ -409,19 +409,22 @@
 
 /* THE CLASSIC DECK ROWS (B1 · P7-T1/T2/T3) — three rows above the tile's grid,
    replacing the `strip-deckverbs` header span the verbs used to share with the
-   menu and expand buttons. They get their own rows because there are now
-   eighteen controls rather than seven, and because a deck block reads as one
-   object only when its rows line up. */
+   menu and expand buttons. They get their own rows because there are eighteen
+   controls now rather than seven.
+
+   ⚠️ THE ROW METRICS ARE `.strip-row`'S, NOT THIS BLOCK'S. The first cut
+   redeclared `min-height: 16px`, `gap: 3px` and `height: 14px` on the buttons —
+   which is precisely the drift pd-visual-language §2.4 names: *"all take
+   `height: var(--control-h)` — one token, so a box in front of a bar [aligns];
+   that is how the drag box and the slider drifted apart when the Appearance
+   panel's bar height was changed."* With WIN a real `GeoRange`, a hand-set
+   button height would have put the buttons and the bar on different baselines
+   in the same row. So this block adds only what is genuinely NEW: the overflow
+   rule and the readout widths. */
 .deckrow {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex: 0 0 auto;
-  min-height: 16px;
-  padding: 1px 0;
   /* L1: the box is authoritative. Rows may not push the tile taller, so a row
      too narrow for its controls scrolls rather than wrapping — wrapping would
-     change the tile's height with state, which is the law this file exists
+     change the tile's height with state, which is the law this file is built
      around. */
   overflow-x: auto;
   overflow-y: hidden;
@@ -434,9 +437,11 @@
 
 .deckrow .dr {
   flex: 0 0 auto;
-  padding: 0 4px;
-  min-width: 18px;
-  height: 14px;
+  /* The one token every control in the suite sizes from, so the buttons, the
+     WIN bar and its value sit on one baseline. */
+  height: var(--control-h);
+  min-width: calc(var(--cell) * 5);
+  padding: 0 var(--cell);
   line-height: 1;
   font-size: var(--type-micro-size);
   background: transparent;
@@ -461,27 +466,27 @@
   cursor: default;
 }
 
-/* Read-outs beside their controls (the pulse relation, the semitone count):
-   FIXED WIDTH, so `auto` and `3:2` and `-12` all occupy the same box and the
-   row cannot reflow while you walk a value (L4/L5's spirit, applied to text). */
+/* WIN sits in a dense row beside eight buttons, so it takes the strip's own
+   compact bar width rather than a panel's. Height still comes from the token. */
+.deckrow .ds-geo {
+  flex: 0 0 auto;
+  width: 72px;
+}
+
+/* Read-outs beside their controls (the pulse relation, the semitone count) are
+   sized in `ch`, NOT px — §2.4: *"scales with the value font, not a px
+   assumption"*. Fixed width so `auto`, `3:2` and `-12` all occupy the same box
+   and the row cannot reflow while you walk a value. */
 .deckrow .dr-read {
   flex: 0 0 auto;
-  min-width: 26px;
+  min-width: 4ch;
   text-align: center;
   font-size: var(--type-micro-size);
+  font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
 
-.deckrow .dr-name {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  font-size: var(--type-micro-size);
-  color: var(--text-dim);
-}
-
+.deckrow .dr-name,
 .deckrow .dr-note {
   flex: 1 1 auto;
   overflow: hidden;
@@ -489,21 +494,14 @@
   white-space: nowrap;
   font-size: var(--type-micro-size);
   color: var(--text-dim);
+}
+
+.deckrow .dr-name {
+  text-align: right;
+}
+
+.deckrow .dr-note {
   opacity: 0.7;
-}
-
-.deckrow .dr-win {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex: 0 0 auto;
-  font-size: var(--type-micro-size);
-  color: var(--text-dim);
-}
-
-.deckrow .dr-win input[type='range'] {
-  width: 46px;
-  height: 10px;
 }
 
 /* THE LCM BAR (P3-D4-2): the deck's position in its pattern cycle, between the

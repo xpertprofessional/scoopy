@@ -701,10 +701,16 @@ export function Strip({
    * start_step)` already carries the flag per deck, and publishing a world is
    * how it is set. `companionEngine.play(deck)/stop(deck)` do exactly that.
    *
-   * ⚠️ The verbs are not all 1:1, and pretending otherwise would be the lie.
-   * A tape has loop / one-shot / retrigger / stop. A sequenced pattern REPEATS
-   * BY NATURE, so ⟳ is simply "play" and ▸ has no meaning — it stays rendered
-   * and inert (layout law L2) rather than being given a fake behaviour.
+   * ⚠️ The verbs are not all 1:1. A tape has loop / one-shot / retrigger / stop;
+   * a sequenced pattern REPEATS BY NATURE, so ⟳ is simply "play".
+   *
+   * ▸ USED TO BE INERT HERE and no longer is (B1). The note said one-shot "has
+   * no sequencer meaning" — but the donor has one (`BeatSequencer.playOnce()`:
+   * play exactly one LCM cycle, then stop, and pressed mid-loop let the cycle
+   * in flight finish) and the user ruled it a PORT. So the fourth verb keeps
+   * the same glyph it has on a tape and finally does the same KIND of thing:
+   * play this once rather than forever. One vocabulary, four verbs, no inert
+   * button left on the row.
    */
   const trigger = (mode: number) => {
     if (isGrid) {
@@ -718,7 +724,8 @@ export function Strip({
         case 2: // ◼
           onGridTransport?.('stop')
           return
-        default: // ▸ one-shot has no sequencer meaning; the button is inert
+        default: // ▸ — one-shot: one LCM cycle, then stop (B1)
+          if (verbDeck >= 0) useCompanion.getState().playOnce(verbDeck)
           return
       }
     }

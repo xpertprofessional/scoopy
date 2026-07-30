@@ -409,8 +409,11 @@ describe('the classic deck rows in the tile (P3-D4-2, rebuilt by B1)', () => {
     // rows of their own when the tile grew from seven controls to eighteen.
     expect(html).toContain('deckrow')
     expect(html).not.toContain('strip-deckverbs')
-    // Row 1's transport, row 2's hand controls, row 3's view switches.
-    for (const verb of ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏']) expect(html).toContain(verb)
+    // Row 1's transport, row 2's hand controls, row 3's view switches. The
+    // transport glyphs are the APP's four (⟳ ▸ ↻ ◼) — the same set the
+    // collapsed strip's own transport row uses, not a second dialect.
+    for (const verb of ['OPEN', '⟳', '▸', '↻', '◼', '»', 'DBL', 'SAVE', '⏏'])
+      expect(html).toContain(verb)
     for (const verb of ['TR', 'TP', 'WIN', 'BR', 'REV', '‹', '›']) expect(html).toContain(verb)
     for (const verb of ['GRID', 'PERF']) expect(html).toContain(verb)
     // …and the LCM bar still sits in the tile.

@@ -4,7 +4,7 @@
  * The donor's deck block, rebuilt on this app's own lanes. Three rows above the
  * expanded tile's grid:
  *
- *   toolbar   OPEN · ■ · ▶ · ▸¹ · » · DBL · SAVE · ⏏
+ *   toolbar   OPEN · ⟳ · ▸ · ↻ · ◼ · » · DBL · SAVE · ⏏
  *   sync      SYNC · pulse ‹› · TR ‹› · TP · WIN · BR + scale + ‹› · REV · nudge
  *   scene     the pads, second rendering · GRID/PERF
  *
@@ -33,6 +33,7 @@ import { HotFrameLayout } from '../../protocol/schema.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { nudgeTranspose } from '../audio/deckTransport.ts'
 import { applyPitchModeExclusion } from '../audio/deckTransport.ts'
+import { GeoRange } from '../design/controls.tsx'
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
@@ -170,16 +171,16 @@ export function DeckToolbarRow({
         onClick={() => useCompanion.getState().stop(deck)}
         title={locked ? LOCKED_TITLE : 'stop this deck'}
       >
-        ■
+        ◼
       </button>
       <button
         type="button"
         className={`dr mono${playing && oneShot === null ? ' latched' : ''}`}
         disabled={locked || !hasSession}
         onClick={() => useCompanion.getState().play(deck)}
-        title={locked ? LOCKED_TITLE : 'play this deck (from the top)'}
+        title={locked ? LOCKED_TITLE : 'play — a pattern loops by nature, so this runs it'}
       >
-        ▶
+        ⟳
       </button>
       <button
         type="button"
@@ -196,7 +197,24 @@ export function DeckToolbarRow({
             : 'ONE-SHOT — play one full pattern cycle, then stop'
         }
       >
-        ▸¹
+        ▸
+      </button>
+      {/* ↻ RETRIGGER — back to step 0 without leaving the transport. The fourth
+          member of the app's transport vocabulary (⟳ ▸ ↻ ◼); leaving it off
+          this row would have made the tile speak a different dialect from the
+          collapsed strip directly above it. */}
+      <button
+        type="button"
+        className="dr mono"
+        disabled={locked || !hasSession}
+        onClick={() => {
+          const c = useCompanion.getState()
+          c.stop(deck)
+          c.play(deck)
+        }}
+        title={locked ? LOCKED_TITLE : 'retrigger — back to step 0 without stopping'}
+      >
+        ↻
       </button>
       <button
         type="button"
@@ -402,24 +420,39 @@ export function DeckSyncRow({ strip, element, link, masterBpm, locked = false }:
         TP
       </button>
 
-      {/* WIN — the donor's window texture, straight down the param lane. */}
-      <label className="dr-win mono" title="WIN — stretch grain: tight at 0, smeared at 1">
-        WIN
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={texture}
-          aria-label="window texture"
-          disabled={locked}
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            setTexture(v)
-            send(link, 'slDeck', { action: 'setTexture', deck, value: v })
-          }}
-        />
-      </label>
+      {/* WIN — the donor's window texture, in the suite's own control vocabulary.
+          `GeoRange`, NOT a bare `<input type="range">`: the design system paints
+          the bar with an inline gradient so the value reads as a SHAPE, sizes
+          it from `--control-h` so a box in front of a bar lines up, and carries
+          the label/value slots. Layout B, the row idiom the whole app uses
+          (pd-visual-language §2.5). A raw range would also have been the only
+          one in the tree — `trackRowControls.tsx:308` records what they cost:
+          a mousedown on the track jumps the thumb and fires `change` before
+          `click` exists. */}
+      <GeoRange
+        value={texture}
+        min={0}
+        max={1}
+        step={0.01}
+        label="WIN"
+        display={texture.toFixed(2)}
+        disabled={locked}
+        onChange={(v) => {
+          setTexture(v)
+          send(link, 'slDeck', { action: 'setTexture', deck, value: v })
+        }}
+        // Double-click resets to the tight end — the suite's reset gesture,
+        // the same one the varispeed bar uses to get back to exactly 1.0.
+        onDoubleClick={() => {
+          setTexture(0)
+          send(link, 'slDeck', { action: 'setTexture', deck, value: 0 })
+        }}
+        title={
+          locked
+            ? LOCKED_TITLE
+            : 'WIN — stretch grain: tight and transient-preserving at 0, smeared and smooth at 1'
+        }
+      />
 
       <button
         type="button"

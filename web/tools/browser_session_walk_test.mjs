@@ -230,8 +230,8 @@ check('the tile carries the three classic deck rows (B1 · P7-T1/T2/T3)',
   (await page.$$('.deckrow')).length === 3)
 {
   const rows = (await page.textContent('.deckrow-toolbar')) ?? ''
-  check('the toolbar row carries the donor block (OPEN ■ ▶ ▸¹ » DBL SAVE ⏏)',
-    ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏'].every((v) => rows.includes(v)), rows)
+  check('the toolbar row carries the donor block in the app vocabulary (OPEN ⟳ ▸ ↻ ◼ » DBL SAVE ⏏)',
+    ['OPEN', '⟳', '▸', '↻', '◼', '»', 'DBL', 'SAVE', '⏏'].every((v) => rows.includes(v)), rows)
   const sync = (await page.textContent('.deckrow-sync')) ?? ''
   check('the sync row carries SYNC/FREE · TR · TP · WIN · BR · REV',
     ['TR', 'TP', 'WIN', 'BR', 'REV'].every((v) => sync.includes(v)) &&

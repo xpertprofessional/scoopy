@@ -51,10 +51,24 @@ beforeEach(() => {
 })
 
 describe('row 1 — the toolbar', () => {
-  it('carries the donor block: OPEN · ■ · ▶ · ▸¹ · » · DBL · SAVE · ⏏', () => {
+  it('carries the donor block in the APP\'s transport vocabulary (⟳ ▸ ↻ ◼)', () => {
     const out = html(<DeckToolbarRow {...props()} />)
-    for (const verb of ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏'])
+    for (const verb of ['OPEN', '⟳', '▸', '↻', '◼', '»', 'DBL', 'SAVE', '⏏'])
       expect(out).toContain(verb)
+    // The first cut spelled stop/play as ■/▶ and one-shot as ▸¹ — a second
+    // dialect for verbs the strip directly above already names. One vocabulary.
+    expect(out).not.toContain('■')
+    expect(out).not.toContain('▶')
+  })
+
+  it('uses the design system\'s bar for WIN, never a bare range input', () => {
+    // pd-visual-language §2.5: label · geometric bar · value, painted with an
+    // inline gradient so the value reads as a SHAPE — and sized from
+    // `--control-h` so a button beside a bar shares its baseline. A raw
+    // `<input type="range">` would have been the only one in the tree.
+    const out = html(<DeckSyncRow {...props()} />)
+    expect(out).toContain('ds-geo')
+    expect(out).toContain('ds-range')
   })
 
   it('disables the transport verbs with NO SESSION rather than firing into nothing', () => {
