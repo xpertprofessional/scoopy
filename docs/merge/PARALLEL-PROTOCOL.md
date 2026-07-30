@@ -208,13 +208,27 @@ good; the authorisation was not there. If a lane thinks the next row is urgent i
 says so in its handoff and lets the conductor dispatch it.
 
 **The rule, in one line: dispatch is a MESSAGE TO THE LANE, not a document.**
-(Lane B's own formulation after the incident, and it is the load-bearing part —
-better than the wording fix above, because it holds no matter what any table
-says.) The compounding factor was subtler than a misread table: the user said
-"continue the work" to the *conductor*, and the lane treated that as standing
-permission to keep pulling from the queue. **A user's go-ahead authorises the
-conductor, never a lane directly** — it cannot, because the user cannot see the
-claim table, the couplings, or what the conductor has already ruled.
+It still stands — but ⚠️ **the incident that produced it was misdiagnosed, and
+the correction matters more than the rule.**
+
+The conductor concluded that Lane B had self-continued to P11-2 by reading the
+queue as authorisation, and wrote that here. **It had not.** The user was
+messaging the lane *directly* — five messages the conductor never saw, including
+`continue` twice. The lane was following live user direction, correctly. Both
+the conductor's diagnosis and the lane's acceptance of blame were wrong, because
+neither could see the other's channel.
+
+**The real lesson is about the CHANNEL, not the lane.** In this harness a user
+can message a running subagent directly, and the conductor sees none of it — it
+sees only the lane's final handoff. So:
+
+- **A lane that seems to act without orders may be under orders you cannot see.**
+  Ask before attributing it to a misread contract.
+- **A conductor holding all dispatch is not holding anything** if the user is
+  steering lanes directly. State plainly which channel you are on.
+- Direction sent to a lane does not reach the ledger, the claim table, or any
+  ruling — so it is invisible to the next session. **Anything decided in a lane
+  channel has to be repeated to the conductor to survive.**
 
 **Queued (plan only):** A: E10a → P11-3a → P6-6a/b/c → P6-AUDIT → P3.5-E4.
 B: P11-2 → P11-3c → P11-6 → P11-4 (last — the only MAP schema bump).
