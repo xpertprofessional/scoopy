@@ -48,8 +48,17 @@
 
 /* ── the bar ─────────────────────────────────────────────────────────────── */
 
+/* THREE ZONES (P11-1, D-SL-TOPROW-01): document · master · output.
+
+   A GRID, not flex-with-a-spacer, and that is the point of the rule rather than
+   a detail of it. The centre column is `auto` between two equal `1fr` flanks, so
+   the master transport sits at the SAME screen position however long the map's
+   name is or how many strips are counted beside it. Under the old spacer,
+   typing in the name field slid the transport sideways — fine on a settings
+   page, wrong for the one cluster a hand must find mid-set without looking. */
 .plane-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 6px 10px;
@@ -57,6 +66,25 @@
   flex: 0 0 auto;
 }
 
+/* Each zone lays itself out. `flex-wrap` rather than clipping: a narrow window
+   makes the bar TALLER and never hides a control — a door you cannot reach
+   because the window is small is still a door you cannot reach. `min-width: 0`
+   lets a zone shrink inside its grid column instead of forcing the whole bar
+   wider than the panel. */
+.plane-zone {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.plane-zone-doc { justify-self: start; }
+.plane-master { justify-self: center; }
+.plane-output { justify-self: end; }
+
+/* Still used by the Matrix and the composer overlay's own bars, which are
+   ordinary flex rows — the plane bar itself no longer needs one. */
 .plane-spacer { flex: 1 1 auto; }
 
 .plane-compose {
@@ -1034,12 +1062,12 @@
 /* In the BAR, not on the plane. A strip is something you place; the master is
    not — there is exactly one, it is never routed anywhere, and it has no
    element. Making it a strip would buy a consistency the eye does not need in
-   exchange for an object you could drag away from or lose. */
-.plane-master {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+   exchange for an object you could drag away from or lose.
+
+   P11-1 split it in two: `.plane-master` is now the CENTRE zone (transport,
+   tempo, BR/REV) and `.plane-output` the RIGHT one (level, meter, LIM, DSP).
+   Both take their layout from `.plane-zone` at the top of this file; the
+   placement rules live with the grid that does the placing. */
 
 .master-fader { display: inline-flex; width: 120px; }
 

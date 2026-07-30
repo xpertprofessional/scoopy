@@ -143,44 +143,21 @@ export function Master({
   }, [link])
 
   return (
-    <div className="plane-master" data-no-drag>
-      <span className="mono dim">master</span>
-      <span className="master-fader">
-        <GeoRange
-          value={level}
-          min={0}
-          max={1.5}
-          step={0.01}
-          onChange={(v) => {
-            onLevel(v)
-            send(link, 'slMaster', { action: 'setLevel', level: v })
-          }}
-          onDoubleClick={() => {
-            onLevel(1)
-            send(link, 'slMaster', { action: 'setLevel', level: 1 })
-          }}
-          title="master output — double-click for unity"
-        />
-      </span>
-      <span className="master-db mono">{formatDb(level)}</span>
-      <canvas ref={canvasRef} className="master-meter" style={{ width: METER_W, height: METER_H }} />
-      <span ref={lampRef} className="master-lamp mono" title="the output limiter (guard G1)">
-        LIM
-      </span>
-      {/* ENGINE HEALTH (P11-5). Beside LIM because they are the same KIND of
-          fact and a person checks them in the same glance: LIM says the output
-          is being held, DSP says the audio thread is running out of time. Both
-          are conditions you can only find out about from the app — the limiter
-          just sounds quiet, and an overrunning engine just sounds broken.
+    <>
+      {/* ZONE 2 — THE MASTER, the CENTRE (P11-1, D-SL-TOPROW-01).
 
-          THE MASTER BAR IS THE HOME because it is the only surface that is
-          always on screen and never in the way (the reason the master lives
-          here at all, above). This read had a widget, a published scalar and a
-          ctest — and its only mount was `DeckMixerPanel`, a surface P3-P1
-          retired from the panels menu. Built, published, pinned, unreachable:
-          rule four exactly. */}
-      <HealthReadout link={link} />
-      {/* THE MASTER TRANSPORT (P3-2). The same four verbs a strip carries, one
+          The only contiguous group a person touches DURING a set: transport ·
+          tempo · BR · REV, with CLOCK and QUANTUM landing here at P11-2/P11-3.
+          Everything else on this bar is before-or-after work and now sits to
+          one side or the other rather than in front of it.
+
+          TWO ZONES OUT OF ONE COMPONENT, as a fragment: the bar is a three-
+          column grid and these are its 2nd and 3rd children, so they cannot be
+          wrapped in a shared element. They stay in ONE file because they are
+          one subject — the master section — and because `uiOwnership.test.ts`
+          pins this file as the engine-health readout's single home. */}
+      <div className="plane-zone plane-master" data-no-drag>
+        {/* THE MASTER TRANSPORT (P3-2). The same four verbs a strip carries, one
           level up: what a strip's ⟳ ▸ ↻ ◼ do to one deck, these do to every
           deck at once. Deliberately the SAME vocabulary — a transport that
           meant something different here would be a second thing to learn for
@@ -191,131 +168,193 @@ export function Master({
           meaning at all (there is no single thing to fire once), which is a
           different case from a grid strip, where it is a verb the element
           genuinely lacks and so is rendered disabled. */}
-      <span className="master-transport" role="group" aria-label="master transport" data-no-drag>
-        <button
-          type="button"
-          onClick={onPlay}
-          disabled={deckCount === 0}
-          title={deckCount === 0 ? 'no deck to play — load a session into a strip' : 'play every deck'}
-        >
-          ⟳
-        </button>
-        <button
-          type="button"
-          onClick={onRestart}
-          disabled={deckCount === 0}
-          title={
-            deckCount === 0
-              ? 'no deck to restart — load a session into a strip'
-              : 'stop and restart every deck from the top'
-          }
-        >
-          ↻
-        </button>
-        <button
-          type="button"
-          onClick={onStop}
-          disabled={deckCount === 0}
-          title={deckCount === 0 ? 'no deck to stop — load a session into a strip' : 'stop every deck'}
-        >
-          ◼
-        </button>
-        {/* BEAT REPEAT (P3-M-1b): scoopy's signature performance verb, folded
-            into the master. BR latches the window; the number cycles the fused
-            scale (16…2 whole steps, then 1/2…1/32 re-triggering rolls) and is
-            live while latched. REV runs the whole session backwards — true
-            tape reverse, composing with any track's own direction. */}
-        <button
-          type="button"
-          className={`master-br mono${brActive ? ' latched' : ''}`}
-          disabled={deckCount === 0}
-          onClick={onToggleBeatRepeat}
-          title={
-            deckCount === 0
-              ? 'no deck — load a session into a strip'
-              : brActive
-                ? 'release the beat repeat'
-                : 'beat repeat — loop the window on every deck'
-          }
-        >
-          BR
-        </button>
-        <button
-          type="button"
-          className="master-br mono"
-          disabled={deckCount === 0}
-          onClick={onCycleBeatRepeat}
-          title="beat-repeat length — 16…2 whole steps, then 1/2…1/32 rolls"
-        >
-          {brLabel}
-        </button>
-        <button
-          type="button"
-          className={`master-br mono${revActive ? ' latched' : ''}`}
-          disabled={deckCount === 0}
-          onClick={onToggleReverse}
-          title={
-            deckCount === 0
-              ? 'no deck — load a session into a strip'
-              : revActive
-                ? 'play forward again'
-                : 'REV — the whole session backwards, true tape reverse'
-          }
-        >
-          REV
-        </button>
-      </span>
-      <label className="plane-bpm mono">
-        {/* −/+ STEPPERS on the DOCUMENT tempo — a ±1 the number box also
-            offers, made one-click. This is deliberately NOT the pitch-fader
-            nudge: that gesture is TRANSIENT (never the document, snaps back on
-            release), the law already takes it as `nudgeBpmDelta`, and its
-            feel — hold-to-bend, how it releases — is a D-4 design call. Until
-            that lands, these buttons say what they do and do what they say. */}
-        <button
-          type="button"
-          className="bpm-nudge"
-          onClick={() => onBpm(round1(masterBpm - 1))}
-          aria-label="master tempo down"
-          title="−1 BPM"
-        >
-          −
-        </button>
-        <input
-          type="number"
-          min={20}
-          max={300}
-          step={0.1}
-          value={masterBpm}
-          aria-label="master tempo"
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            if (Number.isFinite(v) && v > 0) onBpm(v)
-          }}
-          title="the plane's master tempo — every synced element resolves against this"
-        />
-        <button
-          type="button"
-          className="bpm-nudge"
-          onClick={() => onBpm(round1(masterBpm + 1))}
-          aria-label="master tempo up"
-          title="+1 BPM"
-        >
-          +
-        </button>
-        bpm
-      </label>
-      {/* WHAT THE MASTER IS ACTUALLY DOING TO THE DECKS. A master tempo with no
-          readout is a number you have to trust; this says which decks are
-          following it and at what relation, which is the difference between a
-          sync system and a bpm box. Empty when nothing is synced — a row of
-          zeroes would teach that the readout is usually noise. */}
-      {synced.length > 0 && (
-        <span className="master-sync mono dim" title="synced elements — pulse relation and tempo">
-          {synced.map((s) => `${s.pulse} ${s.bpm}`).join('  ')}
+        <span className="master-transport" role="group" aria-label="master transport" data-no-drag>
+          <button
+            type="button"
+            onClick={onPlay}
+            disabled={deckCount === 0}
+            title={deckCount === 0 ? 'no deck to play — load a session into a strip' : 'play every deck'}
+          >
+            ⟳
+          </button>
+          <button
+            type="button"
+            onClick={onRestart}
+            disabled={deckCount === 0}
+            title={
+              deckCount === 0
+                ? 'no deck to restart — load a session into a strip'
+                : 'stop and restart every deck from the top'
+            }
+          >
+            ↻
+          </button>
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={deckCount === 0}
+            title={deckCount === 0 ? 'no deck to stop — load a session into a strip' : 'stop every deck'}
+          >
+            ◼
+          </button>
+          {/* BEAT REPEAT (P3-M-1b): scoopy's signature performance verb, folded
+              into the master. BR latches the window; the number cycles the fused
+              scale (16…2 whole steps, then 1/2…1/32 re-triggering rolls) and is
+              live while latched. REV runs the whole session backwards — true
+              tape reverse, composing with any track's own direction. */}
+          <button
+            type="button"
+            className={`master-br mono${brActive ? ' latched' : ''}`}
+            disabled={deckCount === 0}
+            onClick={onToggleBeatRepeat}
+            title={
+              deckCount === 0
+                ? 'no deck — load a session into a strip'
+                : brActive
+                  ? 'release the beat repeat'
+                  : 'beat repeat — loop the window on every deck'
+            }
+          >
+            BR
+          </button>
+          <button
+            type="button"
+            className="master-br mono"
+            disabled={deckCount === 0}
+            onClick={onCycleBeatRepeat}
+            title="beat-repeat length — 16…2 whole steps, then 1/2…1/32 rolls"
+          >
+            {brLabel}
+          </button>
+          <button
+            type="button"
+            className={`master-br mono${revActive ? ' latched' : ''}`}
+            disabled={deckCount === 0}
+            onClick={onToggleReverse}
+            title={
+              deckCount === 0
+                ? 'no deck — load a session into a strip'
+                : revActive
+                  ? 'play forward again'
+                  : 'REV — the whole session backwards, true tape reverse'
+            }
+          >
+            REV
+          </button>
         </span>
-      )}
-    </div>
+        <label className="plane-bpm mono">
+          {/* −/+ STEPPERS on the DOCUMENT tempo — a ±1 the number box also
+              offers, made one-click. This is deliberately NOT the pitch-fader
+              nudge: that gesture is TRANSIENT (never the document, snaps back on
+              release), the law already takes it as `nudgeBpmDelta`, and its
+              feel — hold-to-bend, how it releases — is a D-4 design call. Until
+              that lands, these buttons say what they do and do what they say. */}
+          <button
+            type="button"
+            className="bpm-nudge"
+            onClick={() => onBpm(round1(masterBpm - 1))}
+            aria-label="master tempo down"
+            title="−1 BPM"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min={20}
+            max={300}
+            step={0.1}
+            value={masterBpm}
+            aria-label="master tempo"
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isFinite(v) && v > 0) onBpm(v)
+            }}
+            title="the plane's master tempo — every synced element resolves against this"
+          />
+          <button
+            type="button"
+            className="bpm-nudge"
+            onClick={() => onBpm(round1(masterBpm + 1))}
+            aria-label="master tempo up"
+            title="+1 BPM"
+          >
+            +
+          </button>
+          bpm
+        </label>
+        {/* WHAT THE MASTER IS ACTUALLY DOING TO THE DECKS. A master tempo with no
+            readout is a number you have to trust; this says which decks are
+            following it and at what relation, which is the difference between a
+            sync system and a bpm box. Empty when nothing is synced — a row of
+            zeroes would teach that the readout is usually noise. */}
+        {synced.length > 0 && (
+          <span className="master-sync mono dim" title="synced elements — pulse relation and tempo">
+            {synced.map((s) => `${s.pulse} ${s.bpm}`).join('  ')}
+          </span>
+        )}
+      </div>
+
+      {/* ZONE 3 — THE OUTPUT, the RIGHT (P11-1, D-SL-TOPROW-01).
+
+          What the plane is SENDING and how it is coping with it: level, the
+          stereo meter, the limiter lamp, and the engine-health readout. These
+          are checked before and after a set and glanced at during one — never
+          the thing your hand is on — which is what puts them off the centre.
+
+          The word is `out`, not `master`. The re-zoning is what made the old
+          bare `master` label ambiguous: with the master TRANSPORT and TEMPO now
+          a separate zone to the left, a caption saying "master" over on the
+          right names the wrong group. The fader is still the master output
+          level and its title still says so; only the caption follows the zone
+          it captions. */}
+      <div className="plane-zone plane-output" data-no-drag>
+        <span className="mono dim">out</span>
+        <span className="master-fader">
+          <GeoRange
+            value={level}
+            min={0}
+            max={1.5}
+            step={0.01}
+            onChange={(v) => {
+              onLevel(v)
+              send(link, 'slMaster', { action: 'setLevel', level: v })
+            }}
+            onDoubleClick={() => {
+              onLevel(1)
+              send(link, 'slMaster', { action: 'setLevel', level: 1 })
+            }}
+            title="master output — double-click for unity"
+          />
+        </span>
+        <span className="master-db mono">{formatDb(level)}</span>
+        <canvas
+          ref={canvasRef}
+          className="master-meter"
+          style={{ width: METER_W, height: METER_H }}
+        />
+        <span ref={lampRef} className="master-lamp mono" title="the output limiter (guard G1)">
+          LIM
+        </span>
+        {/* ENGINE HEALTH (P11-5, rehomed here by P11-5b). Beside LIM because
+            they are the same KIND of fact and a person checks them in the same
+            glance: LIM says the output is being held, DSP says the audio thread
+            is running out of time. Both are conditions you can only find out
+            about from the app — the limiter just sounds quiet, and an
+            overrunning engine just sounds broken.
+
+            P11-5 put this inside the undivided master cluster because these
+            zones did not exist yet, and P11-5b required the move to land it
+            beside LIM rather than wherever the split happened to leave it.
+            Separating the two would cost the readout its context.
+
+            THE BAR IS THE HOME because it is the only surface always on screen
+            and never in the way. This read had a widget, a published scalar and
+            a ctest — and its only mount was `DeckMixerPanel`, a surface P3-P1
+            retired from the panels menu. Built, published, pinned, unreachable:
+            rule four exactly. */}
+        <HealthReadout link={link} />
+      </div>
+    </>
   )
 }
 

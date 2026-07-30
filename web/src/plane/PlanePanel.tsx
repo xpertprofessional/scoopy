@@ -25,7 +25,7 @@ import {
   setMasterLevel,
   useMapStore,
 } from '../state/mapStore.ts'
-import { useContextMenu } from '../design/ContextMenu.tsx'
+import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import { attachAutosave, exportMap, listMaps, openMap, saveMapAs } from '../state/mapFiles.ts'
 import { carve } from './carve.ts'
 import { parseSidecar, takeSeconds } from '../persist/takeLibrary.ts'
@@ -90,6 +90,87 @@ export const FX_MENU_RETURNS: ReadonlyArray<readonly [string, string]> = [1, 2, 
   (returnIndex) => [`FX ${returnIndex} ⇱`, String(returnIndex)] as const,
 )
 
+/**
+ * The SETTINGS surfaces — REHOMED from `≡ panels` into `map ▾` (P11-1,
+ * D-SL-TOPROW-01, which names `map ▾` as their new home by name).
+ *
+ * They belong with the document verbs rather than with the panel list: naming a
+ * map, saving it, exporting it and configuring the app are all before-or-after
+ * work, and none of them is something you reach for mid-set.
+ *
+ * Exported so `panelMenu.test.ts` can pin BOTH halves of the move — that they
+ * left the panels menu AND that they arrived in the map menu. A rehome checked
+ * only at the departure end is how a door goes missing.
+ */
+export const SETTINGS_SURFACES = [
+  ['general', 'general'],
+  ['audio', 'audio'],
+  ['appearance', 'appearance'],
+  ['template', 'templates'],
+  ['import', 'import'],
+] as const
+
+/**
+ * `map ▾`'s rows, as a pure builder (P11-1).
+ *
+ * A FUNCTION rather than inline JSX so the reachability gate can be a real
+ * assertion instead of a source grep: the test hands it recording callbacks and
+ * checks that every verb this bar used to carry as its own button is still
+ * selectable from somewhere. That is the row's actual gate — "every retired
+ * item still reachable somewhere" — and it cannot be honoured by eyeballing.
+ *
+ * Reuses the `≡ panels` ContextMenu shape deliberately (the row is explicit):
+ * one menu vocabulary on this bar, not a second popover kind to learn.
+ */
+export function mapMenuItems(on: {
+  save: () => void
+  exportPackage: () => void
+  open: () => void
+  settings: (panel: string) => void
+}): MenuItem[] {
+  return [
+    { kind: 'info', label: 'map' },
+    { kind: 'item', label: 'save', onSelect: on.save },
+    { kind: 'item', label: 'open…', onSelect: on.open },
+    // The old button's title said what the package IS ("the map with its audio,
+    // for travel"); a menu row has no title attribute, so the label carries it.
+    { kind: 'item', label: 'export package…', onSelect: on.exportPackage },
+    { kind: 'sep' },
+    { kind: 'info', label: 'settings' },
+    ...SETTINGS_SURFACES.map(([panel, label]) => ({
+      kind: 'item' as const,
+      label: `${label} ⇱`,
+      onSelect: () => on.settings(panel),
+    })),
+  ]
+}
+
+/**
+ * `≡ panels`' rows (P11-1). Same reason as above: the gate compares what the
+ * two menus can reach against what the bar used to carry, and a builder is the
+ * only shape that lets it.
+ */
+export function panelsMenuItems(on: {
+  fx: (arg: string) => void
+  surface: (panel: string) => void
+}): MenuItem[] {
+  return [
+    { kind: 'info', label: 'FX returns' },
+    ...FX_MENU_RETURNS.map(([label, arg]) => ({
+      kind: 'item' as const,
+      label,
+      onSelect: () => on.fx(arg),
+    })),
+    { kind: 'sep' },
+    { kind: 'info', label: 'surfaces' },
+    ...PANEL_MENU_SURFACES.map(([panel, label]) => ({
+      kind: 'item' as const,
+      label: `${label} ⇱`,
+      onSelect: () => on.surface(panel),
+    })),
+  ]
+}
+
 export function PlanePanel({ link }: { link: EngineLink | null }) {
   const strips = useMapStore((s) => s.map.strips)
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
@@ -150,12 +231,11 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       }),
     )
   }, [])
-  /** A deck for the BAR's compose button to open — the first grid strip on the
-      plane. (A strip's own COMPOSE names its own deck; this is the affordance
-      for "I just want the composer".) Inert rather than hidden when there is
-      nothing to compose, which is layout law L2 applied to the bar. */
-  const firstGrid = strips.find((s) => s.element.kind === 'grid')
-  const firstLoadedDeck = firstGrid?.element.kind === 'grid' ? firstGrid.element.deck : null
+  /* P11-1 removed `firstGrid`/`firstLoadedDeck` with the bar's compose button.
+     They existed only to answer "which deck does a bar-level COMPOSE mean?",
+     and the honest answer was "the first one, arbitrarily". The strip's own
+     `COMPOSE ⇱` names its deck, so the question no longer arises. `composeDeck`
+     itself stays — the strips call it. */
   /** Every deck on the plane — what the MASTER transport acts on, as against a
       strip's transport, which acts on its own. Same verbs, wider scope. */
   const loadedDecks = strips.flatMap((s) => (s.element.kind === 'grid' ? [s.element.deck] : []))
@@ -867,154 +947,162 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
 
   return (
     <main className="panel plane-panel" ref={surfaceRef}>
-      <div className="plane-bar">
-        <PanelTitle>PLANE</PanelTitle>
-        <input
-          ref={nameRef}
-          className="plane-name mono"
-          type="text"
-          value={mapName ?? draftName}
-          placeholder="untitled"
-          aria-label="map name"
-          onChange={(e) => {
-            // Renaming a SAVED map writes the next save under the new name and
-            // leaves the old file alone — a rename that silently deleted the
-            // previous document would be a destructive act wearing a text
-            // field's clothes.
-            if (mapName) useMapStore.setState({ name: e.target.value, dirty: true })
-            else setDraftName(e.target.value)
-          }}
-          title="the map's name on disk"
-        />
-        <span className="plane-count mono dim">
-          {strips.length} strip{strips.length === 1 ? '' : 's'}
-          {dirty ? ' · unsaved' : ''}
-        </span>
-        <button
-          type="button"
-          className="plane-compose"
-          onClick={() => void doSave()}
-          title={mapName ? `save ${mapName}` : 'save this map'}
-        >
-          save
-        </button>
-        <button
-          type="button"
-          className="plane-compose"
-          onClick={() => void doExport()}
-          title="export a self-contained package — the map with its audio, for travel"
-        >
-          export
-        </button>
-        <button
-          type="button"
-          className="plane-compose"
-          onClick={() => void doOpen(evtRef.current)}
-          onPointerDown={(e) => (evtRef.current = { x: e.clientX, y: e.clientY })}
-          title="open a saved map"
-        >
-          open
-        </button>
-        {/* THE SESSION LIBRARY, ON THE PLANE (P3-L1). This used to open the
-            COMPANION PANEL in a second window — the only surface that could
-            create/import a session, and the door that made the user ask
-            whether we were building on the wrong app. The decree
-            (D-SL-MORPH-01): the companion is the BROWSER's shell, a web
-            bonus, never app-internal. The library's verbs (New · import ·
-            rename · delete) now live in a popover right here, against the
-            same sessionStore both hosts share; LOADING stays the strip
-            menu's gesture. No second window, no second store, no focus
-            round-trip for freshness. */}
-        <button
-          type="button"
-          className="plane-compose"
-          onClick={() => setLibraryOpen((v) => !v)}
-          title="the session library — create, import, rename and delete sessions; load them from a strip’s ⋯ menu"
-        >
-          library ▾
-        </button>
-        {/* THE PANELS MENU (P3-4-2) — the door PANEL-AUDIT.md promised. Every
-            compiled-in panel the audit marked mechanical opens from here;
-            "nothing lost" stops depending on knowing a panel's name. fxslot
-            leads: it is the return-FX config path P3-3-1 is blocked on.
+      {/* THE BAR, IN THREE ZONES (P11-1, D-SL-TOPROW-01):
+          DOCUMENT (left) · MASTER (centre) · OUTPUT (right).
 
-            P3-P1 (D-SL-MORPH-01): djmode, deckmixer and transport are GONE
-            from this menu — their windows hung on "waiting for state" forever
-            (they wait on pushed UiState topics only the old Swift shell
-            served; the M-1 measurement), and their jobs live on the plane now
-            (master bar verbs via P3-M-1b, the deck tile via P3-D4). A door
-            that opens a tombstone is worse than no door. The panels stay
-            routed in App.tsx; the user's direction is that this whole menu is
-            interim scaffolding, dissolving as the remaining jobs rehome. */}
-        <button
-          type="button"
-          className="plane-compose"
-          onPointerDown={(e) => {
-            openMenu(
-              [
-                { kind: 'info', label: 'FX returns' },
-                // ⚠️ THE ARG IS THE RETURN INDEX, 1-BASED (P6-2b). This used to
-                // pass the 0-based menu slot, and FxSlotPanel reads the arg as a
-                // returnIndex — so `FX 1` sent "0", the panel indexed
-                // `fxSlots[-1]`, found undefined and sat on "waiting for state"
-                // FOREVER, while `FX 2`…`FX 4` quietly addressed returns 1…3 and
-                // return 4 was unreachable. Every fxSlot/selectFxPlugin param is
-                // 1-based too, so 0 also failed schema validation on the wire.
-                // The label and the arg are now the same number — which is the
-                // only arrangement that cannot drift again.
-                ...FX_MENU_RETURNS.map(([label, arg]) => ({
-                  kind: 'item' as const,
-                  label,
-                  onSelect: () => send(link, 'openPanelWindow', { panel: 'fxslot', arg }),
-                })),
-                { kind: 'sep' },
-                { kind: 'info', label: 'surfaces' },
-                ...PANEL_MENU_SURFACES.map(([panel, label]) => ({
-                  kind: 'item' as const,
-                  label: `${label} ⇱`,
-                  onSelect: () => send(link, 'openPanelWindow', { panel }),
-                })),
-                { kind: 'sep' },
-                { kind: 'info', label: 'settings' },
-                ...(
-                  [
-                    ['general', 'general'],
-                    ['audio', 'audio'],
-                    ['appearance', 'appearance'],
-                    ['template', 'templates'],
-                    ['import', 'import'],
-                  ] as const
-                ).map(([panel, label]) => ({
-                  kind: 'item' as const,
-                  label: `${label} ⇱`,
-                  onSelect: () => send(link, 'openPanelWindow', { panel }),
-                })),
-              ],
-              e.clientX,
-              e.clientY,
-            )
-          }}
-          title="every panel — FX returns, transport, spectral, settings and the rest"
-        >
-          ≡ panels
-        </button>
-        {/* COMPOSE. The plane is the PERFORMATIVE surface; a session is
-            COMPOSED in the grid, which is a different job. In the MERGED host
-            this opens the REAL SEPARATE WINDOW (P3-C1 — the user's explicit
-            wish): `panel:'compose'` addressed via `__slPanelArg` with
-            {deck, session}; that window opens the session from disk into its
-            own store and owns the deck's publishes while it lives (P3-C2).
-            In the browser (no window layer) the in-window overlay remains. */}
-        <button
-          type="button"
-          className="plane-compose"
-          title="compose the selected grid strip's session, in its own window"
-          disabled={firstLoadedDeck === null}
-          onClick={() => firstLoadedDeck !== null && composeDeck(firstLoadedDeck)}
-        >
-          compose
-        </button>
-        <span className="plane-spacer" />
+          It used to run four file/panel buttons BEFORE the master cluster,
+          which was then shoved right of a spacer — backwards for a performance
+          surface, in the user's words "old from wizard plane". The centre is
+          now the only contiguous group a hand goes to during a set; the
+          document work is to its left and what the plane is sending is to its
+          right. The grid (not flex + spacer) is what holds the centre STILL:
+          the transport keeps the same screen position however long the map's
+          name is, which is what makes it findable without looking. */}
+      <div className="plane-bar">
+        {/* ZONE 1 — THE DOCUMENT. Which map this is, whether it is saved, and
+            the two menus that act on it. */}
+        <div className="plane-zone plane-zone-doc">
+          <PanelTitle>PLANE</PanelTitle>
+          <input
+            ref={nameRef}
+            className="plane-name mono"
+            type="text"
+            value={mapName ?? draftName}
+            placeholder="untitled"
+            aria-label="map name"
+            onChange={(e) => {
+              // Renaming a SAVED map writes the next save under the new name and
+              // leaves the old file alone — a rename that silently deleted the
+              // previous document would be a destructive act wearing a text
+              // field's clothes.
+              if (mapName) useMapStore.setState({ name: e.target.value, dirty: true })
+              else setDraftName(e.target.value)
+            }}
+            title="the map's name on disk"
+          />
+          <span className="plane-count mono dim">
+            {strips.length} strip{strips.length === 1 ? '' : 's'}
+            {dirty ? ' · unsaved' : ''}
+          </span>
+          {/* `map ▾` — save · open · export · settings, in ONE menu (P11-1).
+              They were four separate bar buttons; three of them are things you
+              do once at either end of a session, and giving each permanent
+              width in front of the transport is what the decision calls
+              backwards. Same ContextMenu the panels button uses — one menu
+              vocabulary on this bar, not a second popover kind. */}
+          <button
+            type="button"
+            className="plane-compose"
+            onPointerDown={(e) => {
+              evtRef.current = { x: e.clientX, y: e.clientY }
+              openMenu(
+                mapMenuItems({
+                  save: () => void doSave(),
+                  exportPackage: () => void doExport(),
+                  // `open` opens a SECOND menu listing the saved maps, at the
+                  // same point — it has to, because a native modal would block
+                  // the whole WebView (the `doSave` rule, one level up).
+                  open: () => void doOpen(evtRef.current),
+                  settings: (panel) => send(link, 'openPanelWindow', { panel }),
+                }),
+                e.clientX,
+                e.clientY,
+              )
+            }}
+            title="the map — save, open, export a package, and settings"
+          >
+            map ▾
+          </button>
+          {/* THE SESSION LIBRARY, ON THE PLANE (P3-L1). This used to open the
+              COMPANION PANEL in a second window — the only surface that could
+              create/import a session, and the door that made the user ask
+              whether we were building on the wrong app. The decree
+              (D-SL-MORPH-01): the companion is the BROWSER's shell, a web
+              bonus, never app-internal. The library's verbs (New · import ·
+              rename · delete) now live in a popover right here, against the
+              same sessionStore both hosts share; LOADING stays the strip
+              menu's gesture. No second window, no second store, no focus
+              round-trip for freshness.
+
+              KEPT AS ITS OWN BUTTON rather than folded into `map ▾`: it acts on
+              SESSIONS, and `map ▾` acts on the MAP. Two different documents —
+              filing session verbs under a menu named for the map would be a
+              tidier bar telling a lie. */}
+          <button
+            type="button"
+            className="plane-compose"
+            onClick={() => setLibraryOpen((v) => !v)}
+            title="the session library — create, import, rename and delete sessions; load them from a strip’s ⋯ menu"
+          >
+            library ▾
+          </button>
+          {/* THE PANELS MENU (P3-4-2) — the door PANEL-AUDIT.md promised. Every
+              compiled-in panel the audit marked mechanical opens from here;
+              "nothing lost" stops depending on knowing a panel's name. fxslot
+              leads: it is the return-FX config path P3-3-1 is blocked on.
+
+              P3-P1 (D-SL-MORPH-01): djmode, deckmixer and transport are GONE
+              from this menu — their windows hung on "waiting for state" forever
+              (they wait on pushed UiState topics only the old Swift shell
+              served; the M-1 measurement), and their jobs live on the plane now
+              (master bar verbs via P3-M-1b, the deck tile via P3-D4). A door
+              that opens a tombstone is worse than no door. The panels stay
+              routed in App.tsx.
+
+              ⚠️ THIS BUTTON WAS SUPPOSED TO LEAVE THE BAR AT P11-1 AND DID NOT.
+              D-SL-TOPROW-01 retires it, and the settings block DID move out (to
+              `map ▾`, above) — but the rest of it has nowhere to go yet, and a
+              retirement that orphans a door is rule four, not tidiness. TWO
+              things must land before it can go, and neither is this row's:
+
+                · P7-MIX-0 rehomes FX 1–4 into the strip mixer. Until then this
+                  menu is their only door (conductor ruling: do not invent an
+                  interim home — that means building the same door twice and
+                  risking the gap in between, which is what P3.5-E8 was).
+                · P11-1-a decides where the five PANEL_MENU_SURFACES live.
+                  Measured: `openPanelWindow` has four call sites and ALL FOUR
+                  are in this file, so this menu is the only door to spectral,
+                  paintmode, midi, perf and capture — and D-SL-TOPROW-01 names a
+                  new home for settings only.
+
+              Do not delete this button until both are done. */}
+          <button
+            type="button"
+            className="plane-compose"
+            onPointerDown={(e) => {
+              openMenu(
+                panelsMenuItems({
+                  // ⚠️ THE ARG IS THE RETURN INDEX, 1-BASED (P6-2b). This used to
+                  // pass the 0-based menu slot, and FxSlotPanel reads the arg as a
+                  // returnIndex — so `FX 1` sent "0", the panel indexed
+                  // `fxSlots[-1]`, found undefined and sat on "waiting for state"
+                  // FOREVER, while `FX 2`…`FX 4` quietly addressed returns 1…3 and
+                  // return 4 was unreachable. Every fxSlot/selectFxPlugin param is
+                  // 1-based too, so 0 also failed schema validation on the wire.
+                  // The label and the arg are now the same number — which is the
+                  // only arrangement that cannot drift again.
+                  fx: (arg) => send(link, 'openPanelWindow', { panel: 'fxslot', arg }),
+                  surface: (panel) => send(link, 'openPanelWindow', { panel }),
+                }),
+                e.clientX,
+                e.clientY,
+              )
+            }}
+            title="every panel — FX returns, spectral, paint mode, MIDI, perf and capture"
+          >
+            ≡ panels
+          </button>
+          {/* COMPOSE IS RETIRED FROM THE BAR (P11-1, D-SL-TOPROW-01) — it is a
+              PER-STRIP verb, and the strip's own door is strictly better.
+
+              The bar's button could only ever open the FIRST grid strip,
+              because a bar has no way to say WHICH strip you meant. Every grid
+              strip already draws its own `COMPOSE ⇱`
+              (`GridElement.tsx:265`, wired through `Plane.tsx:660` to the same
+              `composeDeck` this button called). So the retired door was a less
+              capable duplicate of one that stays, and `composeDeck` itself is
+              untouched — this removes a button, not a capability. */}
+        </div>
         <Master
           link={link}
           level={masterLevel}
