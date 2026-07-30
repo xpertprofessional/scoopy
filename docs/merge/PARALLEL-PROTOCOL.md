@@ -190,15 +190,10 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | — | — | integrating |
-| B | `../scoopy-lane-b` (`lane/b`) | **P3.5-E8g-d** → **E8g-e** | `companionEngine.ts`, `gridBackend.ts`, `browserLink.ts`, `CompanionPanel.tsx`, `useComposeBinding.ts`, `sampleDoors.ts` | in-progress |
-| C | `../scoopy-lane-c` (`lane/c`) | **P11-3a** — the scene queue that never fires | `web/src/audio/nativeAudio.ts` (+ `companionEngine.ts` READ-ONLY) | in-progress |
-| D | `../scoopy-lane-d` (`lane/d`) | **P9-5a** → **P7-K0a** | `web/src/plane/Strip.tsx`, `web/src/commands/keymap.ts`, `browserKeymap.ts` | in-progress |
-
-⚠️ **`companionEngine.ts` is claimed by B and read by C this cycle.** C is told to
-stop and ask before editing it. That is the pattern for a file two rows need: one
-owner, everyone else read-only, and the conflict surfaces as a question rather
-than as a merge.
+| A | main checkout (conductor) | — | — | idle |
+| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle |
+| C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
+| D | `../scoopy-lane-d` (`lane/d`) | — | — | idle |
 
 ⚠️ **Keep this table honest or it lies to the next session.** It went stale for
 a full cycle: it still read "B · P11-1 · in-progress" after B had been pulled off
@@ -405,3 +400,72 @@ sequencing, not row dependencies.
 `SLPMethod` cases. Swift enforces exhaustiveness (no `default`), so it is a
 complete list of what the old host answered. Start there for any "who used to
 answer this?" question.
+
+---
+
+## 10. Handoff — state at 2026-07-30 end of session
+
+**Tree clean at `6694d4b` on `host-hygiene`.** typecheck green · vitest
+**1670/1670** · ctest **44/44** · **ten** drift gates green · bundle fresh.
+All four lanes idle, all four worktrees clean, nothing uncommitted anywhere.
+
+⚠️ **Not pushed.** `P3-PUSH` is a recurring row ("push after each green commit")
+and this session never pushed. Confirm the remote and the user's intent before
+pushing ~30 commits at once.
+
+### Start here
+
+1. `P3-LEDGER.md` for the queue, then **§9 above** — work by donor binding, not
+   by phase. That is the ruling that changes everything about how to proceed.
+2. **Re-measure the §2 baseline.** It is dated, and the reason it exists is that
+   two documents were stale about it.
+3. The lane worktrees are seeded and ready; `ledger-lane` is now a **registered
+   agent type**, so no hand-binding onto `general-purpose`.
+
+### The one thing that made this session productive
+
+`../scoopyloops/ScoopyLoops/*.swift` is the donor, and for most of the session
+**nobody knew it existed** — `CLAUDE.md` scoped searches in-repo only. Once lanes
+read it, three rows in a row inverted their own premise. **51 of 83 open rows are
+ports with a known file and line.** Do not let a lane re-derive what it can read.
+
+### Dispatched but NOT delivered — re-dispatch these
+
+The agent infrastructure degraded at end of session (four startup stalls plus a
+classifier outage). These were briefed and produced nothing; **the briefs were
+good and are worth reusing**:
+
+- **The scene binding port plan** (Lane C) — `docs/specs/scenes-port.md`, from
+  `WebSceneBinding.swift:119` + `BeatSequencer.swift`. This is the **first unit
+  of the binding-oriented plan** and the user picked it. It must also settle
+  whether the scene port carries `P11-3a-b` or that lands first.
+- **`P7-K4`** (Lane D) — the shortcut list door, reference `ShortcutListView.swift`
+  + `ShortcutsWindowController.swift`. ⚠️ The donor showed only live shortcuts;
+  **ours has 57 parked rows of 99** and must not present them as working.
+
+### Awaiting the user
+
+- **Real-host walks** pending on: `P3.5-E8g-h` (new-track), `P11-1` (three
+  zones), `P11-2` (CLOCK/TAP), `P11-5` (DSP readout), `P11-3a` (scene queue —
+  **test strip A**; B/C fire on A's clock until `P11-3a-b`), `P9-5c` (device
+  error), `P9-5a` (input hint).
+- **`P7-K0b`** — half-answered: the donor's `⌘S` saves the SESSION; what saves
+  the map is open.
+- **`P7-N2` vs `P7-K0`'s digit ruling** — in the donor Tab/⇧Tab are already
+  taken (⇧Tab is Compose↔DJ) and the deck-cycle chord is bare `-`. K0's ruling
+  was provisional; it needs re-ruling.
+- **Three deliberate divergences** to rule: `P9-5g` (donor stores the CoreAudio
+  `deviceUID`, not a name), `P11-4` (donor's crossfader also assigns FX returns
+  and the input, and persists **globally** — bears on the planned MAP bump),
+  `P11-3c` (donor uses one global quantum with an auto-chosen reference deck;
+  `quantize.md` replaces a shipped answer).
+
+### Landed this session
+
+The `-O0` build fix (12× on the stretcher — the multi-deck collapse), the
+performance gate, `nativemethods:check` (which caught `fxSlot` and
+`getFxSlotState` shipping unreachable), the file browser's home, the compose
+load door, the health readout's door, the keyboard audit, the overlay spec, the
+virtual-device path, a device switch that no longer costs all audio, the bar
+re-zoning, CLOCK/TAP, the scene-queue fan-out, new-track creation, and the
+ledger compaction (214 KB → 159 KB, 70 rows archived byte-identical).
