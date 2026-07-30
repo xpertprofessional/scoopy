@@ -912,3 +912,55 @@ engine-free and JUCE-free for a future WASM/companion build — does not); and `
 `CaptureFake`, which P10 names by file as its foundation. The cost accepted: `render_sink_test`
 stops proving two engines share the device seam, because there is only one engine. What is bought:
 "the door is unreachable in the real app" stops being a finding a human makes at a phase gate.
+
+## D-SL-TOPROW-01 · 2026-07-30 · The master bar is three zones, and the wizard-era file verbs leave it
+**Decision:** the plane's top row is rebuilt as **document (left) · master (centre) · output (right)**.
+`save` / `export` / `open` collapse into one `map ▾` menu; `≡ panels` leaves the bar entirely (FX 1–4
+rehome to the strip mixer at P7-MIX-0, settings goes under `map ▾`); `compose` leaves the bar as a
+per-strip verb (P7-T1 already puts OPEN in the tile's toolbar row). Signed live by the user, whose
+words were: *"the current one is old from wizard plane and includes many item we are not asking for
+in the final version."*
+**Rationale:** today four file/panel buttons sit BEFORE the master cluster, which is shoved right of a
+spacer — backwards for a performance surface. The centre zone becomes the only contiguous group a
+person touches during a set (transport · tempo · clock · quantum · BR · REV); everything else is
+before-or-after work. P3-P1's own note already called `≡ panels` "interim scaffolding, dissolving as
+the remaining jobs rehome" — this is that dissolution.
+**Consequences:** new rows P11-1…P11-6. The bar gains a clock SOURCE, a launch QUANTUM, a TAP, an
+INPUT channel, CAPTURE and a HEALTH readout — see the three decisions below for the ones with
+engine cost. `Master.tsx`'s shipped stereo meter, limiter lamp, fader, transport, BR/REV and BPM
+steppers are KEPT unchanged; this is a re-zoning plus additions, not a rewrite of what works.
+
+## D-SL-XFADER-01 · 2026-07-30 · The crossfader returns, with ASSIGNABLE sides
+**Decision:** the crossfader comes back on the top row, and its two sides are **assigned per strip**
+(a strip menu item: crossfade side A / B / neither) rather than being deck A vs deck B. Signed live.
+**Rationale:** `crossfaderEngaged` / `crossfaderPosition` are in scoopy's own `ToolbarUiState`, but
+D-SL-MORPH-01 made the plane N one-kind-each strips instead of two decks, so "the crossfader" had no
+two sides left to name. Assignment restores the instrument's signature gesture without reintroducing
+the deck-pair model the strip model deliberately retired.
+**Consequences:** needs a per-strip document field (the side) plus an assignment affordance in the
+strip menu, so it is a document change and not only a control — MAP schema bump. The engine already
+carries the crossfader; what is missing is which strips it acts on. Rows P11-4.
+
+## D-SL-HEALTH-01 · 2026-07-30 · The bar reports dropouts and CPU
+**Decision:** a health readout on the top row showing `<rate> · <block> · <cpu>%` plus a **monotonic
+dropout/xrun count since the set began**, with a colour flip once anything has dropped. Signed live.
+**Rationale:** measured 2026-07-30 — **nothing in the tree reports CPU load, xruns or dropouts**: not
+`web/protocol`, not a topic, not a field. On stage the question "is it about to glitch" currently has
+no answer at all. The count is the part that matters: a CPU percentage tells you how it feels now, a
+dropout count tells you whether it already failed while you were not looking.
+**Consequences:** a new HotFrame field for CPU load and a monotonic dropout counter — engine work,
+small. Row P11-5. Deliberately NOT bundled with P9-4's accumulated per-path latency: that number has
+its own definition problem and would delay this one.
+
+## D-SL-CAPTURE-01 · 2026-07-30 · One CAPTURE button — the main mix to the library
+**Decision:** a single **CAPTURE** verb on the top row that arms/stops a main-mix recording to the
+session library, showing elapsed time while it runs. NOT split into capture-vs-bounce. Signed live.
+**Rationale:** measured 2026-07-30 — `mainMix` exists today ONLY as a record tap for a looper strip
+(`stripOps.ts:142`, `RECORD_SOURCE.mainMix`); there is no "record the set to disk" verb anywhere,
+though scoopy's contract carries both `activeIsOutputRecording` and `activeIsBouncing`. A live
+instrument that cannot record its own output is missing the one thing that cannot be redone
+afterwards. Bounce is deliberately excluded: it needs an OFFLINE render path this engine has no row
+for, and pairing them would block the verb people actually need behind the one they do not.
+**Consequences:** row P11-6. Lands beside the takes a looper already writes, through the same
+recorder — the take machinery exists (P3-F3's stereo-bus fix applies directly), what is missing is a
+main-mix source and a door. `activeIsBouncing` stays unimplemented and is recorded as such.
