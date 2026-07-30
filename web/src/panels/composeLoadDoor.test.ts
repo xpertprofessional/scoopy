@@ -22,7 +22,13 @@
  *
  * No jsdom (the P6-2b house rule).
  */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 // ── the fake host ──────────────────────────────────────────────────────────
 
@@ -132,7 +138,8 @@ vi.stubGlobal(
 const { setNativeFilesLinkForTest } = await import("../store/nativeFiles.ts");
 const { BrowserLink } = await import("../browserLink.ts");
 const { registerSampleDoors } = await import("./sampleDoors.ts");
-const { useCompanion, idleDeck } = await import("../store/companionEngine.ts");
+const { useCompanion, idleDeck, gridRuntimeInfos } = await import("../store/companionEngine.ts");
+const { GridRuntimeState } = await import("../../protocol/schema.ts");
 
 /** The shell's `slFiles` dispatch, in memory. */
 const nativeLink = {
@@ -281,6 +288,148 @@ describe("P3.5-E8g · the picker is the shape this host has actually delivered t
     await settle();
     expect(useCompanion.getState().error, "cancelling is a choice, not a failure").toBeNull();
     expect(useCompanion.getState().notice, "and it leaves no stale progress line").toBeNull();
+  });
+});
+
+/**
+ * P3.5-E8g-a — THE ROW REPAINTS, WITHOUT A SUBSCRIPTION THE DOOR DOES NOT OWN.
+ *
+ * The user's E8g walk reached `<name> → track N` — the line `loadSample` sets
+ * at companionEngine.ts:674, AFTER the document write — with the track row
+ * still empty. So the load worked and the repaint did not.
+ *
+ * ⚠️ WHAT THESE PIN, EXACTLY. There is no jsdom here (the P6-2b house rule) and
+ * no React renderer in this project's devDependencies, so **nothing below can
+ * see a pixel**. What they see is the topic push the panel repaints FROM: a
+ * `gridRuntime/<i>` carrying the sample's name and key is the last thing this
+ * side of the wire can observe, and `GridPanel`'s subscription
+ * (GridPanel.tsx:779) turns it into `tracksRef` + `bump` with no further
+ * decision. "The row shows the sample" stays a REAL-HOST WALK claim, and the
+ * gate line says so.
+ *
+ * THE HARNESS DELIBERATELY DOES NOT SIMULATE THE RELOAD EFFECT. Measured
+ * 2026-07-30: with `useComposeBinding`'s session-keyed reload effect simulated,
+ * the store→backend chain is correct end to end — `gridRuntime/0` receives
+ * `name: "kick"`. So faking that effect here would have pinned a chain that was
+ * never broken and stayed green through the user's defect. Not simulating it is
+ * the honest reproduction of the state the walk found: the document written,
+ * and nothing that reads it having been told. What is pinned is that the DOOR
+ * no longer depends on that effect — the same shape `toggleLaunch` and
+ * `toggleSolo` have always had (CompanionPanel:66/71, useComposeBinding:36/40).
+ */
+describe("P3.5-E8g-a · the grid is TOLD, by the door, that a sample landed", () => {
+  /** Every `gridRuntime/<i>` push, parsed — what the panel would repaint from. */
+  function watchRuntime(i: number) {
+    const seen: { name: string; sampleKey: string | null }[] = [];
+    link.onUiState(`gridRuntime/${i}`, (raw) => {
+      const parsed = GridRuntimeState.safeParse(raw);
+      // A payload the panel would reject is not a repaint — count only what it
+      // would actually adopt (GridPanel.tsx:781 drops a failed parse).
+      if (parsed.success) seen.push({ name: parsed.data.name, sampleKey: parsed.data.sampleKey });
+    });
+    return seen;
+  }
+
+  /** The grid as it stands after a session opens: rows loaded, no sample yet. */
+  function gridAtOpen() {
+    const s = deckSession()!;
+    link.gridBackend.load(s.pattern as unknown as Record<string, unknown>, gridRuntimeInfos(DECK));
+  }
+
+  it("LOAD: the picked sample reaches the row's runtime topic", async () => {
+    gridAtOpen();
+    const seen = watchRuntime(0);
+    registerSampleDoors(link, DECK, "compose");
+    seen.length = 0; // only what the DOOR caused
+
+    await link.command("trackEdit", { op: "loadSample", trackIndex: 0 });
+    await settle();
+
+    expect(
+      seen.at(-1),
+      "the row the document now names must reach the topic the grid repaints from",
+    ).toEqual({ name: "kick", sampleKey: "/samples/Imported/kick.wav" });
+  });
+
+  it("FILES double-click: the same door, the same push", async () => {
+    // The conductor's contrast, pinned rather than argued: the library-path
+    // handler and the LOAD button land through ONE `loadSample`, so a repaint
+    // that only the picker triggers would be the E8a defect again — two callers
+    // of one gesture and only one of them wired.
+    disk.set("/samples/Imported/kick.wav", "");
+    await useCompanion.getState().loadSample(0, "/samples/Imported/kick.wav", DECK);
+    gridAtOpen();
+    const seen = watchRuntime(0);
+    registerSampleDoors(link, DECK, "compose");
+    seen.length = 0;
+
+    await link.command("fileBrowser", { op: "load", trackIndex: 0, path: "/samples/Imported/kick.wav" });
+    await settle();
+
+    expect(seen.at(-1)?.sampleKey, "a double-clicked library row must repaint too").toBe(
+      "/samples/Imported/kick.wav",
+    );
+  });
+
+  it("the peak paths move with it — a named row with no waveform is the same report, smaller", async () => {
+    // `getSamplePeaks` resolves the row's file through the scoped peak-path map
+    // (browserLink.ts:246), written ONLY by the reload effect until now. A
+    // runtime push naming a sample that map has never heard of draws a row with
+    // a name and no waveform.
+    gridAtOpen();
+    registerSampleDoors(link, DECK, "compose");
+    await link.command("trackEdit", { op: "loadSample", trackIndex: 0 });
+    await settle();
+
+    const peaks = (await link.command("getSamplePeaks", { trackIndex: 0, points: 64 })) as {
+      sampleKey: string | null;
+      minMax: number[];
+    };
+    expect(peaks.sampleKey).toBe("/samples/Imported/kick.wav");
+    expect(peaks.minMax.length, "an empty envelope is a row that draws nothing").toBeGreaterThan(0);
+  });
+
+  /**
+   * ⚠️ BOTH COMPOSE SURFACES, OR IT IS SHIPPED BROKEN IN ONE. The separate
+   * compose WINDOW and the in-window `Composer` overlay share the FILES drawer
+   * for exactly this reason (P3.5-E8b), and E8a's root cause was three
+   * hand-written copies of a registration with a fourth surface quietly missing
+   * it. The repaint above lives in `registerSampleDoors`, whose only compose
+   * caller is `useComposeBinding` — so what has to hold is that neither surface
+   * grows its own binding. Source-level, because there is no jsdom to mount
+   * them in.
+   */
+  it.each([["ComposeWindow.tsx"], ["Composer.tsx"]])(
+    "%s takes its doors from the SHARED binding, not a copy",
+    (file) => {
+      const src = readFileSync(resolve(here, "../plane", file), "utf8");
+      expect(src).toContain("useComposeBinding(link, deck)");
+      expect(src, "a surface registering its own doors is the E8a defect").not.toContain(
+        "registerSampleDoors",
+      );
+    },
+  );
+
+  it("…and that binding is the one place compose registers them", () => {
+    const src = readFileSync(resolve(here, "../plane/useComposeBinding.ts"), "utf8");
+    expect(src).toContain("registerSampleDoors(browserLink, deck, 'compose')");
+  });
+
+  it("a load with NO session open does not wipe the names off the grid", async () => {
+    // `gridRuntimeInfos` answers `[]` with no session, and `updateRuntime([])`
+    // would republish every row under `runtimeState`'s `Track i+1` fallback —
+    // a repaint fix that blanks the grid is worse than the defect.
+    gridAtOpen();
+    const seen = watchRuntime(0);
+    registerSampleDoors(link, DECK, "compose");
+    useCompanion.setState({ decks: Array.from({ length: 8 }, idleDeck) });
+    seen.length = 0;
+
+    await link.command("trackEdit", { op: "loadSample", trackIndex: 0 });
+    await settle();
+
+    expect(useCompanion.getState().error, "and it still says why").toContain("open (or create)");
+    expect(seen, "nothing may be republished over a grid this store cannot describe").toEqual([]);
   });
 });
 

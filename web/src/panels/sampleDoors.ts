@@ -17,7 +17,12 @@
  * is the only shape where a new surface cannot quietly ship without doors.
  */
 import { BrowserLink } from "../browserLink.ts";
-import { importAudioFile, useCompanion } from "../store/companionEngine.ts";
+import {
+  gridPeakPaths,
+  gridRuntimeInfos,
+  importAudioFile,
+  useCompanion,
+} from "../store/companionEngine.ts";
 
 /**
  * One audio file, by user gesture — a plain file input, in every engine.
@@ -73,6 +78,61 @@ export function pickAudioFile(): Promise<File | null> {
 }
 
 /**
+ * P3.5-E8g-a — TELL THE GRID THE SAMPLE LANDED.
+ *
+ * The user's E8g walk: the header reached `<name> → track N` (companionEngine
+ * :674, set AFTER the document write) and the row stayed empty. So the load
+ * worked and the REPAINT did not — and this is the hole it fell through.
+ *
+ * A sample landing on a track is a RUNTIME change, not a pattern one: nothing
+ * about the sample is on the pattern wire (`toGridPattern` carries no sample
+ * field at all; `name` / `sampleKey` / `sampleDurationMs` are `toGridRuntime`'s,
+ * gridProjection.ts:353). Every other door that moves the runtime half
+ * republishes the backend RIGHT THERE, from its own handler —
+ *
+ *   toggleLaunch  → `updateRuntime` (CompanionPanel:66, useComposeBinding:36,
+ *                   deckTile:89)
+ *   toggleSolo    → `updateRuntime` (CompanionPanel:71, useComposeBinding:40,
+ *                   deckTile:93)
+ *   setActiveCellParameter → `grid.setActiveCellParameter` (browserLink:362)
+ *
+ * — and the SAMPLE doors republished nothing. Their repaint was delegated
+ * entirely to a React effect in another component (`useComposeBinding:53`,
+ * `CompanionPanel:76`) that reloads the whole grid when the session OBJECT's
+ * identity changes. That effect is three layers from the store, it is the only
+ * path a loaded sample had to the screen, and when it does not fire the door is
+ * indistinguishable from the defect E8g was opened for: the document changed
+ * and the only evidence a person has that it changed did not.
+ *
+ * Measured 2026-07-30 (composeLoadDoor.test.ts): the store→backend chain is
+ * correct end to end — with the reload effect simulated, `gridRuntime/<i>`
+ * receives the sample's name and key. So the fix is not to repair that chain
+ * but to stop the repaint DEPENDING on a subscription the door does not own.
+ * This is the shape the launch/solo doors have always had, and neither has ever
+ * been reported dead.
+ *
+ * ONE call site for every surface, deliberately: the compose WINDOW and the
+ * in-window `Composer` share this module precisely so a repaint fixed in one
+ * cannot ship missing from the other (P3.5-E8b), and the companion and the deck
+ * tiles inherit it for free.
+ */
+function republishRow(link: BrowserLink, deck: number, scope: "deck" | "compose"): void {
+  const infos = gridRuntimeInfos(deck);
+  // No session ⇒ nothing to repaint. Guarded rather than assumed: `updateRuntime([])`
+  // would republish every row under `runtimeState`'s `Track i+1` fallback and
+  // wipe the names off a grid that is still showing a document.
+  if (!infos.length) return;
+  const at = scope === "deck" ? deck : undefined;
+  // PEAK PATHS FIRST. `getSamplePeaks` resolves a row's file through this map
+  // (browserLink:246), and it is written only by the reload effect — so a
+  // runtime push naming a sample the map has never heard of draws a NAMED row
+  // with no waveform, which is the same report one layer smaller.
+  link.setGridPeakPaths(gridPeakPaths(deck), at);
+  const backend = scope === "deck" ? link.djGridBackend(deck) : link.gridBackend;
+  backend.updateRuntime(infos);
+}
+
+/**
  * Register both sample doors for one surface.
  *
  * `deck` is whose DOCUMENT the sample lands in. `scope` is which handler slot
@@ -92,6 +152,7 @@ export function registerSampleDoors(
   // A library path (double-clicked in FILES, or a row dropped on a track).
   link.setSampleLoadHandler(async (trackIndex, path) => {
     await useCompanion.getState().loadSample(trackIndex, path, deck);
+    republishRow(link, deck, scope);
   }, at);
 
   // The LOAD button: pick → import into the library → assign to the row. The
@@ -124,6 +185,9 @@ export function registerSampleDoors(
       // `loadSample` owns the last word: it sets `<name> → track N` on success
       // and `sample load failed: …` on a decode or document failure.
       await useCompanion.getState().loadSample(trackIndex, path, deck);
+      // P3.5-E8g-a — the row, on screen, without waiting for a reload effect
+      // this handler does not own. See `republishRow`.
+      republishRow(link, deck, scope);
       void link.command("fileBrowser", { op: "refresh" });
     } catch (err) {
       // The store's error line is the one surface every host renders — a door
