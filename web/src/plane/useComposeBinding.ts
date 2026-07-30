@@ -13,6 +13,7 @@ import { registerSampleDoors } from '../panels/sampleDoors.ts'
 import { projectScene } from '../audio/sceneProjection.ts'
 import {
   applyGridRow,
+  gridDocument,
   gridPeakPaths,
   gridRuntimeInfos,
   toggleLocatorRepeatTrack,
@@ -39,7 +40,13 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
       useCompanion.getState().toggleSoloTrack(trackIndex, deck)
       browserLink.gridBackend.updateRuntime(gridRuntimeInfos(deck))
     })
-    browserLink.setLocatorRepeatHandler((trackIndex) => toggleLocatorRepeatTrack(trackIndex, deck))
+    // ↻ locator repeat — the PATTERN-wire member of this family (P3.5-E8g-d). The two
+    // above push `updateRuntime`; `locatorRepeatActive` is not on the runtime wire at
+    // all, so this one republishes the row's document topic instead.
+    browserLink.setLocatorRepeatHandler((trackIndex) => {
+      toggleLocatorRepeatTrack(trackIndex, deck)
+      browserLink.gridBackend.updatePatternRow(trackIndex, gridDocument(deck))
+    })
     // P3.5-E8a — THE DOORS THIS BINDING NEVER REGISTERED. `GridPanel` draws a
     // LOAD button on every audio row and takes a browser row dropped on it, but
     // both are intents `BrowserLink` forwards to a handler; with none

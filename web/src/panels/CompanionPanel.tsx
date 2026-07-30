@@ -27,6 +27,7 @@ import {
   applyGridRow,
   gridRuntimeInfos,
   gridPeakPaths,
+  gridDocument,
   toggleLocatorRepeatTrack,
 } from "../store/companionEngine.ts";
 import { isSessionFile } from "../store/sessionStore.ts";
@@ -70,8 +71,13 @@ export function CompanionPanel({ link }: { link: EngineLink | null }) {
       useCompanion.getState().toggleSoloTrack(trackIndex);
       browserLink.gridBackend.updateRuntime(gridRuntimeInfos());
     });
-    // ↻ locator repeat: a scene-aware document flip (the grid repaints via the session reload).
-    browserLink?.setLocatorRepeatHandler(toggleLocatorRepeatTrack);
+    // ↻ locator repeat: a scene-aware document flip. Unlike ▶/■ and S above this lands on the
+    // PATTERN wire, so it republishes the row's `gridPattern/<i>` — `updateRuntime` carries no
+    // `locatorRepeatActive` and would repaint the row without moving the lamp (P3.5-E8g-d).
+    browserLink?.setLocatorRepeatHandler((trackIndex) => {
+      toggleLocatorRepeatTrack(trackIndex);
+      browserLink.gridBackend.updatePatternRow(trackIndex, gridDocument());
+    });
   }, [browserLink]);
   useEffect(() => {
     if (!browserLink) return;

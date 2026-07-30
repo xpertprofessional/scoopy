@@ -35,6 +35,7 @@ import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 import type { WorkingSession } from '../store/sessionStore.ts'
 import {
   applyGridRow,
+  gridDocument,
   gridPeakPaths,
   gridRuntimeInfos,
   toggleLocatorRepeatTrack,
@@ -92,10 +93,12 @@ export function useDeckTileBinding(
       useCompanion.getState().toggleSoloTrack(trackIndex, deck)
       browserLink.djGridBackend(deck).updateRuntime(gridRuntimeInfos(deck))
     }, deck)
-    browserLink.setLocatorRepeatHandler(
-      (trackIndex) => toggleLocatorRepeatTrack(trackIndex, deck),
-      deck,
-    )
+    // ↻ locator repeat — pattern wire, not runtime (P3.5-E8g-d), so it republishes
+    // THIS tile's `djPattern/<deck>/<i>` rather than pushing runtime infos.
+    browserLink.setLocatorRepeatHandler((trackIndex) => {
+      toggleLocatorRepeatTrack(trackIndex, deck)
+      browserLink.djGridBackend(deck).updatePatternRow(trackIndex, gridDocument(deck))
+    }, deck)
     // Both sample doors, deck-scoped — the tile addresses the grid WITH a deck,
     // so its LOAD lands in ITS document (P3.5-E8a shares the registration with
     // the compose window, which had none at all).

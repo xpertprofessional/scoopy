@@ -166,6 +166,38 @@ export class GridBackend {
     );
   }
 
+  /**
+   * P3.5-E8g-d — ONE TRACK'S **DOCUMENT** ROW CHANGED, UNDER THE SAME SESSION.
+   *
+   * The pattern-wire sibling of `updateRuntime`, and it had no equivalent: the
+   * only way a document edit made OUTSIDE this backend could reach the panel was
+   * `load()`, i.e. the binding's session-keyed reload effect. That is the exact
+   * dependency P3.5-E8g-a removed from the sample doors — except a sample lands
+   * on the RUNTIME wire, so `updateRuntime` sufficed there. `locatorRepeatActive`
+   * is a `toGridPattern` field (gridProjection.ts:181) and appears **nowhere** in
+   * `toGridRuntime`, so a runtime push cannot repaint it. Hence this.
+   *
+   * Takes the whole (scene-projected) document rather than a `DocRow`, because
+   * `docRows` is the one place that knows a row is `sectionA[i]` PAIRED WITH
+   * `baseSettings.trackSettings[i]` — a caller assembling that pair by hand is
+   * the drift `docRows` exists to prevent.
+   *
+   * ⚠️ IT DELIBERATELY DOES NOT RESET THE CURSOR. `load()` sets `selected = 0`
+   * and clears the armed lanes, which is right for a NEW document and wrong for
+   * an edit to the open one — a repaint that moves the user's selection is its
+   * own defect (P3.5-E8g-e). Republishing one topic is also why an edit on track
+   * 3 cannot disturb a drag in flight on track 5.
+   */
+  updatePatternRow(trackIndex: number, pattern: Record<string, unknown>): void {
+    const row = docRows(pattern)[trackIndex];
+    // No such track (no session, or an index past the document) ⇒ nothing to
+    // repaint. Guarded rather than assumed: publishing `toGridPattern` of an
+    // absent row would push a default pattern over a real one.
+    if (!row) return;
+    this.rows[trackIndex] = row;
+    this.publish(`${this.topics.patternPrefix}${trackIndex}`, this.pattern(trackIndex));
+  }
+
   /** No session open — an empty grid rather than a stale one. */
   clear(): void {
     this.rows = [];

@@ -1138,7 +1138,36 @@ export function toggleLocatorRepeatTrack(trackIndex: number, deck = 0): void {
   useCompanion.setState((s) => patchDeck(s, deck, { session: nextSession }));
   publish(useCompanion.getState(), deck, d.playing);
   autosaver.schedule(nextSession); // a real document edit, unlike launch/solo
-  // The grid repaints via the panel's session-keyed reload effect.
+  // ⚠️ THE REPAINT IS THE CALLER'S (P3.5-E8g-d). This used to read "the grid repaints
+  // via the panel's session-keyed reload effect" — the same indirect path the sample
+  // doors had, and E8g-a is the row about what that costs: a door whose only route to
+  // the screen is an effect in another component is indistinguishable from a dead
+  // button whenever that effect does not fire. The store cannot push it itself (it
+  // holds no link), so every registration site follows this with
+  // `gridBackend.updatePatternRow(i, gridDocument(deck))` — the PATTERN-wire twin of
+  // the `updateRuntime` launch and solo already do. Not `updateRuntime`, which is what
+  // the row proposed: `locatorRepeatActive` is a `toGridPattern` field
+  // (gridProjection.ts:181) and is absent from `toGridRuntime` entirely, so a runtime
+  // push would repaint everything about the row EXCEPT the lamp that was clicked.
+}
+
+/**
+ * The DOCUMENT the grid backend is currently showing: the ACTIVE SCENE's projection —
+ * byte-for-byte what the bindings' reload effect feeds `GridBackend.load`
+ * (CompanionPanel.tsx:80, useComposeBinding.ts:63, deckTile.tsx:113).
+ *
+ * Exported for P3.5-E8g-d so a door that edits the document can refresh the backend's
+ * copy from its OWN handler instead of waiting for that effect. It must stay the scene
+ * projection and never raw `session.pattern`: the grid shows and edits the ACTIVE
+ * scene, so pushing sectionA while scene C is live would repaint the row with a
+ * pattern the engine is not playing.
+ */
+export function gridDocument(deck = 0): Record<string, unknown> {
+  const d = deckOf(useCompanion.getState(), deck);
+  // No session ⇒ an empty document, so `docRows` finds no row and the republish is a
+  // no-op. Same guard shape as `gridRuntimeInfos`/`gridPeakPaths`.
+  if (!d.session) return {};
+  return projectScene(d.session.pattern, d.scene) as unknown as Record<string, unknown>;
 }
 
 /** Per-track runtime info the grid needs — name + the decoded sample's duration/peak. */
