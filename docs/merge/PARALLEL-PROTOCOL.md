@@ -127,6 +127,15 @@ collects them and posts "awaiting sign-off on: …" per §11.4.
 - **P11-1's FX 1–4** wait on P7-MIX-0, so until then they need a named interim
   home "or the row is a REGRESSION in reachability." Naming it is a conductor
   call.
+- **P11-1 SHIPS SCOPED, and `≡ panels` stays.** Same reasoning as the FX 1–4
+  ruling, and Lane B found the wider case: `≡ panels` is the **only** door to all
+  five `PANEL_MENU_SURFACES` — spectral · paintmode · midi · perf · capture —
+  because `openPanelWindow` has exactly four call sites, all in `PlanePanel.tsx`.
+  D-SL-TOPROW-01 names a new home only for *settings*. Retiring the button as the
+  row is written orphans five surfaces, which is rule four. So P11-1 builds the
+  re-zoning — the whole substance of the decision — and defers only the one
+  retirement that has nowhere to go. `compose` may still leave the bar: every
+  grid strip already draws `COMPOSE ⇱`, so it orphans nothing (P11-1-b).
 - **P6-6c must carry its own live block-size source.** The ledger allows it to
   either follow P9-3(c) or do this; P9-3 is phases away, so the answer is fixed
   now and goes in Lane A's brief.
@@ -174,20 +183,33 @@ dispatch is refused.
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
 | A | main checkout (conductor) | **P3.5-E10a** — re-measure P6's latency on Release | `slengine/`, `shell/tools/` | next |
-| B | `../scoopy-lane-b` (`lane/b`) | **P11-1** — the three zones + wizard-era retirements | `web/src/plane/Master.tsx`, `PlanePanel.tsx`, `plane.css`, `design/HealthReadout.tsx` | in-progress |
-| C | `../scoopy-lane-c` (`lane/c`) | **P9-5** — the interim other-app-audio path | `docs/` only (spec row) | in-progress |
+| B | `../scoopy-lane-b` (`lane/b`) | **P11-1 (SCOPED)** — three zones, `map ▾`, retire `compose`, rehome `HealthReadout`; `≡ panels` STAYS | `web/src/plane/Master.tsx`, `PlanePanel.tsx`, `plane.css`, `design/HealthReadout.tsx` | dispatched |
+| C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
 
-**Integrated so far:** P3.5-E10 · P3.5-E10b (conductor) · P3.5-E8b · P11-5
-(Lane B) · P7-K0 · P8-1 (Lane C). **Thirty-one follow-up rows** written from
-those six handoffs.
+⚠️ **Keep this table honest or it lies to the next session.** It went stale for
+a full cycle: it still read "B · P11-1 · in-progress" after B had been pulled off
+P11-1 and onto E8g, while the Queued line below omitted P11-1 entirely and
+Integrated listed neither E8g nor E8g-c. **Lane B caught it, not the conductor.**
+Update this table at every dispatch and every integration, not at the end of a
+cycle.
 
-**Queued:** A: E10a → P6-6a/b/c → P6-AUDIT → P3.5-E4. B: P11-2 → P11-3 → P11-6
-→ P11-4 (last — the only MAP schema bump). C: P11-AUDIT.
+**Integrated, 2026-07-30:** P3.5-E10 · P3.5-E10b · P9-5b · the quantize spec
+(conductor) · P3.5-E8b · P11-5 · P3.5-E8g · P3.5-E8g-c (Lane B) · P7-K0 ·
+P8-1 · P9-5 (Lane C). Plus P3.5-E8f and P3.5-E9b **resolved by the user's walk**.
+**Forty-odd follow-up rows** written from those handoffs.
 
-**Not dispatchable, collected for the user:** P3.5-E8f (ONE walk answers both
-E7 and E8b — `<input webkitdirectory>` in WKWebView) · P3.5-E9b (diagnostic) ·
-P7-K0b (`⌘S` ambiguity — a decision) · P11-5's real-host reachability · the
-walks pending on E7/E8a/E9a · every `*-G1` gate.
+**Queued:** A: E10a → P11-3a → P6-6a/b/c → P6-AUDIT → P3.5-E4.
+B: P11-2 → P11-3c → P11-6 → P11-4 (last — the only MAP schema bump).
+C: P11-AUDIT → P8-1's downstream specs.
+
+**Not dispatchable, waiting on the user:**
+- **P3.5-E8g's walk** — the compose header line now names the seam; it decides
+  whether E8g-a is a C++ row or a decode row (E8g-b).
+- **P11-1-a** — where spectral · paintmode · midi · perf · capture live once
+  `≡ panels` retires. They have no other door.
+- **P7-K0b** — what `⌘S` saves on the plane.
+- P11-5's real-host reachability · the walks pending on E7/E8a/E9a · every
+  `*-G1` gate.
 
 ### Conductor rulings, so they are not re-litigated
 
