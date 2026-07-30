@@ -99,21 +99,54 @@ juce::String AudioIO::setDevices(const juce::String& inName, const juce::String&
                                  double sampleRate) {
     if (sampleRate <= 0.0) return "invalid sample rate";
     if (!initialised) return open(sampleRate); // nothing open yet
+
+    // P9-5b: EVERY failure below must put the app back where it was.
+    //
+    // This function detaches first, and each early return used to leave it
+    // detached — so a switch to a device that cannot run `sampleRate` left the
+    // app with NO render callback at all. Not the previous device: nothing.
+    // Silence, with no other trigger to restore it, recoverable only by
+    // relaunching. And the reason for the failure is still only a return value
+    // (P9-5c/P9-5d cover getting it onto a screen), so what a person actually
+    // experienced was an app that went quiet for good when they touched a picker.
+    //
+    // A refusal must cost you the CHANGE, never the audio you already had.
+    const auto previous     = deviceManager.getAudioDeviceSetup();
+    const double previousRate = openedRate;
+
+    // Puts the previous device back and restarts the callback. Reports whether
+    // it managed it, because "your switch failed" and "your switch failed and
+    // the old device did not come back" are different things to tell someone,
+    // and attaching to a device running at a rate the engine is not configured
+    // for is the one thing worse than staying silent (see open()'s refusal).
+    const auto restorePrevious = [&]() -> bool {
+        if (deviceManager.setAudioDeviceSetup(previous, true).isNotEmpty()) return false;
+        auto* prev = deviceManager.getCurrentAudioDevice();
+        if (prev == nullptr) return false;
+        if (std::abs(prev->getCurrentSampleRate() - previousRate) > 0.5) return false;
+        openedRate = previousRate;
+        attach();
+        return true;
+    };
+    const auto fail = [&](const juce::String& why) {
+        return restorePrevious() ? why : why + " (and the previous device did not come back)";
+    };
+
     detach();
-    auto setup = deviceManager.getAudioDeviceSetup();
+    auto setup = previous;
     if (inName.isNotEmpty()) setup.inputDeviceName = inName;
     if (outName.isNotEmpty()) setup.outputDeviceName = outName;
     setup.sampleRate = sampleRate;
     setup.useDefaultInputChannels = true;
     setup.useDefaultOutputChannels = true;
     const auto err = deviceManager.setAudioDeviceSetup(setup, true);
-    if (err.isNotEmpty()) return err;
+    if (err.isNotEmpty()) return fail(err);
     auto* device = deviceManager.getCurrentAudioDevice();
-    if (device == nullptr) return "no audio device";
+    if (device == nullptr) return fail("no audio device");
     if (std::abs(device->getCurrentSampleRate() - sampleRate) > 0.5)
-        return "device does not support " + juce::String(sampleRate, 0) + " Hz";
+        return fail("device does not support " + juce::String(sampleRate, 0) + " Hz");
     if (!sink.setSampleRate(sampleRate))
-        return "engine could not run at " + juce::String(sampleRate, 0) + " Hz";
+        return fail("engine could not run at " + juce::String(sampleRate, 0) + " Hz");
     openedRate = sampleRate;
     attach();
     return {};
