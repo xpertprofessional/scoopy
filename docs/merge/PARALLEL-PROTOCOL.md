@@ -182,9 +182,15 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | **P11-3a** — the scene queue that never fires in the real host | `web/src/audio/nativeAudio.ts` | next |
-| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle |
+| A | main checkout (conductor) | — | — | idle |
+| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle, holding |
 | C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
+
+⚠️ **`web/src/panels/sampleDoors.ts` is contested territory** — E8a created it,
+E8b and E8g extended it, E8g-a republishes from it. It is the one module both
+compose surfaces share their sample doors through, which is deliberate (the
+alternative is the E8a defect by construction). Any row touching a compose
+sample door claims it.
 
 ⚠️ **Keep this table honest or it lies to the next session.** It went stale for
 a full cycle: it still read "B · P11-1 · in-progress" after B had been pulled off
