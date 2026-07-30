@@ -5,8 +5,9 @@
 // restart. This is it — a JSON object on disk, mirroring scoopy's UserDefaults
 // role (its settings ARE JSON-shaped values).
 //
-// Extracted from the window so the persistence is testable without a GUI (the
-// SessionStore precedent). Writes atomically: a settings file half-written by a
+// Extracted from the window so the persistence is testable without a GUI —
+// following wizard's `SessionStore`, which H2b retired once this store had
+// inherited its discipline. Writes atomically: a settings file half-written by a
 // crash mid-save must leave the PREVIOUS settings intact, not an empty or
 // truncated file — losing every preference to one bad save is worse than the
 // save failing.

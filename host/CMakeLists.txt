@@ -81,31 +81,22 @@ add_executable(sl_take_drain_test tools/sl_take_drain_test.cpp)
 target_link_libraries(sl_take_drain_test PRIVATE wz_record wz_sl_engine)
 add_test(NAME sl_take_drain_test COMMAND sl_take_drain_test)
 
-# Session file persistence (P7-06). Extracted from the shell so the ATOMICITY of
-# the write is testable headlessly — a half-written session is the one failure
-# that would make autosave worse than not having it.
-add_library(wz_session STATIC src/SessionStore.cpp)
-target_include_directories(wz_session PUBLIC src)
-target_link_libraries(wz_session
-    PUBLIC juce::juce_core
-    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
-
-add_executable(session_store_test tools/session_store_test.cpp)
-target_link_libraries(session_store_test PRIVATE wz_session)
-add_test(NAME session_store_test COMMAND session_store_test)
-
-# `.wizard` package (P7-04): STORED zip of session.json + Takes/. Separate from
-# wz_session because the package is what a user SHARES, while the autosave is
-# what saves them — different lifetimes, different failure modes.
-add_library(wz_package STATIC src/PackageStore.cpp)
-target_include_directories(wz_package PUBLIC src)
-target_link_libraries(wz_package
-    PUBLIC juce::juce_core
-    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
-
-add_executable(package_store_test tools/package_store_test.cpp)
-target_link_libraries(package_store_test PRIVATE wz_package)
-add_test(NAME package_store_test COMMAND package_store_test)
+# `wz_session` and `wz_package` are GONE (H2b, D-SL-ONEHOST-01) — the last two
+# wizard-only host services, reachable only from the shell H1 deleted.
+#
+#   SessionStore  wizard's autosave (P7-06). The merged host persists through
+#                 `FileSettingsStore` (shell/src/SlSettingsStore.h), which took
+#                 this file's atomic-write discipline as its stated precedent —
+#                 that is where the lesson lives on, not here.
+#   PackageStore  the `.wizard` package (P7-04): a STORED zip of session.json +
+#                 Takes/. The merged host's shareable document is `.scoopyMap`,
+#                 which carries strips, routing and per-return plugin state
+#                 (P6-5b) — a different document, not a renamed one. Checked
+#                 against the queue before deleting: no row wants a bundled
+#                 audio export, and P8-6's round-trip gate is `.scoopyMap`'s.
+#
+# Their ATOMICITY tests went with them. `sl_settings_store_test` covers the same
+# half-written-file failure on the store that ships.
 
 # The device callback's arithmetic (chunking, offsetting, ceilings), plus the
 # real SlRenderSink driving the D-WZ-RATE-01 stop→set→start rebuild. It used to
