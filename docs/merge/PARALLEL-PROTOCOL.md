@@ -173,15 +173,30 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | **P6-6a** — the `hostSendFeed` one-block seam | `slengine/src/sl_engine.cpp`, `slengine/include/sl_engine.h`, `shell/src/SlDispatch.cpp` | in-progress |
-| B | `../scoopy-lane-b` (`lane/b`) | **P3.5-E8b** — the file browser has no home | `web/src/plane/ComposeWindow.tsx`, `web/src/plane/Composer.tsx`, `web/src/panels/FileBrowserPanel.tsx`, `web/src/store/fileBrowserBackend.ts` | in-progress |
-| C | `../scoopy-lane-c` (`lane/c`) | **P7-K0** — the NAV-SHORTCUTS audit | `docs/merge/NAV-SHORTCUTS.md` only (spec row, no source) | in-progress |
+| A | main checkout (conductor) | **P3.5-E10b** — the performance gate | `shell/tools/plane_audio_test.cpp`, `shell/CMakeLists.txt` | in-progress |
+| B | `../scoopy-lane-b` (`lane/b`) | **P11-5** — the health readout gets a door | `web/src/design/CpuMeter.tsx`, `web/src/panels/DeckMixerPanel.tsx`, `web/src/plane/PlanePanel.tsx`, `web/src/plane/Master.tsx` | in-progress |
+| C | `../scoopy-lane-c` (`lane/c`) | **P8-1** — the MAP-SCHEMA amendment | `docs/merge/MAP-SCHEMA.md` (spec row, no source) | in-progress |
 
-Three disjoint territories: C++ engine · compose-window web surface · docs.
+**Delivered and integrated so far:** P3.5-E10 (conductor) · P3.5-E8b (Lane B) ·
+P7-K0 (Lane C). Thirteen follow-up rows written from their handoffs.
 
-**Queued behind each lane** — B: P11-1 → P11-2 → P11-3 → P11-5 → P11-6 → P11-4
-(P11-4 last; it is the only one needing a MAP schema bump). C: P8-1 → P9-5 →
-P11-AUDIT. A: P6-6b → P6-6c → P6-AUDIT → P3.5-E4.
+**Queued:** A: E10a → P6-6a/b/c → P6-AUDIT → P3.5-E4. B: P11-1 → P11-2 → P11-3
+→ P11-6 → P11-4 (P11-4 last, the only MAP schema bump). C: P9-5 → P11-AUDIT.
 
-**Not dispatchable, collected for the user:** P3.5-E9b (user-gated diagnostic),
-the real-host walks still pending on P3.5-E7 / E8a / E9a, and every `*-G1` gate.
+**Not dispatchable, collected for the user:** P3.5-E9b (diagnostic), P3.5-E8f
+(ONE walk answers both E7 and E8b — `<input webkitdirectory>` in WKWebView),
+P7-K0b (`⌘S` ambiguity — a decision, not a build), the real-host walks pending
+on E7/E8a/E9a/E8b, and every `*-G1` gate.
+
+## 7. Two lessons from the first cycle
+
+**Integrate a lane's row BEFORE dispatching its next one.** Lane B was given
+P11-5 while E8b was still uncommitted upstream, so E8b had to be cherry-picked
+out from under in-flight work instead of merged cleanly. Cheap this time; it
+will not always be.
+
+**Reset an idle lane to `host-hygiene` once its row is integrated** (`git reset
+--hard host-hygiene`), rather than merging. The lane's commit is already
+upstream; merging re-applies the same patch from two directions and eventually
+conflicts. Only ever do this while the lane is idle — it discards uncommitted
+work.
