@@ -287,3 +287,63 @@ returned one row may still be finishing follow-up work, and the conductor cannot
 see its working tree. Moving the reset into the lane removes the race entirely,
 because the only process that resets the branch is the one that knows whether it
 is done.
+
+---
+
+## 8. Resuming this in a fresh session
+
+**Lane agents do not survive a restart** — their conversations live in the
+session that spawned them. That is fine, and the contract is built for it: every
+lane returns its handoff as *text*, the conductor writes it into `P3-LEDGER.md`,
+and the reasoning goes into the commit message. **Nothing load-bearing is ever
+left in an agent's head.** A cold session loses warm context, not knowledge.
+
+### What is already on disk
+
+| | |
+|---|---|
+| `.claude/agents/ledger-lane.md` | the lane contract, committed — so `ledger-lane` is a **registered agent type** from session start (this session had to bind it onto `general-purpose` by hand, because the registry loads before the file existed; that workaround is no longer needed) |
+| this file | the shape, the dispatch rules, the **conductor rulings**, the measured gate baseline, the claim table, and the lessons — including the ones that cost a cycle to learn |
+| `docs/merge/P3-LEDGER.md` | every row, every handoff note, every follow-up |
+| the git log | the *why* behind each row, at length |
+| `../scoopy-lane-b`, `../scoopy-lane-c` | the worktrees, still seeded with `node_modules` and the gitignored `scoopy-engine.js` — no setup to redo |
+
+### Startup sequence
+
+1. **Take the conductor role explicitly** and say so, so the user knows which
+   channel they are on (§7 — direction sent to a lane never reaches the ledger).
+2. Read `P3-LEDGER.md`'s authority order, then this file's §2 baseline, §3
+   dispatch rules and rulings, and §6's claim table.
+3. **Re-measure the baseline** — do not trust §2. It is dated, and the whole
+   reason it exists is that two documents were stale about it.
+4. Check the lane worktrees exist and their branches are behind `host-hygiene`
+   (they will be — each lane resets itself at the start of its next row).
+5. Dispatch by **messaging a lane**, naming one row. Never treat §6's queue as
+   authorisation.
+
+### What a FRESH lane needs that a warm one did not
+
+A lane resumed across rows in one session carried its own history — it knew what
+it had already measured and why. A cold lane knows nothing. Its first brief must
+carry more than a row number:
+
+- the row's **falsified premises**, spelled out. Several rows in this ledger
+  carry citations the 2026-07-30 audit disproved, and a cold lane will believe
+  them.
+- any **conductor ruling** that constrains the row (§3), stated as decided.
+- the **known-red baseline**, or the lane will chase `engine:check`.
+- what the row's **gate line** actually requires, and that the lane cannot run
+  the real host — so it must say what the conductor should click.
+
+### The habits that produced the good rows
+
+Worth restating, because they are what made the lanes useful rather than fast:
+
+- **Measure before building.** Three rows in a row inverted their own premise
+  once measured — P11-5, P8-1 and P3.5-E8g-a each found the ledger wrong about
+  what existed.
+- **Report refuted theories.** E8g's value was two theories killed, not a fix.
+- **State what a gate cannot see.** "The pins cannot see a repaint" is worth more
+  than a fixture that tests something easier.
+- **A fake thin enough to pass either way is a green gate that cannot see the
+  defect** (E8g-c) — the web-tier form of P3.5-E10's lesson.

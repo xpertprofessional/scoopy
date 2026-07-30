@@ -13,6 +13,9 @@
    carries the measured known-red baseline. **While lanes are live, only the
    conductor commits to `host-hygiene`.** Its §2 also corrects two stale claims
    this file and §11 still make (see the gate list below).
+   **To pick the multi-agent loop back up in a fresh session, start at its §8** —
+   the lane worktrees, the `ledger-lane` agent type and every ruling are already
+   on disk; only the agents' warm context is lost.
 
 **The four rules:** tests pass ≠ it works ≠ it shipped ≠ you can reach it. Green gates
 in Chromium repeatedly missed features unreachable in the real app — every UI claim
