@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 7
+export const MAP_SCHEMA_VERSION = 8
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -273,6 +273,28 @@ export const RouteSchema = z
   .strict()
 export type Route = z.infer<typeof RouteSchema>
 
+/** One FX return's plugin, as a map stores it (P6-5b). Both fields null = an
+    empty return, which is a FACT the document records rather than a key it
+    omits — an absent key would read as "unknown" and a restore could not tell
+    "nothing was loaded" from "this map predates the field". */
+export const FxSlotDocSchema = z
+  .object({
+    identifier: z.string().nullable(),
+    state: z.string().nullable(),
+  })
+  .strict()
+export type FxSlotDoc = z.infer<typeof FxSlotDocSchema>
+
+/** Four empty returns — a fresh map, and what every pre-v8 map is migrated to. */
+export function emptyFxSlots(): PlaneMap['fx'] {
+  return [
+    { identifier: null, state: null },
+    { identifier: null, state: null },
+    { identifier: null, state: null },
+    { identifier: null, state: null },
+  ]
+}
+
 export const MapSchema = z
   .object({
     /** Viewport only; pure UI state. */
@@ -294,6 +316,28 @@ export const MapSchema = z
     transport: z
       .object({ masterBpm: z.number().positive(), masterLevel: z.number().min(0) })
       .strict(),
+    /** THE FX RETURNS' PLUGINS (P6-5b) — the user's own requirement, verbatim:
+        "so we can also restore these settings (like a plugin loaded) within a
+        map". Exactly four, one per return, index 0 = FX 1.
+
+        `identifier` is JUCE's `createIdentifierString`, NOT the display name: a
+        name is for people and collides across formats and vendors, so a map
+        keyed on it would reload a DIFFERENT plugin on a machine that has both.
+        `state` is the plugin's own opaque blob (base64) — null when the plugin
+        saves nothing, which is normal and still restores fine from the
+        identifier alone.
+
+        ⚠️ NOT SAVED HERE: mode / hardware output / pre-post. Nothing in the
+        merged host can set them yet (the `fxSlot` ops for those are refused by
+        name until P7-MIX-0) and no apply path reads them, so a field for them
+        would be fiction the document swore to. They arrive with their controls.
+
+        ⚠️ CAPTURED FROM THE ENGINE AT SAVE, like the routing graph and for the
+        same reason: the plugin's state lives in the plugin, and a save that
+        recorded what we last asked for rather than what is true would persist a
+        blob from before the user touched a knob. See `captureMap`. */
+    fx: z
+      .tuple([FxSlotDocSchema, FxSlotDocSchema, FxSlotDocSchema, FxSlotDocSchema]),
   })
   .strict()
 export type PlaneMap = z.infer<typeof MapSchema>
@@ -470,6 +514,23 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
     // identity migration is the honest entry, not a skipped one.
     run: (m) => m,
   },
+  7: {
+    to: 8,
+    name: 'the map remembers its FX plugins (P6-5b)',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      return {
+        ...m,
+        // FOUR EMPTY RETURNS, because that is what a v7 map SOUNDED like: there
+        // was nowhere to store a plugin, so reopening one always came up with
+        // bare returns. The house migration rule — an old map plays back exactly
+        // as it did. Note this is not the same as omitting the field: an explicit
+        // "nothing loaded" is what lets the restore path tell an empty return
+        // from a map that never knew about returns.
+        map: { ...map, fx: emptyFxSlots() },
+      }
+    },
+  },
 }
 
 /** This strip's remembered performance state for `sessionId`, or the defaults.
@@ -507,6 +568,7 @@ export function emptyMap(): PlaneMap {
     strips: [],
     routes: [],
     transport: { masterBpm: 120, masterLevel: 1 },
+    fx: emptyFxSlots(),
   }
 }
 

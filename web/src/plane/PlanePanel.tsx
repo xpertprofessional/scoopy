@@ -244,7 +244,15 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           checked: m.name === mapName,
           onSelect: () => {
             void openMap(link, m.name).then((r) =>
-              setNote(r.ok ? `opened ${m.name}` : `could not open — ${r.error}`),
+              setNote(
+                !r.ok
+                  ? `could not open — ${r.error}`
+                  : r.warnings.length > 0
+                    ? // It OPENED, and something it wanted is not here (P6-5b).
+                      // Named rather than counted: "1 warning" sends you looking.
+                      `opened ${m.name} — ${r.warnings.join(' · ')}`
+                    : `opened ${m.name}`,
+              ),
             )
           },
         })),

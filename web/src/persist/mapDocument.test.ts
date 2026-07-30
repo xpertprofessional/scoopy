@@ -388,6 +388,68 @@ describe('map document', () => {
     })
   })
 
+  describe('the v7 → v8 migration (the map remembers its FX plugins, P6-5b)', () => {
+    const v7Doc = () => {
+      const doc = saveMap({ ...emptyMap(), strips: [strip({})] }) as unknown as {
+        schemaVersion: number
+        map: Record<string, unknown>
+      }
+      doc.schemaVersion = 7
+      delete doc.map.fx
+      return doc
+    }
+
+    it('opens a v7 map SOUNDING THE SAME — four empty returns', () => {
+      const r = loadMap(v7Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(7)
+      // v7 had nowhere to store a plugin, so reopening one always came up with
+      // bare returns. The house rule: an old map plays back as it did.
+      expect(r.map.fx).toEqual([
+        { identifier: null, state: null },
+        { identifier: null, state: null },
+        { identifier: null, state: null },
+        { identifier: null, state: null },
+      ])
+    })
+
+    it('round-trips a loaded plugin and its state blob verbatim', () => {
+      const map: PlaneMap = {
+        ...emptyMap(),
+        fx: [
+          { identifier: 'AudioUnit:Effects/aufx,dely,appl', state: 'YmFzZTY0' },
+          { identifier: null, state: null },
+          { identifier: 'VST3:some-reverb', state: null },
+          { identifier: null, state: null },
+        ],
+      }
+      const again = loadMap(JSON.parse(JSON.stringify(saveMap(map))))
+      expect(again.ok).toBe(true)
+      if (!again.ok) return
+      expect(again.migratedFrom).toBeUndefined()
+      // A state blob that came back altered is a plugin that restores wrong.
+      expect(again.map.fx).toEqual(map.fx)
+    })
+
+    it('refuses a map whose fx is not exactly four returns', () => {
+      // A tuple, not an array: three entries would silently leave FX 4 unwritten
+      // on every load, which reads as "the plugin vanished".
+      const doc = saveMap(emptyMap()) as unknown as { map: { fx: unknown } }
+      doc.map.fx = [{ identifier: null, state: null }]
+      expect(loadMap(doc).ok).toBe(false)
+    })
+
+    it('a migrated v7 map re-saves as clean idempotent v8', () => {
+      const r = loadMap(v7Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const again = loadMap(JSON.parse(JSON.stringify(saveMap(r.map))))
+      expect(again.ok).toBe(true)
+      if (again.ok) expect(again.migratedFrom).toBeUndefined()
+    })
+  })
+
   it('treats an unknown key as a loud failure, never a silent coercion', () => {
     const doc = saveMap(emptyMap()) as unknown as { map: Record<string, unknown> }
     doc.map.mysteryField = 1

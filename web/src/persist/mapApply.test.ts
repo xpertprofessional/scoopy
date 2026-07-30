@@ -66,7 +66,19 @@ describe('planApply', () => {
   it('emits routeClearAll even for an empty map', () => {
     // An empty map still has to WIPE the boot wiring, or "load an empty map"
     // silently means "keep whatever was patched".
-    expect(planApply(emptyMap())).toEqual([{ op: 'routeClearAll' }])
+    const ops = planApply(emptyMap())
+    expect(ops[0]).toEqual({ op: 'routeClearAll' })
+    // …and it EMPTIES ALL FOUR FX RETURNS for the same reason (P6-5b): a running
+    // engine inherits whatever the previous map left loaded, so a map that says
+    // nothing about a return must actively clear it rather than leave someone
+    // else's reverb on it. Nothing else belongs in an empty map's plan.
+    expect(ops.filter((o) => o.op === 'fxSelect')).toEqual([
+      { op: 'fxSelect', returnIndex: 1, identifier: null, state: null },
+      { op: 'fxSelect', returnIndex: 2, identifier: null, state: null },
+      { op: 'fxSelect', returnIndex: 3, identifier: null, state: null },
+      { op: 'fxSelect', returnIndex: 4, identifier: null, state: null },
+    ])
+    expect(ops).toHaveLength(5)
   })
 
   it('binds a channel source BEFORE writing its level and sends', () => {

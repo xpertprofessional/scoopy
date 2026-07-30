@@ -199,7 +199,9 @@ describe("applyMap", () => {
   });
 
   it("does nothing without a link rather than throwing", async () => {
-    await expect(applyMap(null, mapWith([strip()]))).resolves.toBeUndefined();
+    // Still a no-op; it now REPORTS (P6-5b) — and with no engine to ask, it
+    // cannot know a plugin is missing, so it must not claim one is.
+    await expect(applyMap(null, mapWith([strip()]))).resolves.toEqual({ warnings: [] });
   });
 });
 
@@ -431,6 +433,98 @@ describe("captureMap", () => {
       onUiState: () => () => {},
     } as unknown as EngineLink;
     expect((await captureMap(link)).routes).toEqual(routes);
+  });
+
+  it("captures the FX returns' plugins from the ENGINE (P6-5b)", async () => {
+    // Same law as the routing graph: a plugin's settings are made in its own
+    // editor, which the document never sees, so a save must ASK.
+    setMap(mapWith([strip()]));
+    const { link } = fakeLink({
+      getFxSlotState: {
+        slots: [
+          { returnIndex: 1, identifier: "AudioUnit:aufx,dely,appl", state: "BLOB1" },
+          { returnIndex: 2, identifier: null, state: null },
+          { returnIndex: 3, identifier: "VST3:reverb", state: null },
+          { returnIndex: 4, identifier: null, state: null },
+        ],
+      },
+    });
+    const captured = await captureMap(link);
+    expect(captured.fx[0]).toEqual({ identifier: "AudioUnit:aufx,dely,appl", state: "BLOB1" });
+    expect(captured.fx[1]).toEqual({ identifier: null, state: null });
+    // Loaded but saving nothing of its own is normal — the identifier restores it.
+    expect(captured.fx[2]).toEqual({ identifier: "VST3:reverb", state: null });
+  });
+
+  it("matches slots by returnIndex, not by list position", async () => {
+    // The reply is a list. Trusting its order would put FX 3's plugin on FX 1 —
+    // silently, and only audible as the wrong effect on the wrong send.
+    setMap(mapWith([strip()]));
+    const { link } = fakeLink({
+      getFxSlotState: {
+        slots: [
+          { returnIndex: 3, identifier: "third", state: null },
+          { returnIndex: 1, identifier: "first", state: null },
+        ],
+      },
+    });
+    const captured = await captureMap(link);
+    expect(captured.fx[0]?.identifier).toBe("first");
+    expect(captured.fx[2]?.identifier).toBe("third");
+  });
+
+  it("does NOT erase a plugin this machine could not load (the portable-map hazard)", async () => {
+    // THE FAILURE THIS PREVENTS: carry a set to a rig that lacks one plugin, open
+    // it, save it — and the map has now forgotten the plugin on the machine that
+    // did have it. The engine honestly reports that return as empty; the restore
+    // is the only thing that knows it TRIED and this machine does not have it.
+    setMap({
+      ...mapWith([strip()]),
+      fx: [
+        { identifier: "missing-here", state: "PRECIOUS" },
+        { identifier: null, state: null },
+        { identifier: null, state: null },
+        { identifier: null, state: null },
+      ],
+    });
+    // The restore runs first and records the identifier as unresolvable: the
+    // scanner's list does not contain it.
+    const { link } = fakeLink({
+      listPlugins: { plugins: [{ identifier: "something-else" }], scanning: false },
+      getFxSlotState: {
+        slots: [
+          { returnIndex: 1, identifier: null, state: null }, // engine: empty, truthfully
+          { returnIndex: 2, identifier: null, state: null },
+          { returnIndex: 3, identifier: null, state: null },
+          { returnIndex: 4, identifier: null, state: null },
+        ],
+      },
+    });
+    const { warnings } = await applyMap(link, getMap());
+    expect(warnings).toEqual(["FX 1: this machine does not have that plugin"]);
+
+    const captured = await captureMap(link);
+    expect(captured.fx[0]).toEqual({ identifier: "missing-here", state: "PRECIOUS" });
+  });
+
+  it("KEEPS the document's fx when the engine cannot be asked", async () => {
+    // A hostless build refuses `getFxSlotState`. Saving there must not erase the
+    // plugins the map remembers — same rule as the routes above.
+    const fx: PlaneMap["fx"] = [
+      { identifier: "keep-me", state: "S" },
+      { identifier: null, state: null },
+      { identifier: null, state: null },
+      { identifier: null, state: null },
+    ];
+    setMap({ ...mapWith([strip()]), fx });
+    const link = {
+      command: () => Promise.reject(new Error("no host")),
+      paramWrite: () => {},
+      onHotFrame: () => () => {},
+      onEvent: () => () => {},
+      onUiState: () => () => {},
+    } as unknown as EngineLink;
+    expect((await captureMap(link)).fx).toEqual(fx);
   });
 
   it("round-trips deep-equal through save/load", async () => {

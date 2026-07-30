@@ -29,6 +29,9 @@ export type EngineOp =
   | { op: 'channelSetMonitor'; channel: number; on: boolean }
   | { op: 'channelSetSend'; channel: number; send: number; level: number }
   | { op: 'channelSetDrive'; channel: number; curve: number; amount: number }
+  /** An FX return's plugin (P6-5b). `identifier` null = unload that return.
+      `state` is the plugin's own blob, applied at instantiation. */
+  | { op: 'fxSelect'; returnIndex: number; identifier: string | null; state: string | null }
   | { op: 'tapeLoadTake'; tape: number; takeRef: string }
   | { op: 'tapeSetLoop'; tape: number; enabled: boolean; start: number; end: number }
   | { op: 'tapeSetRate'; tape: number; rate: number }
@@ -199,6 +202,21 @@ export function planApply(map: PlaneMap): EngineOp[] {
     )
   }
 
+  // THE FX RETURNS' PLUGINS (P6-5b), emitted for all four EXPLICITLY — including
+  // the empty ones, and for the same reason the monitor and DRV are: a running
+  // engine inherits whatever the previous map left loaded, so a return this map
+  // says nothing about must be actively emptied rather than left holding someone
+  // else's reverb. Ordered before the routes only for readability; fx slots and
+  // cables do not constrain each other.
+  map.fx.forEach((slot, i) =>
+    ops.push({
+      op: 'fxSelect',
+      returnIndex: i + 1, // the ABI and the schema are both 1-based here
+      identifier: slot.identifier,
+      state: slot.state,
+    }),
+  )
+
   for (const r of map.routes) {
     ops.push({
       op: 'routeAdd',
@@ -267,4 +285,50 @@ export function captureRoutes(live: readonly LiveRoute[]): Route[] {
     })
   }
   return out
+}
+
+/** What the engine reports for one return (`getFxSlotState`). */
+export type LiveFxSlot = {
+  returnIndex?: number
+  identifier?: string | null
+  state?: string | null
+}
+
+/**
+ * The FX returns as they should be SAVED (P6-5b).
+ *
+ * The engine is the truth about what is loaded and what its state is — that is
+ * the whole reason this is captured rather than remembered (a plugin's settings
+ * are made in its own editor, which the document never sees).
+ *
+ * ⚠️ EXCEPT WHERE THE PLUGIN COULD NOT BE LOADED HERE, and this is the case that
+ * makes a portable map safe. Open a map on a machine that lacks one of its
+ * plugins: that return is EMPTY in the engine, honestly so. If a save then took
+ * the engine's word, the map would ERASE the plugin it remembers — carry a set
+ * to a different rig, open it, save it, and the original machine has lost it
+ * too. So identifiers the restore could not resolve (`preserve`) keep their
+ * stored entry verbatim, blob included.
+ *
+ * That is deliberately NOT "keep whatever the document had whenever the engine
+ * reads empty" — which would make unloading a plugin on purpose unsavable. The
+ * distinction is knowledge the restore has and nobody else does: it tried, and
+ * this machine does not have it.
+ */
+export function captureFxSlots(
+  live: readonly LiveFxSlot[],
+  current: PlaneMap['fx'],
+  preserve: ReadonlySet<string> = new Set(),
+): PlaneMap['fx'] {
+  const out = current.map((stored, i) => {
+    if (stored.identifier !== null && preserve.has(stored.identifier)) return stored
+    // Match by returnIndex rather than array position: the reply is a list and
+    // trusting its order would silently put FX 3's plugin on FX 1.
+    const reported = live.find((s) => s.returnIndex === i + 1)
+    if (reported === undefined) return stored // said nothing about this return
+    return {
+      identifier: reported.identifier ?? null,
+      state: reported.state ?? null,
+    }
+  })
+  return [out[0]!, out[1]!, out[2]!, out[3]!]
 }

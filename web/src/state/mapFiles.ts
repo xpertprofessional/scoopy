@@ -48,7 +48,15 @@ export async function saveMapAs(link: EngineLink | null, name: string): Promise<
   return { ok: true }
 }
 
-export type OpenResult = { ok: true; map: PlaneMap } | { ok: false; error: string }
+export type OpenResult =
+  /** `warnings` are things the map WANTED that this machine could not give it —
+      today: FX plugins the scanner does not know (P6-5b). The map still opened,
+      which is why these are warnings and not an error: a set that is missing one
+      reverb is a set you can still play, and refusing to open it would be worse.
+      But it must be SAID — a silently absent effect with its return still cabled
+      is the kind of thing found on stage. */
+  | { ok: true; map: PlaneMap; warnings: string[] }
+  | { ok: false; error: string }
 
 /**
  * Open `name` and make the engine match it.
@@ -76,8 +84,8 @@ export async function openMap(link: EngineLink | null, name: string): Promise<Op
   // is slow or absent; then the engine is made to match it.
   setMap(parsed.map)
   useMapStore.setState({ name })
-  await applyMap(link, parsed.map)
-  return { ok: true, map: parsed.map }
+  const { warnings } = await applyMap(link, parsed.map)
+  return { ok: true, map: parsed.map, warnings }
 }
 
 /** The refusal, in words a person can act on. */

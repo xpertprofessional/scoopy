@@ -19,9 +19,11 @@ import { create } from "zustand";
 import type { EngineLink } from "../engineLink.ts";
 import { ask, send } from "../plane/send.ts";
 import {
+  captureFxSlots,
   captureRoutes,
   planApply,
   type EngineOp,
+  type LiveFxSlot,
   type LiveRoute,
 } from "../persist/mapApply.ts";
 import {
@@ -213,6 +215,15 @@ async function issue(link: EngineLink, op: EngineOp): Promise<void> {
         amount: op.amount,
       });
       return;
+    case "fxSelect":
+      await ask(link, "selectFxPlugin", {
+        returnIndex: op.returnIndex,
+        identifier: op.identifier,
+        // `state` is OPTIONAL on the wire, so a null must be omitted rather than
+        // sent — the params object is `.strict()` and would refuse a null there.
+        ...(op.state !== null ? { state: op.state } : {}),
+      });
+      return;
     case "tapeSetLoop":
       await ask(link, "slTape", {
         action: "setLoop",
@@ -284,14 +295,73 @@ async function issue(link: EngineLink, op: EngineOp): Promise<void> {
  * half-configured engine. It is ~40 calls on a load and never runs while
  * anything is being performed, so the cost is irrelevant.
  */
-export async function applyMap(link: EngineLink | null, map: PlaneMap): Promise<void> {
-  if (!link) return;
-  for (const op of planApply(map)) await issue(link, op);
+export async function applyMap(
+  link: EngineLink | null,
+  map: PlaneMap,
+): Promise<{ warnings: string[] }> {
+  if (!link) return { warnings: [] };
+
+  // WHICH OF THIS MAP'S PLUGINS THIS MACHINE DOES NOT HAVE (P6-5b).
+  //
+  // Asked BEFORE the loads, because the engine cannot tell us afterwards: a
+  // select is async on the message thread, and an identifier the scanner cannot
+  // resolve simply leaves the slot empty (pinned in plugin_state_test §6). So a
+  // map carried to a different rig would come up quietly missing an effect, with
+  // the return still cabled and nothing anywhere saying why.
+  //
+  // A failure to ASK is not a failure to load: a host with no plugin support
+  // refuses `listPlugins`, and there we skip the check rather than accusing every
+  // plugin of being missing.
+  const missing = await missingPlugins(link, map);
+  const warnings: string[] = [];
+  for (const op of planApply(map)) {
+    if (op.op === "fxSelect" && op.identifier !== null && missing.has(op.identifier)) {
+      // Skipped, not attempted: the load would be a no-op anyway, and skipping
+      // keeps the note line the only place this is reported.
+      warnings.push(`FX ${op.returnIndex}: this machine does not have that plugin`);
+      unresolvedFx.add(op.identifier);
+      continue;
+    }
+    if (op.op === "fxSelect" && op.identifier !== null) unresolvedFx.delete(op.identifier);
+    await issue(link, op);
+  }
   // The master is transport state, not a strip's — `planApply` has no op for
   // it, and adding one would mean a second place that decides load ORDER. It
   // goes last, with the rest of the output section.
   await ask(link, 'slMaster', { action: 'setLevel', level: map.transport.masterLevel });
+  return { warnings };
 }
+
+/**
+ * Identifiers this map wants that the scanner does not know about.
+ *
+ * Empty set on any failure — including a host that has no plugin support at all,
+ * where refusing `listPlugins` means "cannot say", not "none of them exist".
+ */
+async function missingPlugins(link: EngineLink, map: PlaneMap): Promise<Set<string>> {
+  const wanted = map.fx.map((s) => s.identifier).filter((id): id is string => id !== null);
+  if (wanted.length === 0) return new Set();
+  try {
+    const raw = await ask(link, "listPlugins", {});
+    const list = (raw as { plugins?: Array<{ identifier?: string }> })?.plugins;
+    if (!Array.isArray(list)) return new Set();
+    const have = new Set(list.map((p) => p.identifier).filter((id): id is string => !!id));
+    return new Set(wanted.filter((id) => !have.has(id)));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Identifiers the last restore could not resolve on THIS machine.
+ *
+ * Module state on purpose, and it is the memory that keeps a portable map safe:
+ * `captureMap` preserves these entries instead of taking the engine's (honest)
+ * "that return is empty" as an instruction to forget the plugin. Without it,
+ * opening a set on a rig that lacks one plugin and saving would erase it
+ * everywhere. See `captureFxSlots`.
+ */
+const unresolvedFx = new Set<string>();
 
 /**
  * THE MASTER TEMPO, PUSHED AT THE ENGINE.
@@ -458,14 +528,33 @@ export async function bootMap(link: EngineLink | null): Promise<void> {
 export async function captureMap(link: EngineLink | null): Promise<PlaneMap> {
   const map = getMap();
   if (!link) return map;
+  let next = map;
   try {
     const raw = await ask(link, "slRouteList", {});
     const routes = (raw as { routes?: LiveRoute[] })?.routes;
-    if (!Array.isArray(routes)) return map;
-    return { ...map, routes: captureRoutes(routes) };
+    if (Array.isArray(routes)) next = { ...next, routes: captureRoutes(routes) };
   } catch {
-    return map;
+    // Keep the store's own routes (see above) — a save that dropped every cable
+    // because one command timed out would destroy what it meant to preserve.
   }
+  // THE FX PLUGINS (P6-5b), read back for the same reason as the routing graph:
+  // a plugin's state lives in the PLUGIN. Saving what we last asked for would
+  // persist a blob from before the user touched a single knob in the editor —
+  // and the editor is where plugin settings are actually made (P6-4).
+  //
+  // Independently guarded: a host without plugin support refuses this method, and
+  // that must not cost the routing read-back that already succeeded.
+  try {
+    const raw = await ask(link, "getFxSlotState", {});
+    const slots = (raw as { slots?: LiveFxSlot[] })?.slots;
+    if (Array.isArray(slots))
+      next = { ...next, fx: captureFxSlots(slots, next.fx, unresolvedFx) };
+  } catch {
+    // A hostless build keeps whatever the document already held, which is the
+    // honest outcome: opening a map on a machine without plugin hosting and
+    // saving it must not silently ERASE the plugins it remembers.
+  }
+  return next;
 }
 
 /* ── live edits ───────────────────────────────────────────────────────────── */
