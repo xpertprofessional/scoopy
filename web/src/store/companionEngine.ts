@@ -489,17 +489,34 @@ export const MAX_TRACKS = 16;
  *                       rather than restated here — which is both why
  *                       `check:tokens` stays green and why a palette change on
  *                       the desktop would arrive with no code edit at all.
- *   trackGain         — **the one divergence.** `makeEmptyTrack` sets 0.80
- *                       (:15576) while `createDefaultTracks` leaves it 1.0, so in
- *                       the shipping app an ADDED track is quieter than a
- *                       FRESH-SESSION track. `TRACK_GAIN_ON_ADD` follows the ADD
- *                       path, because that is the path being ported.
+ *   trackGain         — **the one divergence, and the one place we do NOT follow
+ *                       the original.** `makeEmptyTrack` sets 0.80 (:15576) while
+ *                       `createDefaultTracks` leaves it 1.0, so in the shipping
+ *                       app an ADDED track is quieter than a FRESH-SESSION track.
+ *                       **RULED 2026-07-30 (user): 1.0.** See below.
  */
-/** `makeEmptyTrack`'s explicit gain (BeatSequencer.swift:15576) — headroom the
-    original gives every track it appends, and the one field where the fresh-save
-    template does not already answer. Read as `gain` by `toGridPattern` (:154) and
-    multiplied into the world's per-track volume (`worldFromSession.ts:351`). */
-const TRACK_GAIN_ON_ADD = 0.8;
+/** Unity, deliberately — and this is a departure from the original, so it is
+    written down rather than left to look like an oversight.
+
+    `makeEmptyTrack` gives an appended track 0.80 (BeatSequencer.swift:15576)
+    while a fresh session's tracks sit at 1.0, so in the shipping app the same
+    sample is quieter depending on how its track came to exist. That is the
+    original's own inconsistency, not a considered headroom policy.
+
+    **RULED 2026-07-30 (user): unity, and NO normalisation on load.** A loaded
+    sample plays at the level it was authored at — the track adds nothing and
+    takes nothing away. So a quiet sample stays quiet and a hot one stays hot,
+    and the relative balance a person built into a kit survives being loaded.
+
+    ⚠️ **Do not "fix" this by adding load-time gain analysis.** It was considered
+    and ruled out by the user. `sampleStore.peakEnvelope` already computes a
+    peak/RMS envelope for the waveform, so the measurement is sitting right
+    there and is easy to reach for — which is exactly why this note exists.
+    Analysing it into a gain would silently move levels a person set on purpose.
+
+    Read as `gain` by `toGridPattern` (:154) and multiplied into the world's
+    per-track volume (`worldFromSession.ts:351`). */
+const TRACK_GAIN_ON_ADD = 1.0;
 interface TrackTemplate {
   track: Record<string, unknown>;
   settings: Record<string, unknown>;

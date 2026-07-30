@@ -139,17 +139,23 @@ describe("the append itself", () => {
     expect(a.cellLengths).not.toBe(b.cellLengths);
   });
 
-  it("carries the fresh-session template's defaults, and the ADD path's gain", async () => {
+  it("carries the fresh-session template's defaults, at UNITY gain", async () => {
     openDoc(0);
     await useCompanion.getState().appendTrack();
     const row = sectionA()[0] as Record<string, unknown>;
-    // `makeEmptyTrack`: 16 steps (templateStepCount default), volume 0.8,
-    // cellLengths 1 per step, and an explicit trackGain of 0.80 that the
-    // FRESH-SESSION tracks do not have (createDefaultTracks leaves it 1.0).
+    // From `makeEmptyTrack`: 16 steps (templateStepCount default), volume 0.8,
+    // cellLengths 1 per step. `volume` comes from the template and is unchanged.
     expect((row.steps as unknown[]).length).toBe(16);
     expect((row.cellLengths as number[]).every((n) => n === 1)).toBe(true);
     expect(row.volume).toBe(0.8);
-    expect(row.trackGain).toBe(0.8);
+    // `trackGain` is the ONE field where we depart from the original, so it is
+    // pinned rather than left to drift back. The shipping app gives an ADDED
+    // track 0.80 (BeatSequencer.swift:15576) while a fresh session's tracks sit
+    // at 1.0 — the same sample is quieter depending on how its track came to
+    // exist, which is an inconsistency rather than a headroom policy.
+    // RULED 2026-07-30 (user): unity, and no load-time normalisation — a sample
+    // plays at the level it was authored at, so a kit's balance survives.
+    expect(row.trackGain).toBe(1.0);
     expect(row.sampleId ?? null).toBeNull(); // an EMPTY track — nothing is playing yet
   });
 
