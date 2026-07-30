@@ -21,6 +21,7 @@ import { NativeWorldSink, type WorldSink } from "../audio/nativeAudio.ts";
 import { juceBackend } from "../../protocol/juceLink.ts";
 import { nativeLink } from "../engineLink.ts";
 import { lcmForScene, switchBoundary } from "../audio/patternClock.ts";
+import { oneShotStopStep, shiftBeatRepeatWindow } from "../audio/deckTransport.ts";
 import {
   SCENE_LETTERS,
   SECTION_KEYS,
@@ -211,6 +212,14 @@ export interface DeckState {
       restated by every publish; dies with the deck (closeDeck → idleDeck). */
   beatRepeat: { startStep: number; length: number; subdivision?: number } | null;
   reverse: boolean;
+  /**
+   * ONE-SHOT: the step this deck stops itself at, or null for free-running.
+   * RUNTIME like the transport verbs above — a one-shot is a hand gesture, never
+   * a document field. Ported from `BeatSequencer.stopTargetStep`
+   * (BeatSequencer.swift:2120, armed by `playOnce()` :3573-3587, consumed at
+   * :4220-4225 as `currentStep >= target → stop()`).
+   */
+  stopAtStep: number | null;
 }
 
 export function idleDeck(): DeckState {
@@ -226,6 +235,7 @@ export function idleDeck(): DeckState {
     decodeFailures: [],
     beatRepeat: null,
     reverse: false,
+    stopAtStep: null,
   };
 }
 
@@ -278,12 +288,44 @@ interface CompanionState {
   startEngine(): Promise<void>;
   play(deck?: number): void;
   stop(deck?: number): void;
+  /**
+   * B1/P7-T1: ONE-SHOT — play exactly one LCM cycle, then stop. Ported from
+   * `BeatSequencer.playOnce()` (BeatSequencer.swift:3573-3587) whole:
+   *   · stopped  → arm the stop at `lcm - 1` and start
+   *   · playing  → arm it at the end of the CURRENT cycle, do not restart
+   * The LCM is the pattern's, not a bar count, so it is the same law the queued
+   * scene switch uses (`lcmForScene`) and two strips one-shotting together do
+   * NOT share a boundary — correct, and the reason the donor computes it per
+   * session too.
+   */
+  playOnce(deck?: number): void;
   /** P3-M-1b: latch/release a beat repeat on this deck (runtime, republishes).
       null releases. */
   setBeatRepeat(
     deck: number,
     br: { startStep: number; length: number; subdivision?: number } | null,
   ): void;
+  /**
+   * B1/P7-T2: nudge a LATCHED beat repeat's window one slot left/right. Ported
+   * from `BeatSequencer.shiftBeatRepeat(by:)` (BeatSequencer.swift:20390-20427),
+   * including its two guards — a shift does nothing unless the deck is PLAYING
+   * and a repeat is actually latched — and its sub-cell carry: at subdivision
+   * > 1 the window moves by sub-cells and carries whole steps, so the micro
+   * stutter walks smoothly rather than jumping a step at a time.
+   * Negative starts wrap by a whole LCM, which leaves the audible fold unchanged.
+   */
+  shiftBeatRepeat(deck: number, delta: number): void;
+  /**
+   * B1/P7-T1: the DJ INSTANT DOUBLE — clone `from`'s session onto `to` as an
+   * unsaved copy. ⚠️ Not "double the pattern length": the donor's DBL is
+   * `NativeDJCoordinator.doubleDeck(from:to:)` (DJModeView.swift:899-921), which
+   * copies a deck's whole session to the OTHER deck so you can mix a track
+   * against itself. Refuses (returns false) when the source has nothing to
+   * double or the destination is busy — the same three refusals the donor makes,
+   * minus its temp-file round-trip, which existed only because Swift had no
+   * in-memory session copy.
+   */
+  cloneDeck(from: number, to: number): boolean;
   /** P3-M-1b: whole-session tape reverse (runtime, republishes). */
   setReverse(deck: number, on: boolean): void;
   setBpm(bpm: number, deck?: number): void;
@@ -958,14 +1000,116 @@ export const useCompanion = create<CompanionState>((set, get) => ({
   play(deck = 0) {
     if (!audio.running || !deckOf(get(), deck).session) return;
     // Play restarts at step 0 — a pending switch armed against the old clock is meaningless.
-    set((s) => patchDeck(s, deck, { playing: true, scheduledScene: null, switchBoundaryStep: null }));
+    // A plain play also DISARMS a one-shot: pressing ▶ means "keep going".
+    set((s) =>
+      patchDeck(s, deck, {
+        playing: true,
+        scheduledScene: null,
+        switchBoundaryStep: null,
+        stopAtStep: null,
+      }),
+    );
     set((s) => patchDeck(s, deck, { missingSamples: publish(get(), deck, true) }));
   },
 
   stop(deck = 0) {
     if (!audio.running) return;
-    set((s) => patchDeck(s, deck, { playing: false, scheduledScene: null, switchBoundaryStep: null }));
+    set((s) =>
+      patchDeck(s, deck, {
+        playing: false,
+        scheduledScene: null,
+        switchBoundaryStep: null,
+        stopAtStep: null,
+      }),
+    );
     publish(get(), deck, false);
+  },
+
+  playOnce(deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!audio.running || !d.session) return;
+    const cycle = lcmForScene(d.session.pattern, d.scene);
+    const stopAtStep = oneShotStopStep(cycle, d.playing, audio.position()?.step ?? 0);
+    if (stopAtStep === null) return; // no cycle to play once
+
+    if (d.playing) {
+      // ALREADY PLAYING → arm the stop at the end of the cycle in flight, and do
+      // NOT restart. Landing this on `play()` instead would jump the playhead
+      // back to 0, which is the opposite of "let this one finish".
+      set((s) => patchDeck(s, deck, { stopAtStep }));
+      return;
+    }
+    // STOPPED → one full cycle from the top. Armed AFTER the playing flag but in
+    // its own write, because `play()` clears the arm — going through play() here
+    // would disarm what we just set. Order is load-bearing, not style.
+    set((s) => patchDeck(s, deck, { playing: true, scheduledScene: null, switchBoundaryStep: null }));
+    set((s) => patchDeck(s, deck, { stopAtStep, missingSamples: publish(get(), deck, true) }));
+  },
+
+  shiftBeatRepeat(deck, delta) {
+    if (deck < 0 || deck >= MAX_DECKS || delta === 0) return;
+    const d = deckOf(get(), deck);
+    // BOTH donor guards. A shift with nothing latched, or on a stopped deck, is
+    // not an error — it is a no-op, and making it one keeps the control live on
+    // screen without it doing something invisible.
+    if (!d.playing || !d.beatRepeat || !d.session) return;
+
+    const br = d.beatRepeat;
+    const sub = Math.max(1, br.subdivision ?? 1);
+    const moved = shiftBeatRepeatWindow(
+      { startStep: br.startStep, startSubcell: (br as { startSubcell?: number }).startSubcell ?? 0 },
+      delta,
+      sub,
+      lcmForScene(d.session.pattern, d.scene),
+    );
+    set((s) =>
+      patchDeck(s, deck, {
+        beatRepeat: {
+          ...br,
+          startStep: moved.startStep,
+          ...(sub > 1 ? { startSubcell: moved.startSubcell } : {}),
+        },
+      }),
+    );
+    if (audio.running) publish(get(), deck, deckOf(get(), deck).playing);
+  },
+
+  cloneDeck(from, to) {
+    if (from < 0 || from >= MAX_DECKS || to < 0 || to >= MAX_DECKS || from === to) return false;
+    const src = deckOf(get(), from);
+    const dst = deckOf(get(), to);
+    // The donor's three refusals, in its order: nothing to double, destination
+    // busy, copy failed. The third cannot happen here — Swift needed a temp-file
+    // save/load round-trip to copy a session and this is a structural clone — so
+    // it is two, and saying which two is the point.
+    if (!src.session) return false;
+    const srcRows = src.session.pattern.sectionA;
+    if (!Array.isArray(srcRows) || srcRows.length === 0) return false;
+    if (dst.playing) return false;
+
+    // UNSAVED COPY, AND THE NAME IS WHAT MAKES IT ONE. `name` is this model's
+    // file identity — it is the key `open()` and the autosaver write back
+    // through — so a clone that kept it would autosave the double straight over
+    // the original the first time anyone touched a step. The donor gets the same
+    // property from `loadSessionAsUnsavedCopy` dropping the file URL while
+    // keeping the display name; here, renaming IS dropping the identity.
+    //
+    // The pattern is deep-cloned (the double must edit independently) but the
+    // KIT is shared by reference on purpose: it is decoded audio, registered
+    // with the engine under content ids, and copying it would re-register every
+    // sample to say the same thing.
+    const copy: WorkingSession = {
+      ...src.session,
+      name: `${src.session.name} (double)`,
+      pattern: structuredClone(src.session.pattern),
+      extras: new Map(src.session.extras),
+    };
+    set((s) => patchDeck(s, to, { ...idleDeck(), session: copy, scene: src.scene }));
+    if (audio.running) {
+      set((s) => patchDeck(s, to, { missingSamples: publish(get(), to, false) }));
+    }
+    set({ notice: `doubled onto strip ${to + 1}` });
+    return true;
   },
 
   setBpm(bpm, deck = 0) {
@@ -1186,6 +1330,18 @@ audio.onPosition((pos) => {
   // have different LCMs, which is the whole reason the boundary is computed per
   // session rather than taken from a global bar count.
   const st = useCompanion.getState();
+  // THE ONE-SHOT STOP, on the same broadcast as the scene commit below and for
+  // the same reason: it must fire on the message channel rather than rAF, or a
+  // hidden tab one-shots forever. The donor's law verbatim
+  // (BeatSequencer.swift:4220-4225) — `currentStep >= target → stop()`, which
+  // stops on ENTERING the final step of the cycle.
+  for (let deck = 0; deck < st.decks.length; deck++) {
+    const d = st.decks[deck];
+    if (!d || d.stopAtStep === null || !d.playing) continue;
+    if (pos.step < d.stopAtStep) continue;
+    useCompanion.setState((s) => patchDeck(s, deck, { stopAtStep: null }));
+    useCompanion.getState().stop(deck);
+  }
   for (let deck = 0; deck < st.decks.length; deck++) {
     const d = st.decks[deck];
     if (!d?.scheduledScene || d.switchBoundaryStep === null) continue;

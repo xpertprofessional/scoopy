@@ -253,3 +253,93 @@ describe("setEnabledSceneCount (P3-U8) — the scene row is a document fact", ()
     expect(companionDeck(0).session).toBeNull();
   });
 });
+
+/**
+ * B1: the two deck-row verbs that are DOCUMENT work rather than engine work.
+ *
+ * Both refuse more than they act, and the refusals are the interesting half —
+ * the donor refuses in three places for DBL and two for a BR shift, and every
+ * one of those is a case where doing the obvious thing would destroy something.
+ */
+describe("the instant double (NativeDJCoordinator.doubleDeck)", () => {
+  it("clones a deck's session onto another deck under a NAME OF ITS OWN", () => {
+    setDeck(0, { session: session("beach"), scene: "C" });
+    expect(useCompanion.getState().cloneDeck(0, 1)).toBe(true);
+
+    const copy = companionDeck(1).session;
+    expect(copy?.name).toBe("beach (double)");
+    // THE PROPERTY THAT MAKES DBL SAFE MID-SET. `name` is this model's file
+    // identity — what open() and the autosaver write back through — so a clone
+    // that kept it would autosave the double over the original the first time
+    // anyone touched a step. The donor buys the same property by dropping the
+    // file URL in loadSessionAsUnsavedCopy.
+    expect(copy?.name).not.toBe(companionDeck(0).session?.name);
+    // The scene travels: doubling a deck mid-performance should land on the
+    // pattern you can hear, not on A.
+    expect(companionDeck(1).scene).toBe("C");
+  });
+
+  it("gives the double its OWN pattern, so editing one cannot reach the other", () => {
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().cloneDeck(0, 1);
+    const src = companionDeck(0).session!.pattern as { sectionA: unknown[] };
+    const dst = companionDeck(1).session!.pattern as { sectionA: unknown[] };
+    expect(dst.sectionA).not.toBe(src.sectionA); // a shared reference would be the bug
+    expect(dst.sectionA).toEqual(src.sectionA);
+  });
+
+  it("refuses a source with nothing to double", () => {
+    expect(useCompanion.getState().cloneDeck(0, 1)).toBe(false); // no session at all
+    setDeck(0, {
+      session: { ...session("empty"), pattern: { bpm: 120, sectionA: [] } } as never,
+    });
+    expect(useCompanion.getState().cloneDeck(0, 1)).toBe(false);
+    expect(companionDeck(1).session).toBeNull();
+  });
+
+  it("refuses a BUSY destination rather than yanking a playing deck out from under", () => {
+    setDeck(0, { session: session("beach") });
+    setDeck(1, { session: session("forest"), playing: true });
+    expect(useCompanion.getState().cloneDeck(0, 1)).toBe(false);
+    expect(companionDeck(1).session?.name).toBe("forest"); // untouched
+  });
+
+  it("refuses to double a deck onto itself", () => {
+    setDeck(0, { session: session("beach") });
+    expect(useCompanion.getState().cloneDeck(0, 0)).toBe(false);
+    expect(companionDeck(0).session?.name).toBe("beach");
+  });
+});
+
+describe("shifting a latched beat repeat", () => {
+  const latched = { startStep: 4, length: 2, subdivision: 1 };
+
+  it("walks the window while the deck is playing with a repeat latched", () => {
+    setDeck(0, { session: session("beach"), playing: true, beatRepeat: { ...latched } });
+    useCompanion.getState().shiftBeatRepeat(0, 1);
+    expect(companionDeck(0).beatRepeat?.startStep).toBe(5);
+    useCompanion.getState().shiftBeatRepeat(0, -2);
+    expect(companionDeck(0).beatRepeat?.startStep).toBe(3);
+  });
+
+  it("does nothing with no repeat latched, and nothing on a stopped deck", () => {
+    // BOTH donor guards (`guard delta != 0, isPlaying` then `guard br.active`).
+    // Neither is an error — the control stays on screen and simply does not act,
+    // which is better than a button that looks armed and moves nothing.
+    setDeck(0, { session: session("beach"), playing: true, beatRepeat: null });
+    useCompanion.getState().shiftBeatRepeat(0, 1);
+    expect(companionDeck(0).beatRepeat).toBeNull();
+
+    setDeck(0, { session: session("beach"), playing: false, beatRepeat: { ...latched } });
+    useCompanion.getState().shiftBeatRepeat(0, 1);
+    expect(companionDeck(0).beatRepeat?.startStep).toBe(4); // unmoved
+  });
+
+  it("leaves every other deck's repeat alone", () => {
+    setDeck(0, { session: session("beach"), playing: true, beatRepeat: { ...latched } });
+    setDeck(1, { session: session("forest"), playing: true, beatRepeat: { ...latched } });
+    useCompanion.getState().shiftBeatRepeat(1, 3);
+    expect(companionDeck(0).beatRepeat?.startStep).toBe(4);
+    expect(companionDeck(1).beatRepeat?.startStep).toBe(7);
+  });
+});
