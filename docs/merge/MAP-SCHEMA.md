@@ -146,7 +146,13 @@ strip.element.grid.perfBySession: Record<sessionId, {
 }>
 ```
 
-### ⚠️ The sharper hazard: unpinned edits bleed across maps — **SETTLED 2026-07-29 (D-SL-MAPPERF-01), see the amendment below**
+### ⚠️ The sharper hazard: unpinned edits bleed across maps — **RESOLVED BY DECISION**
+
+*Settled in principle 2026-07-29 (D-SL-MAPPERF-01). Made concrete, and made
+checkable, by the **2026-07-30 P8-1 amendment, §2 below**: every plane door that
+writes a session parameter today is named there — five of them, not the three the
+ledger carried — and each is given a routing target. Nothing about this hazard is
+left to a later reader's judgement.*
 
 With the latch OFF, an edit is **global to the session** — so a tweak made while
 performing from one map propagates to every other map using that session. This is
@@ -158,6 +164,10 @@ parameters must be explicit about where the value lands. "The map is playing" is
 arguably a context where the latch should default ON, or where such edits should
 be refused outright and sent to compose. **Settle this before the plane UI exposes
 any session-parameter control.**
+
+*That line was crossed by P3-D4-1a and has stayed crossed. §2 states where each
+value lands; §2's last paragraph states the one case that deliberately keeps
+writing the session, and why that is a decision rather than a leak.*
 
 ### Keyed by (strip, sessionId), not by strip
 
@@ -179,7 +189,15 @@ strip, its reference and its record button all survive — see `takeLibrary.ts`)
 An explicit "collect" produces a self-contained map for travel. Collecting is
 then something the user DID, not something they have to trust happened.
 
-### ⚠️ The hazard to design in, not discover — **SETTLED 2026-07-29 (D-SL-MAPPERF-01), see the amendment below**
+### ⚠️ The hazard to design in, not discover — **RESOLVED BY DECISION**
+
+*Settled in principle 2026-07-29 (D-SL-MAPPERF-01). Made concrete by the
+**2026-07-30 P8-1 amendment, §3 below**: four named re-apply triggers, one named
+hook each, and a **fifth trigger that is explicitly REFUSED** (the compose window
+must never be overlaid). §3 also corrects this paragraph's own proposed fix —
+"the same code on a different trigger" is wrong, and believing it is how the
+stomp fix would have re-opened the bleed hazard. See §3's "one mechanism, two
+hazards".*
 
 A compose edit republishes that deck's world, and the core's epoch gate hands
 control back to the snapshot when a republish carries different values — so a
@@ -312,6 +330,291 @@ trigger" — now signed and built as row **P8-3**, hanging off P3-C2's republish
   shell grows the topic. A persisted field with nothing behind it is the document
   equivalent of dead ABI.
 
+## AMENDMENT 2026-07-30 — the overlay made concrete (P8-1)
+
+*The 2026-07-29 amendment above signed the overlay in principle and deferred four
+things to this row: **the field shape, the write-routing law, the re-apply
+triggers, and the migration**. They are §1–§4 here. Everything below was measured
+against HEAD rather than read from the ledger, and the measurement moved three of
+the four answers.*
+
+### What the measurement found, before any of it is designed
+
+**Three of the overlay's four existing fields are backed by nothing.**
+`GridPerfSchema` (`web/src/persist/mapDocument.ts:136-152`) holds `currentScene ·
+switchMode · queuedScenes · queueLoop`. Against HEAD:
+
+| field | live counterpart | verdict |
+|---|---|---|
+| `currentScene` | `DeckState.scene`, written by `selectScene` (`companionEngine.ts:191,809`) | **real** |
+| `switchMode` | only `SceneUiState.switchMode`, pushed on the `scenes/<deck>` topic **no merged host publishes**, and settable only via `sendSceneSwitchMode` → `link.command('patternScene', …)` (`scenesStore.ts:99-104`) — a verb in neither `BrowserLink`'s switch nor `MergedLink.NATIVE_METHODS` (P7-K0). The companion store has no `switchMode` at all; its analogue is the per-gesture `immediate` boolean | **fiction** |
+| `queuedScenes: string[]` | the store holds `scheduledScene: SceneLetter \| null` — ONE armed scene, not a list (`companionEngine.ts:193`) | **fiction** |
+| `queueLoop` | **zero occurrences** anywhere outside `mapDocument.ts`, `mapApply.ts` and their tests | **fiction** |
+
+So P8-1 is not "generalize four fields". It is **replace three unbacked fields
+with the ones a running deck actually holds.** And the reason the fiction survived
+is structural, not careless: `planApply` emits `sceneSelect`/`sceneSetSwitch`
+(`mapApply.ts:47-54,170-181`) and `mapStore.ts:265-272` drops both on the floor,
+so the read path could look complete while the values it read were never issued
+and two of them named state the app does not have.
+
+**The derivation rule this amendment uses**, so the next field is decided the same
+way rather than argued from taste:
+
+> A field belongs in the overlay iff **(a)** it is state a LIVE DECK holds that its
+> `.scoopySession` file does not, or a session-document parameter a PLANE gesture
+> writes; **and (b)** something in the tree can both READ it at capture time and
+> WRITE it at re-apply time *today*. A field failing (b) is named, parked, and
+> given the row that unblocks it — never carried as a schema field with nothing
+> behind it. That is `mapDocument.ts:14-17`'s own law ("a persisted field with
+> nothing behind it is the document equivalent of dead ABI") applied to itself.
+
+`DeckState` (`companionEngine.ts:187-214`) is the complete inventory of what a
+deck holds beyond its file, so test (a) runs down it exactly once:
+
+| `DeckState` field | overlay? | why |
+|---|---|---|
+| `session` | no | it IS the reference — `element.grid.sessionId` |
+| `playing` | no | `map.transport` deliberately carries only `masterBpm`/`masterLevel` (`mapDocument.ts:316-318`). A map that reopened PLAYING makes noise before anyone is ready |
+| `scene` | **yes** | the one field that already worked at the document tier |
+| `scheduledScene` + `switchBoundaryStep` | no | an armed switch is a gesture in flight, pinned to a master step that will not exist next boot. Restoring it fires a scene change seconds after the map opens, from nothing the user touched |
+| `stoppedTracks` | **yes** | see the ruling below — this is the biggest real gap |
+| `soloedTracks` | no | see the ruling below |
+| `missingSamples`, `decodeFailures` | no | diagnostics about THIS machine's resolution, re-derived on every open. Persisting them would carry another rig's failures into yours |
+| `beatRepeat`, `reverse` | no | "a hand gesture" (`companionEngine.ts:208-213`). A latched repeat restored at load is an effect nobody asked for and no visible control explains |
+
+**RULING — `stoppedTracks` joins the overlay; `soloedTracks` does not.** These look
+symmetrical and are not. The launch gate is already a THREE-layer stack: the
+session's per-track `isStopped`, read once by `seedStopped` at open
+(`companionEngine.ts:424-428`), then a runtime set that `toggleLaunch` flips and
+that **never persists anywhere** (`:883-893`, "No autosave — the document's
+isStopped fields stay untouched"). On the plane, which tracks are running IS the
+performance — "this set runs without the hats" — so the overlay is the *first*
+home this control has ever had, not a second one. That does **not** contradict the
+2026-07-25 ruling that per-track mute/solo belongs to the session: that ruling was
+about the session's PINNABLE mute (CM-3), and the launch gate is not it — nothing
+pins it and nothing writes it. `soloedTracks` is refused because solo is a
+momentary *monitoring* gesture on both hosts (`:894-905`, "solo is never persisted,
+on either host"): reopening a set with seven strips inaudible, and nothing at map
+level saying why, is worse than losing it. It also has no document counterpart at
+all, so unlike the launch gate there is no seed to fall back to.
+
+### §1 — the field shape
+
+`strip.sessionPerf: Record<sessionId, GridPerf>` becomes:
+
+```
+strip.overlay: Record<sessionId, SessionOverlay>          // v9, see §4
+
+SessionOverlay = {
+  // WHAT IS RUNNING — runtime state with no session counterpart, so a plain value.
+  scene:            string                 // "A".."H"        (was `currentScene`)
+
+  // WHAT THIS MAP OVERRODE — null means "this map has no opinion; the session's
+  // own value plays". A number standing in for "untouched" would be a lie the
+  // document could not later distinguish from a deliberate setting.
+  stoppedTracks:    number[] | null        // null = seed from the file's isStopped
+  masterVolume:     number | null          // pattern.masterVolume
+  masterDrive:      number | null          // pattern.masterClipperDrive  [1,32]
+  masterDriveCurve: number | null          // pattern.masterClipperCurve  0..3
+}
+```
+
+Five fields. Three rulings are load-bearing:
+
+- **`null` is a third state, not a missing value**, and it is the same distinction
+  P6-5b drew for FX slots (`mapDocument.ts:276-286`): an explicit "nothing" is what
+  lets a restore tell "this map chose the session's value" from "this map predates
+  the field". It is also what makes the migration in §4 sound-preserving for free.
+- **There is NO `bpm` field, deliberately.** The map already carries a per-strip
+  tempo at `element.grid.bpm`, and `updateGridTempo` (`mapStore.ts:435-459`) already
+  routes the plane's bpm box through `setTempoOverride` (`companionEngine.ts:1010`)
+  — an in-memory per-deck override that wins on every publish
+  (`resolveWorldBpm`, `:351`) and **never reaches the Autosaver**. Adding
+  `overlay.bpm` would give one deck two map-side tempi that could disagree. This
+  path is not a workaround to be replaced; **it is the working precedent the other
+  three parameters must copy**, and it already carries the exact rationale in its
+  own comment (`companionEngine.ts:335-347`).
+- **`switchMode` / `queuedScenes` / `queueLoop` are PARKED, with their reason and
+  their unblocking row** (§5). They return when the app grows a scene-switch-mode
+  control that something answers.
+
+⚠️ **The apply mechanism is an OVERRIDE LANE, not a document write.** `publish()`
+re-seeds `masterVolume` and the clipper block from `d.session.pattern` on every
+call (`companionEngine.ts:365-420`), so an overlay value that was applied by
+writing the session would (a) be stomped by the next republish anyway and (b) be
+the bleed hazard through the back door. `tempoOverrideBpm` + `resolveWorldBpm` is
+the shape; VOL/DRV/DRV-curve need siblings, and `stoppedTracks` needs the seed at
+`open()` to consult the overlay before the file. That is P8-2's real work.
+
+### §2 — the write-routing law (this is what resolves the BLEED hazard)
+
+The 2026-07-29 law reads *"plane-surface edits to session parameters land in the
+OVERLAY; compose edits land in the SESSION."* Read literally it is wrong in both
+directions, because the deck tile mounts the real `GridPanel` on the plane
+(`deckTile.tsx:1-30`) and cell editing is a plane-surface edit. Sharpened:
+
+> **Parameters overlay; contents do not.** A gesture routes to the OVERLAY iff it
+> changes a value the session already HAS. A gesture that changes what the session
+> IS — its cells, tracks, kit, or how many scenes exist — is a composition edit that
+> happens to have been made on a plane surface, and it lands in the SESSION,
+> autosave included. The surface is not the discriminator; the *object of the edit*
+> is.
+
+**The five plane doors that write a session parameter at HEAD**, each with its
+target. The ledger's P8-4 names three of them; the audit found five:
+
+| # | door | path today | target |
+|---|---|---|---|
+| 1 | MasterRow **BPM** | `MasterRow.tsx:92` → `paramWrite("sessionBpm")` → `browserLink.ts:59-64` → `App.tsx:59-72` → `useCompanion.setBpm` → session + `autosaver.schedule` (`companionEngine.ts:749-763`) | **`updateGridTempo(strip.key, link, {bpm})`** — the EXISTING plane path. Not a new overlay field |
+| 2 | MasterRow **VOL** | same chain → `setMasterVolume` (`:765-779`) | `overlay.masterVolume` |
+| 3 | MasterRow **DRV** | same chain → `setMasterDrive` (`:781-792`) | `overlay.masterDrive` |
+| 4 | **Inspector DRV curve + amount**, for a grid strip | `Inspector.tsx:417,421` → `setMasterDriveCurve` / `setMasterDrive` (`:794-807`) | `overlay.masterDriveCurve` / `overlay.masterDrive` |
+| 5 | plane **add-scene** pad | `Plane.tsx:611-616` → `setEnabledSceneCount` → session + autosave (`:851-881`) | **stays a SESSION write** — see below |
+
+⚠️ **Door 4 is not in any ledger row.** `Inspector.tsx:409-412` says outright "one
+value, two doors" — and *both* doors bleed. A P8-4 that reroutes only MasterRow
+leaves the Inspector writing the library session for the same two values, which
+would read as an intermittent bug ("sometimes my DRV follows me between maps").
+
+⚠️ **Door 5 deliberately keeps writing the session, and that is the decision this
+hazard demanded — not an exception to it.** A map cannot own a scene that does not
+exist: a scene added into the overlay would be invisible to the compose window,
+unopenable anywhere else, and would vanish the moment the strip swapped sessions.
+Adding a pad changes what the session IS. The hazard section asked for map controls
+that write session parameters to be *explicit about where the value lands*; this is
+explicit, and the answer is "the session, on purpose".
+
+**Everything else the plane touches is already correct and stays put**, recorded so
+nobody re-routes it: `selectScene` (`Plane.tsx:625-628`; runtime, no autosave —
+`companionEngine.ts:846`), `toggleLaunch` / `toggleSoloTrack`
+(`deckTile.tsx:88,92`), `setReverse` / `setBeatRepeat` (`Strip.tsx:784,797,818`),
+and `applyGridRow` cell edits through the tile's `setGridEditHandler`
+(`deckTile.tsx:85`) — the last of these is a CONTENTS edit and must keep reaching
+the session document.
+
+**CAPTURE — the overlay is written at the gesture, not at save.** Every routed
+gesture calls one function, `rememberOverlay(stripKey, sessionId, patch)` — the
+generalization of `rememberPerf` (`mapDocument.ts:545`, which has **no production
+caller at HEAD**; every one of its callers is a test). It goes through
+`updateStrip` (`mapStore.ts:97-105`) so `dirty` cannot be forgotten at a call site
+and the 4 s autosave (`mapFiles.ts:attachAutosave`) carries it. This is what P8-2's
+rewritten gate means by "the round trip must START from a UI gesture".
+
+⚠️ **Deck → strip resolution belongs to the MAP layer, never to the companion
+store.** Every routed setter knows a *deck*; the overlay is keyed by *(strip,
+session)*. The map resolves it — `map.strips.find(s => s.element.kind === 'grid' &&
+s.element.deck === deck)` — and the resolution is unique because `freeDeck`
+(`stripOps.ts:60-66`) gives at most one strip per deck. Teaching `companionEngine`
+about strips would put the plane's document model inside the session tier and break
+the layering that `worldFromSession` is explicitly built to protect.
+
+### §3 — the re-apply triggers (this is what resolves the STOMP hazard)
+
+Every trigger is the same event wearing four hats: **a session just landed in a
+deck.** So there is ONE entry point, `applyOverlay(deck, overlay)`, and four
+callers that `await useCompanion.open(...)` first:
+
+| | trigger | hook | note |
+|---|---|---|---|
+| T1 | **map load** | `mapFiles.ts:83-88`, between `setMap` and `applyMap`, after P8-0's blocking `useCompanion.open(sessionId, deck)` per grid strip | the ordering D-SL-MAPOPEN-01 signed |
+| T2 | **compose return** | `PlanePanel.tsx:146-149`, the `reopen` callback `handlePanelClosed` drives (`composeOwnership.ts:16-32`) | ⚠️ chain off the promise `open()` returns, **not** the `setTimeout(…, 500)` — a timer that fires while the read is still in flight re-applies onto the old world |
+| T3 | **strip swaps session** | `PlanePanel.tsx:786`, `await useCompanion.open(sessionId, deck)` | the trigger nobody had listed, and it is the *entire* justification for keying by (strip, sessionId): swap away and back, and the tweaks must return |
+| T4 | **engine (re)start** | `PlanePanel.tsx:388-395`'s `autoStartEngine`, and any path that republishes a deck from its file | a world published before the engine was up is re-published when it comes up, from the session — so the overlay must ride that too |
+
+**T5 — REFUSED, and the refusal is part of the design.** The compose window
+(`ComposeWindow.tsx:55-56`) opens the same session into the same deck and must show
+it **exactly as the file has it**. Overlaying there means composing against values
+you cannot see and cannot edit — you would turn a knob to a number the file does
+not contain, save, and have written something else. The compose window is the
+session's surface; the plane is the map's. This is the same boundary the
+write-routing law draws, on the read side.
+
+⚠️ **One mechanism, two hazards — and this corrects the stomp paragraph's own
+proposed fix.** That paragraph says the re-apply is "the same code on a different
+trigger" because "it already does exactly this at load (`planApply`)". It is not.
+`planApply` returns `EngineOp`s — "one engine call, named for the ABI entry point
+it becomes" (`mapApply.ts:23`) — and the overlay has no ABI entry point and never
+will (`mapStore.ts:265-272` says so in the tree). Re-applying the overlay through
+document writes would fix the stomp by *causing the bleed*. So:
+
+> **RULING: `sceneSelect` and `sceneSetSwitch` leave `EngineOp` entirely.** The
+> overlay's apply path is companion verbs and override lanes, in its own function,
+> called after `open()` resolves — not a case in `issue()`. Two tiers in one
+> ordered op list is what forced one ordering on two different clocks, and it is
+> why a "complete and tested" read path issued nothing for the whole of P8's life.
+
+*(This sharpens the ledger's P8-2 part (b), which puts the call at
+`mapStore.ts:265`. Same verb, different home — see the proposed row correction.)*
+
+### §4 — the migration: MAP v8 → v9, `sessionPerf` → `overlay`
+
+Named `the performance layer becomes the overlay (P8-1)`, and written the way
+every migration in `mapDocument.ts:367-534` is written — **choose whatever makes a
+v8 map sound unchanged**:
+
+- `currentScene` → `scene`, carried **verbatim**. It is the one field that was real.
+- `stoppedTracks`, `masterVolume`, `masterDrive`, `masterDriveCurve` → **`null`**,
+  not a constant. `null` resolves to "the session's own value plays", which is
+  precisely what a v8 map sounded like: it had no overlay for them. A fixed default
+  would silently overlay every reopened map with a value nobody chose.
+- `switchMode`, `queuedScenes`, `queueLoop` → **DROPPED.**
+
+⚠️ **That drop is the first in this document's history and it needs its carve-out
+written down, because the house law is `preserve-don't-drop`** (see Compatibility
+rules below). The carve-out: *preserve-don't-drop protects information a reader
+might act on.* These three are values **no reader ever could** — nothing consumes
+them (`mapStore.ts:265-272` returns early), nothing could have produced a non-default
+one (`rememberPerf` has no production caller), and two of them name state the app
+does not have. Carrying them forward would freeze fiction into v9 where a later
+reader would believe them. A field that was never writable and never readable is
+not information; it is a comment with a schema entry.
+
+**v9 is a MAP-document bump and touches nothing on the wire.** `MAP_SCHEMA_VERSION`
+(`mapDocument.ts:22`) is not `web/protocol/schema.ts::SCHEMA_VERSION`. `schema:check`
+compares the protocol version across exactly three C++ sites — `SlDispatch.cpp`'s
+`getCapabilities().schemaVersion`, `MergedApp.h`'s `kScoopySchemaVersion`, and the
+assertions in `shell/tools/sl_dispatch_test.cpp` (`web/scripts/checkSchemaVersion.ts`)
+— and **no gate compares `MAP_SCHEMA_VERSION` to anything.** Nothing in this
+amendment needs a protocol bump either: every verb it uses (`selectScene`,
+`toggleLaunch`, the override lanes) is in-process TS. P8-2 moves ONE number and adds
+ONE migration. If a future overlay field ever does need the wire, it moves all three
+sites or `schema:check` goes red — which is the gate working.
+
+### §5 — parked, with the row that unblocks each
+
+- **`switchMode`** — needs a control the app answers. Today the only setter rides
+  the dead `patternScene` verb (`scenesStore.ts:99-104`) and the only state lives on
+  a topic no merged host publishes. Unblocked by the K-series' reconciliation of
+  `scenesStore` (P7-K0's finding); until then a map cannot capture it or issue it.
+- **`queuedScenes` / `queueLoop`** — need a scene QUEUE. The store has one armed
+  scene (`scheduledScene`), not a list, and no loop concept anywhere.
+- **`soloedTracks`** — refused by ruling above, not by capability. Recorded so it is
+  not re-proposed as an oversight.
+- **Per-track volume/pan/tone, FX, macros** — unchanged from 2026-07-25: the PIN
+  mechanism (CM-3) owns them. Two ways to set one value with different persistence
+  remains the trap.
+
+### §6 — what P7-T4 must do (it was told to name its persistence target here)
+
+**P7-T4's master sends persist in `strip.sends[4]` — the map document field that
+already exists — and NOT in the overlay.** A send LEVEL is the CHANNEL's, by
+decision 5 (2026-07-25, above): "the channel owns the send's level, the routing
+document owns its destination". The overlay holds *session*-scope values only, and
+a strip's send is strip scope. The field is already schema'd (`mapDocument.ts:176-178`)
+and already applied — `planApply` emits `channelSetSend` for all four
+(`mapApply.ts:203-205`) — so T4 adds **no** persistence code and P8-4 will not
+rewrite it.
+
+⚠️ Two traps for whoever builds T4. The session document *does* carry a
+`deckMasterSendRow` (`patternFile.ts:689-691`), a legacy Swift field with **zero
+consumers in `web/src`** — persisting there would write a value nothing reads.
+And `MasterRow.tsx:156` writes `deckMasterSend` via `paramWrite`, which is a LIVE
+control param, not one of the three `SESSION_PARAMS` (`browserLink.ts:59-64`) — so
+it neither bleeds nor persists today. T4's remaining question is therefore the
+one-owner ruling its own note demands (which control writes the lane), not where the
+value lands. That is now decided.
+
 ## Compatibility rules
 
 - `.scoopySession` (PatternFile v32+) remains byte-compatible with shipping scoopy until
@@ -319,5 +622,9 @@ trigger" — now signed and built as row **P8-3**, hanging off P3-C2's republish
   corpus both directions).
 - Unknown keys are a loud failure, newer schemaVersion is refused, migrations are named
   per-version steps, each testable (wizard `session.ts` discipline, verbatim).
+  ⚠️ `preserve-don't-drop` has exactly ONE written carve-out — the v8→v9 drop of
+  `switchMode`/`queuedScenes`/`queueLoop`, argued in the 2026-07-30 amendment §4.
+  A field that was never writable and never readable is not information. Any future
+  drop needs the same argument made in the same place, or it is a data loss.
 - Nothing in this schema may require X·MIX (removed, D3) or the parked capture backends;
   their fields are expressible but their implementations refuse at world-commit.
