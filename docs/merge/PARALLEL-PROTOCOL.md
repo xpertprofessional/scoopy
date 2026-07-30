@@ -355,3 +355,53 @@ Worth restating, because they are what made the lanes useful rather than fast:
   than a fixture that tests something easier.
 - **A fake thin enough to pass either way is a green gate that cannot see the
   defect** (E8g-c) — the web-tier form of P3.5-E10's lesson.
+
+---
+
+## 9. Working by DONOR BINDING (ruled 2026-07-30, user)
+
+The 2026-07-30 audit classified the open queue: **51 PORT · 31 NEW · 1 UNKNOWN**
+across 83 rows, every PORT naming a file and a line in `../scoopyloops`. P7 alone
+is 21 PORT of 29. **The queue is largely a rewrite backlog**, and the thing being
+rewritten has a shape the ledger does not follow.
+
+The donor's protocol answerer is **15 `Web*Binding.swift` files, 6,954 lines**,
+sitting on a document layer of ~33k. The merged host answers the same protocol in
+`SlDispatch.cpp` (1,225 lines) plus `BrowserLink`. **What did not come across is
+the bindings.** So a binding is the natural unit of work: it has a boundary, one
+reference file, and it closes several ledger rows at once.
+
+**Dispatch by binding, not by phase.** `WebSceneBinding.swift` answers
+`patternScene` and `sceneOverride` — porting it closes P7-K7, revives
+`scenesStore`, un-swallows P8-2's scene ops and unblocks the launch quantum. Four
+rows, one reference, one coherent change.
+
+### What this costs, stated plainly
+
+It cuts across `P3-LEDGER.md:230-236`'s authority order — P7, P8 and P9 rows
+progress together rather than in sequence. That order exists to stop work being
+built on falsified premises, so the **dependency warnings on individual rows
+still bind**: a row saying *re-measure before building* is still a measure row,
+and `P11-3a-b` still lands before any quantum. What is relaxed is phase
+sequencing, not row dependencies.
+
+### Every brief for a PORT row must carry
+
+1. **The reference — file and line.** Not "see the donor": `patternScene →
+   WebSceneBinding.swift:119`. A lane that has to find it will re-derive instead.
+2. **The instruction to read it BEFORE designing**, and to report where it
+   diverged and why. A divergence the user did not ask for is a regression
+   wearing a redesign's clothes.
+3. ⚠️ **Only `ScoopyLoops/*.swift` and `ScoopyLoopsTests/` are evidence.**
+   `../scoopyloops/web/**` is this project's own web tier frozen at 2026-07-27 —
+   citing it is circular.
+4. **What the user has ruled**, where it differs from the donor. The donor is the
+   reference, not the authority: `trackGain` unity over the donor's 0.80 is the
+   precedent.
+
+### The index
+
+`WebEngineLink.swift:365-559` — an exhaustive dispatch `switch` over all 84
+`SLPMethod` cases. Swift enforces exhaustiveness (no `default`), so it is a
+complete list of what the old host answered. Start there for any "who used to
+answer this?" question.
