@@ -60,6 +60,28 @@ export class NativeWorldSink implements WorldSink {
   private step = 0;
   private positionCbs = new Set<(pos: EnginePosition) => void>();
   private offHotFrame: (() => void) | null = null;
+  /**
+   * THE LAST TRANSPORT STATE WE PUBLISHED, per deck — the honest source for
+   * `position().playing` (P11-3a).
+   *
+   * There is no transport-state slot in the HotFrame: `playheadStepDeck*`
+   * carries a raw monotonic step counter that simply FREEZES when the transport
+   * stops, so "stopped" and "stopped on step 412" look identical on the wire.
+   * The engine itself does know — `NativeAudioEngineCore::deckClockLive()` — and
+   * `sl_engine.cpp:1454` already uses `w.active && snap.isPlaying &&
+   * deckClockLive(deck)` to blank the DJ track playheads. But it is applied only
+   * there; the playhead slots at `sl_engine.cpp:1417-1419` publish the counter
+   * unconditionally, and exposing `deckClockLive` costs a HotFrame slot and a
+   * schema bump across three hosts (see the follow-up row).
+   *
+   * `World.isPlaying` is the SAME field the engine stores as `snap.isPlaying`,
+   * and it rides every publish (`companionEngine.publish()` always passes the
+   * deck's live `playing`). So this mirrors the engine's own truth rather than
+   * estimating one. ⚠️ It is the last COMMANDED transport, not an engine
+   * readback: a publish the applier refuses leaves this stale, which is why a
+   * refusal is surfaced through `lastError` rather than swallowed.
+   */
+  private publishedPlaying = new Map<number, boolean>();
 
   // ⚠️ THERE WAS AN `onPublished` HOOK HERE and it is gone (P3-2). It existed
   // for exactly one subscriber: `sl_snapshot_begin` reset every deck's
@@ -91,12 +113,26 @@ export class NativeWorldSink implements WorldSink {
    * ignored by construction.
    */
   async start(_workletUrl: string): Promise<void> {
+    // `started` FIRST, so a HotFrame arriving during registration is not dropped
+    // by `position()`'s not-started guard below.
+    this.started = true;
     // Subscribe to the sequencer playhead the engine already broadcasts, so
     // `position()` is the ENGINE's truth rather than a UI-side estimate.
     this.offHotFrame = this.link.onHotFrame((frame) => {
       this.step = frame[HotFrameLayout.playheadStepDeck0] ?? 0;
+      // ── THE FAN-OUT (P11-3a) ────────────────────────────────────────────
+      // Without this, `positionCbs` was added to and deleted from and NEVER
+      // ITERATED, so `companionEngine`'s switch commit never ran on the JUCE
+      // host: a queued scene pad lit `queued` and stayed queued forever. Green
+      // in Chromium (which runs `ScoopyAudio`, whose fan-out is at
+      // `scoopyAudio.ts:274`) and dead in the shipping app — the four rules.
+      //
+      // Fanned out on EVERY frame, not only when the step changes, because that
+      // is `ScoopyAudio`'s contract ("position broadcasts, ~every 1024 frames")
+      // and a subscriber that wants edges can compare steps itself.
+      const pos = this.position();
+      if (pos) for (const cb of this.positionCbs) cb(pos);
     });
-    this.started = true;
   }
 
   /** No suspended context to resume. */
@@ -133,6 +169,8 @@ export class NativeWorldSink implements WorldSink {
   }
 
   publish(world: World, deck = 0): void {
+    // The only transport truth this tier gets — see `publishedPlaying`.
+    this.publishedPlaying.set(deck, world.isPlaying);
     void this.link
       .command("slWorld", {
         action: "publish",
@@ -183,9 +221,43 @@ export class NativeWorldSink implements WorldSink {
     // and the scene scheduler consume. The sub-step fields are reported as 0
     // rather than estimated: a made-up `stepFrame` would drive a scheduler to
     // fire at the wrong moment, which is worse than one that only knows steps.
-    return { playing: this.step >= 0, step: this.step, stepFrame: 0, framesPerStep: 0, time: 0 };
+    // WHOLE-STEP RESOLUTION IS THE HONEST CEILING HERE and the fan-out above
+    // delivers exactly that; nothing downstream may infer sub-step phase from it.
+    //
+    // `playing` was `this.step >= 0` — ALWAYS TRUE, since `step` initialises to
+    // 0 and the engine's counter is unsigned, so the native host reported a
+    // stopped engine as playing (P11-3a's second defect). It is now the last
+    // transport state published for DECK 0, which is the deck `step` itself
+    // comes from (`playheadStepDeck0`) — the two agree about whose clock this is.
+    return {
+      playing: this.publishedPlaying.get(0) ?? false,
+      step: this.step,
+      stepFrame: 0,
+      framesPerStep: 0,
+      time: 0,
+    };
   }
 
+  /**
+   * Subscribe to position broadcasts. LIVE since P11-3a — driven from the
+   * HotFrame subscription in `start()` at the shell's ~30 Hz timer rate.
+   *
+   * RATE. The browser's guarantee is "every step is observed at least once"
+   * (1024-frame broadcast < 1102-frame step floor). 30 Hz gives the same
+   * guarantee up to a ~33 ms step, i.e. a 16th at roughly 450 BPM — far past
+   * anything the app offers. And the one consumer
+   * (`companionEngine.ts:960-981`) compares `pos.step < boundary - 1`, a
+   * THRESHOLD rather than an equality, so even a skipped step commits on the
+   * next frame rather than being missed. Nothing here may be tightened into an
+   * equality test without a finer position source.
+   *
+   * ⚠️ ONE DECK. `EnginePosition` carries a single `step`, and on this host it
+   * is `playheadStepDeck0`. The consumer's commit loop iterates all three decks
+   * against it, so a scene queued on strip B or C is committed against DECK 0's
+   * clock, not its own. That is a real defect this fan-out EXPOSES rather than
+   * introduces — it needs a per-deck position, which changes the `WorldSink`
+   * contract and the consumer. Filed as its own row; do not paper over it here.
+   */
   onPosition(cb: (pos: EnginePosition) => void): () => void {
     this.positionCbs.add(cb);
     return () => this.positionCbs.delete(cb);
