@@ -28,8 +28,11 @@ resource that cannot be shared, because sharing it corrupts something:
 **The lanes** are long-lived subagents (`.claude/agents/ledger-lane.md`), resumed
 with the next row rather than respawned, so repo knowledge stays warm.
 
-- **Lane A — the main checkout.** Takes the authority chain and every row needing
-  C++, `ctest`, the walks, or the real host. Reuses the existing `build/`.
+- **Lane A — the main checkout, driven by the conductor itself**, not by a
+  subagent. It takes the authority chain and every row needing C++, `ctest`, the
+  walks, or the real host, and reuses the existing `build/`. The conductor and a
+  Lane A subagent would be two writers in one tree, and the audio device and
+  `build/` cannot be split anyway — so the roles are merged rather than raced.
 - **Lanes B and C — git worktrees, web-only.** `../scoopy-lane-b` on `lane/b`,
   `../scoopy-lane-c` on `lane/c`. No CMake, no walks, no bundle.
 
@@ -113,8 +116,14 @@ collects them and posts "awaiting sign-off on: …" per §11.4.
 - **P3.5-E8b and P11-1 decide the same thing** — where the file browser lives,
   when P11-1 retires `≡ panels` entirely. The ledger says decide the home
   **ONCE** for both rows. They are therefore pinned to the **same lane, in
-  sequence**, never concurrent, and the home ruling is ratified by the conductor
-  before either is built.
+  sequence**, never concurrent.
+
+  **RULED 2026-07-30 (conductor), adopting E8b's own standing recommendation:
+  the file browser's home is a drawer inside the COMPOSE WINDOW** — "compose is
+  where a person reaches for a sample." It does **not** go into
+  `PANEL_MENU_SURFACES`. That is what makes the ruling survive P11-1: a door
+  that never lived in `≡ panels` cannot be orphaned when `≡ panels` is retired,
+  so E8b needs no rework and P11-1 inherits no obligation to rehome it.
 - **P11-1's FX 1–4** wait on P7-MIX-0, so until then they need a named interim
   home "or the row is a REGRESSION in reachability." Naming it is a conductor
   call.
@@ -164,6 +173,15 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout | — | — | idle |
-| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle |
-| C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
+| A | main checkout (conductor) | **P6-6a** — the `hostSendFeed` one-block seam | `slengine/src/sl_engine.cpp`, `slengine/include/sl_engine.h`, `shell/src/SlDispatch.cpp` | in-progress |
+| B | `../scoopy-lane-b` (`lane/b`) | **P3.5-E8b** — the file browser has no home | `web/src/plane/ComposeWindow.tsx`, `web/src/plane/Composer.tsx`, `web/src/panels/FileBrowserPanel.tsx`, `web/src/store/fileBrowserBackend.ts` | in-progress |
+| C | `../scoopy-lane-c` (`lane/c`) | **P7-K0** — the NAV-SHORTCUTS audit | `docs/merge/NAV-SHORTCUTS.md` only (spec row, no source) | in-progress |
+
+Three disjoint territories: C++ engine · compose-window web surface · docs.
+
+**Queued behind each lane** — B: P11-1 → P11-2 → P11-3 → P11-5 → P11-6 → P11-4
+(P11-4 last; it is the only one needing a MAP schema bump). C: P8-1 → P9-5 →
+P11-AUDIT. A: P6-6b → P6-6c → P6-AUDIT → P3.5-E4.
+
+**Not dispatchable, collected for the user:** P3.5-E9b (user-gated diagnostic),
+the real-host walks still pending on P3.5-E7 / E8a / E9a, and every `*-G1` gate.
