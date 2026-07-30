@@ -42,7 +42,12 @@ import { fileURLToPath } from 'node:url'
 import { PARAM_IDS } from '../protocol/schema.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const SHELL = resolve(repoRoot, 'shell/src/MergedMain.cpp')
+// `shell/src/MergedApp.cpp` since H3, which moved the shell's assembly out of
+// MergedMain.cpp into a library so a walk could drive it. The gate caught the
+// move by THROWING (see parseShellMap's contract below) rather than finding an
+// empty table and passing — which is the whole reason that contract is written
+// the way it is.
+const SHELL = resolve(repoRoot, 'shell/src/MergedApp.cpp')
 const ENGINE = resolve(repoRoot, 'slengine/src/sl_engine.cpp')
 const WAIVERS = resolve(repoRoot, 'slengine/param-map-not-wired.json')
 

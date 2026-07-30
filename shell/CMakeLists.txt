@@ -228,6 +228,64 @@ if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
     target_link_libraries(WizardMerged PRIVATE "-framework CoreAudioKit")
 endif()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MergedWalk (H5) — THE SAME APP, driven by a script instead of a person.
+#
+# It links `wz_merged_app`, so it boots the real shell: real WKWebView, real
+# resource provider, real dispatcher, real engine, a real `window.__JUCE__`.
+# That last one is the point — every browser walk in web/tools/ answers through
+# `browserLink.ts` and is structurally blind to the native half.
+#
+# A GUI binary, so it needs a window server: SKIP (77) where there is none.
+# ⚠️ NativePluginHost.mm listed here for the same reason as the app — never in
+# the library.
+# ─────────────────────────────────────────────────────────────────────────────
+juce_add_gui_app(MergedWalk
+    PRODUCT_NAME "MergedWalk"
+    COMPANY_NAME "Wizard"
+    BUNDLE_ID com.wizard.mergedwalk)
+
+target_sources(MergedWalk PRIVATE tools/merged_walk.cpp)
+target_compile_definitions(MergedWalk PRIVATE
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:MergedWalk,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:MergedWalk,JUCE_VERSION>")
+target_link_libraries(MergedWalk PRIVATE
+    wz_merged_app
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    target_sources(MergedWalk PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
+    set_target_properties(MergedWalk PROPERTIES
+        OBJCXX_STANDARD 20
+        OBJCXX_STANDARD_REQUIRED ON)
+    target_link_libraries(MergedWalk PRIVATE "-framework CoreAudioKit")
+endif()
+
+# OPT-IN, and off by default on purpose. This binary opens real windows and
+# opens the real audio DEVICE, so folding it into the routine `ctest` run would
+# steal focus and the sound card out from under whoever is working. A gate that
+# interrupts you is a gate you start skipping.
+#
+#   cmake -B build -DWIZARD_TEST_REALHOST=ON && ctest --test-dir build -L realhost
+#
+# or just run it, which is the same thing without ctest in the way:
+#
+#   cmake --build build --target MergedWalk
+#   ./build/shell/MergedWalk_artefacts/MergedWalk.app/Contents/MacOS/MergedWalk
+#
+# ⚠️ It is built either way — an opt-in gate that stops COMPILING is how a walk
+# quietly rots. Only its ctest registration is conditional.
+option(WIZARD_TEST_REALHOST "Register the real-host walk (MergedWalk) with ctest" OFF)
+if(WIZARD_TEST_REALHOST)
+    add_test(NAME merged_walk
+             COMMAND ${CMAKE_CURRENT_BINARY_DIR}/MergedWalk_artefacts/MergedWalk.app/Contents/MacOS/MergedWalk)
+    set_tests_properties(merged_walk PROPERTIES
+        SKIP_RETURN_CODE 77
+        LABELS "realhost"
+        TIMEOUT 90)
+endif()
+
 # Same JUCE 8 gap for every WebView target: juce_gui_extra declares no
 # linuxPackages, so nothing supplies the GTK/WebKit headers its Linux
 # WebBrowserComponent includes. On the LIBRARY so both entry points inherit it.

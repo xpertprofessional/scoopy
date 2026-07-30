@@ -66,7 +66,19 @@ juce::var capabilities(const HostServices* services) {
     // runtime backstop for a coupling the C++/TS split cannot check at build
     // time. A future codegen step could emit this from schema.ts; until then it
     // is a loud constant, deliberately not buried.
-    obj->setProperty("schemaVersion", 92);
+    // ⚠️ THIS WAS **92** AGAINST A schema.ts OF 96 (H5 found it, `schema:check`
+    // now gates it). Four versions stale, and the "loud constant" above was not
+    // loud enough on its own — the two things that were supposed to catch it
+    // both missed:
+    //   · App.tsx:207 DOES compare them and set "SCHEMA MISMATCH: ui vN vs
+    //     engine vM" — but it renders on the FALLBACK debug panel, and every
+    //     real panel (`plane` included) returns before reaching it. The backstop
+    //     was defeated by routing, not absent.
+    //   · every browser walk passed, because `browserLink.ts:275` reports the
+    //     UI's OWN constant — the browser host agrees with itself BY
+    //     CONSTRUCTION and cannot fail this check however wrong native is.
+    // A comment saying "must equal" is not a gate. `npm run schema:check` is.
+    obj->setProperty("schemaVersion", 96);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`

@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
     // ctest run — a hand tool for exactly the drift the key-set pins guard.
     if (argc > 1 && juce::String(argv[1]) == "--dump-toolbar") {
         wizard::sl::HostServices services;
-        sl_engine* e = sl_engine_create(48000.0, 512, 92);
+        sl_engine* e = sl_engine_create(48000.0, 512, 96);
         std::printf("%s\n", juce::JSON::toString(wizard::sl::toolbarState(e, &services))
                                 .toRawUTF8());
         sl_engine_destroy(e);
@@ -59,21 +59,26 @@ int main(int argc, char* argv[]) {
     }
     FakeSettings settings;
 
-    // getCapabilities — the handshake. schemaVersion must be scoopy’s (92), or
-    // its UI shows a mismatch banner. The host's real capabilities, not
+    // getCapabilities — the handshake. schemaVersion must equal schema.ts's
+    // SCHEMA_VERSION, or the UI shows a mismatch banner.
+    //
+    // ⚠️ THIS PIN SAID **92** WHILE schema.ts SAID 96, so the test DEFENDED the
+    // drift: the assertion agreed with the stale constant and went green for
+    // four bumps. That is why `npm run schema:check` now gates this literal too
+    // — a hand-written number in a test is a fourth place to drift, not a check. The host's real capabilities, not
     // aspirational ones.
     {
         const auto r = dispatch("getCapabilities", juce::var(), settings, nullptr);
         CHECK(replyOk(r));
         const auto caps = result(r);
-        CHECK((int) caps.getProperty("schemaVersion", 0) == 92); // scoopy SCHEMA_VERSION
+        CHECK((int) caps.getProperty("schemaVersion", 0) == 96); // scoopy SCHEMA_VERSION
         CHECK((bool) caps.getProperty("fileSystem", false) == true);
         CHECK((bool) caps.getProperty("audioDeviceSelection", false) == true);
         CHECK((bool) caps.getProperty("pluginHosting", true) == false);
         CHECK((bool) caps.getProperty("midiHardware", true) == false);
         CHECK((bool) caps.getProperty("returnFx", true) == false);
         // The exported helper agrees with the dispatched answer.
-        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 92);
+        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 96);
     }
 
     // An unset key reads as null (value present, null) — NOT absent, NOT a
@@ -532,7 +537,7 @@ int main(int argc, char* argv[]) {
         CHECK(!replyOk(dispatch("selectFxPlugin",
             juce::JSON::parse(R"({"returnIndex":1,"identifier":"x"})"),
             settings, nullptr, &services)));
-        sl_engine* engine = sl_engine_create(48000.0, 512, 92);
+        sl_engine* engine = sl_engine_create(48000.0, 512, 96);
         CHECK(engine != nullptr);
         CHECK(!replyOk(dispatch("selectFxPlugin",
             juce::JSON::parse(R"({"returnIndex":9,"identifier":"x"})"),
