@@ -137,9 +137,60 @@ add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # THE MERGED SHELL — scoopy's real UI on the SL ABI v3 engine. The ONLY host.
-# Everything behind the transport is unit-tested; this target is the GUI
-# assembly, verified by running it.
+#
+# THE ASSEMBLY IS A LIBRARY (H3). It used to be the app's single translation
+# unit, which meant the only way to run it was to launch the app by hand — the
+# reason every phase here ends on an `awaiting-user` gate. `wz_merged_app` holds
+# the whole shell; two entry points link it:
+#
+#   WizardMerged  src/MergedMain.cpp        the app
+#   MergedWalk    tools/merged_walk.cpp     the same app, driven by a script (H5)
+#
+# One source of truth, two ways in. A walk against a COPY of the shell would
+# prove nothing about the shell that ships.
+#
+# ⚠️ `NativePluginHost.mm` IS DELIBERATELY NOT IN THIS LIBRARY — it is listed per
+# EXECUTABLE below. Its symbols must outrank the no-op stub on scoopy_engine's
+# link interface, and an archive member is pulled only if a symbol is still
+# undefined; inside a static lib it can lose that race and every plugin feature
+# goes quiet with a green build. `plugin_audible_test`/`plugin_state_test`
+# already compile it directly for exactly this reason.
 # ─────────────────────────────────────────────────────────────────────────────
+add_library(wz_merged_app STATIC src/MergedApp.cpp)
+target_include_directories(wz_merged_app PUBLIC src
+    ${CMAKE_SOURCE_DIR}/slengine/include ${CMAKE_SOURCE_DIR}/host/src)
+
+target_compile_definitions(wz_merged_app PUBLIC
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_CURL=0
+    # The webdist is PUBLIC because both entry points serve the same bundle;
+    # two entry points disagreeing about which UI they host is precisely the
+    # class of thing this arrangement exists to make impossible.
+    # BUILT IN-TREE from `web/` (P3-0 step 2). It was `vendor/scoopy/webdist` — a
+    # vendored BUILD of another repo's UI — and that indirection cost a session:
+    # a day's work was invisible because nothing rebuilt or re-vendored it.
+    MERGED_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/webdist")
+
+target_link_libraries(wz_merged_app
+    PUBLIC juce::juce_gui_extra
+           wz_sl_engine    # the v3 engine
+           wz_sl_command   # SlDispatch: boot handshake + worldPublish play path
+           wz_sl_settings  # FileSettingsStore
+           wz_webresources # resource serving + navigation policy
+           wz_audio_io     # duplex device -> SlRenderSink -> sl_render_io
+    PRIVATE juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    # The DEFINES and the include path, so MergedApp.{h,cpp} compile the
+    # scanner member in — but not the .mm itself. See the ⚠️ above.
+    target_include_directories(wz_merged_app PUBLIC ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(wz_merged_app PUBLIC
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_VST3=1)
+    target_link_libraries(wz_merged_app PUBLIC juce::juce_audio_processors)
+endif()
+
 juce_add_gui_app(WizardMerged
     PRODUCT_NAME "WizardMerged"
     COMPANY_NAME "Wizard"
@@ -148,29 +199,16 @@ juce_add_gui_app(WizardMerged
     MICROPHONE_PERMISSION_TEXT "ScoopyLoops mixes and records audio; microphone access makes your inputs available.")
 
 target_sources(WizardMerged PRIVATE src/MergedMain.cpp)
-target_include_directories(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/slengine/include ${CMAKE_SOURCE_DIR}/host/src)
 
 target_compile_definitions(WizardMerged PRIVATE
-    JUCE_WEB_BROWSER=1
-    JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_VERSION>"
-    # The vendored, hash-pinned scoopy webdist — the merged repo hosts scoopy
-    # self-contained (no sibling checkout at runtime).
-    # BUILT IN-TREE from `web/` (P3-0 step 2). It was `vendor/scoopy/webdist` — a
-    # vendored BUILD of another repo's UI — and that indirection cost a session:
-    # a day's work was invisible because nothing rebuilt or re-vendored it. One
-    # tree, one build, nothing to forget.
-    MERGED_WEBDIST_DIR="${CMAKE_SOURCE_DIR}/webdist")
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_VERSION>")
 
+# Everything else — the engine, the dispatcher, the webdist, the WebView flags —
+# arrives PUBLIC through the shell library. The app target's own list is now
+# only what is genuinely app-specific: its name and version.
 target_link_libraries(WizardMerged PRIVATE
-    wz_sl_engine    # the v3 engine
-    wz_sl_command   # SlDispatch: boot handshake + worldPublish play path
-    wz_sl_world     # applyWorld (pulled in via wz_sl_command, named for clarity)
-    wz_sl_settings  # FileSettingsStore
-    wz_webresources # resource serving + navigation policy
-    wz_audio_io     # duplex device -> SlRenderSink -> sl_render_io
-    juce::juce_gui_extra
+    wz_merged_app
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
@@ -178,28 +216,25 @@ target_link_libraries(WizardMerged PRIVATE
 # target, exactly as the shipping app does it: the core (built flag=1 via scoopy_engine's
 # PUBLIC define) calls the slot surface, and THIS object file supplies the JUCE-backed
 # implementation — so the no-op stub on scoopy_engine's link interface is never pulled here.
-# juce_audio_processors brings the AU + VST3 format code; the two JUCE_PLUGINHOST defines
-# turn those formats on for every module TU this target compiles.
+# It stays on the EXECUTABLE and out of wz_merged_app (see the ⚠️ above the library):
+# in an archive it can lose the symbol race to that stub, silently.
 if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
     target_sources(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
     set_target_properties(WizardMerged PROPERTIES
         OBJCXX_STANDARD 20
         OBJCXX_STANDARD_REQUIRED ON)
-    target_include_directories(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
-    target_compile_definitions(WizardMerged PRIVATE
-        JUCE_PLUGINHOST_AU=1
-        JUCE_PLUGINHOST_VST3=1)
     # CoreAudioKit explicitly: JUCE's module metadata only auto-links the frameworks its
     # DEFAULT config needs, and the AU-host code (AUGenericView) is behind our define.
-    target_link_libraries(WizardMerged PRIVATE
-        juce::juce_audio_processors
-        "-framework CoreAudioKit")
+    target_link_libraries(WizardMerged PRIVATE "-framework CoreAudioKit")
 endif()
 
+# Same JUCE 8 gap for every WebView target: juce_gui_extra declares no
+# linuxPackages, so nothing supplies the GTK/WebKit headers its Linux
+# WebBrowserComponent includes. On the LIBRARY so both entry points inherit it.
 if(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
     pkg_check_modules(WEBKIT2GTK REQUIRED webkit2gtk-4.1)
-    target_include_directories(WizardMerged PRIVATE ${GTK3_INCLUDE_DIRS} ${WEBKIT2GTK_INCLUDE_DIRS})
-    target_link_libraries(WizardMerged PRIVATE ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
+    target_include_directories(wz_merged_app PUBLIC ${GTK3_INCLUDE_DIRS} ${WEBKIT2GTK_INCLUDE_DIRS})
+    target_link_libraries(wz_merged_app PUBLIC ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
 endif()
