@@ -23,7 +23,12 @@ commits, each green. The ledger's **BUNDLES** section (B1–B8) is the queue.
    backlog** is `docs/merge/PARALLEL-PROTOCOL.md` §10 "Awaiting the user".
    (`docs/archive/MORNING-DECISIONS-2.md` is history: every decision in it is
    signed. Do not orient on it.)
-4. `docs/merge/PARALLEL-PROTOCOL.md` — **§0 is the donor-binding ruling**; read
+4. `docs/DESIGN.md` — **read before adding any UI control.** The control
+   vocabulary (`GeoRange` / `DragBox` / `Button`, never a bare range input), the
+   one control-height token, the four transport glyphs ⟳ ▸ ↻ ◼, and the rule
+   that a disabled control must say why. Short, and every rule in it is one the
+   CSS or `check:tokens` already enforces.
+5. `docs/merge/PARALLEL-PROTOCOL.md` — **§0 is the donor-binding ruling**; read
    it. The rest is the conductor/lane contract, currently **PARKED** — bundles
    run single-session by user ruling. Its §8 is the recipe for reviving lanes
    (the worktrees and the `ledger-lane` agent type are still on disk) when two
