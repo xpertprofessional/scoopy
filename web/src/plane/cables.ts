@@ -122,6 +122,32 @@ export function routeKeyOf(c: Cable): RouteKey {
 }
 
 /**
+ * Is this exact cable already in the graph?
+ *
+ * IDENTITY IS THE ENDPOINTS — kind, index, sub, and the destination — and
+ * deliberately NOT gain or feedback: the same cable at a different level is
+ * still the same cable, and a "duplicate" that differed only in gain would be
+ * two engine routes summing into one input.
+ *
+ * ⚠️ THIS BELONGS ON THE COMMIT PATH, not on the gestures. Every authoring door
+ * used to be trusted to check for itself, and only ONE of them did
+ * (`onRecordFromStrip`) — so a repeated shift-drag added a second identical
+ * route and the engine summed it, DOUBLING that strip's contribution with
+ * nothing on screen to show why it got louder. A guard that lives beside the
+ * `slRoute add` cannot be forgotten by the next door someone adds.
+ */
+export function routeExists(routes: readonly Route[], want: Route): boolean {
+  return routes.some(
+    (r) =>
+      r.src.kind === want.src.kind &&
+      r.src.index === want.src.index &&
+      (r.src.sub ?? null) === (want.src.sub ?? null) &&
+      r.dst.kind === want.dst.kind &&
+      r.dst.index === want.dst.index,
+  )
+}
+
+/**
  * The TERMINAL facts a strip states about itself — the chips.
  *
  * Everything that is not a graph edge. `→ main` is the resting state and is

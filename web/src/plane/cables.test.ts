@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { emptyMap, type PlaneMap, type Route, type Strip } from '../persist/mapDocument.ts'
-import { cablePath, cablesOf, chipsOf, feedbackInto, hasOutput, inPoint, outPoint, routeKeyOf } from './cables.ts'
+import {
+  cablePath,
+  cablesOf,
+  chipsOf,
+  feedbackInto,
+  hasOutput,
+  inPoint,
+  outPoint,
+  routeExists,
+  routeKeyOf,
+} from './cables.ts'
 import { newStrip } from './stripOps.ts'
 
 const strip = (key: string, channel: number): Strip => ({
@@ -104,6 +114,49 @@ describe('which routes become cables', () => {
     const grid = { ...strip('g', 0), element: gridEl(2) }
     const map = mapWith([grid, strip('loop', 1)], [route({ src: deckOut(0), dst: chanIn(1) })])
     expect(cablesOf(map)).toEqual([])
+  })
+})
+
+describe('the duplicate-cable guard', () => {
+  // P9-3(a). This guard used to live in ONE gesture, so every other authoring
+  // door could add a second identical route — and the engine sums them, so the
+  // strip simply got twice as loud with nothing on screen to explain it.
+
+  const r = (src: Route['src'], dstIndex = 1, over: Partial<Route> = {}): Route => ({
+    src,
+    dst: { kind: 'channelIn', index: dstIndex },
+    gain: 1,
+    feedback: false,
+    ...over,
+  })
+
+  it('catches an exact repeat — the repeated shift-drag', () => {
+    const out = r({ kind: 'channelOut', index: 0, sub: null })
+    expect(routeExists([out], out)).toBe(true)
+  })
+
+  it('ignores gain and feedback — the same cable at another level is the same cable', () => {
+    const a = r({ kind: 'channelOut', index: 0, sub: null })
+    const b = r({ kind: 'channelOut', index: 0, sub: null }, 1, { gain: 0.25, feedback: true })
+    // Were this false, "re-patching at a different level" would add a SECOND
+    // engine route and both would sum into the one input.
+    expect(routeExists([a], b)).toBe(true)
+  })
+
+  it('lets genuinely different cables through', () => {
+    const existing = [r({ kind: 'channelOut', index: 0, sub: null })]
+    expect(routeExists(existing, r({ kind: 'channelOut', index: 1, sub: null }))).toBe(false) // other source
+    expect(routeExists(existing, r({ kind: 'channelOut', index: 0, sub: null }, 2))).toBe(false) // other dest
+    expect(routeExists(existing, r({ kind: 'deckOut', index: 0, sub: null }))).toBe(false) // other KIND, same index
+  })
+
+  it('separates the four sends of one strip', () => {
+    // Send 1 and send 3 from the same strip into the same input are two
+    // different cables; collapsing them would make the second silently no-op.
+    const s1 = r({ kind: 'channelSend', index: 0, sub: 0 })
+    const s3 = r({ kind: 'channelSend', index: 0, sub: 2 })
+    expect(routeExists([s1], s3)).toBe(false)
+    expect(routeExists([s1, s3], s3)).toBe(true)
   })
 })
 

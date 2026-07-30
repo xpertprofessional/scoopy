@@ -24,7 +24,16 @@ import { useCompanion } from '../store/companionEngine.ts'
 import { enabledScenes } from '../audio/sceneProjection.ts'
 import { fitToContent, zoomAbout, type Viewport } from './planeLayout.ts'
 import { Cables } from './Cables.tsx'
-import { chipsOf, feedbackInto, feedbackMs, hasOutput, routeKeyOf, type Cable } from './cables.ts'
+import {
+  chipsOf,
+  feedbackInto,
+  feedbackMs,
+  hasOutput,
+  routeExists,
+  routeKeyOf,
+  type Cable,
+} from './cables.ts'
+import { DST_KIND, NO_INDEX, SRC_KIND } from '../persist/mapApply.ts'
 import { cellsOf, inputFor, inputRoute } from './stripOps.ts'
 import { send } from './send.ts'
 import { Strip } from './Strip.tsx'
@@ -250,16 +259,21 @@ export function Plane({
       gain: 1,
       feedback,
     }
+    // THE DUPLICATE GUARD LIVES HERE, on the commit path (P9-3a). It used to
+    // live in exactly one GESTURE, so every other door — this one included —
+    // could add a second identical route that the engine happily summed,
+    // doubling the strip's contribution with nothing on screen to explain it.
+    if (routeExists(getMap().routes, route)) return
     useMapStore.setState((st) => ({
       map: { ...st.map, routes: [...st.map.routes, route] },
       dirty: true,
     }))
     send(link, 'slRoute', {
       action: 'add',
-      srcKind: sendIndex === null ? 0 : 1,
+      srcKind: SRC_KIND[route.src.kind],
       srcIndex: fromChannel,
-      srcSub: sendIndex ?? 0xffffffff,
-      dstKind: 0,
+      srcSub: sendIndex ?? NO_INDEX,
+      dstKind: DST_KIND[route.dst.kind],
       dstIndex: toChannel,
       gain: 1,
       feedback,
@@ -288,16 +302,17 @@ export function Plane({
       gain: 1,
       feedback: false,
     }
+    if (routeExists(getMap().routes, route)) return
     useMapStore.setState((st) => ({
       map: { ...st.map, routes: [...st.map.routes, route] },
       dirty: true,
     }))
     send(link, 'slRoute', {
       action: 'add',
-      srcKind: 4,
+      srcKind: SRC_KIND[route.src.kind],
       srcIndex: deck,
-      srcSub: 0xffffffff,
-      dstKind: 0,
+      srcSub: NO_INDEX,
+      dstKind: DST_KIND[route.dst.kind],
       dstIndex: toChannel,
       gain: 1,
       feedback: false,
