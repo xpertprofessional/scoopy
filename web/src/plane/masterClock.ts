@@ -21,21 +21,45 @@
 
 /** Taps kept in the rolling window: four taps, so three intervals. Enough for
     a median to out-vote ONE bad tap, few enough that the readout follows you
-    when you change tempo rather than averaging in the old one. */
+    when you change tempo rather than averaging in the old one.
+
+    ⚠️ The donor keeps EIGHT and simple-averages (`TapTempoEngine.swift`), and
+    that is a coherent design rather than a worse one: a larger window dilutes a
+    bad interval statistically where ours rejects it outright. We keep four
+    because rejection converges faster — a doubled interval among three is
+    thrown away, where among seven it is averaged in at ~14% error and never
+    leaves. The donor also filters only intervals under 0.03 s (2000 BPM), which
+    catches a bounced button but not the mis-tap people actually make: a MISSED
+    beat, which reads as one interval of roughly double. */
 export const TAP_WINDOW = 4
 
-/** A longer gap than this starts a NEW series rather than extending the old
-    one. Without it, a tap two minutes after the last one averages against
-    ancient intervals and produces a tempo nobody asked for. 2.5 s is just
-    past the slowest interval that could still be meant as a beat (24 BPM). */
-export const TAP_TIMEOUT_MS = 2500
-
-/** The same range the master's own number box accepts. A tap series that
-    implies something outside it is a mis-tap, not a tempo — reported as
-    "cannot say" rather than clamped, because clamping would silently set 20
-    when you fumbled and teach you the button is erratic. */
+/** The same range the master's own number box accepts. A tap series implying
+    something outside it is a mis-tap, not a tempo — reported as "cannot say"
+    rather than clamped, because clamping would silently set 20 when you fumbled
+    and teach you the button is erratic. */
 export const TAP_MIN_BPM = 20
 export const TAP_MAX_BPM = 300
+
+/** A longer gap than this starts a NEW series rather than extending the old one.
+    Without it, a tap two minutes after the last averages against ancient
+    intervals and produces a tempo nobody asked for.
+
+    DERIVED from `TAP_MIN_BPM`, and that is the point. It was a hand-written
+    2500 whose own comment said "just past the slowest interval that could still
+    be meant as a beat (24 BPM)" — while `TAP_MIN_BPM` said 20. **20 BPM is a
+    3000 ms beat, so every tap in a 20–24 BPM series exceeded the timeout and
+    started a fresh one: a range we declare acceptable that could never be
+    tapped.** Two constants disagreeing quietly, found by comparing against the
+    donor rather than by anything failing.
+
+    The 1.15 is human jitter: nobody lands a 3000 ms interval exactly, and a
+    series that resets because one beat ran 4% long is the same defect again.
+    Deriving it means the floor and the timeout cannot drift apart — raise
+    `TAP_MIN_BPM` and this follows.
+
+    ⚠️ The donor uses a flat 1.2 s, which puts ITS floor near 50 BPM. Not
+    portable here: it declares no range, and ours does. */
+export const TAP_TIMEOUT_MS = Math.round((60_000 / TAP_MIN_BPM) * 1.15)
 
 export interface TapResult {
   /** The series after this tap. Hand it back in on the next one. */

@@ -121,6 +121,30 @@ describe('P11-2 · tap tempo — the series boundaries', () => {
     expect(TAP_MAX_BPM).toBe(300)
   })
 
+  it('admits a series tapped at the SLOWEST tempo it claims to accept', () => {
+    // The defect this pins, found by comparing against the donor's
+    // TapTempoEngine rather than by anything failing: TAP_TIMEOUT_MS was a
+    // hand-written 2500 whose comment reasoned about 24 BPM, while
+    // TAP_MIN_BPM said 20. A 20 BPM beat is 3000 ms, so every tap in a
+    // 20–24 BPM series exceeded the timeout and started a fresh one — a range
+    // declared acceptable that could never be tapped.
+    //
+    // Deriving the timeout fixes it; this asserts the relationship rather than
+    // the number, so raising TAP_MIN_BPM cannot quietly reintroduce it.
+    const slowest = 60000 / TAP_MIN_BPM
+    expect(TAP_TIMEOUT_MS).toBeGreaterThan(slowest)
+    const { bpm } = tapAll(steady(slowest, 4))
+    expect(bpm).toBeCloseTo(TAP_MIN_BPM, 5)
+  })
+
+  it('tolerates human jitter at the slowest tempo without resetting', () => {
+    // A series that resets because one beat ran a few percent long is the same
+    // defect wearing a smaller number. Nobody lands a 3000 ms interval exactly.
+    const slowest = 60000 / TAP_MIN_BPM
+    const { taps } = tapAll([0, slowest, slowest * 2 + slowest * 0.1])
+    expect(taps).toHaveLength(3) // still ONE series
+  })
+
   it('survives two taps in the same millisecond without dividing by zero', () => {
     expect(tapAll([1000, 1000]).bpm).toBeNull()
   })
