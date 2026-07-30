@@ -173,20 +173,33 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | **P3.5-E10b** — the performance gate | `shell/tools/plane_audio_test.cpp`, `shell/CMakeLists.txt` | in-progress |
-| B | `../scoopy-lane-b` (`lane/b`) | **P11-5** — the health readout gets a door | `web/src/design/CpuMeter.tsx`, `web/src/panels/DeckMixerPanel.tsx`, `web/src/plane/PlanePanel.tsx`, `web/src/plane/Master.tsx` | in-progress |
-| C | `../scoopy-lane-c` (`lane/c`) | **P8-1** — the MAP-SCHEMA amendment | `docs/merge/MAP-SCHEMA.md` (spec row, no source) | in-progress |
+| A | main checkout (conductor) | **P3.5-E10a** — re-measure P6's latency on Release | `slengine/`, `shell/tools/` | next |
+| B | `../scoopy-lane-b` (`lane/b`) | **P11-1** — the three zones + wizard-era retirements | `web/src/plane/Master.tsx`, `PlanePanel.tsx`, `plane.css`, `design/HealthReadout.tsx` | in-progress |
+| C | `../scoopy-lane-c` (`lane/c`) | **P9-5** — the interim other-app-audio path | `docs/` only (spec row) | in-progress |
 
-**Delivered and integrated so far:** P3.5-E10 (conductor) · P3.5-E8b (Lane B) ·
-P7-K0 (Lane C). Thirteen follow-up rows written from their handoffs.
+**Integrated so far:** P3.5-E10 · P3.5-E10b (conductor) · P3.5-E8b · P11-5
+(Lane B) · P7-K0 · P8-1 (Lane C). **Thirty-one follow-up rows** written from
+those six handoffs.
 
-**Queued:** A: E10a → P6-6a/b/c → P6-AUDIT → P3.5-E4. B: P11-1 → P11-2 → P11-3
-→ P11-6 → P11-4 (P11-4 last, the only MAP schema bump). C: P9-5 → P11-AUDIT.
+**Queued:** A: E10a → P6-6a/b/c → P6-AUDIT → P3.5-E4. B: P11-2 → P11-3 → P11-6
+→ P11-4 (last — the only MAP schema bump). C: P11-AUDIT.
 
-**Not dispatchable, collected for the user:** P3.5-E9b (diagnostic), P3.5-E8f
-(ONE walk answers both E7 and E8b — `<input webkitdirectory>` in WKWebView),
-P7-K0b (`⌘S` ambiguity — a decision, not a build), the real-host walks pending
-on E7/E8a/E9a/E8b, and every `*-G1` gate.
+**Not dispatchable, collected for the user:** P3.5-E8f (ONE walk answers both
+E7 and E8b — `<input webkitdirectory>` in WKWebView) · P3.5-E9b (diagnostic) ·
+P7-K0b (`⌘S` ambiguity — a decision) · P11-5's real-host reachability · the
+walks pending on E7/E8a/E9a · every `*-G1` gate.
+
+### Conductor rulings, so they are not re-litigated
+
+- **File browser home** — a drawer in the compose window, never
+  `PANEL_MENU_SURFACES` (P3.5-E8b · P11-1).
+- **FX 1–4 stay on the bar** until P7-MIX-0 rehomes them into the strip mixer.
+  P11-1 must not invent an interim home: a door that works today is not worth
+  trading for a tidier bar, and a temporary home means building the same door
+  twice with a gap in between — which is exactly what P3.5-E8 was.
+- **`HealthReadout` moves into P11-1's status zone beside LIM**, and
+  `uiOwnership.test.ts`'s pin gets **repointed, never deleted** (P11-5b).
+- **P6-6c carries its own live block-size source** — P9-3(c) is phases away.
 
 ## 7. Two lessons from the first cycle
 
