@@ -883,3 +883,32 @@ you cannot keep more than one or two decks visible, so the collapsed face has to
 **Consequences:** "one control, one home" is explicitly NOT the rule for state that is played —
 it governs verbs with side effects (D4-2's SAVE/⏏), not performance surfaces. P7-T5's tile walk
 must additionally assert the collapsed face still plays.
+
+## D-SL-ONEHOST-01 · 2026-07-30 · One host, one engine tier — and the gates run WebKit
+**Decision:** `WizardMerged` is the ONLY host. The donor tier that survived the P3 flip only via
+its own tests is retired: wizard's `Main.cpp` shell, its `CommandDispatch` dispatcher, the P1
+`spike/` target, `wz_engine` and its ~21 tests, `SessionStore`, `PackageStore` and the `Wz*`
+engine bindings. `engine/` is **reduced, not deleted** — it survives as the vendored
+libsamplerate the decoder needs. Separately, the browser walk gates change their default engine
+from Chromium to **WebKit**, and a native `MergedWalk` target is built to cover the JuceLink half
+no browser walk can reach. Signed live by the user, in answer to their own question about whether
+this tree runs two different webviews.
+**Rationale:** it does not — `juce::WebBrowserComponent` IS WKWebView on macOS and WebKitGTK on
+Linux, one engine named at two levels. But the question was pointing at something real twice over.
+(a) Three files looked like the app and one was: `Main.cpp` had been orphaned since 2026-07-27
+with no target compiling it, and `spike/` was still built ON by default serving *another repo's*
+bundle six days after its own written deletion condition was met. `RenderSink.h:3` states the
+whole tier's reason — "P1 of the merge runs TWO engines side by side" — and that stopped being
+true at the flip. (b) The gates measure the wrong engine: seven of eight walks hardcode
+`chromium` while the app ships WebKit, and `browser_prod_test.mjs:88-103` is already a written
+account of a WebKit-only OPFS behaviour the other engines "happen to tolerate". The JuceLink half
+is invisible to any browser walk at all — this host has shipped an empty `slParam` listener and
+an uninjected `__slPanelArg`, both green.
+**Consequences:** new ledger section **H** (H1 · H2a · H2b · H3 · H4 · H5). Three things are kept
+deliberately and must not be swept up as leftovers: `engine/ThirdParty/libsamplerate` (the only
+supplier of `samplerate`, which `wz_decode` links and P8-5 needs); `RenderSink.h` +
+`TakeDrainSource.h` (their two-engine reason dies, but the live one — keeping `wz_record`
+engine-free and JUCE-free for a future WASM/companion build — does not); and `wz_capture` +
+`CaptureFake`, which P10 names by file as its foundation. The cost accepted: `render_sink_test`
+stops proving two engines share the device seam, because there is only one engine. What is bought:
+"the door is unreachable in the real app" stops being a finding a human makes at a phase gate.

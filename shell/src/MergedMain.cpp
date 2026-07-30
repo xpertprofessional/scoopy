@@ -8,8 +8,10 @@
 // file is the assembly, which is GUI and so verified by RUNNING it, not by a
 // headless test (kickoff law 5 — the visual pass is the user's).
 //
-// Runs alongside the legacy Wizard app (Main.cpp) until the P3 flip retires the
-// wizard-UI host; this is additive, not a replacement.
+// THE ONLY HOST (H1, D-SL-ONEHOST-01). This used to say it ran "alongside the
+// legacy Wizard app (Main.cpp)" — that app's target went at P3-0 step 2 and its
+// source at H1, along with the P1 spike. There is one shell, one webdist, one
+// engine tier; anything that looks like a second one is a leftover, not a peer.
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "AudioIO.h"

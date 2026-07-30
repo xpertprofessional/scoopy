@@ -13,21 +13,10 @@ add_executable(web_resources_test tools/web_resources_test.cpp)
 target_link_libraries(web_resources_test PRIVATE wz_webresources)
 add_test(NAME web_resources_test COMMAND web_resources_test)
 
-# Command JSON-RPC dispatch, shared by the app and its headless test. wz_engine
-# is PRIVATE (CommandDispatch.h only forward-declares it): consumers that create
-# engines link wz_engine directly, keeping it on the final link line once.
-add_library(wz_command STATIC src/CommandDispatch.cpp)
-target_include_directories(wz_command PUBLIC src generated)
-target_link_libraries(wz_command
-    PUBLIC juce::juce_core
-    PRIVATE wz_engine juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+# `wz_command` (CommandDispatch) is GONE (H1). It was wizard's JSON-RPC
+# dispatcher, and its only consumer was the `Wizard` app deleted at P3-0 step 2;
+# `wizard::sl::dispatch` (SlDispatch.cpp, below) is the surviving one.
 
-# The test creates engines directly, but wz_command already propagates the
-# static wz_engine onto the link line (PRIVATE deps of a static lib can't be
-# hidden), so linking it again would just warn about a duplicate library.
-# scoopy's slCommand dispatch (boot handshake: capabilities + settings +
-# view-state), GUI-free so it is tested headlessly like wz_command. No engine
-# yet — the PatternFile->v3 play path is a later increment.
 # File-backed SettingsStore for the live window; GUI-free so its persistence
 # and atomic-write discipline are tested headlessly (SessionStore precedent).
 add_library(wz_sl_settings STATIC src/SlSettingsStore.cpp)
@@ -129,11 +118,6 @@ add_executable(sl_world_apply_test tools/sl_world_apply_test.cpp)
 target_link_libraries(sl_world_apply_test PRIVATE wz_sl_world wz_sl_engine)
 add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
 
-add_executable(command_dispatch_test tools/command_dispatch_test.cpp)
-target_include_directories(command_dispatch_test PRIVATE generated ${CMAKE_SOURCE_DIR}/engine/include)
-target_link_libraries(command_dispatch_test PRIVATE wz_command)
-add_test(NAME command_dispatch_test COMMAND command_dispatch_test)
-
 # THE `Wizard` APP TARGET IS GONE (P3-0 step 2, 2026-07-27).
 #
 # It served `webdist/` built from wizard's own `web/` — a SECOND plane
@@ -145,11 +129,16 @@ add_test(NAME command_dispatch_test COMMAND command_dispatch_test)
 # Keeping both meant two `web` trees and two apps that both looked like "the
 # app", which is most of the folder confusion this collapse exists to end. The
 # code is in git if it is ever wanted back.
+#
+# ITS SOURCE IS GONE TOO (H1, D-SL-ONEHOST-01). Deleting the target left
+# `src/Main.cpp` on disk — 654 lines that no target compiled but that still read
+# like a live shell, which is the same confusion one layer down. A file nothing
+# builds is not documentation; git is.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# The MERGED SHELL — scoopy's real UI on the SL ABI v3 engine (P1 live window).
-# Additive alongside Wizard until the P3 flip. Everything behind the transport
-# is unit-tested; this target is the GUI assembly, verified by running it.
+# THE MERGED SHELL — scoopy's real UI on the SL ABI v3 engine. The ONLY host.
+# Everything behind the transport is unit-tested; this target is the GUI
+# assembly, verified by running it.
 # ─────────────────────────────────────────────────────────────────────────────
 juce_add_gui_app(WizardMerged
     PRODUCT_NAME "WizardMerged"

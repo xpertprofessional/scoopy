@@ -37,5 +37,7 @@ add_subdirectory(vendor)
 add_subdirectory(slengine)
 add_subdirectory(host)
 add_subdirectory(shell)
-# TEMPORARY (P1 spike): removed with spike/ once the WebView verdict is written.
-add_subdirectory(spike)
+# `spike/` is GONE (H1). It answered "can a JUCE WebBrowserComponent host scoopy's
+# real UI"; docs/merge/P1-SPIKE-JUCE-WEBVIEW.md carries the verdict (all four
+# questions, 2026-07-24), which was its own stated deletion condition. Its Linux
+# WebKitGTK coverage lives on in WizardMerged, which carries the same block.
