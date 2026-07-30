@@ -83,8 +83,15 @@ foreach(t
     sl_route_test             # ordered routing, feedback edges, click-free re-patch
     sl_deckout_test           # P3.5-E3: a grid deck reaches a looper strip, audibly
     sl_watchdog_test          # guard G1: a runaway feedback loop stays bounded
+    sl_perf_test              # P3.5-E10b: 3 decks stretched, inside a realtime budget
 )
     add_executable(${t} tools/${t}.cpp)
     target_link_libraries(${t} PRIVATE wz_sl_engine)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# sl_perf_test measures TIME, so give it room on a loaded machine — the other
+# fixtures here assert on samples and finish in well under a second. It is still
+# a ratio-against-realtime gate, never a wall-clock one (see the file header):
+# the timeout only stops a pathological run from hanging ctest.
+set_tests_properties(sl_perf_test PROPERTIES TIMEOUT 120)
