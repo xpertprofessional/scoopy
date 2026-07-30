@@ -610,6 +610,18 @@
   gap: 2px;
   font-size: var(--type-label-size);
 }
+/* The drop door (P3.5-E7). Dragging a `.scoopySession` FOLDER over the popover
+   arms the whole shelf — the drop target is the library itself, not a strip of
+   it, because a folder dragged from Finder lands wherever the pointer is. */
+.plane-library.drop {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+.plane-library-hint {
+  color: var(--text-dim);
+  font-size: var(--type-micro-size);
+  padding: 0 2px 4px;
+}
 .plane-library-actions {
   display: flex;
   gap: 4px;

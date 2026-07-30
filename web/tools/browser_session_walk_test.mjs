@@ -19,8 +19,11 @@
  */
 import { openEngine } from "./lib/engines.mjs"
 import { createServer } from 'node:http'
-import { readFileSync, existsSync } from 'node:fs'
-import { join, extname } from 'node:path'
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, extname, dirname } from 'node:path'
+import { unzipSync } from 'fflate'
 
 const dist = process.argv[2] ?? '../webdist'
 const MIME = {
@@ -318,6 +321,52 @@ await page.waitForFunction(
   { timeout: 10000 },
 )
 check('the lock released on slPanelClosed', true)
+
+// ── 6 · Import a `.scoopySession` FOLDER through the plane library (P3.5-E7) ─
+//        The desktop writes a DIRECTORY, and the plane's lone file input could
+//        not select one — picking a folder fired no event and the button read
+//        as dead. This drives the RESTORED folder picker over a real directory
+//        on disk. Worth most in WebKit (`node tools/walks.mjs webkit session`):
+//        WKWebView is where `webkitdirectory` is likeliest to differ, which is
+//        the whole reason the row exists.
+const fixtureDir = await mkdtemp(join(tmpdir(), 'scoopy-session-'))
+const sessionDir = join(fixtureDir, 'Demo.scoopySession')
+{
+  const zip = unzipSync(new Uint8Array(readFileSync('fixtures/session/session.zip')))
+  for (const [name, bytes] of Object.entries(zip)) {
+    const target = join(sessionDir, name)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, bytes)
+  }
+}
+
+await page.goto('http://localhost:4601/?panel=plane')
+await page.waitForSelector('.plane-bar', { timeout: 10000 })
+await page.click('button:has-text("library ▾")')
+await page.waitForSelector('.plane-library', { timeout: 5000 })
+check('the library offers a FOLDER door beside the file one',
+  (await page.locator('.plane-library-actions button:has-text("folder")').count()) === 1)
+
+await page.setInputFiles('.plane-library input[webkitdirectory]', sessionDir)
+await page.waitForFunction(
+  () => [...document.querySelectorAll('.plane-library-row')]
+    .some((r) => r.textContent.includes('Demo')),
+  null,
+  { timeout: 15000 },
+)
+check('the imported FOLDER is listed in the library', true)
+check('its pattern landed on the native route, non-empty',
+  (files.get('/sessions/Demo/pattern.json')?.length ?? 0) > 100,
+  `got ${files.get('/sessions/Demo/pattern.json')?.length ?? 0} bytes`)
+check('it arrived WITH its samples — the point of importing a session',
+  (files.get('/samples/Demo/kick.wav')?.length ?? 0) > 0 &&
+    (files.get('/samples/Demo/snare.wav')?.length ?? 0) > 0,
+  [...files.keys()].filter((k) => k.startsWith('/samples/')).join(', '))
+check('the import told the note line what it did',
+  ((await page.textContent('.plane-note')) ?? '').includes('imported Demo'),
+  await page.textContent('.plane-note').catch(() => '(no note)'))
+
+await rm(fixtureDir, { recursive: true, force: true })
 
 check('no page errors', pageErrors.length === 0, pageErrors.join(' | '))
 

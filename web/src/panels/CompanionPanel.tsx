@@ -31,6 +31,14 @@ import {
   toggleLocatorRepeatTrack,
 } from "../store/companionEngine.ts";
 import { isSessionFile } from "../store/sessionStore.ts";
+// P3.5-E7: the folder doors moved to `persist/folderImport.ts` and the plane's
+// library uses the SAME ones. Two copies of a directory walk is how the plane
+// ended up with one door out of three.
+import {
+  entriesFromDirectoryInput,
+  readDrop,
+  walkDroppedDir,
+} from "../persist/folderImport.ts";
 import { isCoarsePointer } from "../design/pointerCapability.ts";
 import { FileBrowserPanel } from "./FileBrowserPanel.tsx";
 import { GridPanel } from "./GridPanel.tsx";
@@ -115,17 +123,13 @@ export function CompanionPanel({ link }: { link: EngineLink | null }) {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     // The desktop's `.scoopySession` is a DIRECTORY, and that is what a user naturally drags in.
-    // `dataTransfer.files` flattens a directory into a useless 0-byte File, so the entry API is
-    // the only honest reader. Checked FIRST — a folder must not fall through to the zip path.
-    const entry = e.dataTransfer.items[0]?.webkitGetAsEntry?.();
-    if (entry?.isDirectory) {
-      void walkDroppedDir(entry as FileSystemDirectoryEntry).then((files) =>
-        s.importEntries(entry.name, files),
-      );
+    // `readDrop` reads the entry API first for that reason (folderImport.ts).
+    const drop = readDrop(e.dataTransfer);
+    if (drop.kind === "directory") {
+      void walkDroppedDir(drop.entry).then((files) => s.importEntries(drop.entry.name, files));
       return;
     }
-    const file = e.dataTransfer.files[0];
-    if (file && isSessionFile(file)) void s.importFile(file);
+    if (drop.kind === "file" && isSessionFile(drop.file)) void s.importFile(drop.file);
   };
 
   const tracks = s.session ? kitSamples(s.session.kit) : [];
@@ -399,37 +403,6 @@ function Transport() {
   );
 }
 
-/**
- * Recursively read a dropped directory into path→bytes entries (rooted at the folder name, the
- * shape `packageFromEntries` strips). `readEntries` returns BATCHES and must be called until it
- * comes back empty — a single call caps at 100 entries in Chromium and silently truncates a
- * 130-sample kit.
- */
-async function walkDroppedDir(root: FileSystemDirectoryEntry): Promise<Map<string, Uint8Array>> {
-  const out = new Map<string, Uint8Array>();
-  const walk = async (dir: FileSystemDirectoryEntry, prefix: string): Promise<void> => {
-    const reader = dir.createReader();
-    for (;;) {
-      const batch = await new Promise<FileSystemEntry[]>((res, rej) =>
-        reader.readEntries(res, rej),
-      );
-      if (batch.length === 0) return;
-      for (const entry of batch) {
-        if (entry.isDirectory) {
-          await walk(entry as FileSystemDirectoryEntry, `${prefix}${entry.name}/`);
-        } else {
-          const file = await new Promise<File>((res, rej) =>
-            (entry as FileSystemFileEntry).file(res, rej),
-          );
-          out.set(`${prefix}${entry.name}`, new Uint8Array(await file.arrayBuffer()));
-        }
-      }
-    }
-  };
-  await walk(root, `${root.name}/`);
-  return out;
-}
-
 /** One audio file, by user gesture. `showOpenFilePicker` where it exists, an input elsewhere.
     Exported for the plane's deck-tile binding (P3-D4-1) — the tile's LOAD button is the same
     gesture against a different deck, and two pickers would drift. */
@@ -489,18 +462,11 @@ function ImportButton({ onFile }: { onFile: (file: File) => void }) {
           webkitdirectory=""
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
-            if (files.length === 0) return;
-            void (async () => {
-              const entries = new Map<string, Uint8Array>();
-              for (const f of files) {
-                const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-                entries.set(rel, new Uint8Array(await f.arrayBuffer()));
-              }
-              const first = files[0] as File & { webkitRelativePath?: string };
-              const dirName = first.webkitRelativePath?.split("/")[0] ?? "Imported Session";
-              await s.importEntries(dirName, entries);
-            })();
             e.target.value = "";
+            if (files.length === 0) return;
+            void entriesFromDirectoryInput(files).then(({ dirName, entries }) =>
+              s.importEntries(dirName, entries),
+            );
           }}
         />
       </label>

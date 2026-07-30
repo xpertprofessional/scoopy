@@ -17,16 +17,31 @@
  * open WorkingSession BY NAME, so renaming under it would quietly re-create
  * the old directory on the next autosave, and deleting would leave a deck
  * playing a ghost. "Unload it from the strip first" is the honest state.
+ *
+ * P3.5-E7 — THE IMPORT HAS THREE DOORS, and it must keep all three. The
+ * desktop's `.scoopySession` is a DIRECTORY: a plain file input cannot select
+ * one (picking it fires no event at all, so the button reads as broken), and a
+ * `webkitdirectory` input cannot select the zipped form. Drop takes both. This
+ * row exists because P3-L1 rebuilt this library with only the first of the
+ * three and the folder a user actually has became un-importable. The reading is
+ * one implementation for all three — `persist/folderImport.ts` → the one
+ * package reader.
  */
 import { useRef, useState } from 'react'
 import type { SessionSummary } from '../store/sessionStore.ts'
 import {
   createSession,
   deleteSession,
+  importSessionEntries,
   importSessionFile,
   isSessionFile,
   renameSession,
 } from '../store/sessionStore.ts'
+import {
+  entriesFromDirectoryInput,
+  readDrop,
+  walkDroppedDir,
+} from '../persist/folderImport.ts'
 
 /** Which deck holds this session open, or -1 — the rename/delete gate. */
 export function loadedDeckOf(
@@ -53,6 +68,8 @@ export function Library({
   const [draft, setDraft] = useState('')
   const [confirming, setConfirming] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const dirRef = useRef<HTMLInputElement>(null)
+  const [dropArmed, setDropArmed] = useState(false)
 
   // Every verb funnels one way: do → refresh → tell the note line on failure.
   // The note line is the plane's ONE error surface (the 502b/P3-U6 lesson) —
@@ -63,8 +80,60 @@ export function Library({
       .catch((err: unknown) => onNote(`${label} failed — ${(err as Error).message}`))
   }
 
+  /** The zipped form, from either the picker or a drop. */
+  const takeFile = (file: File) => {
+    if (!isSessionFile(file)) {
+      onNote(`import refused — ${file.name} is not a .scoopySession`)
+      return
+    }
+    run('import', async () => {
+      const s = await importSessionFile(file)
+      onNote(`imported ${s.name}`)
+    })
+  }
+
+  /** The folder form — the shape the desktop actually writes. */
+  const takeEntries = (dirName: string, entries: Map<string, Uint8Array>) => {
+    if (entries.size === 0) {
+      onNote(`import refused — ${dirName} is empty`)
+      return
+    }
+    run('import', async () => {
+      const s = await importSessionEntries(dirName, entries)
+      onNote(`imported ${s.name}`)
+    })
+  }
+
   return (
-    <div className="plane-library" data-no-drag>
+    <div
+      className={`plane-library${dropArmed ? ' drop' : ''}`}
+      data-no-drag
+      // The third door. It is the only one that takes BOTH forms, so it is also
+      // the fallback wherever a host's pickers disappoint (WKWebView is exactly
+      // that risk — this row exists because a folder could not be imported).
+      onDragOver={(e) => {
+        e.preventDefault()
+        setDropArmed(true)
+      }}
+      onDragLeave={() => setDropArmed(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDropArmed(false)
+        const drop = readDrop(e.dataTransfer)
+        if (drop.kind === 'directory') {
+          run('import', async () => {
+            const s = await importSessionEntries(
+              drop.entry.name,
+              await walkDroppedDir(drop.entry),
+            )
+            onNote(`imported ${s.name}`)
+          })
+          return
+        }
+        if (drop.kind === 'file') takeFile(drop.file)
+        else onNote('import refused — nothing readable in that drop')
+      }}
+    >
       <div className="plane-library-actions">
         <button
           type="button"
@@ -81,9 +150,16 @@ export function Library({
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          title="import a .scoopySession package (or its .zip) into the library"
+          title="import a zipped .scoopySession (or .zip) — for a session FOLDER use folder…"
         >
           import
+        </button>
+        <button
+          type="button"
+          onClick={() => dirRef.current?.click()}
+          title="import a .scoopySession FOLDER — the form the desktop writes on disk"
+        >
+          folder…
         </button>
         <input
           ref={fileRef}
@@ -92,19 +168,30 @@ export function Library({
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
+            e.target.value = '' // so importing the same file twice still fires
+            if (file) takeFile(file)
+          }}
+        />
+        <input
+          ref={dirRef}
+          type="file"
+          /* Non-standard but universal (Chrome/Safari/Firefox honour it), and
+             the ONLY attribute that makes a picker take a directory. React has
+             no typing for it. */
+          // @ts-expect-error see above
+          webkitdirectory=""
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? [])
             e.target.value = ''
-            if (!file) return
-            if (!isSessionFile(file)) {
-              onNote(`import refused — ${file.name} is not a .scoopySession`)
-              return
-            }
-            run('import', async () => {
-              const s = await importSessionFile(file)
-              onNote(`imported ${s.name}`)
-            })
+            if (files.length === 0) return
+            void entriesFromDirectoryInput(files).then(({ dirName, entries }) =>
+              takeEntries(dirName, entries),
+            )
           }}
         />
       </div>
+      <div className="plane-library-hint">or drop a .scoopySession here</div>
       {sessions.length === 0 && (
         <div className="plane-library-empty">no sessions yet — New creates one</div>
       )}
