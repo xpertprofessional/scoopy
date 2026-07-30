@@ -21,8 +21,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 interface FakeInput {
   type?: string;
   accept?: string;
+  style: Record<string, string>;
   clicked: boolean;
   click: () => void;
+  addEventListener: (k: string, fn: () => void) => void;
+  remove: () => void;
   onchange?: () => void;
   files?: FileList | null;
 }
@@ -40,11 +43,26 @@ vi.stubGlobal("localStorage", {
   removeItem: () => {},
 });
 vi.stubGlobal("document", {
+  body: { append: () => {} },
   createElement: () => {
-    // The picker never resolves here (nothing fires `onchange`), which is
-    // exactly right: the click IS the door opening, and the OS panel that
-    // follows is the user's business.
-    const el: FakeInput = { clicked: false, click: () => (el.clicked = true) };
+    // The picker never resolves here (nothing fires `change`): this file is
+    // only about whether the INTENT reaches a picker at all, which is E8a's
+    // question.
+    //
+    // ⚠️ THAT LIMIT WAS ONCE WRITTEN HERE AS A VIRTUE — "the OS panel that
+    // follows is the user's business" — AND IT IS THE HOLE P3.5-E8g FELL
+    // THROUGH. Everything after the pick (import, path, decode, the document
+    // write) had no coverage anywhere, and the user's next report was exactly
+    // that half: "load opens the documentpicker but the file never loads once
+    // executed, track stays empty". The rest of the chain is now driven
+    // end-to-end in `composeLoadDoor.test.ts`; this file keeps its narrow job.
+    const el: FakeInput = {
+      style: {},
+      clicked: false,
+      click: () => (el.clicked = true),
+      addEventListener: () => {},
+      remove: () => {},
+    };
     created.push(el);
     return el;
   },

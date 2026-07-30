@@ -37,6 +37,13 @@ export function Composer({
   onClose: () => void
 }) {
   const session = useCompanion((c) => c.decks[deck]?.session ?? null)
+  // P3.5-E8g — the same report line the compose WINDOW carries, for the same
+  // reason the FILES drawer is shared: two compose surfaces registering the
+  // same doors and only one of them able to say what happened is how E8a's
+  // omission happened. This overlay showed NEITHER error nor progress, so a
+  // failed sample load here was silent even after the window's was not.
+  const error = useCompanion((c) => c.error)
+  const notice = useCompanion((c) => c.notice)
   useComposeBinding(link, deck)
 
   return (
@@ -46,6 +53,8 @@ export function Composer({
           {session ? `compose · ${session.name}` : 'compose · nothing loaded'}
         </span>
         <span className="mono dim">deck {deck}</span>
+        {error && <span className="mono warn">{error}</span>}
+        {!error && notice && <span className="mono dim">{notice}</span>}
         <span className="plane-spacer" />
         <button type="button" onClick={onClose} title="back to the plane">
           close

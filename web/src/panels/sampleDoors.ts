@@ -37,7 +37,37 @@ export function pickAudioFile(): Promise<File | null> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.flac,.ogg";
-    input.onchange = () => res(input.files?.[0] ?? null);
+    // ⚠️ IN THE DOCUMENT, HIDDEN — not detached (P3.5-E8g).
+    //
+    // This used to create the input, click it and never append it. The picker
+    // OPENED that way in every engine, so the difference is invisible until you
+    // ask whether the RESULT comes back. Meanwhile the app's OTHER dynamic file
+    // input — `fileBrowserBackend.pickViaInput`, E7's `folder…` — has always
+    // appended, and that is the one the user proved end-to-end in WizardMerged
+    // on the same walk that reported this door broken. Two implementations of
+    // one gesture, and the shipping host had only ever exercised the appended
+    // one: exactly the shape of E8a (three hand-written copies of a
+    // registration, and the fourth surface shipped without it).
+    //
+    // Measured 2026-07-30: headless WebKit fires `change` on a DETACHED input
+    // too, so this is not proof of the cause and is not claimed as one. It is
+    // the cheap half of the answer — make the unproven door structurally
+    // identical to the door this host has actually delivered through — and it
+    // costs nothing if the cause turns out to be elsewhere.
+    input.style.display = "none";
+
+    const done = (file: File | null) => {
+      input.remove();
+      res(file);
+    };
+    input.addEventListener("change", () => done(input.files?.[0] ?? null));
+    // A CANCELLED PICKER USED TO BE AN ETERNALLY PENDING PROMISE, indistinguishable
+    // from a pick that vanished — both were silence forever. `cancel` makes "I
+    // changed my mind" a resolved outcome, so the only remaining silence is a
+    // genuine failure, which the caller now reports.
+    input.addEventListener("cancel", () => done(null));
+
+    document.body.append(input);
     input.click();
   });
 }
@@ -66,17 +96,42 @@ export function registerSampleDoors(
 
   // The LOAD button: pick → import into the library → assign to the row. The
   // import makes the file a library citizen, so FILES is told to refresh.
+  //
+  // ⚠️ EVERY STAGE SAYS WHERE IT IS (P3.5-E8g). This door had FIVE outcomes and
+  // four of them were silent: the picker never returning, the user cancelling,
+  // a non-audio file, an import throw, and success. "Load opens the
+  // documentpicker but the file never loads, track stays empty" is what all
+  // four look like from the outside, which is why one user report could not
+  // name the seam and neither could any test.
+  //
+  // The progress line is not decoration — it is the diagnosis. It NAMES THE
+  // STAGE IT IS WAITING ON, so a door that hangs says which await never came
+  // back: still "choosing…" means the pick never returned; still "loading
+  // <name>…" means the import or the decode did. Cheaper than a timeout and
+  // it cannot guess wrong, because it only ever reports where control is.
   link.setSamplePickHandler(async (trackIndex) => {
+    const row = `track ${trackIndex + 1}`;
     try {
+      useCompanion.setState({ notice: `choosing a sample for ${row}…`, error: null });
       const file = await pickAudioFile();
-      if (!file) return;
+      if (!file) {
+        // Cancelled. A choice, not a failure — clear the line, say nothing.
+        useCompanion.setState({ notice: null });
+        return;
+      }
+      useCompanion.setState({ notice: `loading ${file.name} into ${row}…` });
       const path = await importAudioFile(file);
+      // `loadSample` owns the last word: it sets `<name> → track N` on success
+      // and `sample load failed: …` on a decode or document failure.
       await useCompanion.getState().loadSample(trackIndex, path, deck);
       void link.command("fileBrowser", { op: "refresh" });
     } catch (err) {
       // The store's error line is the one surface every host renders — a door
       // that fails silently is indistinguishable from the defect this fixes.
-      useCompanion.setState({ error: `sample import failed: ${(err as Error).message}` });
+      useCompanion.setState({
+        error: `sample import failed: ${(err as Error).message}`,
+        notice: null,
+      });
     }
   }, at);
 }

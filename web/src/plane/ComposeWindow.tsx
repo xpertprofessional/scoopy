@@ -35,6 +35,13 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
   )
   const deck = arg?.deck ?? 0
   const error = useCompanion((c) => c.error)
+  // P3.5-E8g — the store's PROGRESS line, which this window never rendered.
+  // `loadSample` has always set `<sample> → track N` on success and the sample
+  // doors now name the stage they are waiting on; none of it reached the one
+  // surface a person loads samples in. A door whose only outcome is a silent
+  // change to a row three panes away is not reportable, and "the file never
+  // loads, track stays empty" is what that unreportability sounds like.
+  const notice = useCompanion((c) => c.notice)
   // P3.5-E9a — this window opens the session itself, in its OWN store, so it
   // must report its own silence: a kit that did not fully decode here is a kit
   // this window's engine cannot play, whatever the plane's copy managed.
@@ -92,6 +99,11 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
         <span className="dim">{` deck ${deck + 1} — edits are live and autosaved; close the window to hand the deck back to the plane`}</span>
         {error && <span className="warn">{` ${error}`}</span>}
         {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
+        {/* Beside the warnings rather than instead of them: a kit that cannot
+            play and a sample that is mid-load are two different facts, and the
+            moment you most need the progress line is while filling a kit that
+            is still silent. */}
+        {!error && notice && <span className="dim">{` · ${notice}`}</span>}
       </header>
       {/* The REAL composer, unmodified — the same component the desktop runs. */}
       <div className="compose-window-body">
