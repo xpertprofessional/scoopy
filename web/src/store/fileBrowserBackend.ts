@@ -278,6 +278,14 @@ export class FileBrowserBackend {
    * `<input webkitdirectory>` — which is not a lesser hack but the same transaction: a user gesture,
    * a folder, and bytes copied in. Both are user-gesture pickers; neither is programmatic, and the
    * ledger is right that a programmatic one cannot exist.
+   *
+   * ⚠️ NOTHING MAY BE AWAITED BEFORE THE PICKER, and the whole call chain above this method honours
+   * that today: the panel's click handler → `link.command` → `MergedLink.command` → `BrowserLink.
+   * command` → `handle` → here → `input.click()` is one synchronous run, so the TRANSIENT
+   * ACTIVATION is still live when the picker opens. P3.5-E8a's defect was the same requirement
+   * broken one layer over (`pickAudioFile` behind an async command hop, silently dead in Chromium);
+   * `fileBrowserBackend.test.ts` pins the synchronous reach so an `await` added anywhere on that
+   * chain fails a gate instead of a user's click.
    */
   private async chooseFolder(): Promise<{ notice: string | null }> {
     const picker = (
@@ -297,6 +305,12 @@ export class FileBrowserBackend {
 
       const dest = opfs.joinPath(opfs.SAMPLES_ROOT, name);
       const { imported, skipped } = await this.store.importFiles(dest, files);
+      // ⚠️ NAVIGATE ONLY IF SOMETHING WAS WRITTEN. `importFiles` creates directories lazily, per
+      // audio file — so a folder of nothing but PDFs leaves `dest` non-existent, and moving there
+      // anyway put the panel in a directory it then reported as unreadable ("cannot read
+      // /samples/Docs") while the toast cheerfully said "imported 0 samples". Two surfaces, two
+      // stories, one wrong turn.
+      if (imported === 0) return { notice: `no audio in that folder (${skipped} skipped)` };
 
       this.cwd = dest;
       await this.rescan();
@@ -336,7 +350,7 @@ export class FileBrowserBackend {
         // webkitRelativePath is "FolderName/sub/file.wav" — its first segment names the folder.
         const first = files[0] as File & { webkitRelativePath?: string };
         const name = first.webkitRelativePath?.split("/")[0] || "Imported";
-        resolve({ name, files });
+        resolve({ name, files: files.map((f) => stripRoot(f, name)) });
       });
       // A cancelled picker fires no event in older browsers; `cancel` covers the modern ones and a
       // stuck promise is harmless (the command just never resolves and no state changed).
@@ -349,6 +363,32 @@ export class FileBrowserBackend {
       input.click();
     });
   }
+}
+
+/**
+ * Make a picked file's `webkitRelativePath` mean the same thing in BOTH branches — the path
+ * RELATIVE TO THE PICKED FOLDER.
+ *
+ * ⚠️ THE TWO BRANCHES DISAGREED, and the one that ships in WKWebView was the wrong one. The
+ * directory-handle walk starts at the picked folder, so `collectFiles` produces `kick.wav`; an
+ * `<input webkitdirectory>` produces `Kicks909/kick.wav`, root segment included. `importFiles`
+ * joins that onto a destination which is ALREADY `/samples/<picked name>`, so the input branch
+ * wrote `/samples/Kicks909/Kicks909/kick.wav` — `chooseFolder` then navigated to
+ * `/samples/Kicks909` and showed one folder and no samples. Not fatal, but it is the folder-import
+ * door landing a person somewhere that looks empty, in the only branch WebKit can reach.
+ *
+ * Only the segment that MATCHES the folder's name is stripped: everything below it is the shape a
+ * drum folder is worth keeping.
+ */
+function stripRoot(file: File, root: string): File {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? "";
+  const prefix = `${root}/`;
+  if (!rel.startsWith(prefix)) return file;
+  Object.defineProperty(file, "webkitRelativePath", {
+    value: rel.slice(prefix.length),
+    configurable: true,
+  });
+  return file;
 }
 
 /** Walk a picked directory handle. Recursive: a drum folder keeps its sub-folders. */

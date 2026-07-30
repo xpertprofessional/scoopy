@@ -703,7 +703,12 @@
 .compose-window-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* The composer and the FILES drawer sit SIDE BY SIDE (P3.5-E8b), so the
+     scroll moved down onto the grid pane: kept here, the drawer would scroll
+     away with the grid and its tab — the door — would leave the screen. */
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
 }
 
 /* Sync · tempo · compose, in the rate row's 18 px slot. */
@@ -1219,8 +1224,66 @@
 
 .plane-composer-body {
   flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* ── P3.5-E8b — the FILES drawer, in both compose surfaces ───────────────── */
+
+/* The composer's own column. It carries the scroll and the containing block
+   the body used to, so the drawer beside it stays put. */
+.compose-grid-pane {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: auto;
   position: relative;
+}
+
+.compose-files {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  background: var(--bg);
+  border-left: var(--hairline) solid var(--line);
+}
+
+/* The always-visible handle. A drawer whose door only exists once it is open
+   is the unreachable feature this row is about, so the tab is a permanent
+   vertical strip at the composer's edge. */
+.compose-files-tab {
+  flex: 0 0 auto;
+  writing-mode: vertical-rl;
+  padding: 8px 3px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  border: none;
+  border-left: var(--hairline) solid var(--line);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  font-size: var(--type-label-size);
+}
+
+.compose-files-tab:hover {
+  color: var(--text);
+}
+
+.compose-files.open > .compose-files-tab {
+  color: var(--accent);
+}
+
+.compose-files-body {
+  flex: 0 0 260px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* `.fb-root` is sized for the case where the panel IS the whole webview
+   (filebrowser.css). In a drawer it fills the drawer instead. */
+.compose-files-body .fb-root {
+  height: 100%;
 }
 
 /* OVR — the overdub punch (P3-U3). REC's shape at verb width: it is the same

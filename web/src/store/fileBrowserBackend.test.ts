@@ -8,7 +8,7 @@
  * `FileBrowserPanel.tsx` needs no edit at all. These tests hold the backend to the panel's contract;
  * `browser_opfs_test.mjs` then puts the real panel on top of it in real Chrome.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileBrowserState } from "../../protocol/schema.ts";
 import { FileBrowserState as FileBrowserStateSchema } from "../../protocol/schema.ts";
 
@@ -129,6 +129,118 @@ describe("load — the honest boundary", () => {
     const { notice } = await backend.handle({ op: "load", path: "/samples/alpha.wav" });
     // A silent no-op is indistinguishable from a dead wire. The panel shows this as a toast.
     expect(notice).toMatch(/FLIP/);
+  });
+});
+
+/**
+ * P3.5-E8b — THE FOLDER DOOR, which is the whole point of giving the browser a home: E8a made LOAD
+ * pick ONE file; this is the gesture that brings a folder of samples in.
+ *
+ * No jsdom here (P6-2b's house rule), so `document` is stubbed to the minimum an `<input
+ * webkitdirectory>` touches — and what is observed is the two things that can be wrong without
+ * anything going red: WHEN the picker is clicked, and WHERE the bytes land.
+ */
+describe("chooseFolder — the folder door", () => {
+  interface FakeInput {
+    style: Record<string, string>;
+    files: File[] | null;
+    clicked: boolean;
+    click(): void;
+    remove(): void;
+    addEventListener(type: string, fn: () => void): void;
+    fire(type: string): void;
+  }
+  let created: FakeInput[] = [];
+
+  /** A file as a directory picker hands it over: named by its path INSIDE the picked folder. */
+  const picked = (relativePath: string): File => {
+    const file = new File([new Uint8Array([1, 2, 3])], relativePath.split("/").pop()!);
+    Object.defineProperty(file, "webkitRelativePath", {
+      value: relativePath,
+      configurable: true,
+    });
+    return file;
+  };
+
+  beforeEach(() => {
+    created = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const listeners = new Map<string, () => void>();
+        const el: FakeInput = {
+          style: {},
+          files: null,
+          clicked: false,
+          click: () => {
+            el.clicked = true;
+          },
+          remove: () => {},
+          addEventListener: (type, fn) => void listeners.set(type, fn),
+          fire: (type) => listeners.get(type)?.(),
+        };
+        created.push(el);
+        return el;
+      },
+      body: { append: () => {} },
+    });
+    // No `showDirectoryPicker` — i.e. WebKit, the engine the app ships (H4).
+    vi.stubGlobal("window", {});
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("clicks the picker in the SAME TASK as the gesture — the transient activation E8a lost", () => {
+    // ⚠️ NOT AWAITED, deliberately. A picker demands transient activation, and P3.5-E8a measured
+    // what an `await` before it costs: in Chromium `showOpenFilePicker` produced no picker and no
+    // error, which is a dead button. The whole chain from the panel's onClick down to `input.click()`
+    // is synchronous today; this pin fails the moment anyone puts an await on it.
+    const pending = backend.handle({ op: "chooseFolder" });
+    expect(created).toHaveLength(1);
+    expect(created[0]!.clicked).toBe(true);
+    created[0]!.fire("cancel");
+    return pending;
+  });
+
+  it("treats a cancelled picker as a choice, not a failure", async () => {
+    const pending = backend.handle({ op: "chooseFolder" });
+    created[0]!.fire("cancel");
+    expect(await pending).toEqual({ notice: null });
+    expect(backend.state().cwd).toBe("/samples");
+  });
+
+  it("lands the folder's samples UNDER it, not nested inside a twin of itself", async () => {
+    // ⚠️ THE BRANCHES DISAGREED. `collectFiles` (the File System Access walk) starts at the picked
+    // folder, so its paths are relative to it; an `<input webkitdirectory>` includes the root
+    // segment. `importFiles` joins whatever it gets onto `/samples/<picked name>`, so the INPUT
+    // branch — the only one WebKit can reach — wrote `/samples/Kicks909/Kicks909/kick.wav` and then
+    // navigated to `/samples/Kicks909`, which showed one folder and no samples.
+    const pending = backend.handle({ op: "chooseFolder" });
+    const input = created[0]!;
+    input.files = [
+      picked("Kicks909/kick.wav"),
+      picked("Kicks909/hats/closed.wav"),
+      picked("Kicks909/notes.txt"),
+    ];
+    input.fire("change");
+
+    expect(await pending).toEqual({ notice: "imported 2 samples, 1 skipped" });
+    expect(backend.state().cwd).toBe("/samples/Kicks909");
+    // Directories first, then audio — and NOT a directory called Kicks909.
+    expect(backend.state().entries.map((e) => e.name)).toEqual(["hats", "kick.wav"]);
+    expect(await opfs.exists("/samples/Kicks909/kick.wav")).toBe(true);
+    // The shape BELOW the root is kept: a drum folder stays a drum folder.
+    expect(await opfs.exists("/samples/Kicks909/hats/closed.wav")).toBe(true);
+  });
+
+  it("says so when the folder held no audio, rather than navigating nowhere", async () => {
+    // The pre-fix reading navigated into a directory `importFiles` never created, so the toast said
+    // "imported 0 samples" while the list said "cannot read /samples/Docs".
+    const pending = backend.handle({ op: "chooseFolder" });
+    const input = created[0]!;
+    input.files = [picked("Docs/readme.txt")];
+    input.fire("change");
+    expect(await pending).toEqual({ notice: "no audio in that folder (1 skipped)" });
+    expect(backend.state().cwd).toBe("/samples");
+    expect(backend.state().error).toBeNull();
   });
 });
 

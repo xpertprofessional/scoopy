@@ -34,6 +34,15 @@
   border-color: var(--text-dim);
 }
 
+/* P3.5-E8b — the same door inside the "empty folder" list row. `.br-empty` is
+   centred text, so the button has to break onto its own line rather than sit
+   beside the words. */
+li.br-empty > .fb-choose {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* --- audition footer ----------------------------------------------------- */
 
 .fb-preview {

@@ -329,7 +329,21 @@ export function FileBrowserPanel({ link }: { link: EngineLink | null }) {
                 onDragStart={(e) => writeSampleDrag(e.dataTransfer, entry.path)}
               />
             ))}
-            {entries.length === 0 && <li className="br-empty mono">empty folder</li>}
+            {/* P3.5-E8b — AN EMPTY LIBRARY MUST OFFER THE FOLDER DOOR. The big
+                "Choose folder…" button above only renders when there is no
+                root, and on the merged host (and in the companion) `root` is
+                never null — the library always exists, it is just empty the
+                first time. So the sole folder door there was the ⌘ glyph in
+                the header, which reads as decoration; a person opening the
+                drawer saw the words "empty folder" and nothing to press. */}
+            {entries.length === 0 && (
+              <li className="br-empty mono">
+                empty folder
+                <button className="fb-choose mono" onClick={() => browse("chooseFolder")}>
+                  Choose folder…
+                </button>
+              </li>
+            )}
           </ul>
         )}
       </BrowserShell>

@@ -24,6 +24,7 @@ import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
 import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
+import { ComposeFiles } from './ComposeFiles.tsx'
 import { decodeComposeArg } from './composeArg.ts'
 import { useComposeBinding } from './useComposeBinding.ts'
 
@@ -94,7 +95,14 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
       </header>
       {/* The REAL composer, unmodified — the same component the desktop runs. */}
       <div className="compose-window-body">
-        <GridPanel link={link} />
+        <div className="compose-grid-pane">
+          <GridPanel link={link} />
+        </div>
+        {/* P3.5-E8b — the sample browser's home. The doors it feeds were
+            registered by E8a in `useComposeBinding`, so a file double-clicked
+            here lands on the grid's selected track and a row dragged onto a
+            track lands on that one. */}
+        <ComposeFiles link={link} />
       </div>
     </main>
   )

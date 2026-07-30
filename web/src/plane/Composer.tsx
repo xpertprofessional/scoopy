@@ -24,6 +24,7 @@
 import type { EngineLink } from '../engineLink.ts'
 import { GridPanel } from '../panels/GridPanel.tsx'
 import { useCompanion } from '../store/companionEngine.ts'
+import { ComposeFiles } from './ComposeFiles.tsx'
 import { useComposeBinding } from './useComposeBinding.ts'
 
 export function Composer({
@@ -52,7 +53,13 @@ export function Composer({
       </header>
       {/* The REAL composer, unmodified — the same component the desktop runs. */}
       <div className="plane-composer-body">
-        <GridPanel link={link} />
+        <div className="compose-grid-pane">
+          <GridPanel link={link} />
+        </div>
+        {/* P3.5-E8b — the same drawer the compose WINDOW carries. Two compose
+            surfaces with one sample browser between them: the alternative is
+            how E8a's omission happened. */}
+        <ComposeFiles link={link} />
       </div>
     </section>
   )
