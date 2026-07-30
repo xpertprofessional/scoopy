@@ -492,8 +492,18 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             // thread — the whole point of the service seam.
             sl_tape_record_service(engine);
             sl_tape_record_start(engine, tape);
+            // ⚠️ THE TAKE'S WIDTH IS THE ENGINE'S, NOT THE REQUEST'S (P3-F3).
+            // This used to be `c1 >= 0 ? 2u : 1u` — the requested channel pair.
+            // But a channelBus or mainMix capture is ALWAYS STEREO in the ring
+            // (sl_channel_test pins it: "a bus is always stereo"), so a bus
+            // take asked for with chan1 = -1 opened a MONO file while drain()
+            // delivered stereo frames: the drain scratch overflowed by 2× —
+            // REAL heap corruption on every REC-from-bus stop (the P3-R2/R3
+            // gesture) — and the WAV held interleaved halves at double speed.
+            // record_start has already stamped the true capture width, so ask
+            // the engine — the same pattern overdubStart used from day one.
             const bool opened = recorder.beginTake(
-                tape, c1 >= 0 ? 2u : 1u, sl_engine_sample_rate(engine),
+                tape, sl_tape_channels(engine, tape), sl_engine_sample_rate(engine),
                 0 /* the engine stamps the true start; applied at endTake */,
                 params.getProperty("sourceDesc", "").toString().toStdString(),
                 // P3-2b-1: the MASTER tempo when capture began, from TS (the

@@ -778,6 +778,13 @@ int main() {
         const auto stopped = cmd("slRecord", R"({"action":"stop","tape":1})");
         CHECK(replyOk(stopped));
         CHECK(recorder.takes().size() == takesBefore + 1);
+        // ⚠️ P3-F3: the take must be STEREO — a channel bus is always stereo in
+        // the engine, whatever the request's chan pair said. When the dispatcher
+        // sized the take from `chan1 == -1` instead of the engine, the drain
+        // scratch was allocated at HALF the delivered width and every bus-tap
+        // record stop overflowed it: the intermittent free_list_checksum_botch
+        // SIGABRT this suite carried, and corrupt takes in the real app.
+        CHECK(recorder.takes().back().channels == 2);
 
         // The tape now holds what was ROUTED IN — play it with the input dead:
         // anything audible on main came from the capture, not the live chain.
