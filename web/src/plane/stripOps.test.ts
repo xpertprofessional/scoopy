@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { SL_TAPE_STATE } from '../../protocol/schema.ts'
 import { emptyMap, type PlaneMap, type Strip } from '../persist/mapDocument.ts'
 import {
+  BR_SCALE,
+  masterBrView,
   IDLE_LIVE,
   MAX_CHANNELS,
   enabledControls,
@@ -525,5 +527,58 @@ describe('linkedLooperFor (P3-R3)', () => {
     const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
     const map = { ...mapWith([grid, looper]), routes: [busRoute(0, 1)] }
     expect(linkedLooperFor(map, grid)?.key).toBe(looper.key)
+  })
+})
+
+describe('the master BR view — a fan-out, never a second truth (P11-0)', () => {
+  // THE SCOPE LAW: BR · TR · WIN · REV · SYNC are DECK controls; the master row
+  // FEEDS them and owns none of them. The master used to keep its own `brOn`
+  // boolean synced from nothing, so a strip engaging BR left the master lamp
+  // dark, and the master's next press computed `!brOn` from that stale value.
+  const win = (length: number, subdivision?: number) => ({ length, subdivision })
+  const none = () => null
+
+  it('lights when ANY deck it drives has BR engaged — even one it did not start', () => {
+    const v = masterBrView([0, 1, 2], (d) => (d === 2 ? win(2) : null), 3)
+    expect(v.active).toBe(true)
+    // …and the next press therefore CLEARS, completing the gesture the lamp shows.
+    expect(v.nextOn).toBe(false)
+  })
+
+  it('stays dark, and arms, when no deck is repeating', () => {
+    const v = masterBrView([0, 1], none, 3)
+    expect(v.active).toBe(false)
+    expect(v.nextOn).toBe(true)
+  })
+
+  it('ignores decks the master cannot drive', () => {
+    // A composing deck is not in activeDecks, so its BR must not light the
+    // master — the master genuinely cannot turn that one off.
+    const v = masterBrView([0], (d) => (d === 1 ? win(2) : null), 3)
+    expect(v.active).toBe(false)
+  })
+
+  it('reports the LATCHED window, not what the master last asked for', () => {
+    // A strip's own BR may have set a different scale. The master shows what is
+    // happening; showing its own pending index would be a claim about a deck.
+    const v = masterBrView([0], () => win(1, 16), 3) // pending is '2'
+    expect(v.label).toBe('1/16')
+  })
+
+  it('falls back to the pending label for an off-scale window', () => {
+    // A hand-built window is not on the scale; showing nothing would be worse
+    // than showing what the next press will send.
+    const v = masterBrView([0], () => win(7), 3)
+    expect(v.label).toBe('2')
+  })
+
+  it('shows the pending scale while nothing is latched', () => {
+    expect(masterBrView([0], none, 0).label).toBe(BR_SCALE[0]!.label)
+  })
+
+  it('is dark with no decks at all', () => {
+    const v = masterBrView([], none, 3)
+    expect(v.active).toBe(false)
+    expect(v.nextOn).toBe(true)
   })
 })

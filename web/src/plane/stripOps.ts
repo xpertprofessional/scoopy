@@ -558,3 +558,41 @@ export function brScaleIndex(br: { length: number; subdivision?: number } | null
     (sc) => sc.length === br.length && (sc.subdivision ?? 1) === (br.subdivision ?? 1),
   )
 }
+
+/** A beat-repeat window as a deck reports it. */
+export type BrWindow = { length: number; subdivision?: number } | null
+
+/**
+ * What the MASTER's beat-repeat control shows, and what its next press does.
+ *
+ * ⚠️ THE SCOPE LAW (P11-0): BR · TR · WIN · REV · SYNC are DECK controls. The
+ * master row FEEDS them and owns none of them — original scoopyloops puts every
+ * one in the DECK block's row 2 (`TransportPanel.tsx:25`), reading
+ * `DeckSectionState`, while its master row carries the tempo REFERENCE.
+ *
+ * The master used to keep its own `brOn` boolean, synced from nothing. So
+ * engaging BR on a strip left the master lamp DARK while that deck repeated,
+ * and the master's next press computed `!brOn` from the stale value — one press
+ * could re-engage what was already on. Everything here is DERIVED instead; the
+ * only thing the master still owns is `pendingIdx`, the scale it will SEND,
+ * which is an intent rather than a claim about any deck.
+ */
+export function masterBrView(
+  activeDecks: readonly number[],
+  brOf: (deck: number) => BrWindow,
+  pendingIdx: number,
+): { active: boolean; label: string; nextOn: boolean } {
+  const latched = activeDecks.map(brOf).find((b) => b != null) ?? null
+  const latchedIdx = brScaleIndex(latched)
+  // A latched deck's ACTUAL window wins the label — a strip's own BR may have
+  // set a different scale, and the master should report what is happening
+  // rather than what it last asked for. An off-scale (hand-built) window falls
+  // back to the pending label rather than showing nothing.
+  const shown = latched && latchedIdx >= 0 ? BR_SCALE[latchedIdx] : BR_SCALE[pendingIdx]
+  return {
+    active: latched != null,
+    label: shown?.label ?? '2',
+    // The press completes the gesture the LAMP is showing, whoever started it.
+    nextOn: latched == null,
+  }
+}

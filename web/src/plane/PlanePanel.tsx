@@ -44,6 +44,7 @@ import {
   BR_SCALE,
   inputRoute,
   linkedLooperFor,
+  masterBrView,
   nameAfterSessionLoad,
   newGridElement,
   newStrip,
@@ -423,13 +424,28 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // until the first listing answers, so nothing flashes "missing" merely
   // because the disk has not been asked yet. Re-fetched whenever any strip's
   // takeRef changes — recording stops and take loads both move that.
-  // BEAT REPEAT + REV (P3-M-1b): master-level runtime state, fanned over every
-  // loaded deck through the companion's per-deck verbs. UI state only — the
-  // truth the engine hears is restated by each deck's publish. The scale table
-  // moved to stripOps at D4-2 (each strip's own BR shares it).
-  const [brOn, setBrOn] = useState(false)
+  // BEAT REPEAT + REV — a FAN-OUT, never a second truth (P11-0).
+  //
+  // ⚠️ THE SCOPE LAW: BR · TR · WIN · REV · SYNC are DECK controls. The master
+  // row FEEDS them and owns none of them. Original scoopyloops puts every one
+  // of them in the DECK block's row 2 (`TransportPanel.tsx:25`), reading
+  // `DeckSectionState`; the master row there carries the tempo REFERENCE.
+  //
+  // This used to be `useState` — `brOn`/`revOn` were the master's OWN booleans
+  // with nothing syncing them from the decks, and the comment called them
+  // "master-level runtime state". Two consequences, both real: engage BR on a
+  // strip from its own header and the master lamp stayed DARK while that deck
+  // repeated; and the master's toggle then computed `!brOn` from that stale
+  // boolean, so one press could re-engage what was already on.
+  //
+  // Now DERIVED from the decks the master can actually drive. The only state
+  // kept here is `brIdx` — the scale the master will SEND, which is a pending
+  // intent rather than a claim about what any deck is doing.
   const [brIdx, setBrIdx] = useState(3) // '2' — the classic window
-  const [revOn, setRevOn] = useState(false)
+  const br = masterBrView(activeDecks, (d) => companionDecks[d]?.beatRepeat ?? null, brIdx)
+  const brOn = br.active
+  const brLabel = br.label
+  const revOn = activeDecks.some((d) => companionDecks[d]?.reverse === true)
   const setBeatRepeat = useCompanion((c) => c.setBeatRepeat)
   const setReverse = useCompanion((c) => c.setReverse)
   const applyBr = (on: boolean, idx: number) => {
@@ -1000,13 +1016,12 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           // every loaded deck is in a compose window.
           deckCount={activeDecks.length}
           brActive={brOn}
-          brLabel={BR_SCALE[brIdx]?.label ?? '2'}
+          brLabel={brLabel}
           revActive={revOn}
-          onToggleBeatRepeat={() => {
-            const next = !brOn
-            setBrOn(next)
-            applyBr(next, brIdx)
-          }}
+          // The toggles decide from the DERIVED value: any deck on → turn them
+          // all off, otherwise turn them all on. So the master always completes
+          // the gesture the lamp is showing, whoever started it.
+          onToggleBeatRepeat={() => applyBr(br.nextOn, brIdx)}
           onCycleBeatRepeat={() => {
             const next = (brIdx + 1) % BR_SCALE.length
             setBrIdx(next)
@@ -1014,7 +1029,6 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           }}
           onToggleReverse={() => {
             const next = !revOn
-            setRevOn(next)
             for (const d of activeDecks) setReverse(d, next)
           }}
           onPlay={() => activeDecks.forEach((d) => companionPlay(d))}
