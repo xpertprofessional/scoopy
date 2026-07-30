@@ -23,8 +23,18 @@
  * ⚠️ WHAT THESE PINS CANNOT SEE: no jsdom, no React renderer, so they cannot
  * prove the SELECTION HIGHLIGHT moved on screen, and they do not simulate React
  * — the reload effect is driven here by calling `load` the way the bindings do.
- * What they do prove is where the next `fileBrowser load` is aimed, which is the
+ * What they do prove is where the next untargeted load is aimed, which is the
  * half the user feels.
+ *
+ * ⚠️ **REPOINTED BY P3.5-E8g-h, NOT DELETED.** The property this file exists for
+ * is unchanged — a cursor is UI state and must survive an edit of the same
+ * document — but the door it was measured through moved. The user's answer to
+ * "it lands on track 1" was "it should create a new track", so an UNTARGETED
+ * `fileBrowser load` no longer reads the cursor at all: it arrives as `null` and
+ * appends. The cursor still aims the LOAD button (`trackEdit loadSample` with no
+ * `trackIndex` resolves to `grid.selectedIndex`, browserLink.ts:329), so that is
+ * the door these pins now drive, and the untargeted-load tests below assert the
+ * NEW contract — that the cursor is deliberately not consulted.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -61,20 +71,31 @@ const runtime = (tracks = 8) => Array.from({ length: tracks }, (_, i) => info(i 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 let link: InstanceType<typeof BrowserLink>;
-let landed: Array<{ trackIndex: number; path: string }>;
+/** Every `fileBrowser load` that reached a handler. `null` = the gesture named no row. */
+let landed: Array<{ trackIndex: number | null; path: string }>;
+/** Every row the LOAD button asked a picker for — the door the cursor still aims. */
+let picked: number[];
 beforeEach(() => {
   link = new BrowserLink();
   landed = [];
+  picked = [];
   link.setSampleLoadHandler(async (trackIndex, path) => {
     landed.push({ trackIndex, path });
   });
+  link.setSamplePickHandler(async (trackIndex) => {
+    picked.push(trackIndex);
+  });
 });
+
+/** The row's LOAD button, fired without an explicit index — what `GridPanel` sends
+    when the click carries no row of its own. This is where the cursor is read now. */
+const loadButton = () => link.command("trackEdit", { op: "loadSample" });
 
 /** Exactly what the bindings' reload effect does on every document edit. */
 const reload = (name: string, tracks = 8) =>
   link.gridBackend.load(doc(tracks), runtime(tracks), name);
 
-describe("the FILES double-click lands where the cursor is", () => {
+describe("an untargeted load lands where the cursor is", () => {
   it("THE DEFECT, end to end: an edit used to send the next sample to track 1", async () => {
     reload("My Session");
     await link.command("gridEdit", { op: "selectTrack", trackIndex: 4 }); // "track 5"
@@ -84,10 +105,13 @@ describe("the FILES double-click lands where the cursor is", () => {
     // binding's effect reloads the backend — this line IS that effect.
     reload("My Session");
 
-    await link.command("fileBrowser", { op: "load", path: "/samples/kick.wav" });
+    // Driven through the LOAD button since E8g-h: the FILES double-click that used to
+    // stand here now means "new track" and never consults the cursor (see below). The
+    // defect being pinned is the same one — an edit silently moving where a sample goes.
+    await loadButton();
     await settle();
-    // Before this row: 0.
-    expect(landed).toEqual([{ trackIndex: 4, path: "/samples/kick.wav" }]);
+    // Before E8g-e: 0.
+    expect(picked).toEqual([4]);
   });
 
   it("survives a whole run of edits, not just one", async () => {
@@ -104,6 +128,32 @@ describe("the FILES double-click lands where the cursor is", () => {
     await settle();
     expect(landed).toEqual([{ trackIndex: 1, path: "/samples/snare.wav" }]);
   });
+
+  it("a FILES double-click deliberately does NOT read the cursor any more (E8g-h)", async () => {
+    // The contract this REPLACED: `trackIndex` absent used to be coerced to
+    // `grid.selectedIndex` here, so the same gesture overwrote whatever row the user
+    // had last touched. It now travels as `null` — "no row was named" — all the way
+    // to the handler, which appends. Asserted against a cursor parked somewhere
+    // conspicuous, so a regression to the old coercion cannot pass by accident.
+    reload("My Session");
+    await link.command("gridEdit", { op: "selectTrack", trackIndex: 4 });
+    await link.command("fileBrowser", { op: "load", path: "/samples/kick.wav" });
+    await settle();
+    expect(landed).toEqual([{ trackIndex: null, path: "/samples/kick.wav" }]);
+    // …and the cursor is untouched by the load: it still aims the LOAD button.
+    expect(link.gridBackend.selectedIndex).toBe(4);
+  });
+
+  it("`trackIndex: 0` is a NAMED row, not an absent one", async () => {
+    // The falsy trap. A coercion written `||` rather than `??`, or a
+    // `Number(p.trackIndex) || null`, would turn an explicit drop on track 1 into a
+    // create — the one index where "named" and "absent" are easiest to confuse.
+    reload("My Session");
+    await link.command("gridEdit", { op: "selectTrack", trackIndex: 4 });
+    await link.command("fileBrowser", { op: "load", path: "/samples/kick.wav", trackIndex: 0 });
+    await settle();
+    expect(landed).toEqual([{ trackIndex: 0, path: "/samples/kick.wav" }]);
+  });
 });
 
 describe("a genuinely new document still resets — the distinction that is the row", () => {
@@ -113,9 +163,9 @@ describe("a genuinely new document still resets — the distinction that is the 
     reload("Another Session"); // a different document: row 5 is a different track now
     expect(link.gridBackend.selectedIndex).toBe(0);
 
-    await link.command("fileBrowser", { op: "load", path: "/samples/hat.wav" });
+    await loadButton();
     await settle();
-    expect(landed).toEqual([{ trackIndex: 0, path: "/samples/hat.wav" }]);
+    expect(picked).toEqual([0]);
   });
 
   it("a caller that names NO document keeps the old reset-always behaviour", () => {

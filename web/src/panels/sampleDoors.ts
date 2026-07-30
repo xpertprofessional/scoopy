@@ -18,6 +18,8 @@
  */
 import { BrowserLink } from "../browserLink.ts";
 import {
+  gridDocument,
+  gridDocumentId,
   gridPeakPaths,
   gridRuntimeInfos,
   importAudioFile,
@@ -133,6 +135,46 @@ function republishRow(link: BrowserLink, deck: number, scope: "deck" | "compose"
 }
 
 /**
+ * P3.5-E8g-h — THE SAME REPAINT, WHEN THE DOCUMENT GREW A ROW.
+ *
+ * `republishRow` cannot show a track that did not exist a moment ago: `updateRuntime`
+ * walks the rows the BACKEND already holds (`gridBackend.ts:204`), and `updatePatternRow`
+ * refuses an index past the end (`:236`). Neither republishes `gridMeta`, and `trackCount`
+ * is what tells the panel there is an eighth row to draw at all. So a topology change is
+ * the one case that needs the full `load` — the verb the bindings' reload effect uses.
+ *
+ * ⚠️ IT PASSES THE DOCUMENT ID, and that is the whole difference between this and the bug
+ * E8g-e closed. `load` resets the cursor and the armed cell-parameter lanes only when the
+ * document CHANGES; appending a track is the same document, so the id keeps the user's
+ * selection where they put it. Calling `load(doc, infos)` with the id omitted would send
+ * the cursor home to track 0 on every appended track — a create gesture that silently
+ * moved the selection, which is the shape of defect this family keeps producing.
+ *
+ * `select` then moves the cursor DELIBERATELY, and only when a track was created.
+ * That is the original's behaviour, checked rather than guessed: `addTrackInternal` sets
+ * `keyboardSelectedTrackIndex = newIndex`, calls `selectTrack(trackId:)` and syncs
+ * `HotkeyManager.setSelectedTrack` (`../scoopyloops`, BeatSequencer.swift:15656-15662),
+ * and the schema's own `addTrack` result says the index comes back "so the caller can
+ * focus the row it just made". It does not contradict E8g-e: that row is about a REPAINT
+ * moving a selection nobody asked to move — this is an answer to the gesture itself.
+ */
+function reloadDocument(
+  link: BrowserLink,
+  deck: number,
+  scope: "deck" | "compose",
+  select?: number,
+): void {
+  const at = scope === "deck" ? deck : undefined;
+  // Peak paths first, same order and same reason as `republishRow`.
+  link.setGridPeakPaths(gridPeakPaths(deck), at);
+  const backend = scope === "deck" ? link.djGridBackend(deck) : link.gridBackend;
+  backend.load(gridDocument(deck), gridRuntimeInfos(deck), gridDocumentId(deck));
+  // After the load, never before: `selectTrack` refuses an index the backend's rows do
+  // not answer to yet, so selecting the new row first would silently do nothing.
+  if (select !== undefined) backend.selectTrack(select);
+}
+
+/**
  * Register both sample doors for one surface.
  *
  * `deck` is whose DOCUMENT the sample lands in. `scope` is which handler slot
@@ -149,10 +191,50 @@ export function registerSampleDoors(
 ): void {
   const at = scope === "deck" ? deck : undefined;
 
+  // The CREATE verb, for every caller that has one: ⌘T, the MasterRow `+`, and the
+  // untargeted branch of the library door just below. One registration per surface,
+  // in the module all four surfaces already share — the E8a shape, for the same
+  // reason (three hand-written copies and a fourth surface with none).
+  link.setAddTrackHandler(async () => {
+    const index = await useCompanion.getState().appendTrack(deck);
+    // A refusal has already spoken on the store's error line; there is nothing to
+    // repaint, and the link turns the null into the loud rejection the schema asks
+    // for ("Refused (16-track cap) comes back as an error, not a silent no-op").
+    if (index === null) return null;
+    reloadDocument(link, deck, scope, index);
+    return index;
+  }, at);
+
   // A library path (double-clicked in FILES, or a row dropped on a track).
+  //
+  // TWO GESTURES, ONE INTENT, AND THE DIFFERENCE IS WHETHER A ROW WAS NAMED (P3.5-E8g-h).
+  // A drop names the row it landed on and a LOAD button names its own row, so both
+  // REPLACE. A double-click (and ⏎) in FILES names nothing — it arrives with
+  // `trackIndex` absent, which the protocol has always defined as "new track"
+  // (`fileBrowser.test.tsx`, browser.md §2) — so it APPENDS. The user's report is the
+  // one-line version: "yes it lands on track 1, however it should create a new track."
+  //
+  // Deliberately NOT "create when nothing is selected": that is one gesture doing two
+  // things depending on invisible state, which is the confusion E8g-e came out of.
   link.setSampleLoadHandler(async (trackIndex, path) => {
-    await useCompanion.getState().loadSample(trackIndex, path, deck);
-    republishRow(link, deck, scope);
+    let target = trackIndex;
+    if (target === null) {
+      target = await useCompanion.getState().appendTrack(deck);
+      // Refused — no session, or the track ceiling. `appendTrack` has already put
+      // the reason on the store's error line; loading into a track that does not
+      // exist would set `<name> → track NaN` and change nothing, which is the
+      // silent-accept shape this row exists to avoid. (`loadSample` skips every
+      // section whose length the index is past, so it fails QUIETLY today —
+      // measured, and pinned in `sampleDoors.test.ts`.)
+      if (target === null) return;
+    }
+    await useCompanion.getState().loadSample(target, path, deck);
+    // A created track is a TOPOLOGY change — `gridMeta.trackCount` moved, and the
+    // runtime push alone cannot draw a row the backend has never heard of. The new
+    // row takes the cursor, which is what the original does on this exact path
+    // (`loadBrowserSample` with no trackIndex → `addTrack(sampleURL:)` → select).
+    if (trackIndex === null) reloadDocument(link, deck, scope, target);
+    else republishRow(link, deck, scope);
   }, at);
 
   // The LOAD button: pick → import into the library → assign to the row. The

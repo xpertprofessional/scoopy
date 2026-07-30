@@ -102,8 +102,16 @@ export class BrowserLink implements EngineLink {
    * argument defaults to it), 0|1|2 are the dj deck backends.
    */
   private gridEditHandlers = new Map<number, GridBackendHooks["onEdit"]>();
-  /** Assign a LIBRARY sample (path) to a track. */
-  private sampleLoadHandlers = new Map<number, (trackIndex: number, path: string) => Promise<void>>();
+  /**
+   * Assign a LIBRARY sample (path) to a track. `trackIndex` is **`null` when the
+   * gesture named no row** (P3.5-E8g-h) — see the `fileBrowser` case below.
+   */
+  private sampleLoadHandlers = new Map<
+    number,
+    (trackIndex: number | null, path: string) => Promise<void>
+  >();
+  /** Create a track (⌘T · the MasterRow `+` · an untargeted library load). */
+  private addTrackHandlers = new Map<number, () => Promise<number | null>>();
   /** The LOAD button — pick an audio file, import it, assign it. */
   private samplePickHandlers = new Map<number, (trackIndex: number) => Promise<void>>();
   /** The grid's ▶/■ — flip the runtime launch gate. */
@@ -208,8 +216,18 @@ export class BrowserLink implements EngineLink {
     return true;
   }
 
-  setSampleLoadHandler(fn: (trackIndex: number, path: string) => Promise<void>, deck?: number): void {
+  setSampleLoadHandler(
+    fn: (trackIndex: number | null, path: string) => Promise<void>,
+    deck?: number,
+  ): void {
     this.sampleLoadHandlers.set(this.scopeOf(deck), fn);
+  }
+
+  /** The document owner registers the CREATE-A-TRACK verb here (P3.5-E8g-h).
+      Resolves to the new track's index, or null when the document refused
+      (no session, or the track ceiling) — the refusal is spoken by the store. */
+  setAddTrackHandler(fn: () => Promise<number | null>, deck?: number): void {
+    this.addTrackHandlers.set(this.scopeOf(deck), fn);
   }
 
   setSamplePickHandler(fn: (trackIndex: number) => Promise<void>, deck?: number): void {
@@ -368,6 +386,29 @@ export class BrowserLink implements EngineLink {
         return { ok: true };
       }
 
+      case "addTrack": {
+        // P3.5-E8g-h — THE CREATE VERB, WHICH EXISTED EVERYWHERE EXCEPT HERE.
+        //
+        // Measured while routing the untargeted load: `addTrack` is declared in the
+        // schema (:1441) and has had TWO live callers all along — the MasterRow `+`
+        // (MasterRow.tsx:174) and the registry's `track.add` / ⌘T (registry.ts:211,
+        // via GridPanel.tsx:1397) — and this switch never answered it, so both fell
+        // to the `default:` throw. `MergedLink` does not list it as native either, so
+        // the WKWebView host lands here too. Both callers are fire-and-forget with a
+        // `.catch(() => {})`, which is why a dead ⌘T has been invisible: the throw was
+        // swallowed at the call site.
+        //
+        // The refusal path stays LOUD as the schema demands ("Refused (16-track cap)
+        // comes back as an error, not a silent no-op"). The caller's catch still eats
+        // the rejection — but the store has already put the reason on its error line,
+        // which is the surface the user is looking at.
+        const add = this.addTrackHandlers.get(this.scopeOf(p.deck));
+        if (!add) throw new Error("addTrack: no document owner is registered on this surface");
+        const trackIndex = await add();
+        if (trackIndex === null) throw new Error("addTrack: the document refused — see the notice line");
+        return { trackIndex };
+      }
+
       case "reportUndoState":
         // Undo is TS-side (undoStore); this call exists to light the NATIVE Edit menu, which has no
         // browser equivalent. Accepting it is correct, not lossy.
@@ -383,13 +424,25 @@ export class BrowserLink implements EngineLink {
         return {};
 
       case "fileBrowser":
-        // `load` is a DOCUMENT edit, not a browser op: a double-clicked file lands on the grid's
-        // selected row; a row-drop names its row. Routed to the companion, which owns the document
-        // — this is the op the backend's stub has been promising since P8-6 ("load needs the TS
-        // document"). The document is here now. The file browser has no deck axis, so this stays
-        // compose-scoped by construction.
+        // `load` is a DOCUMENT edit, not a browser op: routed to the companion, which owns the
+        // document — the op the backend's stub has been promising since P8-6 ("load needs the TS
+        // document"). The file browser has no deck axis, so this stays compose-scoped.
+        //
+        // ⚠️ AN ABSENT `trackIndex` MEANS "NEW TRACK", AND THIS LINE USED TO SAY OTHERWISE.
+        // The intent's contract is stated in the protocol and pinned in a test that predates
+        // this host — `fileBrowser.test.tsx`: "omitting trackIndex is what means NEW TRACK"
+        // (browser.md §2; Swift's one loader routes on exactly this field). This case coerced
+        // the absence into `this.grid.selectedIndex`, i.e. it re-aimed a documented CREATE at
+        // whichever row the cursor happened to be on — which is what the user hit: "yes it
+        // lands on track 1, however it should create a new track" (P3.5-E8g-h).
+        //
+        // So the absence travels as `null` rather than being resolved here. It is resolved by
+        // the handler, which owns the document and can therefore refuse honestly at the track
+        // ceiling; a link that guessed an index could only fail silently. `?? null` and not
+        // `Number(...)`: `Number(undefined)` is NaN, and NaN would have indexed nothing while
+        // still looking like a targeted load.
         if (p.op === "load" && this.sampleLoadHandlers.get(COMPOSE_SCOPE) && typeof p.path === "string") {
-          const trackIndex = Number(p.trackIndex ?? this.grid.selectedIndex);
+          const trackIndex = p.trackIndex == null ? null : Number(p.trackIndex);
           void this.sampleLoadHandlers.get(COMPOSE_SCOPE)!(trackIndex, p.path);
           return { notice: null };
         }

@@ -251,6 +251,20 @@ interface CompanionState {
   newSession(): Promise<void>;
   /** Assign a library sample (OPFS path) to a track — the browser's half of `fileBrowser load`. */
   loadSample(trackIndex: number, path: string, deck?: number): Promise<void>;
+  /**
+   * P3.5-E8g-h — APPEND AN EMPTY TRACK AT THE END, and return its index.
+   *
+   * The create half of an UNTARGETED sample load (a FILES double-click names no
+   * row, so it must not overwrite one), and the browser's answer to the
+   * `addTrack` command that ⌘T and the MasterRow `+` have been firing into a
+   * throw. ONE creator behind all three, deliberately: three doors each growing
+   * the document their own way is how the eight sections drift apart.
+   *
+   * Returns `null` when it REFUSED, and a refusal always says why on the store's
+   * error line — never a silent no-op. Two refusals exist: no session open, and
+   * the `MAX_TRACKS` ceiling.
+   */
+  appendTrack(deck?: number): Promise<number | null>;
   /** CARVE (P3-U7, STRIP-MODEL's one-way bridge): land a tape's loop region as
       a grid track. The track references the take IN PLACE via the read-only
       `/takes` mount — the carve invariant is ONE take shared by the tape and
@@ -418,6 +432,103 @@ function publishAll(state: CompanionState): void {
   for (let d = 0; d < state.decks.length; d++) {
     if (state.decks[d]?.session) publish(state, d, state.decks[d]!.playing);
   }
+}
+
+/**
+ * THE TRACK CEILING — 16, and MEASURED rather than assumed (P3.5-E8g-h).
+ *
+ * ⚠️ NOTHING IN THIS STACK ENFORCED IT. The number is stated in exactly one
+ * place, `MasterRow.tsx:10`, where it only greys the `+` button; the schema's
+ * `addTrack` comment says a refusal "comes back as an error, not a silent no-op
+ * — native's `addTrackInternal` only prints, which is how you get a button that
+ * does nothing", but that enforcement is SWIFT'S, and there is no Swift in
+ * either shipping host. The pattern-file decoder types the sections as
+ * `arr(TRACK)` with no length bound (`patternFile.ts:672-679`), `worldFromSession`
+ * iterates whatever it is given, and neither the WASM engine nor `SlWorldApply`
+ * caps the count. So the ceiling is a UI CONVENTION, and this is the first
+ * place that actually holds it.
+ *
+ * It is held here rather than at each door because a limit enforced per-door is
+ * a limit the next door forgets. `trackCeiling.test.ts` pins this against
+ * MasterRow's literal by reading its source — the two cannot be imported into
+ * one another (MasterRow is the shared GridPanel chrome and mounts on the
+ * native host too, where this store does not exist), so the drift is caught
+ * instead of prevented.
+ */
+export const MAX_TRACKS = 16;
+
+/**
+ * THE CANONICAL EMPTY TRACK, from the same template a fresh session is made of.
+ *
+ * A new track is not hand-built. `createSession` (sessionStore.ts:129) decodes
+ * `fresh-default.json` — the byte-pinned fresh-DESKTOP-save — and every one of
+ * its eight tracks is identical except for `id` and `colorHex` (measured). So
+ * "an empty track" already has an exact definition on disk, and copying it is
+ * the only shape that cannot drift: a hand-typed field list would be the
+ * `SECTION_KEYS` injury one level down (a subset that silently skips G and H),
+ * except across ~155 track fields instead of eight sections.
+ *
+ * Decoded ONCE and cached. The import is the same code-split chunk `createSession`
+ * already pulls, so a session that never adds a track pays nothing for this.
+ *
+ * ⚠️ CHECKED FIELD-BY-FIELD AGAINST THE SHIPPING APP, which is what this is a port
+ * of — `BeatSequencer.makeEmptyTrack` (`../scoopyloops`, :15507). Everything agrees
+ * with the template except ONE field, and the divergence is the ORIGINAL'S:
+ *
+ *   16 steps          — `templateStepCount` defaults to 16 (:15508); the fixture's
+ *                       arrays are all length 16. Note the original reads a
+ *                       PREFERENCE, not the open session's step count, so a
+ *                       32-step session there also gets a 16-step new track.
+ *   volume 0.8        — :15529, matches.
+ *   pan 0, chokeGroup 0, playbackMode regular (`templateSamplerMode` default),
+ *                       cellLengths all 1 — all match.
+ *   palette[i % 8]    — :15493-15503. The eight `colorHex` values in this fixture
+ *                       ARE that palette (warm red · orange · yellow · lime ·
+ *                       teal · blue · violet · magenta), channel for channel;
+ *                       verified all eight. The ramp is READ OUT OF THE DOCUMENT
+ *                       rather than restated here — which is both why
+ *                       `check:tokens` stays green and why a palette change on
+ *                       the desktop would arrive with no code edit at all.
+ *   trackGain         — **the one divergence.** `makeEmptyTrack` sets 0.80
+ *                       (:15576) while `createDefaultTracks` leaves it 1.0, so in
+ *                       the shipping app an ADDED track is quieter than a
+ *                       FRESH-SESSION track. `TRACK_GAIN_ON_ADD` follows the ADD
+ *                       path, because that is the path being ported.
+ */
+/** `makeEmptyTrack`'s explicit gain (BeatSequencer.swift:15576) — headroom the
+    original gives every track it appends, and the one field where the fresh-save
+    template does not already answer. Read as `gain` by `toGridPattern` (:154) and
+    multiplied into the world's per-track volume (`worldFromSession.ts:351`). */
+const TRACK_GAIN_ON_ADD = 0.8;
+interface TrackTemplate {
+  track: Record<string, unknown>;
+  settings: Record<string, unknown>;
+  /** The fresh document's eight track colours, in order — cycled past track 8. */
+  colors: string[];
+}
+let trackTemplate: Promise<TrackTemplate> | null = null;
+function blankTrackTemplate(): Promise<TrackTemplate> {
+  trackTemplate ??= (async () => {
+    const { default: freshText } = await import("../../fixtures/patternfile/fresh-default.json?raw");
+    const pattern = decodePatternFileAnyVersion(freshText) as unknown as Record<string, unknown>;
+    const tracks = (pattern.sectionA as Record<string, unknown>[] | undefined) ?? [];
+    const base = pattern.baseSettings as { trackSettings?: Record<string, unknown>[] } | undefined;
+    const settings = base?.trackSettings ?? [];
+    return {
+      track: tracks[0] ?? {},
+      settings: settings[0] ?? {},
+      // Only the ones the document actually states — no literal fallback, so this
+      // module never carries a colour of its own (`check:tokens`).
+      colors: settings.flatMap((s) => (typeof s.colorHex === "string" ? [s.colorHex] : [])),
+    };
+  })();
+  return trackTemplate;
+}
+
+/** A deep copy of a pure-JSON document subtree. The template is shared across every
+    append, so a shallow spread would let one new track's `steps` array alias another's. */
+function cloneRow<T>(row: T): T {
+  return JSON.parse(JSON.stringify(row)) as T;
 }
 
 /** Seed the runtime launch gates from the document — the set starts truthful to the file. */
@@ -617,11 +728,105 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     }
   },
 
+  async appendTrack(deck = 0) {
+    const session = deckOf(get(), deck).session;
+    if (!session) {
+      set({ error: "open (or create) a session first — a track needs a document" });
+      return null;
+    }
+    const pattern = { ...(session.pattern as Record<string, unknown>) };
+    // Section A is the track-count authority, the same rule `carveIntoSession`
+    // states ("Section A is the emptiness authority") — every section carries
+    // one row per track and A is the one every projection reads.
+    const rowsA = pattern.sectionA;
+    if (!Array.isArray(rowsA)) {
+      set({ error: "this session has no track list — it cannot take another track" });
+      return null;
+    }
+    const index = rowsA.length;
+    if (index >= MAX_TRACKS) {
+      // THE REFUSAL, SPOKEN. ⚠️ The alternative — returning null quietly — is
+      // this codebase's recurring injury: an intent accepted and discarded
+      // (P3.5-E8c's dropped `asStretch`, the inert `launchQuantize`). A door
+      // that cannot do the thing must say so where the user is already looking,
+      // which is the same line `loadSample` and `carveIntoSession` refuse on.
+      set({
+        error: `this session is full — ${MAX_TRACKS} tracks is the ceiling; free one, then load again`,
+        notice: null,
+      });
+      return null;
+    }
+
+    const template = await blankTrackTemplate();
+    // ONE id shared across the eight sections, because they are eight views of
+    // the SAME track — the fresh template's rows are id-identical per track
+    // (measured), and a per-section id would make the track eight tracks.
+    const id = crypto.randomUUID().toUpperCase(); // Swift writes uppercase UUIDs
+    for (const key of SECTION_KEYS) {
+      const tracks = pattern[key];
+      if (!Array.isArray(tracks)) continue;
+      // EVERY section gets the row, exactly as the original appends one
+      // `PatternData` to all eight `patternScene*Patterns` arrays
+      // (BeatSequencer.swift:15645-15652) — a track that exists in scene A and
+      // nowhere else is a document that renumbers when you switch scenes.
+      pattern[key] = [...tracks, { ...cloneRow(template.track), id, trackGain: TRACK_GAIN_ON_ADD }];
+    }
+    const base = pattern.baseSettings as Record<string, unknown> | undefined;
+    if (base && Array.isArray(base.trackSettings)) {
+      pattern.baseSettings = {
+        ...base,
+        trackSettings: [
+          ...base.trackSettings,
+          // The palette CYCLES — `palette[index % palette.count]`, the original's own
+          // rule (BeatSequencer.swift:15515) — so past track 8 the ramp starts over
+          // rather than repeating one colour.
+          {
+            ...cloneRow(template.settings),
+            // Spread LAST and only when the document stated a ramp — a template with
+            // no colours leaves the copied row's own `colorHex` standing, rather than
+            // this module inventing one.
+            ...(template.colors.length
+              ? { colorHex: template.colors[index % template.colors.length] }
+              : {}),
+            // Both copies carry the gain, because both are in the file and a
+            // desktop re-save reads the settings side.
+            trackGain: TRACK_GAIN_ON_ADD,
+          },
+        ],
+      };
+    }
+
+    const next: WorkingSession = { ...session, pattern: pattern as WorkingSession["pattern"] };
+    set((s) => patchDeck(s, deck, { session: next }));
+    // A document edit like `setBpm`: the world carries the new (silent) track to
+    // the engine, and the session autosaves. Republishing here rather than
+    // leaving it to the caller is what makes the `addTrack` door — which has no
+    // follow-up load — land in the engine at all.
+    publish(get(), deck, deckOf(get(), deck).playing);
+    autosaver.schedule(next);
+    set({ notice: `track ${index + 1} added`, error: null });
+    return index;
+  },
+
   async loadSample(trackIndex, path, deck = 0) {
     try {
       const session = deckOf(get(), deck).session;
       if (!session) {
         set({ error: "open (or create) a session first — a sample loads into a track" });
+        return;
+      }
+      // NO SUCH TRACK — REFUSED, NOT SKIPPED (P3.5-E8g-h).
+      //
+      // The section loop below skips every section whose length the index is past,
+      // so an out-of-range index used to fall through the whole method and still set
+      // `<name> → track 99` on the notice line: a load that changed nothing and said
+      // it worked. Measured while routing the untargeted load, and it is the same
+      // silent-accept species this row exists to close. The original refuses the same
+      // case out loud — "No such track." (`WebFileBrowserBinding.loadBrowserSample`,
+      // ../scoopyloops:212).
+      const rowCount = Array.isArray(session.pattern.sectionA) ? session.pattern.sectionA.length : 0;
+      if (trackIndex < 0 || trackIndex >= rowCount) {
+        set({ error: `no track ${trackIndex + 1} in this session`, notice: null });
         return;
       }
       // Decode FIRST — a sample that cannot decode must fail loudly here, not silently later.
@@ -1168,6 +1373,22 @@ export function gridDocument(deck = 0): Record<string, unknown> {
   // no-op. Same guard shape as `gridRuntimeInfos`/`gridPeakPaths`.
   if (!d.session) return {};
   return projectScene(d.session.pattern, d.scene) as unknown as Record<string, unknown>;
+}
+
+/**
+ * The DOCUMENT'S IDENTITY for `GridBackend.load` — the same `session.name` the three
+ * bindings pass (CompanionPanel.tsx:82, useComposeBinding.ts:65, deckTile.tsx:115).
+ *
+ * Exported for P3.5-E8g-h, which is the first door that changes the TOPOLOGY of the
+ * document from its own handler: a new row cannot be published by `updateRuntime`
+ * (it only walks rows the backend already has) nor by `updatePatternRow` (it refuses
+ * an index past the end), so the door must call `load` — and calling `load` without
+ * the id would send the cursor home to track 0 on every append, which is exactly the
+ * defect E8g-e closed. `undefined` with no session open, which reads as a different
+ * document, which is the right answer when there is nothing to keep a cursor into.
+ */
+export function gridDocumentId(deck = 0): string | undefined {
+  return deckOf(useCompanion.getState(), deck).session?.name;
 }
 
 /** Per-track runtime info the grid needs — name + the decoded sample's duration/peak. */
