@@ -390,40 +390,52 @@ as `awaiting-decision` ledger rows; **the loop continues on unblocked items.**
 
 ## 11. Loop protocol (every session)
 
-1. **Orient:** read `/MIGRATION.md` — the **Top-level roadmap** section FIRST (the
-   reflected view: what phase is closing, what's next, what's blocked on the user), then
-   pick the top unblocked, non-human-gated item (priority: broken-build fix >
-   phase close-out (loose-end rows) > current-phase order > new features). Working
-   top-level means **finishing spec'd feature sets before starting new ones**.
-2. **Execute:** exactly one increment (`spec` / `schema` / `build` / `fixture` / `gate` /
-   `delete`), ≤ ~500 changed LOC.
-3. **Verify:** `ctest --test-dir build --output-on-failure` + `npm run typecheck && npm
-   test && npm run protocol:check` green → commit (one item per commit), update the
-   ledger row + handoff note. Red → fix or revert fully; an item failing twice is
-   `blocked` and skipped.
-4. **Continue or park:** more machine-runnable items → next iteration. Only human-gated
-   items left → post "awaiting sign-off/decision on: …" and stop.
+*Rewritten 2026-07-31 for the merge. The previous version — orient on
+`/MIGRATION.md`, one item per commit, ≤500 LOC, one new row per ⚠️ — was
+wizard's, and by 2026-07-30 it had produced 97 open rows of which 23 were
+sub-lettered chores. Feature work now moves in **bundles**.*
 
-The loop never crosses a phase gate (gates are human-signed rows), never leaves the tree
-unbuildable, never touches ScoopyLoops or Parlante, and changes schemas only via
-`web/protocol/schema.ts` + regeneration.
+1. **Orient:** read `docs/merge/P3-LEDGER.md` — the **BUNDLES** section first
+   (B1–B8: each names a donor binding, the rows it consumes, and its door), then
+   the phase blocks for rows no bundle has claimed. `docs/DECISIONS.md` is the
+   law; `docs/merge/PARALLEL-PROTOCOL.md` §0 is the standing ruling on what a
+   unit of work is, and its §10 "Awaiting the user" is the live decision backlog.
+   Priority: broken-build fix > the bundle in flight > the next bundle >
+   unclaimed rows.
+2. **Execute one bundle** — a coherent donor-binding-sized unit: the shell/engine
+   seam, the web UI, the door, the tests. **There is no LOC cap.** A bundle spans
+   several commits; each commit is coherent and green on its own, and the bundle
+   is not done until its door is reachable in the real host.
+3. **Verify:** `ctest --test-dir build --output-on-failure`, then in `web/`:
+   `npm run typecheck && npm test` plus **all TEN drift gates** (`params:check` ·
+   `shared:check` · `worldmap:check` · `hotframe:check` · `tape:check` ·
+   `trackparams:check` · `webdist:check` · `check:tokens` · `schema:check` ·
+   `nativemethods:check` — `web/package.json` is the authority; there is no
+   `protocol:check`), then the walks and the real-host proof the row's gate line
+   names. `npm run bundle` **LAST** before `git add`. Red → fix or revert fully.
+4. **Continue or park:** more machine-runnable work → next bundle step. Only
+   human-gated items left → post "awaiting sign-off/decision on: …" and stop.
+
+The loop never leaves the tree unbuildable, never writes to `../scoopyloops`,
+and changes schemas only via `web/protocol/schema.ts` + regeneration.
 
 ### Completeness rules — no skipped or half-built features
 
-- **No orphan follow-ups.** Every deferred / ⚠️ / half-built item a handoff note mentions
-  gets its OWN `todo` ledger row **in the same commit**. Prose in a note is not a plan;
-  only rows get picked up by a later orient.
-- **Done means whole.** A feature row is `done` only when its spec's LIVE behaviors are
-  fully covered, or the remainder exists as explicit rows. Provisional *values* are fine
-  (log them); missing *halves* are not.
-- **Phase audit before every human gate.** Each phase closes with a `P<X>-AUDIT` spec
-  row: re-read the phase's specs + CONFIRM lists, diff them against the built rows, and
-  materialize every gap as a row. The audit — not memory — decides the phase is
-  complete; only then is the gate offered.
-- **Reflect at phase entry/exit.** On entering or closing a phase, update
-  `/MIGRATION.md`'s Top-level roadmap section (Now / Next / Later / Blocked-on-user).
-  The tables are ground truth; the roadmap is the reflected summary every orient reads
-  first.
+- **Follow-ups fold in, they do not multiply.** A ⚠️ a bundle uncovers is either
+  fixed inside that bundle or added to the **one** standing `HYGIENE` row. It
+  gets its own ledger row only if it is feature-sized. (The old rule — every
+  mention gets its own row, in the same commit — is what generated the
+  forty-odd-row cycles; it is retired.)
+- **Done means whole, and reachable.** A bundle is `done` only when its
+  behaviours are covered AND a visible door reaches them in the JUCE WKWebView
+  host. Tests pass ≠ it works ≠ it shipped ≠ you can reach it.
+- **Deviations from the donor are signed, not silent.** Where the merged app
+  departs from `../scoopyloops`, the departure goes in `docs/DECISIONS.md` with
+  its reason. A divergence nobody asked for is a regression wearing a redesign's
+  clothes.
+- **Audit before a human gate.** A phase closes with a `P<X>-AUDIT` row: diff the
+  specs against what was built and materialise the gaps. The audit — not memory —
+  decides the phase is complete.
 
 ## 12. Phases
 

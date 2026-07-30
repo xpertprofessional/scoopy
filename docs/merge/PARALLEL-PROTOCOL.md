@@ -6,12 +6,68 @@ on order; this file is only the *coordination* contract. If the two ever
 disagree, the ledger wins.
 
 Read this together with `docs/ARCHITECTURE.md` §11 (the loop protocol) and
-`CLAUDE.md`. §11 still describes a single session doing everything; the split
-below is how the same contract is honoured by several.
+`CLAUDE.md`.
+
+> **STATUS 2026-07-30 (later session): lanes are PARKED.** The user ruled that
+> feature work now runs as **single-session bundles** (see §0 below and the
+> ledger's BUNDLES section); the conductor/lane machinery below stays as the
+> revival recipe (§8) for when two bundles are truly disjoint. The worktrees
+> remain seeded on disk.
 
 ---
 
-## 1. The shape: one conductor, four lanes
+## 0. The standing ruling: work by DONOR BINDING, not by phase (2026-07-30, user)
+
+*Hoisted from §9 — this is the ruling that decides what a unit of work is; read
+it before the queue.*
+
+The 2026-07-30 audit classified the open queue: **51 PORT · 31 NEW · 1 UNKNOWN**
+across 83 rows, every PORT naming a file and a line in `../scoopyloops`. P7 alone
+is 21 PORT of 29. **The queue is largely a rewrite backlog**, and the thing being
+rewritten has a shape the ledger's phase blocks do not follow.
+
+The donor's protocol answerer is **15 `Web*Binding.swift` files, 6,954 lines**,
+sitting on a document layer of ~33k. The merged host answers the same protocol in
+`SlDispatch.cpp` plus `BrowserLink`. **What did not come across is the
+bindings.** So a binding is the natural unit of work: it has a boundary, one
+reference file, and it closes several ledger rows at once. The ledger's
+**BUNDLES section** (B1–B8) is this ruling made into a queue.
+
+**Dispatch by binding, not by phase.** Example: `WebSceneBinding.swift` answers
+`patternScene` and `sceneOverride` — porting it closes P7-K7, revives
+`scenesStore`, un-swallows P8-2's scene ops and unblocks the launch quantum. Four
+rows, one reference, one coherent change.
+
+**What this costs, stated plainly:** it cuts across the ledger's authority order
+(the `## The queue` preamble) — P7, P8 and P9 rows progress together rather than
+in sequence. That order exists to stop work being built on falsified premises, so
+the **dependency warnings on individual rows still bind**: a row saying
+*re-measure before building* is still a measure row. What is relaxed is phase
+sequencing, not row dependencies.
+
+**Every brief/bundle for PORT work must carry:**
+
+1. **The reference — file and line.** Not "see the donor": `patternScene →
+   WebSceneBinding.swift:119`.
+2. **The instruction to read it BEFORE designing**, and to report where it
+   diverged and why. A divergence the user did not ask for is a regression
+   wearing a redesign's clothes.
+3. ⚠️ **Only `ScoopyLoops/*.swift` and `ScoopyLoopsTests/` are evidence.**
+   `../scoopyloops/web/**` is this project's own web tier frozen at 2026-07-27 —
+   citing it is circular.
+4. **What the user has ruled**, where it differs from the donor. The donor is the
+   reference, not the authority: `trackGain` unity over the donor's 0.80 is the
+   precedent.
+
+**The index:** `WebEngineLink.swift:365-559` — an exhaustive dispatch `switch`.
+⚠️ `SLPMethod` there has 84 cases but only **72** are handled — the other 12
+(`slChannel slTape slRoute … openPanelWindow`) are *successor* additions leaked
+into `Generated/SLPProtocol.swift` by the merge commits. **The donor's real
+capability index is the 72 handled cases.**
+
+---
+
+## 1. The shape: one conductor, four lanes (PARKED — see §0 status note)
 
 **The conductor** is the session holding the ledger. It exclusively owns every
 resource that cannot be shared, because sharing it corrupts something:
@@ -47,8 +103,8 @@ lanes wait on integration rather than the other way round.
 ### The rule that makes it safe
 
 **Lanes never bundle and never commit to the shared branch.** A lane runs only
-the cheap gates in its own tree — `typecheck`, `npm test`, and the nine drift
-checks (pure read-and-compare node scripts, ~2 s for all nine, safe
+the cheap gates in its own tree — `typecheck`, `npm test`, and the ten drift
+checks (pure read-and-compare node scripts, ~2 s for all ten, safe
 concurrently). The conductor runs the exclusive gates at integration, one row at
 a time, in the main tree:
 
@@ -78,25 +134,22 @@ completeness.
 
 ## 2. Known-red baseline
 
-Measured at `8d9a963`, 2026-07-30. Lanes compare reds against **this**, not
-against assumption:
+Measured at `6694d4b`, 2026-07-30 end of session (per §10: typecheck green ·
+vitest 1670/1670 · ctest 44/44 · bundle fresh). Lanes compare reds against
+**this**, not against assumption — and re-measure it on resume (§8):
 
 | Gate | State |
 |---|---|
-| `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` · `tape:check` · `trackparams:check` · `webdist:check` · `schema:check` · `check:tokens` | **all nine GREEN** |
-| `engine:check` (**not** one of the nine) | **RED, pre-existing** — `vendor/scoopy/engine/CMakeLists.txt` edited locally; the drift is recorded in P6-3 |
+| `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` · `tape:check` · `trackparams:check` · `webdist:check` · `schema:check` · `check:tokens` · `nativemethods:check` | **all TEN GREEN** |
+| `engine:check` (**not** one of the ten) | **RED, pre-existing** — `vendor/scoopy/engine/CMakeLists.txt` edited locally; the drift is recorded in P6-3 |
 
-⚠️ **This corrects the ledger preamble at `P3-LEDGER.md:38-43`,** which says
-`params:check` is RED because a concurrent `MergedApp.cpp` split moved
-`kParamMap[]`. That was true when written; H5-a repointed the checker and it now
-passes. A lane that trusts the preamble will chase a red that is not there.
+(`params:check` was RED for one day in an older preamble; H5-a repointed the
+checker and it passes — do not chase that red.)
 
-Two stale statements in §11 that lanes must not follow:
-
-- §11.1 says orient on `/MIGRATION.md`. `CLAUDE.md` overrides: that file is
-  wizard's pre-merge record, **historical**. Orient on `P3-LEDGER.md`.
-- §11.3 names `npm run protocol:check`. **There is no such script.**
-  `web/package.json` is the authority; the gate count is **nine**.
+`docs/ARCHITECTURE.md` §11 was **rewritten 2026-07-30** for the merge; the two
+stale claims it used to carry (orient on `/MIGRATION.md`; a `protocol:check`
+script) are fixed at source. `web/package.json` is the authority on gate names;
+the count is **ten**.
 
 ---
 
@@ -104,7 +157,8 @@ Two stale statements in §11 that lanes must not follow:
 
 A row may go to a parallel lane only if **all** hold:
 
-1. It is at the head of the authority order (`P3-LEDGER.md:230-236`), **or** it
+1. It is at the head of the authority order (the ledger's `## The queue`
+   preamble — line numbers drift, the section name does not), **or** it
    is a `spec`/audit row producing no source change, **or** it is a P11 row —
    P11 is not sequenced in the authority block and rides off-chain, the same
    licence the H section took ("*not a phase — a cross-cutting cleanup*").
@@ -172,7 +226,7 @@ baseline green, a RED `webdist:check` means *"I changed something under
 `web/src`"* and nothing else.
 
 Verify a new worktree before dispatching to it — `npm run typecheck && npm test`
-plus the nine gates must match §2 exactly.
+plus the ten gates must match §2 exactly.
 
 ## 5. Other sessions
 
@@ -353,57 +407,25 @@ Worth restating, because they are what made the lanes useful rather than fast:
 
 ---
 
-## 9. Working by DONOR BINDING (ruled 2026-07-30, user)
+## 9. Working by DONOR BINDING — moved to §0
 
-The 2026-07-30 audit classified the open queue: **51 PORT · 31 NEW · 1 UNKNOWN**
-across 83 rows, every PORT naming a file and a line in `../scoopyloops`. P7 alone
-is 21 PORT of 29. **The queue is largely a rewrite backlog**, and the thing being
-rewritten has a shape the ledger does not follow.
+This ruling decides what a unit of work *is*, so it was hoisted to the top of
+this file on 2026-07-31 (it had been buried at line 356 of 471, in the fourth
+document of the orientation order, and the session it was written for ended
+without acting on it). **See §0.**
 
-The donor's protocol answerer is **15 `Web*Binding.swift` files, 6,954 lines**,
-sitting on a document layer of ~33k. The merged host answers the same protocol in
-`SlDispatch.cpp` (1,225 lines) plus `BrowserLink`. **What did not come across is
-the bindings.** So a binding is the natural unit of work: it has a boundary, one
-reference file, and it closes several ledger rows at once.
-
-**Dispatch by binding, not by phase.** `WebSceneBinding.swift` answers
-`patternScene` and `sceneOverride` — porting it closes P7-K7, revives
-`scenesStore`, un-swallows P8-2's scene ops and unblocks the launch quantum. Four
-rows, one reference, one coherent change.
-
-### What this costs, stated plainly
-
-It cuts across `P3-LEDGER.md:230-236`'s authority order — P7, P8 and P9 rows
-progress together rather than in sequence. That order exists to stop work being
-built on falsified premises, so the **dependency warnings on individual rows
-still bind**: a row saying *re-measure before building* is still a measure row,
-and `P11-3a-b` still lands before any quantum. What is relaxed is phase
-sequencing, not row dependencies.
-
-### Every brief for a PORT row must carry
-
-1. **The reference — file and line.** Not "see the donor": `patternScene →
-   WebSceneBinding.swift:119`. A lane that has to find it will re-derive instead.
-2. **The instruction to read it BEFORE designing**, and to report where it
-   diverged and why. A divergence the user did not ask for is a regression
-   wearing a redesign's clothes.
-3. ⚠️ **Only `ScoopyLoops/*.swift` and `ScoopyLoopsTests/` are evidence.**
-   `../scoopyloops/web/**` is this project's own web tier frozen at 2026-07-27 —
-   citing it is circular.
-4. **What the user has ruled**, where it differs from the donor. The donor is the
-   reference, not the authority: `trackGain` unity over the donor's 0.80 is the
-   precedent.
-
-### The index
-
-`WebEngineLink.swift:365-559` — an exhaustive dispatch `switch` over all 84
-`SLPMethod` cases. Swift enforces exhaustiveness (no `default`), so it is a
-complete list of what the old host answered. Start there for any "who used to
-answer this?" question.
+The ledger's **BUNDLES** section is that ruling turned into a queue: B1–B8, each
+naming its donor binding, the rows it consumes, and its door.
 
 ---
 
 ## 10. Handoff — state at 2026-07-30 end of session
+
+> ⚠️ **Superseded in part by the 2026-07-31 session.** Lanes are parked; work
+> runs as single-session BUNDLES (§0, and the ledger's BUNDLES section). What
+> stays live here is the **"Awaiting the user"** list at the end of this section
+> — that, not `docs/archive/MORNING-DECISIONS-2.md`, is the real decision
+> backlog. Four of its items were ruled on 2026-07-31 and are struck below.
 
 **Tree clean at `6694d4b` on `host-hygiene`.** typecheck green · vitest
 **1670/1670** · ctest **44/44** · **ten** drift gates green · bundle fresh.
@@ -415,8 +437,9 @@ pushing ~30 commits at once.
 
 ### Start here
 
-1. `P3-LEDGER.md` for the queue, then **§9 above** — work by donor binding, not
-   by phase. That is the ruling that changes everything about how to proceed.
+1. `P3-LEDGER.md` for the queue — its **BUNDLES** section first — then **§0
+   above**: work by donor binding, not by phase. That is the ruling that changes
+   everything about how to proceed.
 2. **Re-measure the §2 baseline.** It is dated, and the reason it exists is that
    two documents were stale about it.
 3. The lane worktrees are seeded and ready; `ledger-lane` is now a **registered
@@ -444,6 +467,14 @@ good and are worth reusing**:
   **ours has 57 parked rows of 99** and must not present them as working.
 
 ### Awaiting the user
+
+**Ruled 2026-07-31** (struck from the list below; recorded in `DECISIONS.md`):
+the **pd-\* specs** are archived (D-SL-ARCHIVE-01, settling D-4's 2026-07-28
+question) · **lanes park**, work runs as single-session bundles · **B1 deck
+transport is the first bundle** · **P7-P1 is unblocked** (the looper is a keeper
+and evolves) · plus B1's four donor-deviation rulings: `playOnce` **ports**, TR
+**replicates** the donor's sync⊕transpose exclusivity, `gridHidden` is
+session-lifetime for now, BR stays armable while stopped.
 
 - **Real-host walks** pending on: `P3.5-E8g-h` (new-track), `P11-1` (three
   zones), `P11-2` (CLOCK/TAP), `P11-5` (DSP readout), `P11-3a` (scene queue —

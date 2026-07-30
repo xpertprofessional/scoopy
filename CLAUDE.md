@@ -1,21 +1,35 @@
 # Scoopy (merged wizard + scoopyloops tree) — agent orientation
 
+## Work moves in BUNDLES, not rows
+
+**The unit of work is a donor binding, not a ledger row** (user ruling
+2026-07-30, hoisted to `PARALLEL-PROTOCOL.md` §0). The donor's protocol answerer
+is 15 `Web*Binding.swift` files / ~7k lines; **what never came across is the
+bindings**, which is why 48 of 86 protocol commands are answered by *nobody* in
+the merged host and whole features (deck transport, scenes, audio devices, MIDI)
+are dead or doorless. A bundle = one binding's worth of shell/engine seam + web
+UI + a **visible door reachable in the real host** + tests. No LOC cap; several
+commits, each green. The ledger's **BUNDLES** section (B1–B8) is the queue.
+
 ## Orient here, in this order
-1. `docs/merge/P3-LEDGER.md` — the ACTIVE work queue. Done rows carry one-line
-   summaries; their full handoff notes live in `docs/merge/P3-LEDGER-ARCHIVE.md` —
-   dig there only when a specific done row's detail matters. (`/MIGRATION.md` is
-   wizard's pre-merge record — historical, do not orient on it.)
-2. `docs/ARCHITECTURE.md` §11 — the loop protocol every session follows.
-3. `docs/archive/MORNING-DECISIONS-2.md` — open user decisions; rows marked
-   `awaiting-decision` are skipped, `provisional(D-n)` may build the recommendation.
-4. `docs/merge/PARALLEL-PROTOCOL.md` — read this if more than one agent is working
-   the ledger. It names who may bundle, commit, run `ctest` and run the walks, and
-   carries the measured known-red baseline. **While lanes are live, only the
-   conductor commits to `host-hygiene`.** Its §2 also corrects two stale claims
-   this file and §11 still make (see the gate list below).
-   **To pick the multi-agent loop back up in a fresh session, start at its §8** —
-   the lane worktrees, the `ledger-lane` agent type and every ruling are already
-   on disk; only the agents' warm context is lost.
+1. `docs/merge/P3-LEDGER.md` — the ACTIVE work queue: **BUNDLES section first**,
+   then the phase blocks for unclaimed rows. Done rows carry one-line summaries;
+   their full handoff notes live in `docs/merge/P3-LEDGER-ARCHIVE.md` — dig there
+   only when a specific done row's detail matters.
+2. `docs/ARCHITECTURE.md` §11 — the loop protocol every session follows
+   (rewritten 2026-07-31 for the merge; §1–§10 and §12 are wizard-era frozen
+   reference, and §3 is self-marked historical).
+3. `docs/DECISIONS.md` — the signed law, append-only. The **live decision
+   backlog** is `docs/merge/PARALLEL-PROTOCOL.md` §10 "Awaiting the user".
+   (`docs/archive/MORNING-DECISIONS-2.md` is history: every decision in it is
+   signed. Do not orient on it.)
+4. `docs/merge/PARALLEL-PROTOCOL.md` — **§0 is the donor-binding ruling**; read
+   it. The rest is the conductor/lane contract, currently **PARKED** — bundles
+   run single-session by user ruling. Its §8 is the recipe for reviving lanes
+   (the worktrees and the `ledger-lane` agent type are still on disk) when two
+   bundles are genuinely disjoint.
+
+`docs/archive/` is history — never a spec, never an orientation target.
 
 ## The original app is one directory over — READ IT
 
@@ -71,8 +85,8 @@ take forever (15k files on disk, >1GB of it build trees):
   `cd engine && emcmake cmake -B build-wasm && cmake --build build-wasm`
 - `web/fixtures/**` — many 500KB+ JSONs; open only the specific fixture a test names
 
-Scope searches to the hand-written source: `web/src`, `shell/`, `slengine/`,
-`ScoopyLoops/`, `engine/src`, `host/`, `spike/`, `docs/`.
+Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
+`slengine/`, `ScoopyLoops/`, `engine/src`, `host/`, `docs/` (`spike/` is gone — H1).
 
 ## Known non-bugs — do not "fix"
 - `web/src/plane/` uses single-quote imports vs double quotes elsewhere — two
@@ -80,7 +94,7 @@ Scope searches to the hand-written source: `web/src`, `shell/`, `slengine/`,
 - `SAMPLE_DRAG_TEXT_TAG` in `web/src/panels/FileBrowserPanel.tsx` deliberately uses
   `\u0001` sentinel characters — keep them escaped, never as raw bytes.
 
-## Verify (the gate for every increment)
+## Verify (the gate for every commit in a bundle)
 - C++: `ctest --test-dir build --output-on-failure`
 - Web (in `web/`): `npm run typecheck && npm test`
 - **Drift gates — run all TEN every session, not only when a row names one**
@@ -104,4 +118,7 @@ Scope searches to the hand-written source: `web/src`, `shell/`, `slengine/`,
 - `npm run bundle` must be the LAST step before `git add`, or `.buildhash`
   records a tree that no longer exists (the P3-X4 lesson).
 - Bundle + `webdist/` freshness and the Chromium walk gates per the ledger row's gate
-  line. Never commit a red tree; one ledger item per commit.
+  line. **Never commit a red tree.** One coherent step per commit — a bundle spans
+  several; the ledger row closes on the last one.
+- ⚠️ Other agents edit this tree concurrently: `git add` **explicit paths**, never
+  `git add -A`.
