@@ -145,12 +145,17 @@ describe("chooseFolder — the folder door", () => {
     style: Record<string, string>;
     files: File[] | null;
     clicked: boolean;
+    /** Was it IN the document when `click()` ran? See the connectivity pin below. */
+    connectedAtClick: boolean | null;
+    removed: boolean;
     click(): void;
     remove(): void;
     addEventListener(type: string, fn: () => void): void;
     fire(type: string): void;
   }
   let created: FakeInput[] = [];
+  /** The document, as far as this fake is concerned. */
+  let body: Set<FakeInput>;
 
   /** A file as a directory picker hands it over: named by its path INSIDE the picked folder. */
   const picked = (relativePath: string): File => {
@@ -164,6 +169,7 @@ describe("chooseFolder — the folder door", () => {
 
   beforeEach(() => {
     created = [];
+    body = new Set<FakeInput>();
     vi.stubGlobal("document", {
       createElement: () => {
         const listeners = new Map<string, () => void>();
@@ -171,17 +177,29 @@ describe("chooseFolder — the folder door", () => {
           style: {},
           files: null,
           clicked: false,
+          connectedAtClick: null,
+          removed: false,
           click: () => {
             el.clicked = true;
+            el.connectedAtClick = body.has(el);
           },
-          remove: () => {},
+          remove: () => {
+            body.delete(el);
+            el.removed = true;
+          },
           addEventListener: (type, fn) => void listeners.set(type, fn),
           fire: (type) => listeners.get(type)?.(),
         };
         created.push(el);
         return el;
       },
-      body: { append: () => {} },
+      // ⚠️ `append` AND `remove` USED TO BE NO-OPS THAT RECORDED NOTHING, and
+      // that is the P3.5-E8g-c hole: this door's defining property — the input
+      // is IN THE DOCUMENT when it is clicked — was the one thing the fake
+      // could not see. Dropping the append would have made `pickViaInput`
+      // byte-for-byte the shape `pickAudioFile` had, and every test in this
+      // file would still have passed.
+      body: { append: (el: FakeInput) => void body.add(el) },
     });
     // No `showDirectoryPicker` — i.e. WebKit, the engine the app ships (H4).
     vi.stubGlobal("window", {});
@@ -197,6 +215,32 @@ describe("chooseFolder — the folder door", () => {
     expect(created).toHaveLength(1);
     expect(created[0]!.clicked).toBe(true);
     created[0]!.fire("cancel");
+    return pending;
+  });
+
+  it("clicks an input that is IN the document — the property E8g had to go looking for", () => {
+    // THIS DOOR IS THE ONE THAT WORKS. The user proved it end-to-end in
+    // WizardMerged (E8f, 2026-07-30) on the same walk that reported the compose
+    // window's LOAD door broken — and the two differed in exactly this: the
+    // sample picker was never appended. That made this the only picker shape
+    // the shipping host has ever been known to deliver through, and it was
+    // pinned nowhere. Measured in real WebKit, a detached input DOES fire
+    // `change`, so this is not a claim about the cause; it is a claim about
+    // which shape is PROVEN, so a future tidy-up cannot quietly swap it for the
+    // one that is not.
+    const pending = backend.handle({ op: "chooseFolder" });
+    expect(created[0]!.connectedAtClick).toBe(true);
+    created[0]!.fire("cancel");
+    return pending;
+  });
+
+  it("takes the input back out of the document once the pick is over", () => {
+    // Otherwise every folder import leaves a dead <input> in the body for the
+    // life of the window.
+    const pending = backend.handle({ op: "chooseFolder" });
+    created[0]!.fire("cancel");
+    expect(created[0]!.removed).toBe(true);
+    expect(body.size).toBe(0);
     return pending;
   });
 
