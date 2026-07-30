@@ -70,8 +70,9 @@ D-WZ-RATE-01 says the graph runs at the **output** device's rate. In the merged
 app that rate is pinned to 48 kHz at engine creation, and the input device is
 then required to match it. **So: set the virtual device to 48 kHz, and make sure
 your output interface can do 48 kHz too.** If they disagree, `setDevices` returns
-`"device does not support 48000 Hz"` — and see the box in §7, because what
-happens next is worse than a failed switch.
+`"device does not support 48000 Hz"` — and **that is now the sentence you read
+on the plane's note line** (P9-5c), with the previous device still playing
+underneath it (P9-5b). See the box in §8 for what that used to cost.
 
 ### b. One stereo pair
 
@@ -226,7 +227,9 @@ surfaces that exist before guessing:
 
 - **The plane's note line** — the plane's one error surface (P3-U6, P3.5-E9a).
   After loading a session it says why a deck is quiet; dispatcher refusals land
-  there as `<method> refused — <msg>`.
+  there as `<method> refused — <msg>`; and a device switch reports itself either
+  way — `input device → “BlackHole 2ch”` or `could not switch input to
+  “BlackHole 2ch” — <the host's reason>` (P9-5c).
 - **`DSP` on the master bar** (P11-5, `web/src/plane/Master.tsx`, right of the
   LIM lamp). `—` means no HotFrame has arrived at all, i.e. **no engine** — the
   problem is upstream of everything in this document. A percentage means the
@@ -235,7 +238,9 @@ surfaces that exist before guessing:
 | What you see | What it means | What to do |
 |---|---|---|
 | ⋯ menu has no `input device` section | fewer than two input devices are known (`Strip.tsx:624`) | driver not installed, or installed after launch (§2c) — restart the app |
-| the device is listed, you pick it, and **everything goes silent with no message** | the switch failed and the render callback is detached — see the box below | restart the app; fix the rate (§2a) first |
+| you pick the device and the note line says `could not switch input to “…”` | the switch was refused; the previous device is still playing (P9-5b) | read the reason — usually the rate (§2a); fix it and pick again |
+| …and that line ends `(and the previous device did not come back)` | the refusal *and* the restore both failed: there is no input device attached | restart the app; fix the rate (§2a) before you pick again |
+| you pick the device and **everything goes silent with no message** | the pre-P9-5b/5c behaviour — see the box below | you are on an old build; restart the app |
 | `record from` says *"no inputs on this device"* | the open device reports zero active input channels | the switch did not take, or the device presents no inputs; check Audio MIDI Setup |
 | status line reads `input N — not on this device` | a route left over from a device with more channels (`devices.ts:101-113`) | re-pick the input from ⋯ |
 | strip silent, `MON` dark, meter at zero | the monitor gate — this is the normal state, not a fault (§6) | press `MON` |
@@ -244,25 +249,47 @@ surfaces that exist before guessing:
 | you hear it twice, hollow or flanged | Multi-Output plus Scoopy's monitor (§4) | mute one of the two |
 | clicks, dropouts, slow pitch drift | the two devices are on different clocks | put BlackHole in a Multi-Output/Aggregate with drift correction, or accept it; nothing in the app resamples an input (D-WZ-RATE-01) |
 
-### ⚠️ The silent switch — the one failure with no door
+### ✅ The silent switch — FIXED, 2026-07-30 (P9-5b + P9-5c)
 
-`AudioIO::setDevices` detaches the render callback at `host/src/AudioIO.cpp:102`
-and **every** error return between `:110` and `:116` returns *without*
-re-attaching it. A `setInput` that fails therefore leaves the app with **no audio
-at all** — not the previous device, nothing — and there is no other trigger that
-re-attaches. The reason is produced correctly: `SlDispatch.cpp:1016-1019` returns
-it, and `setInputDevice` stores it in `useDeviceStore.error`
-(`web/src/plane/devices.ts:71-80`).
+Kept as written, because it is the clearest statement of the defect class this
+whole document keeps circling and the two rows are only meaningful against it.
 
-**No component in the tree reads that field.** `error` is written and never
-rendered — the only consumers of the device store take `channels`, `devices` and
-`current` (`Strip.tsx:230-232`, `Inspector.tsx:102`). The schema comment on that
-very field says what it is for: *"a picker that silently fails leaves the user
-staring at a device that did not change"* (`web/protocol/schema.ts:1972-1973`).
-Today it is worse than that: the user stares at a device that did not change,
-with the audio off, and nothing on screen. Recovery is to pick a device that
-works, or quit and relaunch. Rows **P9-5b** (re-attach) and **P9-5c** (surface
-the error).
+**What it was.** `AudioIO::setDevices` detached the render callback and **every**
+error return exited *without* re-attaching it. A `setInput` that failed therefore
+left the app with **no audio at all** — not the previous device, nothing — and no
+other trigger re-attached it. The reason was produced correctly
+(`SlDispatch.cpp:1016-1019`) and stored in `useDeviceStore.error` — and **no
+component in the tree read that field**: every consumer of the device store took
+`channels`, `devices` and `current` (`Strip.tsx:230-232`, `Inspector.tsx:102`),
+while the schema comment on the field said exactly what it was for — *"a picker
+that silently fails leaves the user staring at a device that did not change"*
+(`web/protocol/schema.ts:1972-1973`). What a person got was worse than that
+comment: a device that did not change, the audio off, and nothing on any screen,
+recoverable only by picking a device that happened to work or by relaunching.
+
+**What it is now.** Two halves, and both were needed:
+
+- **P9-5b** captures the previous setup before mutating and restores it on every
+  failure path (`host/src/AudioIO.cpp:98-153`). The restore is *checked* — it
+  re-reads the device and compares its rate before re-attaching, because
+  attaching at the wrong rate is the one outcome worse than silence
+  (D-WZ-RATE-01). **A refusal costs you the change, never the audio you already
+  had.** When the restore itself fails the message says so, verbatim: `"…(and
+  the previous device did not come back)"`.
+- **P9-5c** puts that reason on the plane's note line. `slDevices/setInput`
+  answers a failure with `ok:false` + a reason, which **resolves** — so it never
+  passed through `onRefusal`, the P3-U6 seam every other failure uses. The store
+  now records the outcome of each switch gesture (`DeviceSwitch`,
+  `web/src/plane/devices.ts`) and `watchDeviceSwitches` announces it on the note
+  line. The host's words go through **unedited**, so the two failures stay
+  distinguishable on screen: *your switch failed* and *your switch failed and
+  the old device is gone* are different things to tell someone.
+
+⚠️ **Not the ⋯ menu, deliberately.** The menu that took the pick has already
+closed by the time the host answers — `ContextMenu` runs `onSelect()` then
+`onClose()` synchronously (`web/src/design/ContextMenu.tsx:165-168`) while the
+switch is an awaited round-trip. A menu could only show this on its *next* open,
+which is a report you have to go looking for.
 
 The same shape exists one level up: `Backend::Backend` stores the open failure in
 `deviceError` (`shell/src/MergedApp.cpp:76`, declared `MergedApp.h:68`) and

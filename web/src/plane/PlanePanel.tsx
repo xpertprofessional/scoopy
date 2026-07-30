@@ -34,7 +34,7 @@ import { Library } from './Library.tsx'
 import { Master } from './Master.tsx'
 import { Matrix } from './Matrix.tsx'
 import { Plane } from './Plane.tsx'
-import { refreshDevices } from './devices.ts'
+import { refreshDevices, watchDeviceSwitches } from './devices.ts'
 import { ask, onRefusal, send } from './send.ts'
 import {
   RECORD_SOURCE,
@@ -499,6 +499,13 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   // (the defect class this phase keeps paying for; 502bc1d built this surface
   // for session opens, this extends it to every command the plane sends).
   useEffect(() => onRefusal((method, msg) => setNote(`${method} refused — ${msg}`)), [])
+
+  // …AND SO DOES A REFUSED DEVICE SWITCH (P9-5c). `slDevices/setInput` answers
+  // a failure with `ok:false` + a reason, which RESOLVES — so it never went
+  // through `onRefusal` above, and the reason sat in the device store read by
+  // nothing. Same seam, same line, deliberately: the ⋯ menu that took the pick
+  // has already closed by the time the host answers (`watchDeviceSwitches`).
+  useEffect(() => watchDeviceSwitches(setNote), [])
 
   // THE TAKE LIBRARY, INDEXED (P3-U4). What lets a strip's status line say
   // "audio missing — <ref>" and name a resolved take with its length. `null`
