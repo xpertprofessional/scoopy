@@ -28,7 +28,7 @@ import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
 import { lcmForScene } from '../audio/patternClock.ts'
 import { GridPanel, djSource } from '../panels/GridPanel.tsx'
-import { pickAudioFile } from '../panels/CompanionPanel.tsx'
+import { registerSampleDoors } from '../panels/sampleDoors.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import { useNudge } from '../state/nudgeStore.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
@@ -37,7 +37,6 @@ import {
   applyGridRow,
   gridPeakPaths,
   gridRuntimeInfos,
-  importAudioFile,
   toggleLocatorRepeatTrack,
   useCompanion,
 } from '../store/companionEngine.ts'
@@ -97,20 +96,10 @@ export function useDeckTileBinding(
       (trackIndex) => toggleLocatorRepeatTrack(trackIndex, deck),
       deck,
     )
-    browserLink.setSampleLoadHandler(async (trackIndex, path) => {
-      await useCompanion.getState().loadSample(trackIndex, path, deck)
-    }, deck)
-    browserLink.setSamplePickHandler(async (trackIndex) => {
-      try {
-        const file = await pickAudioFile()
-        if (!file) return
-        const path = await importAudioFile(file)
-        await useCompanion.getState().loadSample(trackIndex, path, deck)
-        void browserLink.command('fileBrowser', { op: 'refresh' })
-      } catch (err) {
-        useCompanion.setState({ error: `sample import failed: ${(err as Error).message}` })
-      }
-    }, deck)
+    // Both sample doors, deck-scoped — the tile addresses the grid WITH a deck,
+    // so its LOAD lands in ITS document (P3.5-E8a shares the registration with
+    // the compose window, which had none at all).
+    registerSampleDoors(browserLink, deck, 'deck')
   }, [browserLink, deck])
 
   // The document into the backend — the active scene's projection, reloaded on

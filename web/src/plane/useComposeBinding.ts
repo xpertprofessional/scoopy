@@ -9,6 +9,7 @@ import { useEffect } from 'react'
 
 import type { EngineLink } from '../engineLink.ts'
 import { BrowserLink } from '../browserLink.ts'
+import { registerSampleDoors } from '../panels/sampleDoors.ts'
 import { projectScene } from '../audio/sceneProjection.ts'
 import {
   applyGridRow,
@@ -39,6 +40,14 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
       browserLink.gridBackend.updateRuntime(gridRuntimeInfos(deck))
     })
     browserLink.setLocatorRepeatHandler((trackIndex) => toggleLocatorRepeatTrack(trackIndex, deck))
+    // P3.5-E8a — THE DOORS THIS BINDING NEVER REGISTERED. `GridPanel` draws a
+    // LOAD button on every audio row and takes a browser row dropped on it, but
+    // both are intents `BrowserLink` forwards to a handler; with none
+    // registered, `trackEdit` falls through to a silent `{ok:true}`. So in the
+    // compose window — the surface a person reaches for a sample IN — LOAD
+    // accepted the click and did nothing. Compose-scoped (this grid has no deck
+    // axis) but written into THIS deck's document, like every handler above.
+    registerSampleDoors(browserLink, deck, 'compose')
   }, [browserLink, deck])
 
   useEffect(() => {

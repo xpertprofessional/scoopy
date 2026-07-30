@@ -366,6 +366,51 @@ check('the import told the note line what it did',
   ((await page.textContent('.plane-note')) ?? '').includes('imported Demo'),
   await page.textContent('.plane-note').catch(() => '(no note)'))
 
+// ── 7 · LOAD a sample IN THE COMPOSE WINDOW (P3.5-E8a) ─────────────────────
+//        "in compose it wont let me load any audio samples" (user, real host).
+//        GridPanel has always drawn LOAD on every audio row, but the button
+//        only sends an intent, and `useComposeBinding` registered no handler
+//        for it — BrowserLink then falls through to a silent {ok:true}. What
+//        is measured here is the door OPENING: the click must produce a real
+//        file chooser, and the file picked must land in the native library.
+{
+  const composePage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  composePage.on('pageerror', (e) => pageErrors.push('compose: ' + String(e)))
+  await composePage.addInitScript(INIT)
+  await composePage.addInitScript(
+    `window.__slPanel = 'compose'; window.__slPanelArg = '${composeArg}';`)
+  await composePage.goto('http://localhost:4601/')
+  await composePage.waitForSelector('.trk-name', { timeout: 15000 })
+
+  const load = composePage.locator('button:has-text("LOAD")').first()
+  check('the compose window draws a LOAD door on a track row',
+    (await load.count()) === 1 || (await composePage.locator('button:has-text("LOAD")').count()) > 0)
+
+  // The measurement. Pre-fix this click resolved `{ok:true}` and NOTHING
+  // happened, so a timeout here is the defect reproducing.
+  let chooserOpened = true
+  const chooser = await Promise.all([
+    composePage.waitForEvent('filechooser', { timeout: 10000 }),
+    load.click(),
+  ]).then(([c]) => c).catch(() => { chooserOpened = false; return null })
+  check('LOAD opens a real file chooser in the compose window', chooserOpened,
+    'bar says: ' + ((await composePage.textContent('.compose-window-bar')) ?? '(none)'))
+
+  if (chooser) {
+    await chooser.setFiles(join(sessionDir, 'Samples', 'kick.wav'))
+    // The picked file becomes a library citizen on the native slFiles route —
+    // the half that does not depend on this engine decoding the audio.
+    let landed = false
+    for (let i = 0; i < 50 && !landed; i++) {
+      landed = (files.get('/samples/Imported/kick.wav')?.length ?? 0) > 0
+      if (!landed) await new Promise((r) => setTimeout(r, 100))
+    }
+    check('the picked file landed in the library on the native route', landed,
+      [...files.keys()].filter((k) => k.startsWith('/samples/Imported')).join(', '))
+  }
+  await composePage.close()
+}
+
 await rm(fixtureDir, { recursive: true, force: true })
 
 check('no page errors', pageErrors.length === 0, pageErrors.join(' | '))

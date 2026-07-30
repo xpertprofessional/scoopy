@@ -27,7 +27,6 @@ import {
   applyGridRow,
   gridRuntimeInfos,
   gridPeakPaths,
-  importAudioFile,
   toggleLocatorRepeatTrack,
 } from "../store/companionEngine.ts";
 import { isSessionFile } from "../store/sessionStore.ts";
@@ -39,6 +38,7 @@ import {
   readDrop,
   walkDroppedDir,
 } from "../persist/folderImport.ts";
+import { registerSampleDoors } from "./sampleDoors.ts";
 import { isCoarsePointer } from "../design/pointerCapability.ts";
 import { FileBrowserPanel } from "./FileBrowserPanel.tsx";
 import { GridPanel } from "./GridPanel.tsx";
@@ -55,23 +55,11 @@ export function CompanionPanel({ link }: { link: EngineLink | null }) {
   const browserLink = link instanceof BrowserLink ? link : null;
   useEffect(() => {
     browserLink?.setGridEditHandler(applyGridRow);
-    // The two sample doors: a library file (double-click / row-drop in FILES) and the LOAD
-    // button's OS picker. Both end in the same document edit, `loadSample`.
-    browserLink?.setSampleLoadHandler(async (trackIndex, path) => {
-      await useCompanion.getState().loadSample(trackIndex, path);
-    });
-    browserLink?.setSamplePickHandler(async (trackIndex) => {
-      try {
-        const file = await pickAudioFile();
-        if (!file) return;
-        const path = await importAudioFile(file);
-        await useCompanion.getState().loadSample(trackIndex, path);
-        // The imported file is a library citizen now — show it in FILES.
-        void browserLink.command("fileBrowser", { op: "refresh" });
-      } catch (err) {
-        useCompanion.setState({ error: `sample import failed: ${(err as Error).message}` });
-      }
-    });
+    // The two sample doors — a library file (double-click / row-drop in FILES) and the LOAD
+    // button's OS picker — both ending in the same document edit, `loadSample`. Registered from
+    // the shared module since P3.5-E8a: this panel's hand-written pair was one of three copies,
+    // and the surface that had NO copy was the compose window.
+    if (browserLink) registerSampleDoors(browserLink, 0, "compose");
     // The grid's ▶/■: flip the runtime gate, then push the row states back so the buttons repaint.
     browserLink?.setLaunchToggleHandler((trackIndex) => {
       useCompanion.getState().toggleLaunch(trackIndex);
@@ -401,36 +389,6 @@ function Transport() {
       </span>
     </div>
   );
-}
-
-/** One audio file, by user gesture. `showOpenFilePicker` where it exists, an input elsewhere.
-    Exported for the plane's deck-tile binding (P3-D4-1) — the tile's LOAD button is the same
-    gesture against a different deck, and two pickers would drift. */
-export function pickAudioFile(): Promise<File | null> {
-  const picker = (
-    window as Window & {
-      showOpenFilePicker?: (opts: unknown) => Promise<FileSystemFileHandle[]>;
-    }
-  ).showOpenFilePicker;
-  if (picker) {
-    return picker({
-      types: [
-        {
-          description: "Audio",
-          accept: { "audio/*": [".wav", ".aif", ".aiff", ".mp3", ".m4a", ".flac", ".ogg"] },
-        },
-      ],
-    })
-      .then(([handle]) => (handle ? handle.getFile() : null))
-      .catch((err: Error) => (err.name === "AbortError" ? null : Promise.reject(err)));
-  }
-  return new Promise((res) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.flac,.ogg";
-    input.onchange = () => res(input.files?.[0] ?? null);
-    input.click();
-  });
 }
 
 /**
