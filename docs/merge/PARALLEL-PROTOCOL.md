@@ -419,6 +419,42 @@ naming its donor binding, the rows it consumes, and its door.
 
 ---
 
+## 10b. Handoff — state at 2026-07-31
+
+**B1 (deck transport) landed**, five commits, tree green at each: the engine seam
+(`sl_deck_skip_step` + deck param `texture`), the companion verbs (one-shot, BR
+shift, the instant double), the three deck rows, and a real answerer for
+`menuTransport` so Space starts a deck.
+
+**Measured, and it reframes the queue:** `schema.ts` declares 86 commands and
+**48 are answered by nobody**. That number, not the row count, is the distance
+to the original — see the ledger's BUNDLES section.
+
+**Verified:** ctest 44/44 · vitest 1710/1710 · ten drift gates green · walks
+7×2 green · bundle fresh. `sl_perf_test`'s binary was simply absent from the
+build tree and is now built.
+
+### Awaiting the user (added 2026-07-31)
+- **The real-host walk for B1.** Open WizardMerged → expand a grid strip (⤢) →
+  the three deck rows appear above the grid. Worth pressing: **▸¹** (one cycle
+  then silence), **»** (playhead nudges one step), **TP** then SYNC/TR (they
+  exclude each other), **WIN** (grain moves), **DBL** (asks which strip).
+- **Space** should now start the focused deck in both the compose window and a
+  deck tile. It never has before.
+
+### Next
+**B2 — scenes.** It is the biggest single unblock left: `patternScene` and
+`sceneOverride` are unanswered, `scenesStore` is an orphaned module that looks
+live (P7-K7), P7-T3's five scene controls are waiting on it, and
+`requestQuantizedLaunch` is compiled into the engine with zero callers. Donor
+reference `WebSceneBinding.swift` (201 L) + `BeatSequencer.swift` §§1628-1946 ·
+11677-12548, with nine scene tests in `ScoopyLoopsTests.swift:310-516`.
+
+⚠️ **Still not pushed** — the unpushed count keeps growing (~35 commits).
+Confirm the remote and the user's intent.
+
+---
+
 ## 10. Handoff — state at 2026-07-30 end of session
 
 > ⚠️ **Superseded in part by the 2026-07-31 session.** Lanes are parked; work

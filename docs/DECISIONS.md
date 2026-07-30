@@ -982,3 +982,44 @@ recoverable, still citable by name from source comments (paths rewritten to
 `P3-LEDGER-ARCHIVE.md` stays in `docs/merge/` (already correctly parked, and its rows'
 old-path citations stay byte-identical). DECISIONS.md's own historical citations are NOT
 rewritten — this file is append-only law.
+
+## D-SL-DECKROWS-01 · 2026-07-31 · The classic deck rows, and four deviations from the donor
+**Decision:** the donor's deck block is REBUILT on the expanded tile as three rows
+(`plane/deckRows.tsx`), never mounted from `panels/TransportPanel.tsx`. Four donor
+divergences signed live by the user, each asked as a question with the donor's behaviour on
+the table:
+
+1. **`playOnce` PORTS.** The plane's "a grid deck has no one-shot" convention is amended;
+   the tile's toolbar row carries ▸¹, arming a stop at the end of the current LCM cycle
+   (`BeatSequencer.swift:3573-3587`, whole).
+2. **TP mode REPLICATES the donor's exclusivity.** Engaging SYNC drops TR and vice versa —
+   but per STRIP, where the donor has one global `DJModeManager.pitchModeEnabled`, because
+   D-SL-MORPH-01 retired the fixed deck slots that global belonged to. MAP v9; the 8→9
+   migration defaults it FALSE, which is both what a v8 map behaved like and the donor's own
+   default, so migration and fresh-strip agree.
+3. **`gridHidden` / perform mode are SESSION LIFETIME**, not persisted. The donor keeps
+   `gridHidden` as a UI pref; persisting it here belongs in the D-SL-MAPPERF-01 overlay and
+   is a later row.
+4. **Beat repeat stays armable while STOPPED.** The donor disables it — an engine limitation
+   there, not intent, and the merged world-projection does not share it.
+
+Plus one the DONOR corrected in us: **DBL is the DJ instant double**, not "double the
+pattern length". `NativeDJCoordinator.doubleDeck(from:to:)` clones a deck's session onto
+another deck as an unsaved copy so a track can be mixed against itself. Its target is ASKED
+FOR here (a menu of eligible strips) rather than hardcoded as "the other deck", since the
+plane has N strips of one kind each. The plan said otherwise; reading the reference before
+designing is what caught it, which is PARALLEL-PROTOCOL §0 rule 2 earning its place.
+
+**Rationale:** `TransportPanel`'s ported `DeckBlock` carries these exact rows and every
+control in it speaks `deckSection` / `transportDeck` / `djSetting` — commands NO host
+answers — reading a `toolbar` topic of spelled-out neutrals. Mounting it would have put nine
+dead controls on screen, which is the defect the four rules exist for.
+
+**Consequences:** two engine seams built (`sl_deck_skip_step`, deck param `texture`); the
+`strip-deckverbs` header span retires into the rows; `setMetaFacts`'s dedup rewritten
+exhaustive; `menuTransport` gains a real answerer so Space starts a deck for the first time
+in the merged host. Row P7-T3 ships SCOPED and says so on screen — S·R·CU·SCN·MUTE are scene
+verbs and land with **B2**, because five controls that reach nothing are worse than an
+honest gap. Retiring the nine dead verbs is row **B1-RETIRE**: it forces deleting
+`TransportPanel`/`DjPanel`, and four test files pin live laws through them that must be
+rehomed, not dropped.
