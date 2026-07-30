@@ -23,7 +23,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { BrowserLink } from '../browserLink.ts'
-import { DeckSyncRow, DeckToolbarRow, DeckViewRow } from './deckRows.tsx'
+import { DeckSceneRow, DeckSyncRow, DeckToolbarRow, DeckViewRow } from './deckRows.tsx'
 import type { EngineLink } from '../engineLink.ts'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
@@ -239,6 +239,7 @@ export function DeckFace({
           TransportPanel, whose every verb is unanswered (D-SL-DECKFULL-01). */}
       <DeckToolbarRow {...rowProps} />
       <DeckSyncRow {...rowProps} />
+      <DeckSceneRow {...rowProps} />
       <DeckViewRow {...rowProps} />
       <div
         className="strip-deckface"

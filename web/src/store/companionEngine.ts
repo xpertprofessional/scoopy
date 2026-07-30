@@ -22,6 +22,7 @@ import { juceBackend } from "../../protocol/juceLink.ts";
 import { nativeLink } from "../engineLink.ts";
 import { lcmForScene, switchBoundary } from "../audio/patternClock.ts";
 import { oneShotStopStep, shiftBeatRepeatWindow } from "../audio/deckTransport.ts";
+import { resolveSwitchAction, type SwitchMode } from "../audio/sceneSwitch.ts";
 import {
   SCENE_LETTERS,
   SECTION_KEYS,
@@ -220,6 +221,29 @@ export interface DeckState {
    * :4220-4225 as `currentStep >= target → stop()`).
    */
   stopAtStep: number | null;
+  /**
+   * What a plain pad click DOES on this deck — the donor's
+   * `patternSceneMouseSwitchMode` (BeatSequencer.swift:1672). RUNTIME, like the
+   * scene itself: it is a performance preference, and the donor's own default
+   * is `scheduled`.
+   */
+  switchMode: SwitchMode;
+  /**
+   * CLEAN CUT: at a scene switch the engine chokes every still-ringing voice
+   * (~10 ms fade) instead of letting the old scene ring out. FX/send tails keep
+   * ringing either way. The donor holds this as a GLOBAL UserDefaults
+   * preference (`patternScene.cleanCutSwitch`); per deck here for the same
+   * reason TP mode is per strip — D-SL-MORPH-01 left no global deck to hang it
+   * on. Default off = today's seamless ring-out, so nothing changes until asked.
+   */
+  cleanCut: boolean;
+  /**
+   * SCN — the scene-edit latch. With it on, editing a parameter auto-pins it to
+   * the current scene rather than writing the session-global value (the donor's
+   * `sceneEditLatched`, pinned by `sceneEditLatchAutoPinsEditedParameters`).
+   * The PIN half lands with the override ops; this carries the switch.
+   */
+  sceneLatched: boolean;
 }
 
 export function idleDeck(): DeckState {
@@ -236,6 +260,9 @@ export function idleDeck(): DeckState {
     beatRepeat: null,
     reverse: false,
     stopAtStep: null,
+    switchMode: "scheduled",
+    cleanCut: false,
+    sceneLatched: false,
   };
 }
 
@@ -350,6 +377,13 @@ interface CompanionState {
    * always immediate.
    */
   selectScene(scene: SceneLetter, opts?: { immediate?: boolean; deck?: number }): void;
+  /** B2: which way a plain pad click switches on this deck (SCHED/RUN/START). */
+  setSwitchMode(mode: SwitchMode, deck?: number): void;
+  /** B2: clean-cut switching — choke ringing voices at the boundary. `on`
+      omitted TOGGLES, mirroring the donor's menu-checkbox gesture. */
+  setCleanCut(on?: boolean, deck?: number): void;
+  /** B2: SCN — the scene-edit latch. */
+  toggleSceneLatch(deck?: number): void;
   /**
    * P3-U8: grow (or shrink) the session's scene row — a DOCUMENT edit
    * (`pattern.enabledSceneCount`, clamped 1..8), autosaved like any other.
@@ -1172,6 +1206,21 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     autosaver.schedule(next);
   },
 
+  setSwitchMode(mode, deck = 0) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    set((s) => patchDeck(s, deck, { switchMode: mode }));
+  },
+
+  setCleanCut(on, deck = 0) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    set((s) => patchDeck(s, deck, { cleanCut: on ?? !deckOf(get(), deck).cleanCut }));
+  },
+
+  toggleSceneLatch(deck = 0) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    set((s) => patchDeck(s, deck, { sceneLatched: !deckOf(get(), deck).sceneLatched }));
+  },
+
   selectScene(scene, opts) {
     const deck = opts?.deck ?? 0;
     const st = get();
@@ -1184,21 +1233,36 @@ export const useCompanion = create<CompanionState>((set, get) => ({
         set((s) => patchDeck(s, deck, { scheduledScene: null, switchBoundaryStep: null }));
       return;
     }
-    // Stopped (or engine down): scheduling has no clock to wait on — switch now, like the
-    // desktop's scheduled mode when the transport is stopped.
-    if (opts?.immediate || !d.playing || !audio.running) {
+    // WHICH WAY THIS DECK SWITCHES is the deck's own mode now (B2), not a hard
+    // "schedule unless told otherwise". `resolveSwitchAction` carries the
+    // donor's rule that a STOPPED deck collapses scheduled into immediate —
+    // arming a boundary against a clock that is not running would light the pad
+    // and then never fire. An engine that is down is the same case.
+    const action =
+      !d.playing || !audio.running
+        ? "seamless"
+        : resolveSwitchAction(d.switchMode, d.playing, opts?.immediate);
+
+    if (action !== "schedule") {
       set((s) => patchDeck(s, deck, { scene, scheduledScene: null, switchBoundaryStep: null }));
       // Undo entries replay whole grid states through the ACTIVE scene's write path — an entry
       // recorded in scene B must not replay into scene C. Desktop-consistent: Swift scene
       // switches are not undoable either.
       resetUndo();
       // The whole-world republish is phase-continuous mid-play (see publish()) — the desktop's
-      // seamless-immediate switch, not a restart.
+      // SEAMLESS-immediate switch. `restart` is the other mode and needs the
+      // extra half: stop then play, which re-enters at step 0. Doing it as
+      // stop+play rather than seeking is the same reasoning the transport's
+      // restart uses — a publish cannot double as a retrigger.
       set((s) =>
         patchDeck(s, deck, {
           missingSamples: publish(get(), deck, deckOf(get(), deck).playing),
         }),
       );
+      if (action === "restart" && deckOf(get(), deck).playing) {
+        get().stop(deck);
+        get().play(deck);
+      }
       // The grid reloads via the panel's effect (it keys on `scene`). No autosave — runtime.
       return;
     }

@@ -11,7 +11,13 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { DeckSyncRow, DeckToolbarRow, DeckViewRow, type DeckRowsProps } from './deckRows.tsx'
+import {
+  DeckSceneRow,
+  DeckSyncRow,
+  DeckToolbarRow,
+  DeckViewRow,
+  type DeckRowsProps,
+} from './deckRows.tsx'
 import { newGridElement } from './stripOps.ts'
 import { MAX_DECKS, idleDeck, useCompanion } from '../store/companionEngine.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
@@ -145,18 +151,41 @@ describe('row 2 — sync, pulse, TR, TP, WIN, BR, REV', () => {
   })
 })
 
-describe('row 3 — the view switches', () => {
+describe('row 3 — the scene controls (B2 completes P7-T3)', () => {
+  it('wears the switch mode as a CYCLER, not three buttons', () => {
+    // The donor holds ONE three-way choice (SCHED · RUN · START) plus a
+    // separate clean-cut boolean. P7-T3's "S · R · CU" sketch had three letters
+    // for four states, and the one it dropped was START.
+    const out = html(<DeckSceneRow {...props()} />)
+    expect(out).toContain('SCHED')
+    expect(out).toContain('CU')
+    expect(out).toContain('SCN')
+  })
+
+  it("carries the donor's help text verbatim, because that sentence IS the mode", () => {
+    const out = html(<DeckSceneRow {...props()} />)
+    expect(out).toContain(
+      'Scene clicks schedule during playback and switch immediately when stopped.',
+    )
+  })
+
+  it('locks with the compose window like every other writing control', () => {
+    expect(html(<DeckSceneRow {...props({ locked: true })} />)).toContain(
+      'editing in the compose window',
+    )
+  })
+
+  it('SAYS what is still missing, rather than showing controls that do nothing', () => {
+    const out = html(<DeckSceneRow {...props()} />)
+    expect(out).toContain('MUTE group and scene pins arrive with the override ops')
+  })
+})
+
+describe('row 4 — the view switches', () => {
   it('carries GRID and PERF', () => {
     const out = html(<DeckViewRow {...props({ onToggleCells: () => {}, onTogglePerform: () => {} })} />)
     expect(out).toContain('GRID')
     expect(out).toContain('PERF')
   })
 
-  it('SAYS the scene verbs are not here yet, rather than showing five dead ones', () => {
-    // P7-T3 asks for S·R·CU·SCN·MUTE beside the pads. Every one reaches
-    // patternScene/sceneOverride, which no host answers — so they are B2's, and
-    // the row admits it instead of rendering controls that do nothing.
-    const out = html(<DeckViewRow {...props()} />)
-    expect(out).toContain('scene switch modes · pin · mute arrive with the scene binding')
-  })
 })

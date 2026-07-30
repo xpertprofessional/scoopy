@@ -226,8 +226,8 @@ check('the tile\'s MasterRow is scoopy\'s own (BPM · VOL · DRV — P3-D4-1a ma
 // there are eighteen of them rather than seven. Asserted BY CONTENT and not
 // only by container, because "a div exists" is exactly the check that would
 // still pass if every button inside it had gone.
-check('the tile carries the three classic deck rows (B1 · P7-T1/T2/T3)',
-  (await page.$$('.deckrow')).length === 3)
+check('the tile carries the four classic deck rows (B1 + B2\'s scene row)',
+  (await page.$$('.deckrow')).length === 4)
 {
   const rows = (await page.textContent('.deckrow-toolbar')) ?? ''
   check('the toolbar row carries the donor block in the app vocabulary (OPEN ⟳ ▸ ↻ ◼ » DBL SAVE ⏏)',
@@ -236,6 +236,9 @@ check('the tile carries the three classic deck rows (B1 · P7-T1/T2/T3)',
   check('the sync row carries SYNC/FREE · TR · TP · WIN · BR · REV',
     ['TR', 'TP', 'WIN', 'BR', 'REV'].every((v) => sync.includes(v)) &&
       (sync.includes('SYNC') || sync.includes('FREE')), sync)
+  const scene = (await page.textContent('.deckrow-scene')) ?? ''
+  check('the scene row carries the switch-mode cycler, CU and SCN (B2)',
+    ['SCHED', 'CU', 'SCN'].every((v) => scene.includes(v)), scene)
   const view = (await page.textContent('.deckrow-view')) ?? ''
   check('the view row carries GRID and PERF',
     view.includes('GRID') && view.includes('PERF'), view)

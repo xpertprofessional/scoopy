@@ -33,6 +33,7 @@ import { HotFrameLayout } from '../../protocol/schema.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { nudgeTranspose } from '../audio/deckTransport.ts'
 import { applyPitchModeExclusion } from '../audio/deckTransport.ts'
+import { SWITCH_MODE_HELP, SWITCH_MODE_LABEL, nextSwitchMode } from '../audio/sceneSwitch.ts'
 import { GeoRange } from '../design/controls.tsx'
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
@@ -555,16 +556,78 @@ export function DeckSyncRow({ strip, element, link, masterBpm, locked = false }:
 }
 
 /**
- * ROW 3 — the view switches.
+ * ROW 3 — the scene controls, and the view switches (B2 completes P7-T3).
  *
- * ⚠️ SCOPED, AND THE SCOPE IS THE POINT. P7-T3 asks for S·R·CU·SCN·MUTE beside
- * the pads. Every one of those is a SCENE verb — switch mode, pin latch, mute
- * group — and they reach `patternScene` / `sceneOverride`, which no host
- * answers: `scenesStore` subscribes to a `scenes/<d>` topic nothing publishes.
- * Building them here would put five dead controls on a live row, which is the
- * defect the four rules exist for. They are B2's, with the binding behind them.
- *
- * What IS live is the pair below, so that is what ships.
+ * ⚠️ THE MODE IS A CYCLER, NOT THREE BUTTONS, and that is the donor's model
+ * rather than the row's original sketch. P7-T3 asked for "S · R · CU" — three
+ * letters for what the donor holds as ONE three-way choice (`SCHED` · `RUN` ·
+ * `START`, `PatternSceneSwitchMode`) plus a SEPARATE clean-cut boolean. Three
+ * letters cannot carry four states, and the missing one would have been START.
+ * A cycler wearing its current value is also the idiom this app already uses
+ * for a three-way musical choice (`strip-tempomode`), so the row reads like the
+ * rest of the surface.
+ */
+export function DeckSceneRow({ element, locked = false }: DeckRowsProps) {
+  const deck = element.deck
+  const mode = useCompanion((c) => c.decks[deck]?.switchMode ?? 'scheduled')
+  const cleanCut = useCompanion((c) => c.decks[deck]?.cleanCut ?? false)
+  const latched = useCompanion((c) => c.decks[deck]?.sceneLatched ?? false)
+
+  return (
+    <div className="ds-row strip-row deckrow deckrow-scene" data-no-drag>
+      <span className="dr-read mono" title="how a scene pad click switches this deck">
+        SCENE
+      </span>
+      <button
+        type="button"
+        className="dr mono"
+        disabled={locked}
+        onClick={() => useCompanion.getState().setSwitchMode(nextSwitchMode(mode), deck)}
+        // The donor's own help text, verbatim — paraphrasing the sentence that
+        // defines a mode is how two apps drift while both look right.
+        title={locked ? LOCKED_TITLE : SWITCH_MODE_HELP[mode]}
+      >
+        {SWITCH_MODE_LABEL[mode]}
+      </button>
+      <button
+        type="button"
+        className={`dr mono${cleanCut ? ' latched' : ''}`}
+        disabled={locked}
+        onClick={() => useCompanion.getState().setCleanCut(undefined, deck)}
+        title={
+          locked
+            ? LOCKED_TITLE
+            : cleanCut
+              ? 'CU — clean cut on: ringing voices are choked at the switch (FX tails still ring)'
+              : 'CU — clean cut off: the old scene rings out through the switch'
+        }
+      >
+        CU
+      </button>
+      <button
+        type="button"
+        className={`dr mono${latched ? ' latched' : ''}`}
+        disabled={locked}
+        onClick={() => useCompanion.getState().toggleSceneLatch(deck)}
+        title={
+          locked
+            ? LOCKED_TITLE
+            : latched
+              ? 'SCN — latched: an edit pins to THIS scene instead of the whole session'
+              : 'SCN — an edit writes the session; latch to pin edits to this scene'
+        }
+      >
+        SCN
+      </button>
+      <span className="dr-note mono">
+        MUTE group and scene pins arrive with the override ops
+      </span>
+    </div>
+  )
+}
+
+/**
+ * ROW 4 — the view switches.
  */
 export function DeckViewRow({
   cellsHidden = false,
@@ -600,9 +663,6 @@ export function DeckViewRow({
       >
         PERF
       </button>
-      <span className="dr-note mono">
-        scene switch modes · pin · mute arrive with the scene binding
-      </span>
     </div>
   )
 }
