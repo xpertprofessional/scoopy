@@ -8,6 +8,11 @@
 2. `docs/ARCHITECTURE.md` §11 — the loop protocol every session follows.
 3. `docs/merge/MORNING-DECISIONS-2.md` — open user decisions; rows marked
    `awaiting-decision` are skipped, `provisional(D-n)` may build the recommendation.
+4. `docs/merge/PARALLEL-PROTOCOL.md` — read this if more than one agent is working
+   the ledger. It names who may bundle, commit, run `ctest` and run the walks, and
+   carries the measured known-red baseline. **While lanes are live, only the
+   conductor commits to `host-hygiene`.** Its §2 also corrects two stale claims
+   this file and §11 still make (see the gate list below).
 
 **The four rules:** tests pass ≠ it works ≠ it shipped ≠ you can reach it. Green gates
 in Chromium repeatedly missed features unreachable in the real app — every UI claim
