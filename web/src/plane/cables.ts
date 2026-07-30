@@ -20,6 +20,7 @@
  * draws ZERO cables — and every cable you see is one you made.
  */
 import type { PlaneMap, Route, Strip } from '../persist/mapDocument.ts'
+import { DST_KIND, NO_INDEX, SRC_KIND } from '../persist/mapApply.ts'
 
 /** One block of latency, in ms, at the engine's block/rate. The honest price of
     a feedback edge, stated on the object rather than in a tooltip. */
@@ -82,6 +83,42 @@ export function cablesOf(map: PlaneMap): Cable[] {
     })
   }
   return out
+}
+
+/** The endpoint quadruple that identifies a cable's route ON THE ENGINE. */
+export type RouteKey = {
+  srcKind: number
+  srcIndex: number
+  srcSub: number
+  dstKind: number
+  dstIndex: number
+}
+
+/**
+ * How to find a drawn cable's route on the engine.
+ *
+ * The document carries no route ids — they are the engine's, and a stale one
+ * would unpatch someone else's cable — so removal matches by ENDPOINTS. That
+ * makes this quadruple the identity, and getting it wrong is silent both ways.
+ *
+ * ⚠️ IT MUST COME FROM THE ROUTE, NEVER FROM THE CABLE'S SHAPE. `unpatch` used
+ * to read `c.send === null ? 0 : 1`, which is only true while every drawable
+ * cable is a `channelOut` or a `channelSend`. P3.5-E3's `deckOut` (kind 4) also
+ * has `send === null`, so it was looked up as kind 0 — and a `deckOut`'s index
+ * is a DECK index, not a channel one. Either a channelOut route sitting at the
+ * same numeric index was unpatched INSTEAD of the one clicked, or nothing
+ * matched at all and the engine kept playing a cable the document had already
+ * dropped. Deriving the kind from `SRC_KIND` means a new source kind is
+ * looked up correctly the day it is drawable.
+ */
+export function routeKeyOf(c: Cable): RouteKey {
+  return {
+    srcKind: SRC_KIND[c.route.src.kind],
+    srcIndex: c.route.src.index,
+    srcSub: c.route.src.sub ?? NO_INDEX,
+    dstKind: DST_KIND[c.route.dst.kind],
+    dstIndex: c.route.dst.index,
+  }
 }
 
 /**

@@ -24,7 +24,7 @@ import { useCompanion } from '../store/companionEngine.ts'
 import { enabledScenes } from '../audio/sceneProjection.ts'
 import { fitToContent, zoomAbout, type Viewport } from './planeLayout.ts'
 import { Cables } from './Cables.tsx'
-import { chipsOf, feedbackInto, feedbackMs, hasOutput, type Cable } from './cables.ts'
+import { chipsOf, feedbackInto, feedbackMs, hasOutput, routeKeyOf, type Cable } from './cables.ts'
 import { cellsOf, inputFor, inputRoute } from './stripOps.ts'
 import { send } from './send.ts'
 import { Strip } from './Strip.tsx'
@@ -173,16 +173,17 @@ export function Plane({
     const listed = (await link
       .command('slRouteList', {})
       .catch(() => null)) as { routes?: Array<Record<string, number | boolean>> } | null
-    const srcKind = c.send === null ? 0 : 1
-    const srcSub = c.send ?? 0xffffffff
+    // The endpoint quadruple comes from the ROUTE (see `routeKeyOf`), never
+    // inferred from the cable's shape — that inference got `deckOut` wrong.
+    const want = routeKeyOf(c)
     for (const [id, r] of (listed?.routes ?? []).entries())
       if (
         r.active &&
-        r.srcKind === srcKind &&
-        r.srcIndex === c.route.src.index &&
-        r.srcSub === srcSub &&
-        r.dstKind === 0 &&
-        r.dstIndex === c.route.dst.index
+        r.srcKind === want.srcKind &&
+        r.srcIndex === want.srcIndex &&
+        r.srcSub === want.srcSub &&
+        r.dstKind === want.dstKind &&
+        r.dstIndex === want.dstIndex
       )
         send(link, 'slRoute', { action: 'remove', id })
   }

@@ -64,8 +64,11 @@ export type EngineOp =
     }
 
 /** The ABI's numeric encodings. Kept here, once, rather than spelled inline —
-    a wrong number is a cable patched somewhere nobody asked for. */
-const SRC_KIND: Record<Route['src']['kind'], number> = {
+    a wrong number is a cable patched somewhere nobody asked for.
+    EXPORTED because `unpatch` must look a cable up on the engine by the same
+    encoding that issued it — it used to infer the kind from the cable's shape
+    and got `deckOut` wrong (see Plane.tsx). One table, both directions. */
+export const SRC_KIND: Record<Route['src']['kind'], number> = {
   channelOut: 0,
   channelSend: 1,
   deviceInput: 2,
@@ -73,12 +76,12 @@ const SRC_KIND: Record<Route['src']['kind'], number> = {
   // ⚠️ index is a DECK here, not a channel (P3.5-E3). See RouteSourceSchema.
   deckOut: 4,
 }
-const DST_KIND: Record<Route['dst']['kind'], number> = {
+export const DST_KIND: Record<Route['dst']['kind'], number> = {
   channelIn: 0,
   sendBus: 1,
   main: 2,
 }
-const NO_INDEX = 0xffffffff
+export const NO_INDEX = 0xffffffff
 
 /** Source kind for a strip's channel binding: none | tape | gridDeck. */
 function sourceKindOf(strip: Strip): { kind: 0 | 1 | 2; index: number } {

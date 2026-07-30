@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyMap, type PlaneMap, type Route, type Strip } from '../persist/mapDocument.ts'
-import { cablePath, cablesOf, chipsOf, feedbackInto, hasOutput, inPoint, outPoint } from './cables.ts'
+import { cablePath, cablesOf, chipsOf, feedbackInto, hasOutput, inPoint, outPoint, routeKeyOf } from './cables.ts'
 import { newStrip } from './stripOps.ts'
 
 const strip = (key: string, channel: number): Strip => ({
@@ -104,6 +104,65 @@ describe('which routes become cables', () => {
     const grid = { ...strip('g', 0), element: gridEl(2) }
     const map = mapWith([grid, strip('loop', 1)], [route({ src: deckOut(0), dst: chanIn(1) })])
     expect(cablesOf(map)).toEqual([])
+  })
+})
+
+describe('finding a drawn cable on the engine, to unpatch it', () => {
+  // The document carries no route ids, so removal matches by ENDPOINTS. This
+  // quadruple IS the identity — the pure decision behind `unpatch`, pinned here
+  // rather than through the DOM because this project has no jsdom (the P6-2b
+  // precedent: pin the decision, not the markup).
+
+  it('takes the kind from the ROUTE, so a deckOut is not mistaken for a channelOut', () => {
+    // THE DEFECT THIS EXISTS FOR. `unpatch` read `c.send === null ? 0 : 1`,
+    // and a deckOut cable also has `send === null` — so it asked the engine to
+    // remove srcKind 0 (channelOut) at srcIndex 2. If a channelOut route
+    // happened to sit at channel 2 it was unpatched INSTEAD of the cable
+    // clicked; if not, nothing matched and the engine kept playing a cable the
+    // document had already dropped.
+    const grid = { ...strip('g', 0), element: gridEl(2) }
+    const map = mapWith([grid, strip('loop', 1)], [route({ src: deckOut(2), dst: chanIn(1) })])
+    const drawn = cablesOf(map)
+    expect(drawn).toHaveLength(1)
+    const cable = drawn[0]!
+    expect(cable.send).toBeNull() // the shape that fooled the old inference
+    expect(routeKeyOf(cable)).toEqual({
+      srcKind: 4, // deckOut — NOT 0
+      srcIndex: 2, // a DECK index
+      srcSub: 0xffffffff,
+      dstKind: 0,
+      dstIndex: 1,
+    })
+  })
+
+  it('still identifies an output tap and a send tap', () => {
+    const map = mapWith(
+      [strip('a', 0), strip('b', 1)],
+      [
+        route({ src: { kind: 'channelOut', index: 0, sub: null }, dst: chanIn(1) }),
+        route({ src: { kind: 'channelSend', index: 0, sub: 3 }, dst: chanIn(1) }),
+      ],
+    )
+    const drawn = cablesOf(map)
+    expect(drawn).toHaveLength(2)
+    expect(routeKeyOf(drawn[0]!)).toMatchObject({ srcKind: 0, srcIndex: 0, srcSub: 0xffffffff })
+    expect(routeKeyOf(drawn[1]!)).toMatchObject({ srcKind: 1, srcIndex: 0, srcSub: 3 })
+  })
+
+  it('gives every drawable source kind a DISTINCT key at the same index', () => {
+    // The property that actually protects unpatch: two cables from the same
+    // numeric index but different kinds must never look alike, or removing one
+    // removes the other.
+    const grid = { ...strip('g', 0), element: gridEl(0) }
+    const map = mapWith(
+      [grid, strip('loop', 1)],
+      [
+        route({ src: { kind: 'channelOut', index: 0, sub: null }, dst: chanIn(1) }),
+        route({ src: deckOut(0), dst: chanIn(1) }),
+      ],
+    )
+    const keys = cablesOf(map).map((c) => JSON.stringify(routeKeyOf(c)))
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })
 
