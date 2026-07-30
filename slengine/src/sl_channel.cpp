@@ -184,7 +184,7 @@ int32_t ChannelBank::addRouteInternal(uint32_t srcKind, uint32_t srcIndex, uint3
                                       uint32_t dstKind, uint32_t dstIndex, double gain,
                                       uint32_t feedback, bool instant, bool markDefault) {
     if (!std::isfinite(gain) || gain < 0.0) return -1;
-    if (srcKind > static_cast<uint32_t>(SourceEndpoint::fxReturn)) return -1;
+    if (srcKind > static_cast<uint32_t>(SourceEndpoint::deckOut)) return -1;
     if (dstKind > static_cast<uint32_t>(DestEndpoint::main)) return -1;
 
     // Endpoint-specific range checks. An out-of-range endpoint is REFUSED
@@ -202,6 +202,12 @@ int32_t ChannelBank::addRouteInternal(uint32_t srcKind, uint32_t srcIndex, uint3
         case SourceEndpoint::deviceInput: break; // resolved against inCount at render
         case SourceEndpoint::fxReturn:
             if (srcIndex >= kNumSends) return -1;
+            break;
+        case SourceEndpoint::deckOut:
+            // Range-checked against the DECK space, not the channel space: they
+            // are different sizes (3 vs 8), and clamping one into the other is
+            // how a cable lands on a deck nobody named.
+            if (srcIndex >= kMaxDeckOuts) return -1;
             break;
     }
     switch (dk) {
@@ -463,7 +469,8 @@ const float* ChannelBank::outR(uint32_t ch) const {
 
 void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t frames,
                           const TapeBank& tapes, double sampleRate, const LaneMap& map,
-                          const float* const* inBus, uint32_t inCount) {
+                          const float* const* inBus, uint32_t inCount,
+                          const float* const* deckOut, uint32_t deckOutCount) {
     const double fs = sampleRate > 0.0 ? sampleRate : 48000.0;
     const double alpha = 1.0 - std::exp(-1.0 / (kRampSeconds * fs));
 
@@ -542,6 +549,19 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
                 sL = lane(base);
                 sR = lane(base + 1u);
                 if (sL == nullptr || sR == nullptr) return;
+                break;
+            }
+            case SourceEndpoint::deckOut: {
+                // The core's dry per-deck output for THIS block (P3.5-E3). Never
+                // `usePrev`: the deck was rendered before this bank ran, so it is
+                // an external source like a device input — a feedback edge from
+                // one cannot exist, because nothing downstream can reach a deck.
+                if (deckOut == nullptr || si >= kMaxDeckOuts) return;
+                const uint32_t l = si * 2u, r = l + 1u;
+                if (r >= deckOutCount) return;
+                sL = deckOut[l];
+                sR = deckOut[r] != nullptr ? deckOut[r] : deckOut[l];
+                if (sL == nullptr) return; // a host without deck taps: silence, not a crash
                 break;
             }
         }

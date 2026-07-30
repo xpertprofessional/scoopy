@@ -41,6 +41,12 @@ class TapeBank;
 
 inline constexpr uint32_t kMaxChannels = 8;
 inline constexpr uint32_t kNumSends = 4;
+/** How many grid decks can be named as a `deckOut` source (P3.5-E3).
+    MIRRORS the core's `kMaxDecks` by hand, because this header is deliberately
+    free of the core's headers (see LaneMap). `sl_engine.cpp` — the one
+    translation unit that sees both — static_asserts them equal, so the mirror
+    cannot drift silently. */
+inline constexpr uint32_t kMaxDeckOuts = 3;
 // Room for the default wiring (one output route per channel + one per send,
 // installed at configure) plus a generous amount of user patching on top.
 inline constexpr uint32_t kMaxRoutes = 128;
@@ -81,6 +87,24 @@ enum class SourceEndpoint : uint32_t {
     channelSend = 1, // index = channel, sub = send 0..3. Output × that send's level.
     deviceInput = 2, // index = input channel (L), sub = input channel (R) or kNoIndex.
     fxReturn = 3,    // index = return 0..3. The core's wet lane for that return.
+    /** index = grid deck 0..kMaxDeckOuts-1. The core's DRY per-deck output
+        (P3.5-E3, `NativeAudioEngineCore::deckDryOut`) — stereo, pre-crossfader,
+        pre-deck-drive.
+
+        WHY A SOURCE KIND OF ITS OWN, rather than a grid channel's `channelOut`.
+        A grid deck's channel is a PROJECTION: the core owns that deck's gain
+        stage and already summed it into main, so this bank mixes nothing for it
+        and its bus is empty by construction (see the header comment). That is
+        correct, and it is also what left P3-R3's signed gesture recording
+        SILENCE — "the looper records the deck's own output" had no source to
+        name. Giving the grid channel's own bus the deck's audio instead would
+        make `channelOut` mean the deck for a chain and NOT mean it for main
+        (the core already delivered that), i.e. one endpoint with two meanings.
+        So the deck's output is named directly, and it composes with everything
+        else here for free: it is an EXTERNAL source (already present when the
+        block starts), so it constrains no render order and can never close a
+        cycle — `dependsOn()` returns kNoIndex for it, like a device input. */
+    deckOut = 4,
 };
 
 /** ...and at the destination end. */
@@ -350,10 +374,18 @@ public:
         already summed them, and their channel controls were projected onto it.
 
         Each channel's post-level output is also kept in its own scratch, which
-        is what a `channelBus` record source captures. */
+        is what a `channelBus` record source captures.
+
+        `deckOut` is kMaxDeckOuts stereo PAIRS (L,R interleaved as pointers:
+        index 2*d and 2*d+1), the core's dry per-deck output for the block the
+        caller has just rendered — the source side of a `deckOut` cable
+        (P3.5-E3). Passed in for the same reason LaneMap is: this translation
+        unit stays free of the core's headers. Entries may be null (a host
+        without per-deck taps), and a null reads as silence, not as a crash. */
     void mixInto(float* const* lanes, uint32_t laneCount, uint32_t frames,
                  const TapeBank& tapes, double sampleRate, const LaneMap& map,
-                 const float* const* inBus, uint32_t inCount);
+                 const float* const* inBus, uint32_t inCount,
+                 const float* const* deckOut = nullptr, uint32_t deckOutCount = 0);
 
     /** A channel's post-everything output for this block (the record tap), or
         nullptr if the channel index is out of range. */

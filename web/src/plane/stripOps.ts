@@ -149,17 +149,25 @@ export const RECORD_SOURCE = { deviceInput: 0, mainMix: 1, channelBus: 2 } as co
  * routed strips.
  */
 export function linkedLooperFor(map: PlaneMap, src: Strip): Strip | null {
+  // WHAT COUNTS AS "THIS STRIP FEEDS IT" depends on the source's kind, and
+  // P3.5-E3 is why. A grid strip's channel bus is EMPTY by construction (the
+  // core owns that deck's gain stage and already summed it), so the cable that
+  // carries a grid strip is `deckOut` naming its DECK — a `channelOut` link
+  // from a grid strip is the silent one this row replaced. Both are matched:
+  // maps saved before the fix still hold the old cable, and the pair must still
+  // read as a pair rather than silently spawning a second looper.
+  const feeds = (r: PlaneMap['routes'][number], looperChannel: number) => {
+    if (r.dst.index !== looperChannel || r.dst.kind !== 'channelIn') return false
+    if (src.element.kind === 'grid' && r.src.kind === 'deckOut')
+      return r.src.index === src.element.deck
+    return r.src.kind === 'channelOut' && r.src.index === src.channel
+  }
   return (
     map.strips.find(
       (s) =>
         s.element.kind === 'tape' &&
         s.recordTap === 'bus' &&
-        map.routes.some(
-          (r) =>
-            r.src.kind === 'channelOut' &&
-            r.src.index === src.channel &&
-            r.dst.index === s.channel,
-        ),
+        map.routes.some((r) => feeds(r, s.channel)),
     ) ?? null
   )
 }

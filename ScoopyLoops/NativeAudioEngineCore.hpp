@@ -1256,6 +1256,32 @@ public:
 #endif
     }
 
+    // AUDIO THREAD (P3.5-E3): this deck's DRY stereo output for the block just
+    // rendered — the tap a host needs to route a deck into its own mixer
+    // (record the deck, chain it into a looper strip). `channel` 0 = L, 1 = R.
+    //
+    // WHAT IT IS, precisely: post-voice, post-bus-stretch, post-carve, and
+    // PRE-crossfader-gain / PRE-deck-drive — the deck's SIGNAL, not its
+    // contribution to the mix. That is the tap point the strip model asks for
+    // (an element is what a strip carries; level comes after), and it is why
+    // this is not simply the deck's output LANE: those carry a deck only when
+    // it is split to a dedicated output, and a host mapping lanes to hardware
+    // would then find the deck on physical outs as well as in main.
+    //
+    // An output-MUTED deck still reports its signal, matching the mute rule
+    // everywhere else here (mute is an output stage — a muted deck's FX-send
+    // wet still returns). An inactive deck reports silence, not stale audio.
+    //
+    // Null for an out-of-range deck/channel or before configure(). Valid until
+    // the next render() on the same thread.
+    const float* deckDryOut(int deck, int channel, std::uint32_t frameCount) const noexcept {
+        if (deck < 0 || deck >= static_cast<int>(kMaxDecks) || channel < 0 || channel > 1)
+            return nullptr;
+        const auto& b = (channel == 0 ? deckStretchOutL_ : deckStretchOutR_)
+                            [static_cast<std::size_t>(deck)];
+        return b.size() >= frameCount ? b.data() : nullptr;
+    }
+
     // Per-return WET output level for the extended host returns (sends 3 & 4). Returns 1 & 2 take
     // their volume from the ReturnTrack snapshot (full gate/pan/LFO path); sends 3 & 4 use this
     // lightweight imperative level (the "Return level" fader) applied to the host-plugin wet. Set

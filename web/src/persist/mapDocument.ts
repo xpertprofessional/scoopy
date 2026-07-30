@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 6
+export const MAP_SCHEMA_VERSION = 7
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -234,7 +234,13 @@ export type Strip = z.infer<typeof StripSchema>
 
 export const RouteSourceSchema = z
   .object({
-    kind: z.enum(['channelOut', 'channelSend', 'deviceInput', 'fxReturn']),
+    /** ⚠️ `deckOut`'s index is a GRID DECK, not a channel (P3.5-E3) — the two
+        spaces are different sizes, and a reader that assumed "index means
+        channel" would draw this cable from the wrong strip. It exists because a
+        grid deck's channel is a PROJECTION whose bus is empty by construction
+        (the core owns that deck's gain stage), so "record the deck" has to name
+        the deck rather than its strip. */
+    kind: z.enum(['channelOut', 'channelSend', 'deviceInput', 'fxReturn', 'deckOut']),
     index: z.number().int().min(0),
     /** Send 0–3 for `channelSend`; the right-hand input channel for
         `deviceInput`; absent otherwise. */
@@ -451,6 +457,18 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
         },
       }
     },
+  },
+  6: {
+    to: 7,
+    name: 'routes may name a deck output (P3.5-E3)',
+    // NOTHING TO CHANGE, and the version still earns its keep. v6 documents are
+    // valid v7 documents: `deckOut` widens the source enum, so no existing field
+    // moves. What the bump records is the WRITE side — a v7 build can save a
+    // deckOut cable, and a v6 build must refuse that file rather than parse it
+    // strictly-and-fail with a confusing per-field error. Two shapes sharing one
+    // version number is exactly what the version exists to prevent, so an
+    // identity migration is the honest entry, not a skipped one.
+    run: (m) => m,
   },
 }
 

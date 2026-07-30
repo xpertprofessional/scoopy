@@ -641,11 +641,19 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
         setNote(`no lanes left — ${budget.wanted} of ${budget.budget}`)
         return
       }
-      // Patched from the SOURCE STRIP'S BUS, not the device input — the whole
-      // point of this strip is the deck's output. No cycle is possible: the
-      // edge lands on a channel that did not exist a moment ago.
+      // Patched from THE DECK'S OWN OUTPUT, not the device input and not the
+      // grid strip's channel bus.
+      //
+      // ⚠️ THIS USED TO READ `channelOut` OF THE SOURCE STRIP, and it recorded
+      // SILENCE (P3.5-E3). A grid deck's channel is a projection: the core owns
+      // that deck's gain stage and has already summed it into main, so this
+      // tier mixes nothing for it and its bus is empty by construction. The
+      // gesture worked, the take held nothing, and no surface said why. The
+      // engine now names the deck directly (srcKind 4 = deckOut, index = the
+      // DECK). Still no cycle possible — a deck is rendered before the
+      // channels, so the edge is external.
       const route = {
-        src: { kind: 'channelOut' as const, index: src.channel, sub: null },
+        src: { kind: 'deckOut' as const, index: src.element.deck, sub: null },
         dst: { kind: 'channelIn' as const, index: channel },
         gain: 1,
         feedback: false,
@@ -662,8 +670,8 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
       })
       send(link, 'slRoute', {
         action: 'add',
-        srcKind: 0, // channelOut — the source strip's bus
-        srcIndex: src.channel,
+        srcKind: 4, // deckOut — the DECK's dry output (P3.5-E3)
+        srcIndex: src.element.deck,
         srcSub: 0xffffffff,
         dstKind: 0,
         dstIndex: channel,

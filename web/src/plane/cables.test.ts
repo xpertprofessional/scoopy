@@ -23,6 +23,19 @@ const mapWith = (strips: Strip[], routes: Route[]): PlaneMap => ({
 const chanOut = (i: number) => ({ kind: 'channelOut' as const, index: i, sub: null })
 const chanIn = (i: number) => ({ kind: 'channelIn' as const, index: i })
 const main = { kind: 'main' as const, index: 0 }
+/** A grid deck's own output (P3.5-E3) — index is a DECK, not a channel. */
+const deckOut = (deck: number) => ({ kind: 'deckOut' as const, index: deck, sub: null })
+const gridEl = (deck: number) =>
+  ({
+    kind: 'grid' as const,
+    sessionId: 'ses',
+    deck,
+    bpm: 120,
+    syncToMaster: false,
+    tempoMode: 'timeStretch' as const,
+    pulseRelation: '1:1' as const,
+    transpose: 0,
+  })
 
 describe('which routes become cables', () => {
   it('draws NOTHING for the boot defaults', () => {
@@ -73,6 +86,23 @@ describe('which routes become cables', () => {
     // A cable to a channel with no strip is not drawable, and it is also not a
     // lie the view should paper over with a guessed position.
     const map = mapWith([strip('a', 0)], [route({ src: chanOut(0), dst: chanIn(5) })])
+    expect(cablesOf(map)).toEqual([])
+  })
+
+  // P3.5-E3 — a grid strip is carried by a `deckOut` cable naming its DECK, and
+  // that pairing is exactly what cables exist to show.
+  it('draws a deckOut cable from the strip HOSTING that deck', () => {
+    const grid = { ...strip('g', 0), element: gridEl(2) }
+    const map = mapWith([grid, strip('loop', 1)], [route({ src: deckOut(2), dst: chanIn(1) })])
+    expect(cablesOf(map)[0]).toMatchObject({ fromKey: 'g', toKey: 'loop', send: null })
+  })
+
+  it('resolves deckOut through the DECK space, not the channel space', () => {
+    // Deck 2 sits in channel 0. A cable naming deck 0 belongs to no strip here,
+    // so it is not drawable — drawing it from channel 0 would point the cable at
+    // the wrong strip and read as a patch nobody made.
+    const grid = { ...strip('g', 0), element: gridEl(2) }
+    const map = mapWith([grid, strip('loop', 1)], [route({ src: deckOut(0), dst: chanIn(1) })])
     expect(cablesOf(map)).toEqual([])
   })
 })

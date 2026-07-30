@@ -265,6 +265,44 @@ export function Plane({
     })
   }
 
+  /**
+   * A GRID DECK's output into a strip's input (P3.5-E3) — the source side of
+   * "record from ▸ <a grid strip>".
+   *
+   * Separate from `patch` above, and NOT because the cable is special: because
+   * a grid strip's channel bus is EMPTY by construction (the core owns that
+   * deck's gain stage and already summed it into main), so `channelOut` of a
+   * grid strip is the silent cable this row replaced. The deck is named
+   * directly instead.
+   *
+   * No cycle consent, and that is a property rather than an omission: a deck is
+   * rendered before the channels, so a deckOut edge is external — nothing
+   * downstream can reach back to a deck, and `wouldCycle` has no channel-space
+   * question to ask about it.
+   */
+  const patchDeckOut = (deck: number, toChannel: number) => {
+    const route = {
+      src: { kind: 'deckOut' as const, index: deck, sub: null },
+      dst: { kind: 'channelIn' as const, index: toChannel },
+      gain: 1,
+      feedback: false,
+    }
+    useMapStore.setState((st) => ({
+      map: { ...st.map, routes: [...st.map.routes, route] },
+      dirty: true,
+    }))
+    send(link, 'slRoute', {
+      action: 'add',
+      srcKind: 4,
+      srcIndex: deck,
+      srcSub: 0xffffffff,
+      dstKind: 0,
+      dstIndex: toChannel,
+      gain: 1,
+      feedback: false,
+    })
+  }
+
   /** Engine side of the above: drop every deviceInput cable into this channel,
       then patch the chosen one. Read from the LIVE graph rather than the
       document, so a cable added outside the document's view is also cleared —
@@ -506,23 +544,42 @@ export function Plane({
                 .filter((p) => p.key !== s.key)
                 .map((p) => ({ key: p.key, name: p.name }))}
               busSources={map.routes
-                .filter((r) => r.src.kind === 'channelOut' && r.dst.index === s.channel)
+                .filter((r) => r.dst.index === s.channel)
                 .flatMap((r) => {
+                  // A grid strip arrives as its DECK (P3.5-E3), every other
+                  // strip as its channel — so the name is looked up in whichever
+                  // space the cable is written in. Matching only channelOut here
+                  // would leave a deck-fed looper's status line saying nothing
+                  // feeds it while it plainly records something.
+                  if (r.src.kind === 'deckOut') {
+                    const src = strips.find(
+                      (p) => p.element.kind === 'grid' && p.element.deck === r.src.index,
+                    )
+                    return src ? [src.name] : []
+                  }
+                  if (r.src.kind !== 'channelOut') return []
                   const src = strips.find((p) => p.channel === r.src.index)
                   return src ? [src.name] : []
                 })}
               onRecordFromStrip={(srcKey, at) => {
                 const src = strips.find((p) => p.key === srcKey)
                 if (!src) return
+                // A GRID source is cabled from its deck, not its bus — that bus
+                // is empty by construction (P3.5-E3), which is what made this
+                // gesture record silence for grid strips.
+                const fromDeck = src.element.kind === 'grid' ? src.element.deck : null
                 // Already cabled in → the tap flip (done strip-side) is the
                 // whole gesture; a second identical cable would double the gain.
                 const already = map.routes.some(
                   (r) =>
-                    r.src.kind === 'channelOut' &&
-                    r.src.index === src.channel &&
-                    r.dst.index === s.channel,
+                    r.dst.index === s.channel &&
+                    (fromDeck !== null
+                      ? r.src.kind === 'deckOut' && r.src.index === fromDeck
+                      : r.src.kind === 'channelOut' && r.src.index === src.channel),
                 )
-                if (!already) void patch(src.channel, s.channel, null, at)
+                if (already) return
+                if (fromDeck !== null) patchDeckOut(fromDeck, s.channel)
+                else void patch(src.channel, s.channel, null, at)
               }}
               gridScene={d?.scene ?? 'A'}
               gridQueued={d?.scheduledScene ?? null}

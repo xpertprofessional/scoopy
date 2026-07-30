@@ -81,6 +81,7 @@ foreach(t
     sl_tape_mix_record_test   # NEW: record the main mix, same-block, honest stamp
     sl_channel_test           # the uniform channel + the channel-bus record tap
     sl_route_test             # ordered routing, feedback edges, click-free re-patch
+    sl_deckout_test           # P3.5-E3: a grid deck reaches a looper strip, audibly
     sl_watchdog_test          # guard G1: a runaway feedback loop stays bounded
 )
     add_executable(${t} tools/${t}.cpp)

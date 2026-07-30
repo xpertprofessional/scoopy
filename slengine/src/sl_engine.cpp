@@ -356,8 +356,25 @@ void renderInto(sl_engine* e,
             std::copy_n(e->lanes[kLaneMap.send[s]].data(), frames, e->sendAfterCore[s].data());
 
     const auto laneCount = static_cast<std::uint32_t>(NativeAudioEngineCore::laneCount);
+
+    // P3.5-E3 — the per-deck DRY taps, gathered AFTER render (they describe the
+    // block the core has just produced) and handed to the channel bank as the
+    // source side of a `deckOut` cable. This is what makes "the looper records
+    // the deck's own output" real: a grid deck's channel is a projection with
+    // an empty bus by design, so the deck's audio has to be named directly.
+    // Null entries are normal (a deck the core has no buffer for) and read as
+    // silence. The static_assert is the whole reason kMaxDeckOuts may be a hand
+    // mirror in a core-header-free file — this is the one TU that sees both.
+    static_assert(sl::kMaxDeckOuts == kMaxDecks,
+                  "sl_channel.h's kMaxDeckOuts mirrors the core's kMaxDecks");
+    const float* deckOutPtrs[sl::kMaxDeckOuts * 2u];
+    for (std::uint32_t d = 0; d < sl::kMaxDeckOuts; ++d) {
+        deckOutPtrs[d * 2u]      = e->core.deckDryOut(static_cast<int>(d), 0, frames);
+        deckOutPtrs[d * 2u + 1u] = e->core.deckDryOut(static_cast<int>(d), 1, frames);
+    }
+
     e->channels.mixInto(e->lanePtrs.data(), laneCount, frames, e->tapes, e->sampleRate,
-                        kLaneMap, in_bus, in_count);
+                        kLaneMap, in_bus, in_count, deckOutPtrs, sl::kMaxDeckOuts * 2u);
 
     // The diff: strip-send content of THIS block, held for the next one. An
     // inactive return holds silence so a plugin landing mid-stream starts from

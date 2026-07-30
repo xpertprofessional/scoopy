@@ -51,6 +51,10 @@ function describe(
   r: LiveRoute,
   nameOf: (channel: number) => string,
 ): { from: string; to: string } {
+  // ⚠️ EVERY KIND IS NAMED EXPLICITLY, with no trailing "else" catch-all. The
+  // chain used to end in `: \`FX ${…} return\``, so `deckOut` (kind 4, P3.5-E3)
+  // would have been labelled "FX 5 return" — the ledger is where you go to find
+  // a mistake, and a confident wrong label there is worse than no ledger.
   const from =
     r.srcKind === 0
       ? nameOf(r.srcIndex)
@@ -58,7 +62,12 @@ function describe(
         ? `${nameOf(r.srcIndex)} · send ${r.srcSub + 1}`
         : r.srcKind === 2
           ? `input ${r.srcIndex + 1}${r.srcSub !== NO_INDEX ? `+${r.srcSub + 1}` : ''}`
-          : `FX ${r.srcIndex + 1} return`
+          : r.srcKind === 3
+            ? `FX ${r.srcIndex + 1} return`
+            : r.srcKind === 4
+              ? // index is a DECK, not a channel — nameOf would name the wrong strip.
+                `deck ${r.srcIndex} · deck out`
+              : `source kind ${r.srcKind}` // honest about an encoding this build does not know
   const to =
     r.dstKind === 0
       ? nameOf(r.dstIndex)

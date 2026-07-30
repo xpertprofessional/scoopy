@@ -67,6 +67,8 @@ const SRC_KIND: Record<Route['src']['kind'], number> = {
   channelSend: 1,
   deviceInput: 2,
   fxReturn: 3,
+  // ⚠️ index is a DECK here, not a channel (P3.5-E3). See RouteSourceSchema.
+  deckOut: 4,
 }
 const DST_KIND: Record<Route['dst']['kind'], number> = {
   channelIn: 0,

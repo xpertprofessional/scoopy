@@ -108,12 +108,20 @@ function StripInspector({
   )
   const feeds = map.routes.filter(
     (r) =>
-      (r.src.kind === 'channelOut' || r.src.kind === 'channelSend') &&
+      (r.src.kind === 'channelOut' ||
+        r.src.kind === 'channelSend' ||
+        // A grid deck arrives as its DECK, not its channel (P3.5-E3) — the
+        // looper's own "in" line would otherwise read "nothing" while it was
+        // recording that deck.
+        r.src.kind === 'deckOut') &&
       r.dst.kind === 'channelIn' &&
       r.dst.index === strip.channel,
   )
   const nameOf = (channel: number) =>
     map.strips.find((s) => s.channel === channel)?.name ?? `channel ${channel + 1}`
+  const deckNameOf = (deck: number) =>
+    map.strips.find((s) => s.element.kind === 'grid' && s.element.deck === deck)?.name ??
+    `deck ${deck}`
 
   return (
     <>
@@ -158,7 +166,9 @@ function StripInspector({
                     .map((f) =>
                       f.src.kind === 'channelSend'
                         ? `${nameOf(f.src.index)} send ${(f.src.sub ?? 0) + 1}`
-                        : nameOf(f.src.index),
+                        : f.src.kind === 'deckOut'
+                          ? `${deckNameOf(f.src.index)} · deck out`
+                          : nameOf(f.src.index),
                     )
                     .join(', ')
                 : 'nothing'}

@@ -495,6 +495,25 @@ double sl_channel_peak_r(sl_engine* e, uint32_t channel);
                       element": it is simply a route into a strip.
       3 fxReturn    — index = return 0..3. The wet lane, so a return can be
                       re-used rather than only summed to main.
+      4 deckOut     — index = grid deck 0..sl_deck_count()-1. That DECK's dry
+                      stereo output (pre-crossfader, pre-deck-drive), so a deck
+                      can be recorded or chained into a looper strip (P3.5-E3).
+
+                      ⚠️ IT IS NOT THE GRID STRIP'S `channelOut`, and the
+                      difference is load-bearing. A grid deck's channel is a
+                      PROJECTION — the core owns that deck's gain stage and has
+                      already summed it into main, so this tier mixes nothing
+                      for it and its bus is EMPTY by construction. That is why
+                      P3-R3's "REC on a grid strip spawns its looper" recorded
+                      silence: there was no source that named the deck. Giving
+                      the grid channel's own bus the deck's audio instead would
+                      make `channelOut` mean the deck when it feeds a strip and
+                      not mean it when it feeds main (already delivered) — one
+                      endpoint, two meanings. Hence a kind of its own.
+
+                      EXTERNAL like a device input: the deck is rendered before
+                      the channels, so it constrains no render order and can
+                      never be part of a cycle.
 
     Destination (`dst_kind`):
       0 channelIn   — index = channel.

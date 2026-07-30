@@ -354,6 +354,40 @@ describe('map document', () => {
     })
   })
 
+  describe('the v6 → v7 migration (a route may name a deck output, P3.5-E3)', () => {
+    it('opens a v6 map unchanged — the source enum only WIDENED', () => {
+      const doc = saveMap({ ...emptyMap(), strips: [strip({})] }) as unknown as {
+        schemaVersion: number
+      }
+      doc.schemaVersion = 6
+      const r = loadMap(doc)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(6)
+      expect(r.map.strips[0]?.drive).toEqual({ curve: 0, amount: 1 })
+    })
+
+    it('round-trips a deckOut cable — index is the DECK, and it survives verbatim', () => {
+      const map: PlaneMap = {
+        ...emptyMap(),
+        strips: [strip({})],
+        routes: [
+          {
+            src: { kind: 'deckOut', index: 2, sub: null },
+            dst: { kind: 'channelIn', index: 1 },
+            gain: 1,
+            feedback: false,
+          },
+        ],
+      }
+      const again = loadMap(JSON.parse(JSON.stringify(saveMap(map))))
+      expect(again.ok).toBe(true)
+      if (!again.ok) return
+      expect(again.migratedFrom).toBeUndefined()
+      expect(again.map.routes[0]?.src).toEqual({ kind: 'deckOut', index: 2, sub: null })
+    })
+  })
+
   it('treats an unknown key as a loud failure, never a silent coercion', () => {
     const doc = saveMap(emptyMap()) as unknown as { map: Record<string, unknown> }
     doc.map.mysteryField = 1

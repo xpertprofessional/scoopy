@@ -2557,6 +2557,14 @@ void NativeAudioEngineCore::render(const float* inputLeft,
                         carvePumpEnv_[di] = 0.0;
                         if (dL) std::fill_n(dL, framesToRender, 0.0f);
                         if (dR) std::fill_n(dR, framesToRender, 0.0f);
+                        // …and the DRY OUT tap goes silent with it (P3.5-E3). These
+                        // buffers are only WRITTEN by the stretch below, so an
+                        // inactive deck would otherwise keep whatever it last
+                        // rendered — and a host reading deckDryOut() would hear a
+                        // stale fragment loop under a deck that is gone. Silence is
+                        // the truth about a deck that is not playing.
+                        std::fill_n(deckStretchOutL_[di].data(), framesToRender, 0.0f);
+                        std::fill_n(deckStretchOutR_[di].data(), framesToRender, 0.0f);
                         continue;
                     }
 

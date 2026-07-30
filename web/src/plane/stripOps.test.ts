@@ -490,4 +490,40 @@ describe('linkedLooperFor (P3-R3)', () => {
     const map = { ...mapWith([grid, other]), routes: [busRoute(0, 1)] }
     expect(linkedLooperFor(map, grid)).toBeNull()
   })
+
+  // P3.5-E3: the cable that actually carries a grid strip is `deckOut` naming
+  // its DECK — a grid strip's channel bus is empty by construction, which is
+  // why the old channelOut cable recorded silence.
+  const deckRoute = (deck: number, toChannel: number) => ({
+    src: { kind: 'deckOut' as const, index: deck, sub: null },
+    dst: { kind: 'channelIn' as const, index: toChannel },
+    gain: 1,
+    feedback: false,
+  })
+
+  it('finds the looper fed by this strip’s DECK OUT (the cable P3.5-E3 authors)', () => {
+    const grid = strip({ channel: 0, element: newGridElement(2, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
+    const map = { ...mapWith([grid, looper]), routes: [deckRoute(2, 1)] }
+    expect(linkedLooperFor(map, grid)?.key).toBe(looper.key)
+  })
+
+  it('matches on the DECK, not the channel — the two index spaces are different', () => {
+    // Deck 2 in channel 0. A deckOut cable naming deck 0 (== this strip's
+    // CHANNEL) must NOT read as this strip's looper; confusing the spaces is
+    // how a gesture lands on someone else's deck.
+    const grid = strip({ channel: 0, element: newGridElement(2, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
+    const map = { ...mapWith([grid, looper]), routes: [deckRoute(0, 1)] }
+    expect(linkedLooperFor(map, grid)).toBeNull()
+  })
+
+  it('still recognises the OLD channelOut link — maps saved before the fix keep reading as a pair', () => {
+    // The cable is silent in those maps (that is the defect), but the pair must
+    // not silently spawn a SECOND looper next to the one already there.
+    const grid = strip({ channel: 0, element: newGridElement(0, 'ses', 120) })
+    const looper = strip({ channel: 1, element: tapeEl(0), recordTap: 'bus' })
+    const map = { ...mapWith([grid, looper]), routes: [busRoute(0, 1)] }
+    expect(linkedLooperFor(map, grid)?.key).toBe(looper.key)
+  })
 })

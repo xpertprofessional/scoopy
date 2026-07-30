@@ -53,12 +53,21 @@ export type Cable = {
 export function cablesOf(map: PlaneMap): Cable[] {
   const byChannel = new Map<number, Strip>()
   for (const s of map.strips) byChannel.set(s.channel, s)
+  // A `deckOut` cable's source index is a DECK, so it resolves through the grid
+  // strip hosting that deck (P3.5-E3). Drawn like any other strip→strip cable —
+  // a grid strip feeding its looper IS the pairing cables exist to show, and
+  // leaving it undrawn would make the spawned looper look unconnected while it
+  // records that deck.
+  const byDeck = new Map<number, Strip>()
+  for (const s of map.strips) if (s.element.kind === 'grid') byDeck.set(s.element.deck, s)
 
   const out: Cable[] = []
   for (const r of map.routes) {
     if (r.dst.kind !== 'channelIn') continue
-    if (r.src.kind !== 'channelOut' && r.src.kind !== 'channelSend') continue
-    const from = byChannel.get(r.src.index)
+    if (r.src.kind !== 'channelOut' && r.src.kind !== 'channelSend' && r.src.kind !== 'deckOut')
+      continue
+    const from =
+      r.src.kind === 'deckOut' ? byDeck.get(r.src.index) : byChannel.get(r.src.index)
     const to = byChannel.get(r.dst.index)
     // A cable to or from a channel no strip occupies is not drawable — and it
     // is also not a lie the view should invent an endpoint for.
@@ -124,10 +133,15 @@ export function chipsOf(map: PlaneMap, strip: Strip): Chips {
  * fault a person is least likely to guess at.
  */
 export function hasOutput(map: PlaneMap, strip: Strip): boolean {
+  const deck = strip.element.kind === 'grid' ? strip.element.deck : null
   return map.routes.some(
     (r) =>
-      (r.src.kind === 'channelOut' || r.src.kind === 'channelSend') &&
-      r.src.index === strip.channel,
+      ((r.src.kind === 'channelOut' || r.src.kind === 'channelSend') &&
+        r.src.index === strip.channel) ||
+      // A grid strip's output can also leave as its DECK (P3.5-E3) — the cable
+      // that feeds a looper. Counting only channel-space cables would report
+      // "no output" on a strip whose deck is plainly being recorded.
+      (deck !== null && r.src.kind === 'deckOut' && r.src.index === deck),
   )
 }
 
