@@ -22,6 +22,11 @@ const TRANSPORT = read("TransportPanel.tsx");
 const MIXER = read("DeckMixerPanel.tsx");
 const MASTER_ROW = read("MasterRow.tsx");
 const NUDGE = read("NudgeBox.tsx");
+/** Not a panel — the plane's master BAR (P11-5 gave it the engine-health read).
+    Read separately from `ALL` on purpose: `ALL` is the set of surfaces that may
+    not write someone else's control, and the master bar is a home, not a
+    contender. */
+const MASTER = readFileSync(new URL("../plane/Master.tsx", import.meta.url), "utf8");
 
 /** Panels that may NOT write a control whose home is elsewhere. */
 const ALL = {
@@ -55,17 +60,34 @@ describe("one control, one home (djmode.md §4C)", () => {
     singleHome('"launchQuantize"', "TransportPanel");
   });
 
-  it("the CPU + output meters each render ONCE (TB-1)", () => {
+  it("the engine-health + output meters each render ONCE (TB-1, rehomed by P11-5)", () => {
     // The tools row held both; it also held three controls that did nothing.
     // Deleting it must RELOCATE the meters, not clone them: OUT onto CAPTURE
     // (which records exactly what it meters) and CPU into the console's global
     // block. A second copy of either is the thing this file exists to stop.
-    expect(MIXER, "the CPU meter's one home is the console utility block")
-      .toContain("<CpuMeter");
+    //
+    // P11-5 MOVED THE AUDIO-LOAD READ AGAIN, and kept that rule while moving
+    // it. The console block turned out to be a home nobody could reach:
+    // `deckmixer` is not in `PANEL_MENU_SURFACES`, P3-P1 retired it, and it
+    // hangs on "waiting for state" in the merged host. So the read — now
+    // `HealthReadout`, `DSP n%` plus a monotonic overrun total — lives in the
+    // plane's MASTER BAR, which is always on screen. The old `CpuMeter` was
+    // DELETED rather than left mounted behind the dead door: two live readings
+    // of `callbackLoad` is precisely the duplicate this file exists to stop.
+    expect(MASTER, "the engine-health readout's one home is the plane's master bar")
+      .toContain("<HealthReadout");
     for (const [name, src] of Object.entries(ALL)) {
-      if (name === "DeckMixerPanel") continue;
-      expect(src, `${name} must not render a second CPU meter`).not.toContain("CpuMeter");
+      expect(src, `${name} must not render a second engine-health readout`)
+        .not.toContain("HealthReadout");
       expect(src, `${name} must not render a second output meter`).not.toContain("OutputMeter");
+    }
+    // And the retired widget stays retired. A reintroduced CpuMeter would be a
+    // second live read of the same scalar, under a name that means something
+    // ELSE in this codebase — PerfPanel's "CPU" is paint cost (p95 < 2 ms per
+    // frame), not audio load, and that collision is how the app ended up with
+    // one health-sounding door that reported on the UI.
+    for (const [name, src] of Object.entries({ ...ALL, Master: MASTER })) {
+      expect(src, `${name} must not bring back the CpuMeter widget`).not.toContain("CpuMeter");
     }
   });
 

@@ -20,6 +20,7 @@ import { useEffect, useRef } from 'react'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { GeoRange } from '../design/controls.tsx'
+import { HealthReadout } from '../design/HealthReadout.tsx'
 import { send } from './send.ts'
 
 const METER_W = 90
@@ -166,6 +167,19 @@ export function Master({
       <span ref={lampRef} className="master-lamp mono" title="the output limiter (guard G1)">
         LIM
       </span>
+      {/* ENGINE HEALTH (P11-5). Beside LIM because they are the same KIND of
+          fact and a person checks them in the same glance: LIM says the output
+          is being held, DSP says the audio thread is running out of time. Both
+          are conditions you can only find out about from the app — the limiter
+          just sounds quiet, and an overrunning engine just sounds broken.
+
+          THE MASTER BAR IS THE HOME because it is the only surface that is
+          always on screen and never in the way (the reason the master lives
+          here at all, above). This read had a widget, a published scalar and a
+          ctest — and its only mount was `DeckMixerPanel`, a surface P3-P1
+          retired from the panels menu. Built, published, pinned, unreachable:
+          rule four exactly. */}
+      <HealthReadout link={link} />
       {/* THE MASTER TRANSPORT (P3-2). The same four verbs a strip carries, one
           level up: what a strip's ⟳ ▸ ↻ ◼ do to one deck, these do to every
           deck at once. Deliberately the SAME vocabulary — a transport that

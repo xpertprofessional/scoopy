@@ -536,7 +536,8 @@
 
 /* SIG-3 — the track OUTPUT meter, at the end of the DSP row (the channel's
    post-fader output position). A HORIZONTAL bar in the app's meter language
-   (OutputMeter/CpuMeter): DragBox width (48px), toggle height, hairline-bordered
+   (OutputMeter — CpuMeter was the other, retired by P11-5): DragBox width
+   (48px), toggle height, hairline-bordered
    on the control radius, with a peak-hold tick and a reserved right-edge clip
    latch. The bar area paints a FIXED green→amber→red gradient left→right (the
    live-activity/warn/hot roles — never --accent); the fill grows from the left,

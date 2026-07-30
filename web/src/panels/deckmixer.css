@@ -77,10 +77,9 @@
   min-width: 0;
 }
 
-/* The CPU caption doubles as the meter's hide/show toggle (persisted). */
-.cpu-toggle {
-  cursor: pointer;
-}
+/* (P11-5 took `.cpu-toggle` and `.channel-utility .cpu-meter` out with the
+   widget they styled: the audio-load read moved to the plane's master bar,
+   because this surface is one P3-P1 retired from the panels menu.) */
 
 .ch-top {
   display: flex;
@@ -230,14 +229,6 @@
   width: 100%;
   height: var(--slider-bar-h);
   flex: 1 1 auto;
-}
-
-/* CPU load, in the console's global block (TB-1 — a provisional home). */
-.channel-utility .cpu-meter {
-  height: var(--slider-bar-h);
-  flex: 1 1 auto;
-  min-width: 0;
-  border: var(--hairline) solid var(--line);
 }
 
 /* ---- FX slot window (MIX-R8): plugin scanner + return settings ---- */

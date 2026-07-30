@@ -7,11 +7,9 @@ import {
 } from "../../protocol/schema.ts";
 import type { EngineLink } from "../engineLink.ts";
 import { Button, GeoRange, Select } from "../design/controls.tsx";
-import { CpuMeter } from "../design/CpuMeter.tsx";
 import { DragBox, useLearnMenu, useLearnStatus } from "../design/DragBox.tsx";
 import { semanticColor } from "../design/tokens.ts";
 import type { LearnTarget } from "../state/midiLearn.ts";
-import { asBoolean, useSetting } from "../useSetting.ts";
 import { ChannelStrip, MicMeter, type ChannelSend } from "./ChannelStrip.tsx";
 import { CaptureChannel } from "./CaptureChannel.tsx";
 import { inputSourceOptions, inputSourceValue, parseInputSource } from "./audioChannels.ts";
@@ -43,9 +41,6 @@ const DECK_NAMES = ["A", "B", "C"] as const;
 export function DeckMixerPanel({ link }: { link: EngineLink | null }) {
   const [state, setState] = useState<ToolbarUiState | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
-  // CPU meter visibility ("it can be annoying to watch it zap around"). The
-  // label stays clickable so the meter can come back; persisted app-level.
-  const [cpuHidden, setCpuHidden] = useSetting(link, "mixer.cpuMeterHidden", false, asBoolean);
 
   useEffect(() => {
     if (!link) return;
@@ -111,25 +106,19 @@ export function DeckMixerPanel({ link }: { link: EngineLink | null }) {
       <div className="mixer">
         {/* Console utility block — global mixer controls, not a channel. Same
             block shell as the strips so it sits on the console grid; holds I/O
-            (device picker + routing matrix in a floating window, MIX-R5) and the
-            CPU meter. */}
+            (device picker + routing matrix in a floating window, MIX-R5).
+
+            THE CPU METER IS GONE FROM HERE (P11-5), relocated rather than
+            cloned — the rule `uiOwnership.test.ts` exists to enforce. Its home
+            is the plane's MASTER BAR now, as `DSP n%`, because this surface is
+            one P3-P1 retired from the panels menu: `deckmixer` is not in
+            `PANEL_MENU_SURFACES` and it hangs on "waiting for state" in the
+            merged host. The audio thread's load was measurable, published and
+            pinned by a ctest, and the only door to it was behind a door that
+            does not open. */}
         <section className="channel channel-utility">
           <div className="ch-top">
             <span className="ch-label-only">MIXER</span>
-          </div>
-
-          {/* CPU load. A PROVISIONAL home (TB-1). Clicking the caption hides the
-              bar (persisted): a meter that zaps around is good to HAVE and nice
-              to silence — the caption survives as the way back. */}
-          <div className="ch-meter-row">
-            <span
-              className="dim mono mini-label cpu-toggle"
-              title={cpuHidden ? "Show the CPU meter" : "Hide the CPU meter"}
-              onClick={() => setCpuHidden(!cpuHidden)}
-            >
-              CPU
-            </span>
-            {!cpuHidden && <CpuMeter link={link} />}
           </div>
 
           <div className="ch-bottom">

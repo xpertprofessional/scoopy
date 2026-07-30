@@ -1073,6 +1073,40 @@
   border-color: var(--warn);
 }
 
+/* ENGINE HEALTH (P11-5). Same shell as the limiter lamp — they are read in the
+   same glance, and a second visual language for "the engine is in trouble"
+   would just be a second thing to learn.
+
+   Wider than LIM because it grows: `DSP 3%` becomes `DSP 94% ✕2`, and a box
+   that resized on the first dropout would shove the tempo box sideways at
+   exactly the moment you are trying to read it. */
+.health-readout {
+  min-width: 88px;
+  text-align: center;
+  color: var(--text-dim);
+  background: transparent;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+/* The colour flip. `warn` is load worth noticing; `hot` means it OVERRAN —
+   not a threshold being approached but audio that already broke up, so it
+   takes the same solid fill the limiter lamp uses, for the same reason: a
+   tinted outline is something the eye can look past. */
+.health-readout.tone-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.health-readout.tone-hot {
+  color: var(--bg);
+  background: var(--hot);
+  border-color: var(--hot);
+}
+
 /* ── the Inspector ───────────────────────────────────────────────────────── */
 
 /* The plane and the Inspector share the panel's remaining height. The plane
