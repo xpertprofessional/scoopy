@@ -207,12 +207,65 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         // null identifier = unload — the picker's "— none —" row.
         const auto idVar = params.getProperty("identifier", juce::var());
         const juce::String identifier = idVar.isVoid() ? juce::String() : idVar.toString();
-        if (sl_fx_plugin_select(engine, returnIndex, scanner,
-                                identifier.isEmpty() ? nullptr : identifier.toRawUTF8()) == 0)
+        // P6-5: an optional opaque state blob, applied AT INSTANTIATION so a
+        // restored plugin is never briefly heard at its defaults. Absent on every
+        // ordinary pick from the list — only a map restore has a blob to give.
+        const auto stateVar = params.getProperty("state", juce::var());
+        const juce::String state = stateVar.isVoid() ? juce::String() : stateVar.toString();
+        if (sl_fx_plugin_select_state(engine, returnIndex, scanner,
+                                      identifier.isEmpty() ? nullptr : identifier.toRawUTF8(),
+                                      state.isEmpty() ? nullptr : state.toRawUTF8()) == 0)
             return fail("selectFxPlugin: refused (bad returnIndex or hostless build)");
         // Accepted, not loaded: instantiation is async on the message thread.
         // The toolbar push picks the name/latency up when the load lands.
         return ok(emptyObject());
+    }
+
+    // WHAT A MAP MUST STORE ABOUT THE FX RETURNS (P6-5) — the identifier a
+    // plugin can be found by again, and its own opaque state.
+    //
+    // A COMMAND, not a field on the toolbar push, and the blob's size is the
+    // reason: a plugin carrying an impulse response or sample content runs to
+    // hundreds of KB, and that has no business crossing the bridge twice a second
+    // for a UI that never displays it. This is pulled once, when a map is saved.
+    if (method == "getFxSlotState") {
+        if (engine == nullptr) return fail("getFxSlotState: no engine on this host");
+        juce::Array<juce::var> slots;
+        for (int i = 1; i <= 4; ++i) {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("returnIndex", i);
+            // Sized twice by design (see sl_engine.h): ask for the length, then
+            // fill exactly that. Truncating a state blob would persist something
+            // the plugin rejects on restore — a map that quietly forgets.
+            const uint32_t idLen = sl_fx_plugin_identifier(engine, i, nullptr, 0);
+            if (idLen == 0) {
+                // Explicit nulls: an empty slot is a FACT the document records,
+                // not a key it omits (zod .nullable() demands the key exist, and
+                // a missing key would read as "unknown" instead of "empty").
+                o->setProperty("identifier", juce::var());
+                o->setProperty("state", juce::var());
+                slots.add(juce::var(o));
+                continue;
+            }
+            std::vector<char> idBuf(idLen + 1, '\0');
+            sl_fx_plugin_identifier(engine, i, idBuf.data(), idLen + 1);
+            o->setProperty("identifier", juce::String(juce::CharPointer_UTF8(idBuf.data())));
+
+            const uint32_t stLen = sl_fx_plugin_state(engine, i, nullptr, 0);
+            if (stLen == 0) {
+                // A plugin that saves nothing is normal (AUDelay does exactly
+                // this on some hosts) — the identifier alone still restores it.
+                o->setProperty("state", juce::var());
+            } else {
+                std::vector<char> stBuf(stLen + 1, '\0');
+                sl_fx_plugin_state(engine, i, stBuf.data(), stLen + 1);
+                o->setProperty("state", juce::String(juce::CharPointer_UTF8(stBuf.data())));
+            }
+            slots.add(juce::var(o));
+        }
+        auto* res = new juce::DynamicObject();
+        res->setProperty("slots", juce::var(slots));
+        return ok(juce::var(res));
     }
 
     // The FX slot's per-return controls. Only the EDITOR is backed here (P6-4);

@@ -653,11 +653,46 @@ void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled);
     0 refused (bad index, no scanner on a load, or a hostless build). */
 int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner,
                         const char* identifier);
+/** THE RESTORING LOAD (P6-5): the same select, plus the plugin's own opaque
+    state applied at instantiation — which is the only moment it can be applied
+    without the user hearing the plugin's defaults first.
+
+    `state_base64` NULL/empty behaves exactly like `sl_fx_plugin_select`, so the
+    two share one implementation and cannot drift. A blob that fails to decode,
+    or that the plugin rejects, leaves the plugin LOADED AT ITS DEFAULTS rather
+    than failing the load: a map that remembers the wrong settings is a bad
+    afternoon, and a map that refuses to open is a lost set. The caller cannot be
+    told from here either way — the load is async on the message thread — so a UI
+    that must report this compares what came back (name / identifier) instead. */
+int sl_fx_plugin_select_state(sl_engine* e, int returnIndex, void* scanner,
+                              const char* identifier, const char* state_base64);
 /** The loaded plugin's display name into out (NUL-terminated, truncated to
     cap). Returns the full length in bytes, 0 = no plugin (or still loading —
     loads are async). */
 uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out,
                            uint32_t cap);
+/** WHAT A DOCUMENT MUST STORE TO FIND THIS PLUGIN AGAIN (P6-5) — the identifier
+    the slot was loaded from (JUCE's `createIdentifierString`), NUL-terminated
+    into `out`, return value = full length in bytes, 0 = nothing loaded.
+
+    Deliberately NOT the display name, which `sl_fx_plugin_name` is for: a name
+    is for people and collides across formats and vendors, so a document keyed on
+    it would reload a different plugin on a machine that has both. */
+uint32_t sl_fx_plugin_identifier(const sl_engine* e, int returnIndex, char* out,
+                                 uint32_t cap);
+/** The loaded plugin's OPAQUE STATE as base64 (P6-5) — every knob the plugin
+    itself considers worth saving. NUL-terminated into `out`, truncated to `cap`;
+    the return value is the FULL length in bytes, so the honest way to call this
+    is twice: once with cap 0 to size the buffer, then once to fill it. 0 = no
+    plugin loaded.
+
+    ⚠️ IT CAN BE BIG — plugins with impulse responses or sample content run to
+    hundreds of KB — which is exactly why this is a sized pull rather than a field
+    on the ~2 Hz toolbar push. Truncating it silently would persist a blob that
+    the plugin will reject on restore, so a short `cap` gives you the length and
+    no illusions. Reads under the slot lock (non-RT, never the audio thread). */
+uint32_t sl_fx_plugin_state(const sl_engine* e, int returnIndex, char* out,
+                            uint32_t cap);
 /** Plugin-reported latency for the slot, in milliseconds at the engine's
     configured rate. 0 when empty. */
 double sl_fx_plugin_latency_ms(const sl_engine* e, int returnIndex);

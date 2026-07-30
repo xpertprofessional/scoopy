@@ -128,6 +128,11 @@ public:
     // Non-RT. Opaque plugin state for persistence, and the loaded plugin's name.
     std::string stateBase64() const;
     std::string loadedName() const;
+    // Non-RT. The identifier this slot was LOADED FROM — the key a document
+    // stores to find the same plugin again (P6-5). NOT the display name: a name
+    // is for people and collides across formats and vendors, while JUCE's
+    // createIdentifierString() is built for exactly this. Empty when unloaded.
+    std::string loadedIdentifier() const;
 
     // Non-RT (marshalled to the JUCE message thread). Open/close the plugin's own
     // editor in a standalone always-on-top window. No-op if the plugin has no editor.

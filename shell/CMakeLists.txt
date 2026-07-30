@@ -91,6 +91,29 @@ if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
         juce::juce_recommended_config_flags)
     add_test(NAME plugin_audible_test COMMAND plugin_audible_test)
     set_tests_properties(plugin_audible_test PROPERTIES SKIP_RETURN_CODE 77)
+
+    # P6-5a: the same real-AU harness, proving MEMORY rather than sound — what a
+    # map must write down (identifier + opaque state) and that feeding it back
+    # reconstitutes the same plugin with the same settings. A separate binary from
+    # plugin_audible_test on purpose: one failure must still say which claim broke.
+    add_executable(plugin_state_test
+        tools/plugin_state_test.cpp
+        ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
+    set_target_properties(plugin_state_test PROPERTIES
+        OBJCXX_STANDARD 20
+        OBJCXX_STANDARD_REQUIRED ON)
+    target_include_directories(plugin_state_test PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(plugin_state_test PRIVATE
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(plugin_state_test PRIVATE
+        wz_sl_command wz_sl_world wz_sl_engine
+        juce::juce_audio_processors
+        "-framework CoreAudioKit"
+        juce::juce_recommended_config_flags)
+    add_test(NAME plugin_state_test COMMAND plugin_state_test)
+    set_tests_properties(plugin_state_test PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # The Option-B play path (native half): a name-keyed World -> v3 snapshot. Links

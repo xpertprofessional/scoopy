@@ -669,6 +669,17 @@ public:
         return instance != nullptr ? instance->getName().toStdString() : std::string();
     }
 
+    /** The identifier this slot was LOADED FROM — what a document must store to
+        find the same plugin again (P6-5). Deliberately not the display name: a
+        name is for people and collides between formats/vendors, while
+        `createIdentifierString()` is JUCE's own persistence key. Empty when
+        nothing is loaded, and cleared by unload/destroy alongside the instance. */
+    std::string identifier() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return instance != nullptr ? loadedIdentifier : std::string();
+    }
+
     // --- JUCE program (preset) list — v81 preset stepping. Main/message-thread callers only
     // (same as stateB64/name). The lock excludes the audio thread's try-lock render for the
     // duration of a program switch — that block renders silence, same policy as a load swap.
@@ -785,6 +796,7 @@ bool NativePluginSlot::processStereoBlock(float* left, float* right, int numFram
 }
 std::string NativePluginSlot::stateBase64() const { return impl_->stateB64(); }
 std::string NativePluginSlot::loadedName() const { return impl_->name(); }
+std::string NativePluginSlot::loadedIdentifier() const { return impl_->identifier(); }
 void NativePluginSlot::openEditor() { impl_->openEditor(); }
 void NativePluginSlot::closeEditor() { impl_->closeEditor(); }
 void NativePluginSlot::setEditorVisible(bool visible) { impl_->setEditorVisible(visible); }
@@ -1015,6 +1027,7 @@ int  NativePluginSlot::latencySamples() const noexcept { return 0; }
 bool NativePluginSlot::processStereoBlock(float*, float*, int, double, bool) noexcept { return false; }
 std::string NativePluginSlot::stateBase64() const { return {}; }
 std::string NativePluginSlot::loadedName() const { return {}; }
+std::string NativePluginSlot::loadedIdentifier() const { return {}; }
 void NativePluginSlot::openEditor() {}
 void NativePluginSlot::closeEditor() {}
 void NativePluginSlot::setEditorVisible(bool) {}

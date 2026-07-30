@@ -836,7 +836,8 @@ void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled) {
  * SCOOPY_PLUGIN_HOST=0 build the slot members do not exist, so every function
  * refuses/answers empty — the honest hostless shape, same as the capability. */
 
-int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner, const char* identifier) {
+int sl_fx_plugin_select_state(sl_engine* e, int returnIndex, void* scanner,
+                              const char* identifier, const char* state_base64) {
 #if SCOOPY_PLUGIN_HOST
     if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
     auto& slot = e->core.returnPluginSlot(returnIndex);
@@ -845,17 +846,42 @@ int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner, const char
         return 1;
     }
     if (scanner == nullptr) return 0;
-    // Async by design: the JUCE message thread instantiates the plugin. State
-    // restore (P6-5) will thread a blob through the empty string.
+    // Async by design: the JUCE message thread instantiates the plugin, and it
+    // applies the state THERE — at instantiation, before the plugin is ever
+    // rendered, which is the only point where a restore is inaudible.
     slot.loadAsync(*static_cast<scoopyloops::NativePluginScanner*>(scanner),
-                   identifier, /*stateBase64*/ "",
+                   identifier, state_base64 != nullptr ? state_base64 : "",
                    [](bool, std::string) {});
     return 1;
 #else
-    (void) e; (void) returnIndex; (void) scanner; (void) identifier;
+    (void) e; (void) returnIndex; (void) scanner; (void) identifier; (void) state_base64;
     return 0;
 #endif
 }
+
+// The stateless door is the stateful one with no blob — ONE implementation, so
+// "select" and "select and restore" cannot acquire different validation.
+int sl_fx_plugin_select(sl_engine* e, int returnIndex, void* scanner, const char* identifier) {
+    return sl_fx_plugin_select_state(e, returnIndex, scanner, identifier, nullptr);
+}
+
+#if SCOOPY_PLUGIN_HOST
+namespace {
+/** Copy `s` out NUL-terminated, truncated to `cap`, returning its FULL length.
+    Shared by the three string reads on this surface (name / identifier / state)
+    so "the return value is the untruncated size" is one rule in one place — the
+    property `sl_fx_plugin_state`'s size-then-fill contract rests on. */
+uint32_t copyOutString(const std::string& s, char* out, uint32_t cap) {
+    if (s.empty()) return 0;
+    if (out != nullptr && cap > 0) {
+        const uint32_t n = std::min<uint32_t>(cap - 1, static_cast<uint32_t>(s.size()));
+        std::memcpy(out, s.data(), n);
+        out[n] = '\0';
+    }
+    return static_cast<uint32_t>(s.size());
+}
+} // namespace
+#endif
 
 uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out, uint32_t cap) {
     if (out != nullptr && cap > 0) out[0] = '\0';
@@ -864,14 +890,33 @@ uint32_t sl_fx_plugin_name(const sl_engine* e, int returnIndex, char* out, uint3
     // returnPluginSlot is non-const (it hands out a mutable slot); the reads
     // below are const-safe, so the cast stays local to this door.
     auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
-    const std::string name = slot.loadedName();
-    if (name.empty()) return 0;
-    if (out != nullptr && cap > 0) {
-        const uint32_t n = std::min<uint32_t>(cap - 1, static_cast<uint32_t>(name.size()));
-        std::memcpy(out, name.data(), n);
-        out[n] = '\0';
-    }
-    return static_cast<uint32_t>(name.size());
+    return copyOutString(slot.loadedName(), out, cap);
+#else
+    (void) e; (void) returnIndex;
+    return 0;
+#endif
+}
+
+uint32_t sl_fx_plugin_identifier(const sl_engine* e, int returnIndex, char* out, uint32_t cap) {
+    if (out != nullptr && cap > 0) out[0] = '\0';
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    return copyOutString(slot.loadedIdentifier(), out, cap);
+#else
+    (void) e; (void) returnIndex;
+    return 0;
+#endif
+}
+
+uint32_t sl_fx_plugin_state(const sl_engine* e, int returnIndex, char* out, uint32_t cap) {
+    if (out != nullptr && cap > 0) out[0] = '\0';
+#if SCOOPY_PLUGIN_HOST
+    if (e == nullptr || returnIndex < 1 || returnIndex > 4) return 0;
+    auto& slot = const_cast<sl_engine*>(e)->core.returnPluginSlot(returnIndex);
+    // Pulls the plugin's own getStateInformation under the slot lock — non-RT by
+    // construction, and never from the audio thread (see sl_engine.h).
+    return copyOutString(slot.stateBase64(), out, cap);
 #else
     (void) e; (void) returnIndex;
     return 0;
