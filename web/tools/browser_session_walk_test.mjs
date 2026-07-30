@@ -338,6 +338,11 @@ const sessionDir = join(fixtureDir, 'Demo.scoopySession')
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, bytes)
   }
+  // ONE SAMPLE IS DELIBERATELY NOT AUDIO (P3.5-E9a). It rides the import
+  // untouched — bytes are bytes — and fails to DECODE when the session is
+  // loaded into a strip, which is the exact shape of "a loaded scoopy session
+  // makes no sound". Step 8 asserts the app now says so instead of going quiet.
+  writeFileSync(join(sessionDir, 'Samples', 'kick.wav'), Buffer.from('not audio at all'))
 }
 
 await page.goto('http://localhost:4601/?panel=plane')
@@ -410,6 +415,29 @@ check('the import told the note line what it did',
   }
   await composePage.close()
 }
+
+// ── 8 · A SILENT DECK SAYS WHY (P3.5-E9a) ──────────────────────────────────
+//        The imported Demo session carries one sample that is not audio. Load
+//        it into a strip: the deck comes up looking perfectly normal and those
+//        tracks make no sound. Before this row NOTHING said so on any surface
+//        in the merged app — `decodeFailures` was read only by the browser-only
+//        companion panel P3-L1 deleted.
+await page.goto('http://localhost:4601/?panel=plane')
+await page.waitForSelector('.plane-add', { timeout: 10000 })
+await page.click('.plane-add')
+await page.waitForSelector('.plane-strip', { timeout: 5000 })
+await page.click('.strip-menu')
+await page.waitForSelector('.ds-menu', { timeout: 5000 })
+await page.locator('.ds-menu-item', { hasText: 'Demo' }).click()
+await page.waitForSelector('.strip-scenes', { timeout: 10000 })
+
+const quiet = await page
+  .waitForSelector('.plane-note', { timeout: 10000 })
+  .then((el) => el.textContent())
+  .catch(() => '(no note at all)')
+check('the load reported the sample that would not decode', /did not load/.test(quiet), quiet)
+check('…and named it, rather than counting it', /kick/.test(quiet), quiet)
+check('…and said what it MEANS — those tracks are silent', /silent/.test(quiet), quiet)
 
 await rm(fixtureDir, { recursive: true, force: true })
 

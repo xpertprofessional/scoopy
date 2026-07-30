@@ -21,6 +21,7 @@ import { useEffect, useMemo } from 'react'
 import type { EngineLink } from '../engineLink.ts'
 import { GridPanel } from '../panels/GridPanel.tsx'
 import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
 import { decodeComposeArg } from './composeArg.ts'
@@ -33,6 +34,17 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
   )
   const deck = arg?.deck ?? 0
   const error = useCompanion((c) => c.error)
+  // P3.5-E9a — this window opens the session itself, in its OWN store, so it
+  // must report its own silence: a kit that did not fully decode here is a kit
+  // this window's engine cannot play, whatever the plane's copy managed.
+  const engine = useCompanion((c) => c.engine)
+  const decodeFailures = useCompanion((c) => c.decks[deck]?.decodeFailures)
+  const missingSamples = useCompanion((c) => c.decks[deck]?.missingSamples)
+  const quiet = silenceNote(arg?.session ?? '', {
+    engine,
+    decodeFailures,
+    missingSamples,
+  })
 
   useEffect(() => {
     if (!arg) return
@@ -78,6 +90,7 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
         <span>{`compose · ${session?.name ?? arg.session}`}</span>
         <span className="dim">{` deck ${deck + 1} — edits are live and autosaved; close the window to hand the deck back to the plane`}</span>
         {error && <span className="warn">{` ${error}`}</span>}
+        {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
       </header>
       {/* The REAL composer, unmodified — the same component the desktop runs. */}
       <div className="compose-window-body">

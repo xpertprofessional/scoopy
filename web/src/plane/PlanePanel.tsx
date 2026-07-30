@@ -52,6 +52,7 @@ import {
   spawnPoint,
 } from './stripOps.ts'
 import { useCompanion } from '../store/companionEngine.ts'
+import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
 import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo.ts'
@@ -820,6 +821,22 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     // `open()` publishes. Deck scope removed that accident, which is what made
     // this path's missing push visible.)
     void applyTempo(link)
+
+    // P3.5-E9a — A SILENT DECK SAYS WHY. The store has always collected the
+    // reasons (a kit sample that would not decode, a track naming a sample the
+    // kit does not carry, an engine sink that never started), and until now the
+    // only surface that READ them was the browser-only companion panel P3-L1
+    // deleted. So a session could load, look right and play nothing, with the
+    // cause on nobody's screen. The load succeeded — this is a note, not a
+    // refusal, and it must not overwrite one.
+    const loaded = useCompanion.getState()
+    const d = loaded.decks[deck]
+    const quiet = silenceNote(sessionId, {
+      engine: loaded.engine,
+      decodeFailures: d?.decodeFailures,
+      missingSamples: d?.missingSamples,
+    })
+    if (quiet) setNote(quiet)
   }
 
   /** Give up a strip's element and the engine slot behind it. */
