@@ -113,16 +113,39 @@ export function packageFromEntries(rawFiles: Map<string, Uint8Array>): SessionPa
   };
 }
 
+/**
+ * The zip entry timestamp, PINNED — deliberately not "now" (P11-5d).
+ *
+ * fflate stamps every entry with `Date.now()` when no `mtime` is given, and DOS timestamps have
+ * 2-second granularity — so packing the SAME package twice returned different bytes whenever the
+ * two calls straddled a tick (measured: 10 bytes of 541,935 in the interop fixture). That cost the
+ * project twice over, and neither cost looked like a timestamp:
+ *   - `fixtures/session/session-from-ts.zip` was rewritten by every `npm test`, so `git status` was
+ *     dirty after any gate and every agent in this shared tree had to decide not to stage it;
+ *   - `sessionStore.test.ts`'s "round-trips a session through OPFS byte-for-byte" compares two packs
+ *     separated by real work, so it went red at random under load — P11-5c's 1-in-5 flake.
+ * A transfer container is worth more REPRODUCIBLE than freshly dated: same session in, same bytes
+ * out, which is what makes an archive diffable and a fixture committable. Nothing on either side of
+ * the handshake reads the entry date — `SessionZip.swift` reads entries.
+ *
+ * ⚠️ A LOCAL-time string on purpose, not an epoch number. fflate encodes the DOS date through
+ * `getFullYear()/getHours()/…`, which are local, so a fixed *instant* would still encode differently
+ * in a different timezone and the committed fixture would false-red for anyone outside this one.
+ */
+export const SESSION_ZIP_MTIME = "2026-01-01T00:00:00";
+
 /** Write a `.scoopySession` archive the desktop can open. */
 export function packSession(pkg: SessionPackage): Uint8Array {
-  const files: Record<string, [Uint8Array, { level: 0 }]> = {};
-  const stored = (b: Uint8Array): [Uint8Array, { level: 0 }] => [b, { level: 0 }];
+  type Stored = [Uint8Array, { level: 0; mtime: string }];
+  const files: Record<string, Stored> = {};
+  const stored = (b: Uint8Array): Stored => [b, { level: 0, mtime: SESSION_ZIP_MTIME }];
 
   files[PATTERN_ENTRY] = stored(enc.encode(encodePatternFile(pkg.pattern)));
   files[KIT_ENTRY] = stored(enc.encode(encodeKit(pkg.kit)));
   for (const [name, bytes] of pkg.samples) files[name] = stored(bytes);
   for (const [name, bytes] of pkg.extras) files[name] = stored(bytes); // preserve-don't-drop
-  return zipSync(files, { level: 0 });
+  // The same pin at the top level, so an entry added without `stored()` cannot reintroduce "now".
+  return zipSync(files, { level: 0, mtime: SESSION_ZIP_MTIME });
 }
 
 /**

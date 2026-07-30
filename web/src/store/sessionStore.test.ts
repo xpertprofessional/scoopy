@@ -146,13 +146,24 @@ describe("packageSession", () => {
 
 describe("saveSession", () => {
   it("round-trips a session through OPFS byte-for-byte", async () => {
+    // ⚠️ This test was P11-5c's 1-in-5 flake, and the cause was in neither OPFS nor the assertion:
+    // it packs, does real work, then packs again, and `packSession` used to stamp every zip entry
+    // with `Date.now()`. DOS timestamps tick every 2 seconds, so whenever the work between the two
+    // packs straddled a tick — ~40 ms of gap on an idle machine, far more under the full suite's
+    // load — 10 bytes of 541,935 came back different and this went red for a reason that had
+    // nothing to do with what it tests. `SESSION_ZIP_MTIME` (sessionPackage.ts) pins the stamp, so
+    // the divergence is now impossible rather than unlikely, and "byte-for-byte" is finally a
+    // property the code HAS rather than one it usually got away with.
     const imported = await importSessionFile(await fixtureFile());
     const before = (await packageSession(imported)).bytes;
 
     await saveSession(imported);
     const after = (await packageSession(await openSession("Demo"))).bytes;
 
-    expect(after).toEqual(before);
+    // Compared as an index, not as two half-megabyte arrays: a failed `toEqual` here printed a
+    // 541,935-element diff, which is a red nobody can read.
+    expect(after.length).toBe(before.length);
+    expect(after.findIndex((b, i) => b !== before[i])).toBe(-1);
   });
 });
 

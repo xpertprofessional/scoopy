@@ -12,15 +12,35 @@
  *
  * The Swift suite reads `session-from-ts.zip` back (SessionZipTests.opensAZipWrittenByTypeScript),
  * closing the loop.
+ *
+ * ⚠️ **That Swift suite is NOT in this repository** (no `.swift` file is tracked here, in any
+ * commit). `session-from-ts.zip` is therefore an EXPORT: the desktop tree reads it, this tree only
+ * produces it, and nothing here can run the far half of the handshake. So the fixture's freshness is
+ * this suite's responsibility alone — see the comparison test below.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { encodePatternFile } from "./patternFile";
-import { KIT_ENTRY, PATTERN_ENTRY, packSession, unpackSession } from "./sessionPackage";
+import {
+  KIT_ENTRY,
+  PATTERN_ENTRY,
+  SESSION_ZIP_MTIME,
+  packSession,
+  unpackSession,
+} from "./sessionPackage";
 
 const dir = new URL("../../fixtures/session/", import.meta.url);
 const SWIFT_ZIP = new Uint8Array(readFileSync(new URL("session.zip", dir)));
+
+afterEach(() => vi.useRealTimers());
+
+/** The first index at which two archives disagree, or -1. Reported as a number, not as a diff. */
+function firstDifference(a: Uint8Array, b: Uint8Array): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return a.length === b.length ? -1 : n;
+}
 
 describe("opening a session Swift zipped (interop, direction A)", () => {
   it("reads both manifests and every sample", () => {
@@ -90,13 +110,47 @@ describe("writing a session for the desktop to open (interop, direction B)", () 
     expect(rt0.outputAssign).toBe(2);
   });
 
-  it("emits the archive the SWIFT suite opens (closing the loop)", () => {
-    // Written for `SessionZipTests.opensAZipWrittenByTypeScript`, which decodes this pattern with
-    // the REAL Swift decoder and asserts the plugin binding survived. Neither side is allowed to
-    // grade its own homework.
+  it("the committed archive the SWIFT suite opens is still what we write today", () => {
+    // `session-from-ts.zip` is read by `SessionZipTests.opensAZipWrittenByTypeScript`, which decodes
+    // this pattern with the REAL Swift decoder and asserts the plugin binding survived. Neither side
+    // is allowed to grade its own homework.
+    //
+    // ⚠️ This test USED TO WRITE that fixture on every run (P11-5d). A default gate that mutates a
+    // tracked file makes the suite irreproducible: `git status` was dirty after any `npm test`, and
+    // the file was a standing invitation to a stray `git add -A` in a tree several agents share. So
+    // the direction is inverted — the suite COMPARES, and `npm run session:generate` is the only
+    // thing that writes. That also closes the rot hole the inversion could have opened: if
+    // `packSession` ever changes shape, this goes red rather than the fixture silently drifting out
+    // of step with the encoder that is supposed to have produced it.
+    const fresh = packSession(unpackSession(SWIFT_ZIP));
+    const committed = new Uint8Array(readFileSync(new URL("session-from-ts.zip", dir)));
+
+    const stale =
+      "web/fixtures/session/session-from-ts.zip is STALE — it is no longer what packSession emits. " +
+      "Regenerate it deliberately with `npm run session:generate` (and commit it: the desktop Swift " +
+      "suite opens this file).";
+    // Compared as an index, never as two 500 KB arrays: a failed `toEqual` on these would print a
+    // half-million-element diff and bury the one line that says what to do.
+    expect(committed.length, stale).toBe(fresh.length);
+    expect(firstDifference(fresh, committed), stale).toBe(-1);
+  });
+
+  it("packs the SAME bytes no matter when it runs (the flake's root, P11-5c)", () => {
+    // fflate stamps entries with `Date.now()` unless told otherwise, and DOS timestamps tick every
+    // 2 seconds — so two packs of one package differed whenever they straddled a tick. That is why
+    // the fixture above dirtied itself every run, and why `sessionStore.test.ts`'s byte-for-byte
+    // round-trip (which packs, does real work, then packs again) failed about 1 run in 5 under load.
+    // The pin makes the divergence impossible rather than unlikely; this test is what keeps it in.
     const pkg = unpackSession(SWIFT_ZIP);
-    writeFileSync(new URL("session-from-ts.zip", dir), packSession(pkg));
-    expect(true).toBe(true);
+    vi.useFakeTimers();
+
+    vi.setSystemTime(new Date("2021-03-04T05:06:07Z"));
+    const early = packSession(pkg);
+    vi.setSystemTime(new Date("2029-11-12T13:14:15Z"));
+    const late = packSession(pkg);
+
+    expect(firstDifference(early, late)).toBe(-1);
+    expect(SESSION_ZIP_MTIME).toBe("2026-01-01T00:00:00");
   });
 });
 

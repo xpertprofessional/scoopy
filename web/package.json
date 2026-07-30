@@ -16,6 +16,7 @@
     "params:check": "node --experimental-strip-types scripts/checkParamMap.ts",
     "schema:check": "node --experimental-strip-types scripts/checkSchemaVersion.ts",
     "preview:lan": "SL_LAN=1 vite build && SL_LAN=1 vite preview --host",
+    "session:generate": "node --experimental-strip-types scripts/generateSessionFixture.ts",
     "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
     "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write",
     "tape:check": "node --experimental-strip-types scripts/checkTapeCoverage.ts",
