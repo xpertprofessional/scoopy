@@ -17,6 +17,29 @@
    the lane worktrees, the `ledger-lane` agent type and every ruling are already
    on disk; only the agents' warm context is lost.
 
+## The original app is one directory over — READ IT
+
+`../scoopyloops` (i.e. `/Users/tobiasjansen/xpert/apps/scoopyloops`) is the
+**shipping ScoopyLoops app this project is migrating from**: ~98 Swift files
+under `ScoopyLoops/`, plus `ScoopyLoopsTests/`. It builds and the user can run
+it. **It is the behaviour reference, and it is the answer to most "what should
+this do?" questions.**
+
+⚠️ **Do not confuse it with `ScoopyLoops/` inside THIS repo**, which is only the
+27-file vendored C++ DSP core (`NativeAudioEngineCore` and friends). The two are
+different things and the name collision has already cost this project real time.
+
+**Before designing a behaviour from scratch, check whether the original already
+answered it** — gestures, defaults, edge cases, what a door does when it cannot
+do the thing. The merged app inherited the DSP intact but **none of the Swift UI
+or document layer came across**, so a row that reads like a design question is
+usually a port whose reference is sitting right there. Ask the user to run it
+when reading is ambiguous; they can compare directly.
+
+Search it scoped and read-only — `../scoopyloops/ScoopyLoops` for the app,
+`../scoopyloops/ScoopyLoopsTests` for pinned behaviour. `attic/` is retired code:
+useful as history, never as a spec. **Never write to that repo.**
+
 **The four rules:** tests pass ≠ it works ≠ it shipped ≠ you can reach it. Green gates
 in Chromium repeatedly missed features unreachable in the real app — every UI claim
 needs a visible door reachable in the JUCE WKWebView host (WizardMerged), not a

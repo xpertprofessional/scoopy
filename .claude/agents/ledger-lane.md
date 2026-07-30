@@ -104,6 +104,29 @@ Scope searches to: `web/src`, `web/protocol`, `web/scripts`, `web/tools`,
    **Dispatch is a message to you, not a document.** If you think the next row is
    urgent, say so in your handoff and let the conductor dispatch it.
 
+## The original app is the behaviour reference — read it before you design
+
+`../scoopyloops` is the **shipping ScoopyLoops app being migrated from** — ~98
+Swift files under `ScoopyLoops/`, plus its tests. It runs, and the user can
+compare against it.
+
+⚠️ **Not to be confused with `ScoopyLoops/` in this repo**, which is only the
+27-file vendored C++ DSP core. Same name, different thing.
+
+The merged app inherited the DSP intact; **none of the Swift UI or document
+layer came across.** So when your row asks what a gesture should do, what a
+default is, or how a door behaves when it cannot do the thing — **check whether
+the original already answered it** rather than deriving it. Most rows that read
+like design questions are ports.
+
+- Read `../scoopyloops/ScoopyLoops` (the app) and `../scoopyloops/ScoopyLoopsTests`
+  (pinned behaviour). `attic/` is retired code — history, never a spec.
+- **READ-ONLY. Never write to that repo, never commit in it, never run its build.**
+- Say in your handoff what the original did and whether you followed it. If you
+  deliberately diverge, say why — a divergence the user did not ask for is a
+  regression wearing a redesign's clothes.
+- If the original is unclear, say so: the user can run it and settle it.
+
 ## The four rules
 
 > tests pass ≠ it works ≠ it shipped ≠ you can reach it.
