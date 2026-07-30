@@ -11,7 +11,7 @@ below is how the same contract is honoured by several.
 
 ---
 
-## 1. The shape: one conductor, three lanes
+## 1. The shape: one conductor, four lanes
 
 **The conductor** is the session holding the ledger. It exclusively owns every
 resource that cannot be shared, because sharing it corrupts something:
@@ -33,8 +33,16 @@ with the next row rather than respawned, so repo knowledge stays warm.
   walks, or the real host, and reuses the existing `build/`. The conductor and a
   Lane A subagent would be two writers in one tree, and the audio device and
   `build/` cannot be split anyway — so the roles are merged rather than raced.
-- **Lanes B and C — git worktrees, web-only.** `../scoopy-lane-b` on `lane/b`,
-  `../scoopy-lane-c` on `lane/c`. No CMake, no walks, no bundle.
+- **Lanes B, C and D — git worktrees, web-only.** `../scoopy-lane-b` on `lane/b`,
+  `../scoopy-lane-c` on `lane/c`, `../scoopy-lane-d` on `lane/d`. No CMake, no
+  walks, no bundle.
+
+**On lane count.** Three was chosen because one `npm test` already forks workers
+across all cores. A fourth is fine in practice because lanes spend most of their
+time reading, not running the suite — but note the real ceiling is **not CPU, it
+is the conductor**: integration is serial (merge → ctest → walk → bundle → commit
+→ ledger row), so past about four lanes the queue backs up on one process and the
+lanes wait on integration rather than the other way round.
 
 ### The rule that makes it safe
 
@@ -182,15 +190,15 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | — | — | idle |
-| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle, holding |
-| C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
+| A | main checkout (conductor) | — | — | integrating |
+| B | `../scoopy-lane-b` (`lane/b`) | **P3.5-E8g-d** → **E8g-e** | `companionEngine.ts`, `gridBackend.ts`, `browserLink.ts`, `CompanionPanel.tsx`, `useComposeBinding.ts`, `sampleDoors.ts` | in-progress |
+| C | `../scoopy-lane-c` (`lane/c`) | **P11-3a** — the scene queue that never fires | `web/src/audio/nativeAudio.ts` (+ `companionEngine.ts` READ-ONLY) | in-progress |
+| D | `../scoopy-lane-d` (`lane/d`) | **P9-5a** → **P7-K0a** | `web/src/plane/Strip.tsx`, `web/src/commands/keymap.ts`, `browserKeymap.ts` | in-progress |
 
-⚠️ **`web/src/panels/sampleDoors.ts` is contested territory** — E8a created it,
-E8b and E8g extended it, E8g-a republishes from it. It is the one module both
-compose surfaces share their sample doors through, which is deliberate (the
-alternative is the E8a defect by construction). Any row touching a compose
-sample door claims it.
+⚠️ **`companionEngine.ts` is claimed by B and read by C this cycle.** C is told to
+stop and ask before editing it. That is the pattern for a file two rows need: one
+owner, everyone else read-only, and the conflict surfaces as a question rather
+than as a merge.
 
 ⚠️ **Keep this table honest or it lies to the next session.** It went stale for
 a full cycle: it still read "B · P11-1 · in-progress" after B had been pulled off
