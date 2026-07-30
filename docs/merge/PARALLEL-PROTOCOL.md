@@ -182,8 +182,8 @@ dispatch is refused.
 
 | Lane | Tree | Row | Claimed paths | State |
 |---|---|---|---|---|
-| A | main checkout (conductor) | **P3.5-E10a** — re-measure P6's latency on Release | `slengine/`, `shell/tools/` | next |
-| B | `../scoopy-lane-b` (`lane/b`) | **P11-1 (SCOPED)** — three zones, `map ▾`, retire `compose`, rehome `HealthReadout`; `≡ panels` STAYS | `web/src/plane/Master.tsx`, `PlanePanel.tsx`, `plane.css`, `design/HealthReadout.tsx` | dispatched |
+| A | main checkout (conductor) | **P11-3a** — the scene queue that never fires in the real host | `web/src/audio/nativeAudio.ts` | next |
+| B | `../scoopy-lane-b` (`lane/b`) | — | — | idle |
 | C | `../scoopy-lane-c` (`lane/c`) | — | — | idle |
 
 ⚠️ **Keep this table honest or it lies to the next session.** It went stale for
