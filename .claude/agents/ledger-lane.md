@@ -18,6 +18,18 @@ tree** — never reach into the main checkout or a sibling lane's worktree. Run
 `git rev-parse --show-toplevel` if you are unsure where you are, and `cd` into
 your own tree before any command.
 
+**Start every new row by syncing your branch yourself:**
+
+```
+git reset --hard host-hygiene
+```
+
+Your previous row is already integrated upstream, so **reset, never merge** —
+merging re-applies the same patch from two directions and eventually conflicts.
+You do this, not the conductor: it cannot see your working tree and a handoff
+arriving is not proof you are finished. If you still have work in progress,
+commit or abandon it deliberately *before* resetting.
+
 ## The hard prohibitions
 
 These exist because the resources are shared and unshareable. Violating one

@@ -208,8 +208,22 @@ P11-5 while E8b was still uncommitted upstream, so E8b had to be cherry-picked
 out from under in-flight work instead of merged cleanly. Cheap this time; it
 will not always be.
 
-**Reset an idle lane to `host-hygiene` once its row is integrated** (`git reset
---hard host-hygiene`), rather than merging. The lane's commit is already
-upstream; merging re-applies the same patch from two directions and eventually
-conflicts. Only ever do this while the lane is idle — it discards uncommitted
-work.
+**The LANE resets itself; the conductor never resets a lane branch.** A lane's
+integrated commit is already upstream, so merging `host-hygiene` back re-applies
+the same patch from two directions and eventually conflicts — the branch must be
+reset rather than merged. But the reset belongs at the **start of the lane's next
+row**, run by the lane, as the first line of its brief:
+
+```
+git reset --hard host-hygiene      # in the lane's own worktree, before new work
+```
+
+⚠️ **Learned the hard way, 2026-07-30.** The conductor reset `lane/b` after
+Lane B's handoff arrived — and the lane was still working. It had an uncommitted
+edit live at that moment; it survived only because the reset happened to leave
+the working tree alone, and a `git reset --hard` would have discarded it
+silently. **A handoff arriving is not proof the lane is idle**: a lane that has
+returned one row may still be finishing follow-up work, and the conductor cannot
+see its working tree. Moving the reset into the lane removes the race entirely,
+because the only process that resets the branch is the one that knows whether it
+is done.
