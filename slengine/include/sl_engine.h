@@ -380,6 +380,27 @@ double sl_channel_send(const sl_engine* e, uint32_t channel, uint32_t send);
 void sl_channel_set_mute(sl_engine* e, uint32_t channel, uint32_t muted);
 uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel);
 
+/** Per-strip DRV (P3-X2) — STRIP-MODEL's "master DSP reaches every strip, not
+    just full decks", the core's own pre-sum deck drive stage one tier over.
+
+    `curve` 0 soft / 1 tanh / 2 hard / 3 fold (the core's MasterDriveCurve);
+    `amount` is an always-on input gain into a fixed 0 dBFS ceiling, clamped to
+    [1, 32] with 1.0 = OFF — bypassed as a branch, so an untouched strip keeps
+    the bit-exact identity path. Applied POST-element PRE-level, the deck
+    stage's own topology (drive before the fader: character constant while
+    fading). An unknown curve keeps the old curve; a non-finite amount is
+    ignored — the two are validated independently.
+
+    ⚠️ A gridDeck-sourced channel: this stage shapes only what is ROUTED INTO
+    the strip's channel. The DECK's own signal is driven by the core
+    (deckMasterDrive_, fed by the session document's masterClipper block), so a
+    grid strip's DRV control must write the DOCUMENT — the same projection rule
+    as level/sends, except the core's stage is document-fed rather than
+    live-set, so the projection happens at the document tier, not here. */
+void sl_channel_set_drive(sl_engine* e, uint32_t channel, uint32_t curve, double amount);
+uint32_t sl_channel_drive_curve(const sl_engine* e, uint32_t channel);
+double sl_channel_drive_amount(const sl_engine* e, uint32_t channel);
+
 /** THE MONITOR SWITCH — whether this strip's DEVICE INPUT reaches the channel.
     Default 0. Ramped like every other gain, so flipping it live is a 10 ms fade.
 

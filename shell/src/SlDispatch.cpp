@@ -271,6 +271,14 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                                 numProp(params, "level"));
             return ok(okFlag());
         }
+        // Per-strip DRV (P3-X2). Tape/input strips only by convention: a grid
+        // strip's DRV is the session document's masterClipper block (the core's
+        // per-deck stage is document-fed — see sl_engine.h's setDrive note).
+        if (action == "setDrive") {
+            sl_channel_set_drive(engine, ch, static_cast<uint32_t>(intProp(params, "curve")),
+                                 numProp(params, "amount", 1.0));
+            return ok(okFlag());
+        }
         return fail("slChannel: unknown action '" + action + "'");
     }
 

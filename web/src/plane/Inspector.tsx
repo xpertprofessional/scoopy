@@ -26,7 +26,8 @@ import { chipsOf, feedbackMs } from './cables.ts'
 import { channelLabel, useDeviceStore } from './devices.ts'
 import { send } from './send.ts'
 import { summarise, summaryLines } from './summary.ts'
-import { useMapStore, updateGridTempo, updateStrip } from '../state/mapStore.ts'
+import { useMapStore, liveSetDrive, updateGridTempo, updateStrip } from '../state/mapStore.ts'
+import { useCompanion } from '../store/companionEngine.ts'
 
 type GridPulse = DJPulseRelation
 
@@ -177,6 +178,15 @@ function StripInspector({
           </div>
         )}
       </section>
+
+      {/* DRIVE — P3-X2, on EVERY strip (STRIP-MODEL: "master DSP reaches every
+          strip, not just full decks"). One surface, two backings: a tape/input
+          strip's DRV is the channel tier's own stage (post-element, PRE-level —
+          character constant while fading); a grid strip's DRV is its SESSION
+          document's masterClipper block, because the core's per-deck stage is
+          document-fed and already drives that deck pre-sum (the no-double-gain
+          rule, at the document tier). Same knobs, whichever engine owns them. */}
+      <DriveSection link={link} strip={strip} />
 
       {/* TEMPO — a grid strip only, for the same reason `material` is a tape
           only: a pulse relation on a strip with no deck is meaningless, not
@@ -372,6 +382,77 @@ function StripInspector({
         </button>
       </section>
     </>
+  )
+}
+
+/** The four drive curves, in the core's own MasterDriveCurve order. */
+const DRIVE_CURVES = [
+  { id: 0, label: 'soft — rounded knee' },
+  { id: 1, label: 'tanh — tube saturation' },
+  { id: 2, label: 'hard — clean clip' },
+  { id: 3, label: 'fold — sine folder' },
+] as const
+
+/** Per-strip DRV (see the section comment above for the two backings). */
+function DriveSection({ link, strip }: { link: EngineLink | null; strip: Strip }) {
+  const grid = strip.element.kind === 'grid' ? strip.element : null
+  // A grid strip reads its SESSION's clipper block — subscribe so a MasterRow
+  // edit in the expanded tile moves this control too (one value, two doors).
+  const pattern = useCompanion((c) =>
+    grid ? (c.decks[grid.deck]?.session?.pattern ?? null) : null,
+  )
+  const curve = grid ? (typeof pattern?.masterClipperCurve === 'number' ? pattern.masterClipperCurve : null) : strip.drive.curve
+  const amount = grid ? (typeof pattern?.masterClipperDrive === 'number' ? pattern.masterClipperDrive : null) : strip.drive.amount
+  const setCurve = (c: number) => {
+    if (grid) useCompanion.getState().setMasterDriveCurve(c, grid.deck)
+    else liveSetDrive(link, strip, c, strip.drive.amount)
+  }
+  const setAmount = (a: number) => {
+    if (grid) useCompanion.getState().setMasterDrive(a, grid.deck)
+    else liveSetDrive(link, strip, strip.drive.curve, a)
+  }
+  // A grid strip whose session is not loaded has no document to edit yet —
+  // say so rather than rendering knobs that would silently write nowhere.
+  if (grid && (curve === null || amount === null)) {
+    return (
+      <section className="ins-section">
+        <h3 className="mono dim">drive</h3>
+        <p className="mono dim ins-hint">session not loaded — DRV lives in the session document</p>
+      </section>
+    )
+  }
+  return (
+    <section className="ins-section">
+      <h3 className="mono dim">drive</h3>
+      <label className="ins-field mono">
+        curve
+        <select value={curve ?? 0} onChange={(e) => setCurve(Number(e.target.value))}>
+          {DRIVE_CURVES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="ins-field mono">
+        amount
+        {/* 1 = off, and off is a bypass BRANCH in the engine — an untouched
+            strip keeps the bit-exact identity path. Pre-level, so pulling the
+            fader scales the driven signal instead of backing it off the curve. */}
+        <input
+          type="number"
+          min={1}
+          max={32}
+          step={0.1}
+          value={amount ?? 1}
+          onChange={(e) => {
+            const a = Number(e.target.value)
+            if (!Number.isFinite(a)) return
+            setAmount(Math.min(32, Math.max(1, a)))
+          }}
+        />
+      </label>
+    </section>
   )
 }
 

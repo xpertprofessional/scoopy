@@ -280,6 +280,13 @@ interface CompanionState {
   /** P3-D4-1a: the session's master clipper drive (document
       `masterClipperDrive`, 1..32). Same lane as setMasterVolume. */
   setMasterDrive(value: number, deck?: number): void;
+  /** P3-X2: the session's master clipper CURVE (document `masterClipperCurve`,
+      0 soft · 1 tanh · 2 hard · 3 fold). Same lane as setMasterDrive — this is
+      the grid half of the per-strip DRV surface: the strip Inspector's curve
+      select writes the SESSION for a grid strip, because the core's per-deck
+      drive stage is document-fed (a live channel-tier projection would be
+      stomped by the next republish). */
+  setMasterDriveCurve(curve: number, deck?: number): void;
   /**
    * Switch the active pattern scene. While playing, a plain select SCHEDULES the switch at the
    * next cycle boundary (the desktop's default switch mode); `immediate` runs it now
@@ -778,6 +785,21 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     const next: WorkingSession = {
       ...session,
       pattern: { ...session.pattern, masterClipperDrive: v },
+    };
+    set((s) => patchDeck(s, deck, { session: next }));
+    publish(get(), deck, deckOf(get(), deck).playing);
+    autosaver.schedule(next);
+  },
+
+  setMasterDriveCurve(curve, deck = 0) {
+    const session = deckOf(get(), deck).session;
+    if (!session) return;
+    // Only the four named curves — a wrong id would pick DSP the user never
+    // chose (the engine's own deck-scope guard, applied at the document too).
+    if (!Number.isInteger(curve) || curve < 0 || curve > 3) return;
+    const next: WorkingSession = {
+      ...session,
+      pattern: { ...session.pattern, masterClipperCurve: curve },
     };
     set((s) => patchDeck(s, deck, { session: next }));
     publish(get(), deck, deckOf(get(), deck).playing);

@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 5
+export const MAP_SCHEMA_VERSION = 6
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -176,6 +176,23 @@ export const StripSchema = z
     /** The four send LEVELS. Where each send GOES is a route (decision 5): the
         channel owns the level, the routing document owns the destination. */
     sends: z.tuple([z.number().min(0), z.number().min(0), z.number().min(0), z.number().min(0)]),
+    /** Per-strip DRV (P3-X2) — STRIP-MODEL's "master DSP reaches every strip".
+        Curve 0 soft · 1 tanh · 2 hard · 3 fold (the core's MasterDriveCurve);
+        amount [1, 32] with 1 = off, applied post-element PRE-level so character
+        stays constant while fading.
+
+        ⚠️ TAPE/INPUT STRIPS ONLY: a grid strip's DRV lives in its SESSION
+        document (masterClipperDrive/Curve — the core's per-deck stage is
+        document-fed), so for a grid strip this field stays at its default and
+        the Inspector's DRV control writes the session instead. One surface,
+        two backings — the same projection rule as level/sends, at the
+        document tier. */
+    drive: z
+      .object({
+        curve: z.number().int().min(0).max(3),
+        amount: z.number().min(1).max(32),
+      })
+      .strict(),
     recordArm: z.boolean(),
     /** THE MONITOR SWITCH — does this strip's device input reach its channel?
         Distinct from `mute`, which is the channel's OUTPUT: mute silences the
@@ -409,6 +426,28 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
               },
             }
           }),
+        },
+      }
+    },
+  },
+  5: {
+    to: 6,
+    name: 'strips gain the DRV stage (P3-X2)',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      const strips = Array.isArray(map.strips) ? (map.strips as RawMap[]) : []
+      return {
+        ...m,
+        map: {
+          ...map,
+          strips: strips.map((s) => ({
+            ...s,
+            // OFF, because that is what a v5 map SOUNDED like: there was no
+            // per-strip drive stage, and amount 1 is a bypass BRANCH in the
+            // engine (bit-exact, not a unity multiply), so an old map plays
+            // back identically. The house migration rule.
+            drive: { curve: 0, amount: 1 },
+          })),
         },
       }
     },

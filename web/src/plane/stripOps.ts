@@ -116,6 +116,9 @@ export function newStrip(channel: number, at: { x: number; y: number }): Strip {
     level: 1,
     mute: false,
     sends: [0, 0, 0, 0],
+    // DRV off — amount 1 is a bypass branch in the engine, so a fresh strip
+    // keeps the bit-exact identity path until someone reaches for character.
+    drive: { curve: 0, amount: 1 },
     recordArm: false,
     // ⚠️ NOT LISTENING YET, and this is the one place R-CREATE-2's "audible the
     // moment it exists" is deliberately not applied.

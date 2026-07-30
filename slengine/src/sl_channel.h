@@ -27,7 +27,13 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <vector>
+
+// P3-X2: the per-strip DRV stage reuses the core's own drive DSP — the
+// stretcher's reuse pattern, one tier over. Forward-declared (like sl_tape.h's
+// NativeBusStretcher) so this header stays free of the core's headers.
+namespace scoopyloops { struct NativeMasterDrive; }
 
 namespace sl {
 
@@ -159,6 +165,24 @@ struct Channel {
     std::atomic<double> send[kNumSends];
     std::atomic<uint32_t> mute{0};
 
+    /** Per-strip DRV (P3-X2) — STRIP-MODEL: "reaches every strip, not just full
+        decks". Curve 0 soft / 1 tanh / 2 hard / 3 fold (MasterDriveCurve);
+        amount is the always-on input gain into a fixed 0 dBFS ceiling, floored
+        at 1.0 = OFF (the deck stage's own convention: bypassed at DRV == 1.0
+        for a bit-identical pass-through).
+
+        Applied at the STRIP-MODEL tap point — post-element (element + routed
+        input), PRE-level — so character stays constant while fading, exactly
+        like the core's per-deck stage runs pre-crossfader.
+
+        ⚠️ A GRID-DECK channel's drive is NOT this field: the core already owns
+        that deck's drive (deckMasterDrive_, fed by the session document's
+        masterClipper block — the no-double-gain rule, same as level/sends).
+        This stage still shapes whatever is ROUTED INTO a grid strip's channel,
+        which is the only audio this tier carries for it. */
+    std::atomic<uint32_t> driveCurve{0};
+    std::atomic<double> driveAmount{1.0};
+
     /** THE MONITOR SWITCH — whether this strip's DEVICE INPUT reaches the
         channel. Default 0, and that default is the fix for a real bug.
 
@@ -246,6 +270,13 @@ public:
         so flipping it mid-performance is a 10 ms fade rather than a click. */
     void setMonitor(uint32_t ch, uint32_t on);
     uint32_t monitorOn(uint32_t ch) const;
+    /** Per-strip DRV (see Channel::driveCurve/driveAmount). An unknown curve id
+        keeps the old curve — a wrong curve would pick DSP the user never chose
+        (the deck-scope guard's own reasoning); amount is clamped to [1, 32],
+        the MasterRow's range, 1 = off. */
+    void setDrive(uint32_t ch, uint32_t curve, double amount);
+    uint32_t driveCurve(uint32_t ch) const;
+    double driveAmount(uint32_t ch) const;
 
     /** Read AND RESET this channel's output peak (see Channel::peakL). 0 for an
         out-of-range channel.
@@ -350,6 +381,15 @@ private:
                              uint32_t feedback, bool instant, bool markDefault);
 
     Channel channels_[kMaxChannels];
+    /** The DRV DSP, one instance per channel — NativeMasterDrive is stateful
+        (ADAA history per side), so sharing one would smear one strip's chord
+        slope into another's. Heap-held behind the forward declaration, the
+        sl_tape.h stretcher pattern; created at configure(). */
+    std::unique_ptr<scoopyloops::NativeMasterDrive> drive_[kMaxChannels];
+    /** Was channel c's drive engaged last block? Render-owned. Engage resets
+        the ADAA/oversampler history so stale state cannot spike (the core's
+        deckMasterDriveActive_ discipline, mirrored). */
+    bool driveActive_[kMaxChannels] = {};
     std::vector<float> outL_[kMaxChannels];
     std::vector<float> outR_[kMaxChannels];
     // The PREVIOUS block of each channel's output, kept only so a feedback edge

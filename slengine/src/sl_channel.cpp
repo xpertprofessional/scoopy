@@ -3,6 +3,7 @@
 #include "sl_channel.h"
 
 #include "sl_tape.h"
+#include "NativeMasterDrive.hpp" // per-strip DRV (P3-X2) — reused as-is, one instance per channel
 
 #include <algorithm>
 #include <cmath>
@@ -76,6 +77,13 @@ void ChannelBank::configure(double sampleRate, uint32_t maxBlockFrames) {
         inL_[c].assign(maxBlockFrames, 0.0f);
         inR_[c].assign(maxBlockFrames, 0.0f);
         mon_[c].assign(maxBlockFrames, 0.0f);
+        // The DRV DSP (P3-X2). Allocated here — the one place this bank may
+        // allocate — and merely RESET on a reconfigure, since drive history is
+        // scratch, not document (the params survive; they are atomics above).
+        if (drive_[c] == nullptr)
+            drive_[c] = std::make_unique<scoopyloops::NativeMasterDrive>();
+        drive_[c]->reset();
+        driveActive_[c] = false;
     }
     // ROUTES ARE NOT TOUCHED HERE, and that is the whole point of this comment.
     //
@@ -400,6 +408,26 @@ void ChannelBank::setMonitor(uint32_t ch, uint32_t on) {
     channels_[ch].monitor.store(on != 0 ? 1u : 0u, std::memory_order_relaxed);
 }
 
+void ChannelBank::setDrive(uint32_t ch, uint32_t curve, double amount) {
+    if (ch >= kMaxChannels) return;
+    // The two params are validated INDEPENDENTLY — a typo'd curve must not also
+    // discard a good amount. Unknown curve keeps the old one (a wrong curve is
+    // DSP the user never chose); a non-finite amount keeps the old one too.
+    if (curve <= 3u)
+        channels_[ch].driveCurve.store(curve, std::memory_order_relaxed);
+    if (std::isfinite(amount))
+        channels_[ch].driveAmount.store(std::clamp(amount, 1.0, 32.0),
+                                        std::memory_order_relaxed);
+}
+
+uint32_t ChannelBank::driveCurve(uint32_t ch) const {
+    return ch >= kMaxChannels ? 0u : channels_[ch].driveCurve.load(std::memory_order_relaxed);
+}
+
+double ChannelBank::driveAmount(uint32_t ch) const {
+    return ch >= kMaxChannels ? 1.0 : channels_[ch].driveAmount.load(std::memory_order_relaxed);
+}
+
 uint32_t ChannelBank::monitorOn(uint32_t ch) const {
     return ch >= kMaxChannels ? 0u : channels_[ch].monitor.load(std::memory_order_relaxed);
 }
@@ -615,6 +643,28 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
         for (uint32_t s = 0; s < kNumSends; ++s)
             tgtSend[s] = ch.send[s].load(std::memory_order_relaxed);
 
+        // Per-strip DRV (P3-X2), the core's own pre-sum deck stage mirrored one
+        // tier over: engaged strictly above the 1.0 floor (bypass is a branch,
+        // not a unity multiply — the bit-exact identity path survives), history
+        // reset on ENGAGE so stale ADAA state cannot spike, params refreshed
+        // per block. Decoupled topology with volume 1.0 and a 0 dBFS ceiling:
+        // the channel's LEVEL is the clean output gain and it stays where it
+        // is, applied AFTER the drive below — character constant while fading.
+        const double driveAmt = ch.driveAmount.load(std::memory_order_relaxed);
+        scoopyloops::NativeMasterDrive* drv = drive_[c].get();
+        const bool driveEngaged = driveAmt > 1.0 && drv != nullptr;
+        if (driveEngaged) {
+            if (!driveActive_[c]) drv->reset();
+            drv->setParameters(
+                static_cast<scoopyloops::MasterDriveCurve>(
+                    ch.driveCurve.load(std::memory_order_relaxed)),
+                /*volume*/ 1.0f,
+                /*threshold*/ 0.7f, /*softness*/ 0.4f,
+                static_cast<float>(driveAmt),
+                /*ceiling*/ 1.0f, /*oversample*/ 0, /*decoupled*/ true);
+        }
+        driveActive_[c] = driveEngaged;
+
         float* sendLane[kNumSends];
         for (uint32_t s = 0; s < kNumSends; ++s) sendLane[s] = lane(map.send[s]);
 
@@ -637,10 +687,21 @@ void ChannelBank::mixInto(float* const* lanes, uint32_t laneCount, uint32_t fram
             // sum is what "a strip can host a tape and take a live input" means
             // in the mixer, and it is why an input element needs no separate
             // code path — it is just a route with no element beside it.
-            const double inputL = (elemL != nullptr ? static_cast<double>(elemL[i]) : 0.0) +
-                                  static_cast<double>(routedL[i]);
-            const double inputR = (elemR != nullptr ? static_cast<double>(elemR[i]) : 0.0) +
-                                  static_cast<double>(routedR[i]);
+            double inputL = (elemL != nullptr ? static_cast<double>(elemL[i]) : 0.0) +
+                            static_cast<double>(routedL[i]);
+            double inputR = (elemR != nullptr ? static_cast<double>(elemR[i]) : 0.0) +
+                            static_cast<double>(routedR[i]);
+            // The DRV tap point — POST-element (element + routed), PRE-level.
+            // Only inside this branch does the sum narrow to float (the DSP's
+            // sample type); the disengaged path keeps its double arithmetic
+            // untouched, so bypass stays bit-exact rather than merely close.
+            if (driveEngaged) {
+                float fl = static_cast<float>(inputL);
+                float fr = static_cast<float>(inputR);
+                drv->processSample(fl, fr);
+                inputL = static_cast<double>(fl);
+                inputR = static_cast<double>(fr);
+            }
             // Bounded HERE, where feedback loops close — see kChannelCeiling.
             const float l = boundSample(inputL * g);
             const float r = boundSample(inputR * g);

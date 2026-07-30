@@ -749,6 +749,22 @@ uint32_t sl_channel_muted(const sl_engine* e, uint32_t channel) {
     return e == nullptr ? 0u : e->channels.muted(channel);
 }
 
+// No projectToCore here, and that is a decision, not an omission: the core's
+// per-deck drive is DOCUMENT-fed (deckSnap.masterClipper*, re-stamped by every
+// republish), so a live projection would be stomped by the next world publish.
+// A grid strip's DRV writes the session document instead (see sl_engine.h).
+void sl_channel_set_drive(sl_engine* e, uint32_t channel, uint32_t curve, double amount) {
+    if (e != nullptr) e->channels.setDrive(channel, curve, amount);
+}
+
+uint32_t sl_channel_drive_curve(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 0u : e->channels.driveCurve(channel);
+}
+
+double sl_channel_drive_amount(const sl_engine* e, uint32_t channel) {
+    return e == nullptr ? 1.0 : e->channels.driveAmount(channel);
+}
+
 void sl_channel_set_monitor(sl_engine* e, uint32_t channel, uint32_t on) {
     if (e != nullptr) e->channels.setMonitor(channel, on);
 }

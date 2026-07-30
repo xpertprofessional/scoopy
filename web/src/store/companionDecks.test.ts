@@ -117,6 +117,24 @@ describe("deck isolation — the property the increment is for", () => {
     expect(companionDeck(2).session).toBeNull();
   });
 
+  it("setMasterDriveCurve edits ONE deck's document and refuses an unknown curve (P3-X2)", () => {
+    useCompanion.getState().setMasterDriveCurve(1, 1);
+    const p1 = companionDeck(1).session?.pattern as Record<string, unknown>;
+    const p0 = companionDeck(0).session?.pattern as Record<string, unknown>;
+    expect(p1.masterClipperCurve).toBe(1);
+    // Deck isolation, same as setMasterDrive.
+    expect("masterClipperCurve" in p0).toBe(false);
+    // Only the four named curves — a wrong id is DSP the user never chose, so
+    // it is REFUSED (the engine's own deck-scope guard), not clamped.
+    useCompanion.getState().setMasterDriveCurve(7, 1);
+    useCompanion.getState().setMasterDriveCurve(1.5, 1);
+    const p1b = companionDeck(1).session?.pattern as Record<string, unknown>;
+    expect(p1b.masterClipperCurve).toBe(1);
+    // No session → a refusal-by-no-op, never a crash on an empty deck.
+    useCompanion.getState().setMasterDriveCurve(1, 2);
+    expect(companionDeck(2).session).toBeNull();
+  });
+
   it("beat repeat and reverse are PER-DECK DeckState — readable truth for the tile lamps (P3-D4-2)", () => {
     useCompanion.getState().setBeatRepeat(1, { startStep: 0, length: 2 });
     useCompanion.getState().setReverse(1, true);

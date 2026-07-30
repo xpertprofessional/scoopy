@@ -26,6 +26,7 @@ function strip(over: Partial<Strip> = {}): Strip {
     level: 1,
     mute: false,
     sends: [0, 0, 0, 0],
+    drive: { curve: 0, amount: 1 },
     recordArm: false,
     monitor: false,
     recordTap: null,
@@ -303,6 +304,53 @@ describe('map document', () => {
       expect(again.ok).toBe(true)
       if (!again.ok) return
       expect(again.migratedFrom).toBeUndefined()
+    })
+  })
+
+  describe('the v5 → v6 migration (strips gain the DRV stage, P3-X2)', () => {
+    /** A v5 document: a strip with no drive field. */
+    const v5Doc = () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ level: 0.7 })],
+      }) as unknown as {
+        schemaVersion: number
+        map: { strips: Record<string, unknown>[] }
+      }
+      doc.schemaVersion = 5
+      for (const s of doc.map.strips) delete s.drive
+      return doc
+    }
+
+    it('opens a v5 map SOUNDING THE SAME — DRV off, and off is a bypass branch', () => {
+      const r = loadMap(v5Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(5)
+      // amount 1 = the engine's bypass BRANCH (bit-exact), so a v5 map plays
+      // back identically — the house migration rule.
+      expect(r.map.strips[0]?.drive).toEqual({ curve: 0, amount: 1 })
+      // and the fields around it are untouched
+      expect(r.map.strips[0]?.level).toBe(0.7)
+    })
+
+    it('a migrated map re-saves as clean idempotent v6', () => {
+      const r = loadMap(v5Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const again = loadMap(JSON.parse(JSON.stringify(saveMap(r.map))))
+      expect(again.ok).toBe(true)
+      if (!again.ok) return
+      expect(again.migratedFrom).toBeUndefined()
+    })
+
+    it('refuses an out-of-range drive rather than clamping it silently', () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ drive: { curve: 2, amount: 8 } })],
+      }) as unknown as { map: { strips: { drive: { amount: number } }[] } }
+      doc.map.strips[0]!.drive.amount = 99
+      expect(loadMap(doc).ok).toBe(false)
     })
   })
 

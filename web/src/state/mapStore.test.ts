@@ -64,6 +64,7 @@ function strip(over: Partial<Strip> = {}): Strip {
     level: 1,
     mute: false,
     sends: [0, 0, 0, 0],
+    drive: { curve: 0, amount: 1 },
     recordArm: false,
     monitor: false,
     recordTap: null,

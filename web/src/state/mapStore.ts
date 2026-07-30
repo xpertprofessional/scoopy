@@ -205,6 +205,14 @@ async function issue(link: EngineLink, op: EngineOp): Promise<void> {
         level: op.level,
       });
       return;
+    case "channelSetDrive":
+      await ask(link, "slChannel", {
+        action: "setDrive",
+        channel: op.channel,
+        curve: op.curve,
+        amount: op.amount,
+      });
+      return;
     case "tapeSetLoop":
       await ask(link, "slTape", {
         action: "setLoop",
@@ -534,6 +542,24 @@ export function liveSetRate(link: EngineLink | null, strip: Strip, rate: number)
   if (!link) return;
   coalesce(`rate/${tape}`, () => {
     send(link, "slTape", { action: "setRate", tape, rate });
+  });
+}
+
+/** Per-strip DRV (P3-X2). Coalesced like level — an amount drag is continuous.
+    TAPE/INPUT strips only: a grid strip's DRV writes the session DOCUMENT
+    (companion setMasterDrive/setMasterDriveCurve — the core's per-deck stage is
+    document-fed), so the Inspector routes by kind and never calls this for a
+    grid strip. The channel-tier stage would only shape routed input there. */
+export function liveSetDrive(
+  link: EngineLink | null,
+  strip: Strip,
+  curve: number,
+  amount: number,
+): void {
+  updateStrip(strip.key, (s) => ({ ...s, drive: { curve, amount } }));
+  if (!link) return;
+  coalesce(`drive/${strip.channel}`, () => {
+    send(link, "slChannel", { action: "setDrive", channel: strip.channel, curve, amount });
   });
 }
 

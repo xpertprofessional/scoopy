@@ -252,6 +252,71 @@ int main() {
     for (uint32_t i = 0; i < kQ; ++i) CHECK(std::abs(drained[i * 2] - 1.0f) < 1e-5f);
     sl_tape_record_stop(e, 1);
 
+    // --- PER-STRIP DRV (P3-X2) ----------------------------------------------
+    // The core's pre-sum deck drive stage, one tier over: post-element,
+    // PRE-level, engaged strictly above the 1.0 floor. Assertions are the
+    // audible laws, not the DSP internals — those live with the core.
+    // Clear the stage: only the drive channel contributes to main below.
+    CHECK(sl_channel_set_source(e, 0, 0 /* none */, 0) == 1);
+
+    // Null-safety and hostile values at the boundary.
+    sl_channel_set_drive(nullptr, 2, 1, 8.0);
+    CHECK(sl_channel_drive_curve(nullptr, 2) == 0);
+    CHECK(sl_channel_drive_amount(nullptr, 2) == 1.0);
+    CHECK(sl_channel_drive_curve(e, sl_channel_count()) == 0);
+    CHECK(sl_channel_drive_amount(e, sl_channel_count()) == 1.0);
+
+    // DC 0.25 on tape 2 — quiet enough that a driven copy is DISTINGUISHABLE
+    // (tanh(0.25 × 8) ≈ 0.964; DC 1.0 would saturate to ~1.0 either way).
+    std::vector<float> dcq(kLen, 0.25f);
+    const float* planarq[1] = {dcq.data()};
+    CHECK(sl_tape_load(e, 2, 1, kLen, planarq, kRate) == 1);
+    sl_tape_set_loop(e, 2, 1, 0, kLen);
+    sl_tape_trigger(e, 2, 0);
+    CHECK(sl_channel_set_source(e, 2, 1 /* tape */, 2) == 1);
+
+    // OFF is the default, and off is BIT-EXACT — the identity path survives.
+    for (int b = 0; b < 40; ++b) render();
+    for (uint32_t i = 0; i < kQ; ++i) CHECK(lane[kMainL][i] == 0.25f);
+
+    // Engaged: the strip is audibly DRIVEN. tanh curve, amount 8 → steady-state
+    // DC lands on tanh(2) ≈ 0.9640 (the ADAA chord degenerates to the curve
+    // itself on constant input, after the one-sample engage transient).
+    sl_channel_set_drive(e, 2, 1 /* tanh */, 8.0);
+    CHECK(sl_channel_drive_curve(e, 2) == 1);
+    CHECK(sl_channel_drive_amount(e, 2) == 8.0);
+    for (int b = 0; b < 4; ++b) render();
+    const float driven = std::tanh(2.0f);
+    for (uint32_t i = 0; i < kQ; ++i) CHECK(std::abs(lane[kMainL][i] - driven) < 1e-3f);
+
+    // PRE-level, the tap-point law: pulling the fader scales the DRIVEN signal
+    // (0.5 × tanh(2) ≈ 0.482) — it does not back the material off the curve
+    // (tanh(0.25 × 0.5 × 8) = tanh(1) ≈ 0.762 would be the wrong topology).
+    // Character constant while fading, exactly like the deck's own stage.
+    sl_channel_set_level(e, 2, 0.5);
+    for (int b = 0; b < 40; ++b) render();
+    for (uint32_t i = 0; i < kQ; ++i) CHECK(std::abs(lane[kMainL][i] - 0.5f * driven) < 1e-3f);
+    sl_channel_set_level(e, 2, 1.0);
+
+    // Independent validation: a typo'd curve keeps the old curve but the good
+    // amount lands; a NaN amount keeps the old amount but the good curve lands;
+    // out-of-range amounts clamp to the MasterRow's [1, 32].
+    sl_channel_set_drive(e, 2, 9 /* no such curve */, 4.0);
+    CHECK(sl_channel_drive_curve(e, 2) == 1);
+    CHECK(sl_channel_drive_amount(e, 2) == 4.0);
+    sl_channel_set_drive(e, 2, 2, std::nan(""));
+    CHECK(sl_channel_drive_curve(e, 2) == 2);
+    CHECK(sl_channel_drive_amount(e, 2) == 4.0);
+    sl_channel_set_drive(e, 2, 2, 100.0);
+    CHECK(sl_channel_drive_amount(e, 2) == 32.0);
+    sl_channel_set_drive(e, 2, 2, 0.0);
+    CHECK(sl_channel_drive_amount(e, 2) == 1.0); // floor = off
+
+    // Disengaged again: back to the BIT-EXACT identity path, not merely close.
+    sl_channel_set_drive(e, 2, 1, 1.0);
+    for (int b = 0; b < 40; ++b) render();
+    for (uint32_t i = 0; i < kQ; ++i) CHECK(lane[kMainL][i] == 0.25f);
+
     sl_engine_destroy(e);
     std::printf("sl_channel_test OK\n");
     return 0;

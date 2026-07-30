@@ -28,6 +28,7 @@ export type EngineOp =
   | { op: 'channelSetMute'; channel: number; muted: boolean }
   | { op: 'channelSetMonitor'; channel: number; on: boolean }
   | { op: 'channelSetSend'; channel: number; send: number; level: number }
+  | { op: 'channelSetDrive'; channel: number; curve: number; amount: number }
   | { op: 'tapeLoadTake'; tape: number; takeRef: string }
   | { op: 'tapeSetLoop'; tape: number; enabled: boolean; start: number; end: number }
   | { op: 'tapeSetRate'; tape: number; rate: number }
@@ -180,6 +181,17 @@ export function planApply(map: PlaneMap): EngineOp[] {
     // and an input strip silently monitoring because the last set did is the
     // feedback bug wearing a different hat.
     ops.push({ op: 'channelSetMonitor', channel: strip.channel, on: strip.monitor })
+    // DRV applied explicitly for the same reason as the monitor: a running
+    // engine inherits the previous map's drive, and a strip arriving quietly
+    // DRIVEN because the last set was is the same bug at a different knob.
+    // (For a grid strip this is a no-op at the channel tier — its deck's drive
+    // rides the session document — but the channel still shapes routed input.)
+    ops.push({
+      op: 'channelSetDrive',
+      channel: strip.channel,
+      curve: strip.drive.curve,
+      amount: strip.drive.amount,
+    })
     strip.sends.forEach((level, send) =>
       ops.push({ op: 'channelSetSend', channel: strip.channel, send, level }),
     )

@@ -13,6 +13,7 @@ function strip(over: Partial<Strip> = {}): Strip {
     level: 1,
     mute: false,
     sends: [0, 0, 0, 0],
+    drive: { curve: 0, amount: 1 },
     recordArm: false,
     monitor: false,
     recordTap: null,
@@ -78,6 +79,7 @@ describe('planApply', () => {
           channel: 2,
           level: 0.5,
           sends: [0.25, 0, 0, 0],
+          drive: { curve: 0, amount: 1 },
           element: { ...gridEl(1, 's', 120), syncToMaster: false },
         }),
       ],
@@ -110,6 +112,31 @@ describe('planApply', () => {
       { op: 'channelSetMonitor', channel: 0, on: false },
       { op: 'channelSetMonitor', channel: 1, on: true },
     ])
+  })
+
+  it('applies DRV explicitly, even at its off default (P3-X2)', () => {
+    // Same law as the monitor: a running engine inherits the previous map's
+    // drive, so a strip that omitted the op would arrive quietly DRIVEN
+    // because the last set was.
+    const map: PlaneMap = {
+      ...emptyMap(),
+      strips: [
+        strip({ key: 'a', channel: 0 }),
+        strip({ key: 'b', channel: 1, drive: { curve: 1, amount: 8 } }),
+      ],
+    }
+    const ops = planApply(map).filter((o) => o.op === 'channelSetDrive')
+    expect(ops).toEqual([
+      { op: 'channelSetDrive', channel: 0, curve: 0, amount: 1 },
+      { op: 'channelSetDrive', channel: 1, curve: 1, amount: 8 },
+    ])
+    // And AFTER the binding, like level/sends — a drive written before the
+    // bind would land on whatever the channel carried before.
+    const all = planApply(map)
+    const bind = indexOfOp(all, (o) => o.op === 'channelSetSource')
+    const drive = indexOfOp(all, (o) => o.op === 'channelSetDrive')
+    expect(bind).toBeGreaterThanOrEqual(0)
+    expect(bind).toBeLessThan(drive)
   })
 
   it('adds every route AFTER all channel state', () => {
