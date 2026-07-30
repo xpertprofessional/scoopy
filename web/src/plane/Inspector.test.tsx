@@ -78,7 +78,7 @@ describe('the DRV section (P3-X2)', () => {
           syncToMaster: false,
           tempoMode: 'timeStretch',
           pulseRelation: '1:1',
-          transpose: 0,
+          transpose: 0, pitchMode: false,
         },
       }),
     )

@@ -20,9 +20,10 @@
  * keyed by track only, so expanded tiles share one ⌘Z timeline — same as DJ
  * mode on the desktop.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { BrowserLink } from '../browserLink.ts'
+import { DeckSyncRow, DeckToolbarRow, DeckViewRow } from './deckRows.tsx'
 import type { EngineLink } from '../engineLink.ts'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
@@ -160,20 +161,72 @@ export function useDeckTileBinding(
  */
 export function DeckFace({
   link,
+  strip,
   element,
   masterBpm,
+  sessions = [],
+  onLoadSession,
+  onDropElement,
+  doubleTargets = [],
+  onDouble,
+  locked = false,
 }: {
   link: EngineLink | null
+  strip: StripDoc
   element: GridElement
   masterBpm: number
+  sessions?: { name: string }[]
+  onLoadSession?: (name: string) => void
+  onDropElement?: () => void
+  doubleTargets?: { key: string; label: string; deck: number }[]
+  onDouble?: (targetDeck: number) => void
+  /** P3-C2: a compose window owns this deck — the rows lock with it. */
+  locked?: boolean
 }) {
   const { session, scene } = useDeckTileBinding(link, element, masterBpm)
   // STABLE identity (the DjPanel DeckSlot rule): GridPanel keys its topic
   // subscriptions off `source`, so a fresh object each render would tear down
   // and re-subscribe every topic every frame.
   const source = useMemo(() => djSource(element.deck), [element.deck])
+  // GRID/PERF — the tile's own view state. SESSION LIFETIME by user ruling
+  // (2026-07-31): the donor persists gridHidden as a UI pref, and a follow-up
+  // row carries it into the MAPPERF overlay if it itches.
+  const [cellsHidden, setCellsHidden] = useState(false)
+  const [performActive, setPerformActive] = useState(false)
+
+  // PERF rides the meta topic (GridPanel reads `meta.performActive`), so the
+  // toggle has to reach the backend rather than the panel — the same lane the
+  // keyboard claim uses.
+  const browserLink = link instanceof BrowserLink ? link : null
+  useEffect(() => {
+    browserLink?.djGridBackend(element.deck).setMetaFacts({ performActive })
+  }, [browserLink, element.deck, performActive])
+
+  const rowProps = {
+    strip,
+    element,
+    link,
+    masterBpm,
+    sessions,
+    onLoadSession,
+    onDropElement,
+    doubleTargets,
+    onDouble,
+    locked,
+    cellsHidden,
+    onToggleCells: () => setCellsHidden((v) => !v),
+    performActive,
+    onTogglePerform: () => setPerformActive((v) => !v),
+  }
+
   return (
     <>
+      {/* THE CLASSIC DECK ROWS, above the grid — the donor's deck block on this
+          app's lanes (B1 · STRIP-DECK.md). Rebuilt rather than mounted from
+          TransportPanel, whose every verb is unanswered (D-SL-DECKFULL-01). */}
+      <DeckToolbarRow {...rowProps} />
+      <DeckSyncRow {...rowProps} />
+      <DeckViewRow {...rowProps} />
       <div
         className="strip-deckface"
         data-no-drag
@@ -184,7 +237,7 @@ export function DeckFace({
         // user's first real-host complaint, 2026-07-29).
         onWheel={(e) => e.stopPropagation()}
       >
-        <GridPanel link={link} source={source} />
+        <GridPanel link={link} source={source} cellsHidden={cellsHidden} />
       </div>
       <LcmBar link={link} deck={element.deck} session={session} scene={scene} />
     </>

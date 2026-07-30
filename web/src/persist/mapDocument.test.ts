@@ -60,6 +60,7 @@ const grid = () => ({
   tempoMode: 'timeStretch' as const,
   pulseRelation: 'auto' as const,
   transpose: 0,
+  pitchMode: false,
 })
 
 describe('map document', () => {
@@ -227,6 +228,58 @@ describe('map document', () => {
         strips: [strip({ element: tape(true, 't1') })],
       }) as unknown as { schemaVersion: number }
       doc.schemaVersion = 3
+      const r = loadMap(doc)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.map.strips[0]?.element.kind).toBe('tape')
+    })
+  })
+
+  describe('the v8 → v9 migration (a grid strip gains its TP mode, B1/P7-T2)', () => {
+    /** A v8 document: a grid strip with no `pitchMode` field at all. */
+    const v8Doc = () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: grid() })],
+      }) as unknown as {
+        schemaVersion: number
+        map: { strips: { element: Record<string, unknown> }[] }
+      }
+      doc.schemaVersion = 8
+      for (const s of doc.map.strips) delete s.element.pitchMode
+      return doc
+    }
+
+    it('opens a v8 map BEHAVING THE SAME — TP mode off, so nothing excludes', () => {
+      const r = loadMap(v8Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(8)
+      const el = r.map.strips[0]?.element
+      if (el?.kind !== 'grid') return
+      // v8 had no exclusion at all: sync and transpose were independent and
+      // both were commonly on. `true` would silently drop one of them the next
+      // time an old map was opened — a migration that changes how a saved set
+      // plays is not a migration (the v3→v4 rule, applied again).
+      expect(el.pitchMode).toBe(false)
+    })
+
+    it('refuses a pitchMode that is not a boolean rather than coercing it', () => {
+      // The field is a MODE SWITCH, so a truthy string would read as "on" and
+      // silently drop someone's sync. The schema is strict; this pins that the
+      // strictness reaches this field.
+      const doc = v8Doc()
+      doc.schemaVersion = 9
+      for (const s of doc.map.strips) s.element.pitchMode = 'yes'
+      expect(loadMap(doc).ok).toBe(false)
+    })
+
+    it('leaves a TAPE strip alone', () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: tape(true, 't1') })],
+      }) as unknown as { schemaVersion: number }
+      doc.schemaVersion = 8
       const r = loadMap(doc)
       expect(r.ok).toBe(true)
       if (!r.ok) return

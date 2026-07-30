@@ -392,7 +392,7 @@ describe('the deck tile (P3-D4-1, D-SL-MORPH-01)', () => {
   })
 })
 
-describe('the deck verbs in the tile header (P3-D4-2)', () => {
+describe('the classic deck rows in the tile (P3-D4-2, rebuilt by B1)', () => {
   const tile = (over: Partial<StripDoc> = {}, props: Record<string, unknown> = {}) =>
     render(
       base({
@@ -403,16 +403,23 @@ describe('the deck verbs in the tile header (P3-D4-2)', () => {
       props,
     )
 
-  it('the expanded tile carries the verb row — ▶ REV BR scale nudge SAVE ⏏', () => {
+  it('the expanded tile carries the deck rows — the donor block, every verb live', () => {
     const html = tile()
-    expect(html).toContain('strip-deckverbs')
-    for (const verb of ['▶', 'REV', 'BR', 'SAVE', '⏏', '‹', '›']) expect(html).toContain(verb)
-    // …and the LCM bar sits in the tile.
+    // The verbs moved OUT of the header span (`strip-deckverbs`) and into three
+    // rows of their own when the tile grew from seven controls to eighteen.
+    expect(html).toContain('deckrow')
+    expect(html).not.toContain('strip-deckverbs')
+    // Row 1's transport, row 2's hand controls, row 3's view switches.
+    for (const verb of ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏']) expect(html).toContain(verb)
+    for (const verb of ['TR', 'TP', 'WIN', 'BR', 'REV', '‹', '›']) expect(html).toContain(verb)
+    for (const verb of ['GRID', 'PERF']) expect(html).toContain(verb)
+    // …and the LCM bar still sits in the tile.
     expect(html).toContain('strip-lcm')
   })
 
   it('the collapsed strip carries NONE of it — the master bar already fans BR/REV', () => {
     const html = render(base({ element: newGridElement(0, 'ses', 120) }))
+    expect(html).not.toContain('deckrow')
     expect(html).not.toContain('strip-deckverbs')
     expect(html).not.toContain('strip-lcm')
   })
@@ -430,9 +437,23 @@ describe('the deck verbs in the tile header (P3-D4-2)', () => {
 
   it('the composing lock disables the verbs — one publisher at a time', () => {
     const html = tile({}, { composing: true })
-    // Every sdv button except SAVE renders disabled under the lock.
-    const disabledCount = (html.match(/class="sdv mono[^"]*" disabled=""/g) ?? []).length
-    expect(disabledCount).toBeGreaterThanOrEqual(5)
+    // Every deck-row button except SAVE renders disabled under the lock. The
+    // count is a floor rather than an equality on purpose: the rows grow, and a
+    // pin that has to be re-counted every time one does would be re-fitted to
+    // whatever shipped instead of asserting the property.
+    const disabledCount = (html.match(/class="dr mono[^"]*" disabled=""/g) ?? []).length
+    expect(disabledCount).toBeGreaterThanOrEqual(10)
+    // …and it SAYS why, wherever it is met.
+    expect(html).toContain('editing in the compose window')
+  })
+
+  it('SAVE stays live under the lock — flushing publishes nothing', () => {
+    // The one deliberate exception: a pending write is exactly what you want
+    // flushed while another window is editing, and SAVE cannot race a publisher
+    // because it does not publish.
+    const html = tile({}, { composing: true })
+    const saveButton = html.match(/<button[^>]*>SAVE<\/button>/)?.[0] ?? ''
+    expect(saveButton).not.toContain('disabled')
   })
 })
 

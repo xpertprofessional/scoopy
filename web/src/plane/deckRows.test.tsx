@@ -1,0 +1,148 @@
+/**
+ * THE DECK ROWS — that every control on them is live, and that the ones which
+ * cannot act say why.
+ *
+ * The bundle exists because `TransportPanel`'s ported deck block speaks nine
+ * verbs no host answers. So the property worth pinning is not "the buttons
+ * render" — it is that each one reaches a lane that exists, and that a disabled
+ * control TEACHES rather than just greying out. Rendered to static markup like
+ * `Strip.test.tsx` does (no jsdom in this suite — P3.5-E8g-f).
+ */
+import { describe, expect, it, beforeEach } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+import { DeckSyncRow, DeckToolbarRow, DeckViewRow, type DeckRowsProps } from './deckRows.tsx'
+import { newGridElement } from './stripOps.ts'
+import { MAX_DECKS, idleDeck, useCompanion } from '../store/companionEngine.ts'
+import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+
+const element = () => newGridElement(0, 'ses', 120)
+
+const strip = (over: Partial<StripDoc> = {}): StripDoc =>
+  ({
+    key: 'k',
+    name: 'beach',
+    channel: 0,
+    level: 1,
+    monitor: false,
+    cell: { x: 0, y: 0, w: 692, h: 612 },
+    drive: { curve: 0, amount: 1 },
+    element: element(),
+    sends: [0, 0, 0, 0],
+    muted: false,
+    input: null,
+    recordTap: null,
+    sessionPerf: {},
+    ...over,
+  }) as unknown as StripDoc
+
+const props = (over: Partial<DeckRowsProps> = {}): DeckRowsProps => ({
+  strip: strip(),
+  element: element(),
+  link: null,
+  masterBpm: 120,
+  ...over,
+})
+
+const html = (node: React.ReactElement) => renderToStaticMarkup(node)
+
+beforeEach(() => {
+  useCompanion.setState({ decks: Array.from({ length: MAX_DECKS }, idleDeck) })
+})
+
+describe('row 1 — the toolbar', () => {
+  it('carries the donor block: OPEN · ■ · ▶ · ▸¹ · » · DBL · SAVE · ⏏', () => {
+    const out = html(<DeckToolbarRow {...props()} />)
+    for (const verb of ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏'])
+      expect(out).toContain(verb)
+  })
+
+  it('disables the transport verbs with NO SESSION rather than firing into nothing', () => {
+    const out = html(<DeckToolbarRow {...props()} />)
+    // Every deck verb needs a loaded deck; the store starts idle here.
+    expect((out.match(/disabled=""/g) ?? []).length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('says WHY DBL cannot fire, instead of offering a menu onto nothing', () => {
+    // The empty-target case, which is the one the plane hands over most often
+    // (every other grid strip playing, or none loaded). It must read as a
+    // reason, not as a grey button.
+    const out = html(<DeckToolbarRow {...props({ doubleTargets: [] })} />)
+    expect(out).toMatch(/nothing loaded to double|DBL needs a free grid strip/)
+  })
+
+  it('locks every writing verb behind the compose window, and SAVE stays live', () => {
+    const out = html(<DeckToolbarRow {...props({ locked: true })} />)
+    expect(out).toContain('editing in the compose window')
+    // SAVE flushes a pending write and publishes nothing, so it is the one verb
+    // that is MORE useful under the lock, not less.
+    expect(out.match(/<button[^>]*>SAVE<\/button>/)?.[0] ?? '').not.toContain('disabled')
+  })
+})
+
+/**
+ * ⚠️ WHAT THESE PINS CANNOT SEE, and why the store cases are pinned elsewhere.
+ *
+ * `renderToStaticMarkup` is a SERVER render, and zustand v5 answers a server
+ * render from `getInitialState()` — not from the live store. So a
+ * `useCompanion.setState` here is invisible to the component: every
+ * store-derived title renders at its default no matter what the test sets.
+ *
+ * That is not worked around with a fake, because a fake thin enough to pass
+ * either way is a green gate that cannot see the defect (the P3.5-E8g-c
+ * lesson). The store-dependent halves are pinned where they are real instead:
+ * one-shot's two branches in `audio/deckTransport.test.ts`, DBL's three
+ * refusals in `store/companionDecks.test.ts`. What is left here is what the ROW
+ * itself decides — presence, the teach-strings, and the lock.
+ *
+ * The real fix is a mount-level renderer, which this suite does not have
+ * (P3.5-E8g-f, owner: user/conductor).
+ */
+
+describe('row 2 — sync, pulse, TR, TP, WIN, BR, REV', () => {
+  it('carries every hand control', () => {
+    const out = html(<DeckSyncRow {...props()} />)
+    for (const verb of ['FREE', 'TR', 'TP', 'WIN', 'BR', 'REV']) expect(out).toContain(verb)
+  })
+
+  it('reads FREE unsynced and SYNC synced — the state IS the label', () => {
+    expect(html(<DeckSyncRow {...props()} />)).toContain('FREE')
+    const synced = { ...element(), syncToMaster: true }
+    const out = html(<DeckSyncRow {...props({ element: synced, strip: strip({ element: synced }) })} />)
+    expect(out).toContain('SYNC')
+  })
+
+  it('teaches that TP mode is what makes SYNC and TR exclusive', () => {
+    expect(html(<DeckSyncRow {...props()} />)).toContain('SYNC and TR may both run')
+    const tp = { ...element(), pitchMode: true }
+    const out = html(<DeckSyncRow {...props({ element: tp, strip: strip({ element: tp }) })} />)
+    expect(out).toContain('SYNC and TR exclude each other')
+  })
+
+  it('the BR shift TEACHES its two preconditions rather than only greying out', () => {
+    // Both donor guards are no-ops, so the control stays put (L2: fill, never
+    // presence) — which only works if it says what it is waiting for.
+    const out = html(<DeckSyncRow {...props()} />)
+    expect(out).toContain('latch BR first')
+  })
+
+  it('nudge on a FREE deck explains that the law bends the SYNCED target', () => {
+    expect(html(<DeckSyncRow {...props()} />)).toContain('turn SYNC on first')
+  })
+})
+
+describe('row 3 — the view switches', () => {
+  it('carries GRID and PERF', () => {
+    const out = html(<DeckViewRow {...props({ onToggleCells: () => {}, onTogglePerform: () => {} })} />)
+    expect(out).toContain('GRID')
+    expect(out).toContain('PERF')
+  })
+
+  it('SAYS the scene verbs are not here yet, rather than showing five dead ones', () => {
+    // P7-T3 asks for S·R·CU·SCN·MUTE beside the pads. Every one reaches
+    // patternScene/sceneOverride, which no host answers — so they are B2's, and
+    // the row admits it instead of rendering controls that do nothing.
+    const out = html(<DeckViewRow {...props()} />)
+    expect(out).toContain('scene switch modes · pin · mute arrive with the scene binding')
+  })
+})

@@ -221,8 +221,27 @@ check('the deck tile hosts the real GridPanel at DJ density',
   (await page.$('.strip-deckface .track-strips.density-dj')) !== null)
 check('the tile\'s MasterRow is scoopy\'s own (BPM · VOL · DRV — P3-D4-1a made it real)',
   (await page.$('.strip-deckface .master-row')) !== null)
-check('the header carries the deck verbs (▶ REV BR · nudge · SAVE · ⏏ — P3-D4-2)',
-  (await page.$('.strip-deckverbs')) !== null)
+// THE CLASSIC DECK ROWS (B1 · P7-T1/T2/T3). The verbs used to be a span in the
+// tile header (`strip-deckverbs`); they are three rows of their own now that
+// there are eighteen of them rather than seven. Asserted BY CONTENT and not
+// only by container, because "a div exists" is exactly the check that would
+// still pass if every button inside it had gone.
+check('the tile carries the three classic deck rows (B1 · P7-T1/T2/T3)',
+  (await page.$$('.deckrow')).length === 3)
+{
+  const rows = (await page.textContent('.deckrow-toolbar')) ?? ''
+  check('the toolbar row carries the donor block (OPEN ■ ▶ ▸¹ » DBL SAVE ⏏)',
+    ['OPEN', '■', '▶', '▸¹', '»', 'DBL', 'SAVE', '⏏'].every((v) => rows.includes(v)), rows)
+  const sync = (await page.textContent('.deckrow-sync')) ?? ''
+  check('the sync row carries SYNC/FREE · TR · TP · WIN · BR · REV',
+    ['TR', 'TP', 'WIN', 'BR', 'REV'].every((v) => sync.includes(v)) &&
+      (sync.includes('SYNC') || sync.includes('FREE')), sync)
+  const view = (await page.textContent('.deckrow-view')) ?? ''
+  check('the view row carries GRID and PERF',
+    view.includes('GRID') && view.includes('PERF'), view)
+}
+check('the header no longer carries the retired verb span',
+  (await page.$('.strip-deckverbs')) === null)
 check('the LCM bar sits between the deck rows and the channel row (P3-D4-2)',
   (await page.$('.strip-lcm')) !== null)
 check('the panel is not stuck waiting for state',

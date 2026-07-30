@@ -35,7 +35,7 @@ const gridEl = (deck: number, sessionId: string, bpm: number) =>
     syncToMaster: false,
     tempoMode: 'timeStretch',
     pulseRelation: 'auto',
-    transpose: 0,
+    transpose: 0, pitchMode: false,
   }) as const
 
 const indexOfOp = (ops: EngineOp[], pred: (o: EngineOp) => boolean) => ops.findIndex(pred)
@@ -263,7 +263,7 @@ describe('planApply', () => {
       ...emptyMap(),
       strips: [
         strip({
-          element: { ...gridEl(1, 's', 120), tempoMode: 'timePitch', transpose: -3 },
+          element: { ...gridEl(1, 's', 120), tempoMode: 'timePitch', transpose: -3, pitchMode: false },
         }),
       ],
     }

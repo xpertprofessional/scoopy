@@ -63,6 +63,7 @@ export function Plane({
   onOpenMatrix,
   onLoadSession,
   onDropElement,
+  onDouble,
   onCompose,
   composingDecks,
   onRecordIntoLooper,
@@ -75,6 +76,8 @@ export function Plane({
       owns the map and can refuse when all three decks are taken. */
   onLoadSession?: (stripKey: string, sessionId: string) => void
   onDropElement?: (stripKey: string) => void
+  /** DBL — clone `stripKey`'s session onto the strip owning `targetDeck`. */
+  onDouble?: (stripKey: string, targetDeck: number) => void
   /** Open the composer beside the map, bound to a deck. */
   onCompose?: (deck: number) => void
   /** P3-C2: decks whose publishes a compose window owns — their strips lock. */
@@ -645,6 +648,29 @@ export function Plane({
               sessions={sessions}
               onLoadSession={(id) => onLoadSession?.(s.key, id)}
               onDropElement={() => onDropElement?.(s.key)}
+              // DBL'S TARGETS, resolved HERE because this is the only place
+              // that can see every strip (user ruling 2026-07-31: the double
+              // asks which strip rather than guessing, since D-SL-MORPH-01 left
+              // no "other deck" to mean). Eligible = another grid strip whose
+              // deck is not playing — the donor's "destination busy" refusal,
+              // applied before the menu rather than after the press, so a
+              // target that would be refused is never offered.
+              doubleTargets={strips
+                .filter(
+                  (t) =>
+                    t.key !== s.key &&
+                    t.element.kind === 'grid' &&
+                    !(useCompanion.getState().decks[t.element.deck]?.playing ?? false),
+                )
+                .map((t) => ({
+                  key: t.key,
+                  label: t.name,
+                  deck: t.element.kind === 'grid' ? t.element.deck : -1,
+                }))}
+              onDouble={(targetDeck) => {
+                if (deck < 0 || targetDeck < 0) return
+                onDouble?.(s.key, targetDeck)
+              }}
               // COMPOSE BESIDE THE MAP, in this window.
               //
               // ⚠️ It used to be `openPanelWindow`, which cannot work: the shell

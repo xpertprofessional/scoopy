@@ -197,6 +197,8 @@ export function Strip({
   onDropElement,
   gridPlaying = false,
   onGridTransport,
+  doubleTargets = [],
+  onDouble,
 }: {
   strip: StripDoc
   link: EngineLink | null
@@ -279,6 +281,11 @@ export function Strip({
   gridPlaying?: boolean
   /** GRID strips: the transport verbs, in the vocabulary a deck actually has. */
   onGridTransport?: (action: 'play' | 'stop' | 'restart') => void
+  /** DBL's eligible destinations, resolved by the PLANE — it is the only thing
+      that can see every strip. Empty disables the button with the reason in its
+      title rather than opening a menu onto nothing. */
+  doubleTargets?: { key: string; label: string; deck: number }[]
+  onDouble?: (targetDeck: number) => void
 }) {
   const tape = strip.element.kind === 'tape' ? strip.element.index : null
   const channels = useDeviceStore((d) => d.channels)
@@ -806,114 +813,12 @@ export function Strip({
             {expanded ? '⤡' : '⤢'}
           </button>
         )}
-        {/* DECK VERBS (P3-D4-2, the STRIP-DECK sketch's header row): scoopy's
-            own transport hand — ▶ · REV · BR+scale · nudge · SAVE · ⏏ — at
-            deck scope, in the expanded tile only (the collapsed 340px header
-            has no room, and the master bar already fans BR/REV everywhere).
-            SYNC is deliberately NOT here: the tile's own grid row carries it
-            (one control, one home). */}
-        {expanded && verbDeck >= 0 && (
-          <span className="strip-deckverbs" data-no-drag>
-            <button
-              type="button"
-              className={`sdv mono${gridPlaying ? ' latched' : ''}`}
-              disabled={lock}
-              onClick={() => onGridTransport?.(gridPlaying ? 'stop' : 'play')}
-              title={gridPlaying ? 'stop this deck' : 'play this deck'}
-            >
-              ▶
-            </button>
-            <button
-              type="button"
-              className={`sdv mono${deckRev ? ' latched' : ''}`}
-              disabled={lock}
-              onClick={() => useCompanion.getState().setReverse(verbDeck, !deckRev)}
-              title={deckRev ? 'play forward again' : 'REV — this session backwards, true tape reverse'}
-            >
-              REV
-            </button>
-            <button
-              type="button"
-              className={`sdv mono${deckBr ? ' latched' : ''}`}
-              disabled={lock}
-              onClick={() => {
-                const sc = BR_SCALE[brIdx] ?? BR_SCALE[3]!
-                useCompanion
-                  .getState()
-                  .setBeatRepeat(
-                    verbDeck,
-                    deckBr ? null : { startStep: 0, length: sc.length, subdivision: sc.subdivision },
-                  )
-              }}
-              title={deckBr ? 'release the beat repeat' : 'beat repeat — loop the window on this deck'}
-            >
-              BR
-            </button>
-            <button
-              type="button"
-              className="sdv mono"
-              disabled={lock}
-              onClick={() => {
-                const cur = deckBr && latchedIdx >= 0 ? latchedIdx : brIdx
-                const next = (cur + 1) % BR_SCALE.length
-                setBrIdx(next)
-                if (deckBr) {
-                  const sc = BR_SCALE[next]!
-                  useCompanion
-                    .getState()
-                    .setBeatRepeat(verbDeck, { startStep: 0, length: sc.length, subdivision: sc.subdivision })
-                }
-              }}
-              title="beat-repeat length — 16…2 whole steps, then 1/2…1/32 rolls (live while latched)"
-            >
-              {brLabel}
-            </button>
-            {/* NUDGE — the pitch-fader hand: hold to bend, release to snap
-                back, NEVER the document (the U5 distinction made flesh). The
-                law bends the SYNCED target, so a free deck honestly offers
-                nothing to bend. */}
-            {(['‹', '›'] as const).map((glyph) => {
-              const delta = glyph === '‹' ? -4 : 4
-              const synced = strip.element.kind === 'grid' && strip.element.syncToMaster
-              return (
-                <button
-                  key={glyph}
-                  type="button"
-                  className={`sdv mono${nudge === delta ? ' latched' : ''}`}
-                  disabled={lock || !synced}
-                  onPointerDown={() => setNudge(link, verbDeck, delta)}
-                  onPointerUp={() => setNudge(link, verbDeck, 0)}
-                  onPointerLeave={() => setNudge(link, verbDeck, 0)}
-                  onPointerCancel={() => setNudge(link, verbDeck, 0)}
-                  title={
-                    synced
-                      ? `nudge — hold to bend ${delta > 0 ? 'up' : 'down'} ${Math.abs(delta)} BPM, snaps back on release`
-                      : 'nudge bends the SYNCED tempo — turn SYNC on first'
-                  }
-                >
-                  {glyph}
-                </button>
-              )
-            })}
-            <button
-              type="button"
-              className="sdv mono"
-              onClick={() => void flushAutosave()}
-              title="save now — edits autosave; this flushes the pending write immediately"
-            >
-              SAVE
-            </button>
-            <button
-              type="button"
-              className="sdv mono"
-              disabled={lock || !onDropElement}
-              onClick={() => onDropElement?.()}
-              title="eject — drop this session from the strip (the library keeps it)"
-            >
-              ⏏
-            </button>
-          </span>
-        )}
+        {/* THE DECK VERBS MOVED DOWN (B1). They lived here as a header span —
+            ▶ · REV · BR+scale · nudge · SAVE · ⏏ — because the tile had no rows
+            of its own. It has three now (`deckRows.tsx`), so the verbs live
+            beside the rest of the deck block instead of being split between a
+            header and a grid row. One control, one home: the rule that kept
+            SYNC out of this span now moves the span itself. */}
         {/* The feedback lamp's slot is reserved at all times (L2), so an alarm
             cannot shift the state word sideways. */}
         {/* THE OUT CHIP — where this strip's signal goes, stated on the object.
@@ -1009,7 +914,18 @@ export function Strip({
           plane's. Only in the expanded box — presence follows the GEOMETRY the
           document carries, so the collapsed strip is byte-identical to before. */}
       {expanded && strip.element.kind === 'grid' && (
-        <DeckFace link={link} element={strip.element} masterBpm={masterBpm} />
+        <DeckFace
+          link={link}
+          strip={strip}
+          element={strip.element}
+          masterBpm={masterBpm}
+          sessions={sessions}
+          onLoadSession={onLoadSession}
+          onDropElement={onDropElement}
+          doubleTargets={doubleTargets}
+          onDouble={onDouble}
+          locked={lock}
+        />
       )}
 
       {/* THE TRANSPORT ROW has a rhythm — record · verbs · switches — and that

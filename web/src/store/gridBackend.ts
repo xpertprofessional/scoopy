@@ -67,6 +67,11 @@ export interface GridMetaFacts {
   /** The sync law's resolved tempo, struck through over the session bpm when
       the deck is synced/nudged — null = free-running. */
   syncedBpm: number | null;
+  /** PERF (DJ perform mode): a drag sets a track's locator window live instead
+      of selecting cells. Mount-owned because the DECK ROW owns the toggle —
+      the compose grid has no transport strip to put it on, which is why this
+      was hardcoded false until B1 built one. */
+  performActive: boolean;
 }
 
 /** What the engine/store must tell the grid about each track's loaded sample. */
@@ -121,7 +126,12 @@ export class GridBackend {
   // no idea which parameter to change. Defaults to "pitch", matching Swift's
   // Track.activeCellParameter default (an unarmed drag edits pitch).
   private activeParams: string[] = [];
-  private facts: GridMetaFacts = { deckIndex: null, keyboardActive: false, syncedBpm: null };
+  private facts: GridMetaFacts = {
+    deckIndex: null,
+    keyboardActive: false,
+    syncedBpm: null,
+    performActive: false,
+  };
 
   constructor(
     private hooks: GridBackendHooks,
@@ -131,12 +141,13 @@ export class GridBackend {
   /** Update the mount-owned meta facts and republish meta if anything moved. */
   setMetaFacts(facts: Partial<GridMetaFacts>): void {
     const next = { ...this.facts, ...facts };
-    if (
-      next.deckIndex === this.facts.deckIndex &&
-      next.keyboardActive === this.facts.keyboardActive &&
-      next.syncedBpm === this.facts.syncedBpm
-    )
-      return;
+    // ⚠️ EXHAUSTIVE BY CONSTRUCTION. This dedup used to name its three fields
+    // one by one, which meant every field added to GridMetaFacts was silently
+    // omitted from the comparison — a new fact would set `this.facts` and never
+    // republish, so the control driving it would move and the grid would not.
+    // `performActive` was the fourth and would have been the first to hit it.
+    const keys = Object.keys(next) as (keyof GridMetaFacts)[];
+    if (keys.every((k) => next[k] === this.facts[k])) return;
     this.facts = next;
     this.publish(this.topics.meta, this.meta());
   }
@@ -287,9 +298,10 @@ export class GridBackend {
       ownerPatterns: true,
       noteKeyboardActive: false,
       keyboardActive: this.facts.keyboardActive,
-      // The companion composes; perform mode is a studio DJ surface it has no
-      // transport strip to toggle, so it stays off here.
-      performActive: false,
+      // Mount-owned since B1: the compose grid has no transport strip to toggle
+      // it (so it stays false there, as it always has), but an expanded deck
+      // tile now HAS one — the deck view row.
+      performActive: this.facts.performActive,
       bpm: this.bpm,
       muteGroupActive: false,
       masterVolume: this.masterVolume,

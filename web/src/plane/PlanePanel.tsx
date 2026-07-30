@@ -952,6 +952,42 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
     if (composing === strip.element.deck) setComposing(null)
   }
 
+  /**
+   * DBL — the DJ instant double (B1, `NativeDJCoordinator.doubleDeck`).
+   *
+   * The companion clones the SESSION; the map has to give the destination strip
+   * a grid ELEMENT to host it, or the copy would exist in the store with
+   * nothing on the plane pointing at it. Both halves or neither: if the clone
+   * refuses (nothing to double, destination busy), the document is not touched.
+   */
+  const doubleOnto = (stripKey: string, targetDeck: number) => {
+    const map = getMap()
+    const src = map.strips.find((s) => s.key === stripKey)
+    const dst = map.strips.find((s) => s.element.kind === 'grid' && s.element.deck === targetDeck)
+    if (!src || src.element.kind !== 'grid' || !dst || dst.element.kind !== 'grid') return
+    // Same guard dropElement makes, for the same reason: a compose window
+    // editing the destination would be left holding a document that changed
+    // under it.
+    if (composingDecks.has(targetDeck)) {
+      setNote(`deck ${targetDeck + 1} is composing — close its window before doubling onto it`)
+      return
+    }
+    const srcSessionId = src.element.sessionId
+    if (!useCompanion.getState().cloneDeck(src.element.deck, targetDeck)) {
+      setNote('nothing to double, or that strip is playing')
+      return
+    }
+    // The destination strip now hosts the COPY, under its own session id — the
+    // clone is unsaved, so it must not claim the original's identity here
+    // either (that is what would let an autosave land on the original).
+    updateStrip(dst.key, (t) =>
+      t.element.kind === 'grid'
+        ? { ...t, element: { ...t.element, sessionId: `${srcSessionId} (double)` } }
+        : t,
+    )
+    setNote(`doubled ${src.name} onto ${dst.name}`)
+  }
+
   return (
     <main className="panel plane-panel" ref={surfaceRef}>
       {/* THE BAR, IN THREE ZONES (P11-1, D-SL-TOPROW-01):
@@ -1184,6 +1220,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onOpenMatrix={() => setMatrix(true)}
           onLoadSession={(key, id) => void loadSession(key, id)}
           onDropElement={dropElement}
+          onDouble={doubleOnto}
           onCompose={composeDeck}
           composingDecks={composingDecks}
           onRecordIntoLooper={(key) => void recordIntoLooper(key)}

@@ -286,6 +286,9 @@ export function newGridElement(deck: number, sessionId: string, bpm: number): Gr
     tempoMode: 'timeStretch',
     pulseRelation: 'auto',
     transpose: 0,
+    // TP mode OFF, the donor's own default: sync and transpose coexist until
+    // someone asks for the exclusion. A new strip and the v8→v9 migration agree.
+    pitchMode: false,
   }
 }
 

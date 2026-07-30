@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 8
+export const MAP_SCHEMA_VERSION = 9
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -112,6 +112,20 @@ export const ElementSchema = z.discriminatedUnion('kind', [
           half of tempo-and-pitch: it is what lets a synced deck sit in the key
           of the set rather than the key it was sampled in. */
       transpose: z.number().min(-24).max(24),
+      /** TP MODE — when true, SYNC and TRANSPOSE are mutually exclusive on this
+          strip: engaging one drops the other (`applyPitchModeExclusion` in
+          `audio/deckTransport.ts`).
+
+          Ported from the donor's `DJModeManager.pitchModeEnabled`, which is a
+          GLOBAL preference there — but D-SL-MORPH-01 retired the fixed deck
+          slots that global belonged to, so the closest honest successor is
+          per-strip (ruled by the user 2026-07-31, replicating the exclusivity
+          rather than inventing a permissive model).
+
+          Defaults false, which is the DONOR'S OWN DEFAULT and the permissive
+          one: both may be on at once, exactly as every map written before v9
+          behaved. */
+      pitchMode: z.boolean(),
     })
     .strict(),
 ])
@@ -528,6 +542,30 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
         // "nothing loaded" is what lets the restore path tell an empty return
         // from a map that never knew about returns.
         map: { ...map, fx: emptyFxSlots() },
+      }
+    },
+  },
+  8: {
+    to: 9,
+    name: 'a grid strip carries its TP mode (B1/P7-T2)',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      const strips = Array.isArray(map.strips) ? (map.strips as RawMap[]) : []
+      return {
+        ...m,
+        map: {
+          ...map,
+          strips: strips.map((s) => {
+            const element = (s.element ?? {}) as RawMap
+            if (element.kind !== 'grid') return s
+            // FALSE, because that is what a v8 map BEHAVED like: there was no
+            // exclusion, so sync and transpose could both be on and often were.
+            // It is also the donor's own default (`pitchModeEnabled` starts
+            // off), so this migration and a fresh strip agree — the house rule
+            // twice over.
+            return { ...s, element: { ...element, pitchMode: false } }
+          }),
+        },
       }
     },
   },
