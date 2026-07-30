@@ -247,6 +247,26 @@ int main(int argc, char* argv[]) {
             const auto trans = deckParam(R"({"action":"setTranspose","deck":0,"value":-7})");
             CHECK((double) result(trans).getProperty("value", 0.0) == -7.0);
 
+            // TEXTURE (the donor's WIN) reaches the engine through the same
+            // read-back path, and its refusal is visible for the same reason:
+            // it is BOUNDED [0,1], so an out-of-range write is refused whole and
+            // the reply proves the old value still stands.
+            const auto tex = deckParam(R"({"action":"setTexture","deck":0,"value":0.4})");
+            CHECK(replyOk(tex));
+            CHECK((double) result(tex).getProperty("value", -1.0) == 0.4);
+            const auto badTex = deckParam(R"({"action":"setTexture","deck":0,"value":3})");
+            CHECK((double) result(badTex).getProperty("value", -1.0) == 0.4);
+
+            // SKIP-STEP is a request, not a param: it replies with the plain ok
+            // flag because there is nothing to read back — the jump is applied
+            // at the next step boundary inside render(). A missing or negative
+            // step is refused by the engine, and the command still answers ok
+            // (it was understood); what must NOT happen is a dispatch failure or
+            // a corrupted deck.
+            CHECK(replyOk(deckParam(R"({"action":"skipStep","deck":0,"step":16})")));
+            CHECK(replyOk(deckParam(R"({"action":"skipStep","deck":0,"step":-4})")));
+            CHECK(replyOk(deckParam(R"({"action":"skipStep","deck":0})")));
+
             CHECK(!replyOk(deckParam(R"({"action":"nope","deck":0})")));
             CHECK(!replyOk(dispatch("slDeck", juce::var(), settings, nullptr)));
             sl_deck_clear(e, 0); // leave the ground as it was found

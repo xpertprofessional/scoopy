@@ -957,9 +957,10 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         // value), which means the only place a mismatch can be reported is here,
         // while the id is being resolved.
         {
-            const char* paramName = action == "setTempoMode"  ? "tempoMode"
-                                    : action == "setRate"     ? "rate"
+            const char* paramName = action == "setTempoMode"   ? "tempoMode"
+                                    : action == "setRate"      ? "rate"
                                     : action == "setTranspose" ? "transpose"
+                                    : action == "setTexture"   ? "texture"
                                                                : nullptr;
             if (paramName != nullptr) {
                 const int32_t id = sl_param_id_for_name(paramName);
@@ -980,6 +981,17 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         }
         if (action == "clear") {
             sl_deck_clear(engine, deck);
+            return ok(okFlag());
+        }
+        // SKIP-STEP — the deck transport verb with no other home. play/stop live
+        // on the companion (it owns the pattern document), but a playhead jump is
+        // the engine's: it has to land on a step boundary the render decides, and
+        // nothing above the ABI can see that boundary. The donor groups it with
+        // play/stop under `transportDeck` for the same reason it is one verb —
+        // here the ownership split puts it beside the other engine deck ops.
+        if (action == "skipStep") {
+            sl_deck_skip_step(engine, deck,
+                              static_cast<int64_t>(numProp(params, "step", -1.0)));
             return ok(okFlag());
         }
         return fail("slDeck: unknown action '" + action + "'");

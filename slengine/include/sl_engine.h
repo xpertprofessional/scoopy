@@ -140,11 +140,18 @@ uint64_t sl_engine_time_samples(const sl_engine* e);
  *   rate        signed varispeed multiplier, independent of sync. Negative is
  *               reserved for reverse and is REFUSED here until the core's
  *               per-deck reverse exists — declare-only-what-is-implemented.
- *   transpose   semitones on the deck's stretch bus. The ONE param here that
- *               does not republish: the core carries a realtime setter for it,
- *               so it is a fader you can ride. It is what lets a deck sit in
+ *   transpose   semitones on the deck's stretch bus. One of the two params here
+ *               that do not republish: the core carries a realtime setter for
+ *               it, so it is a fader you can ride. It is what lets a deck sit in
  *               its own key while staying tempo-locked, which is the half of
  *               "tempo and pitch" that sync alone does not give you.
+ *   texture     0…1 window texture across the deck's stretch node bank — the
+ *               donor's WIN control (`paramWrite("deckBusTexture", …)` in
+ *               WebToolbarBinding.swift). The grain character of the stretch:
+ *               low is tight and transient-preserving, high is smeared and
+ *               smooth. Realtime like transpose, and out of [0,1] is REFUSED
+ *               rather than clamped. Inaudible in tempoOnly, where the stretch
+ *               bus is neutral by definition.
  *
  * Master globals (mainGain, master bpm) are NOT here: mainGain is
  * sl_master_set_level, and master bpm is the host's, carried to each deck as
@@ -789,6 +796,20 @@ void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
     session publish no longer touches the tempo axis. Equivalent to
     sl_param_get(e, deck, id_of("syncRatio")). */
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck);
+
+/** SKIP-STEP: jump `deck`'s playhead to absolute `step` at the next step
+    boundary, and keep playing. The donor spells this `transportDeck` /
+    `skipStep`, beside play and stop (WebToolbarBinding.swift), and it is the one
+    deck transport verb the merged host had no seam for.
+
+    A REQUEST, not a write: the core stores one atomic and applies it inside
+    render() at the boundary (NativeAudioEngineCore.hpp:1536-1539), so the jump
+    lands on the grid instead of wherever the message thread finished. RT-safe,
+    no world publish, no allocation.
+
+    `step < 0`, an out-of-range deck or a null engine is IGNORED. Does NOT start
+    a stopped deck — it moves the playhead; transport starts it. */
+void sl_deck_skip_step(sl_engine* e, uint32_t deck, int64_t step);
 
 /** Begin a track. `steps` is `step_count` bytes (0/1). Returns 1 on success. */
 int sl_snapshot_track_begin(sl_engine* e,

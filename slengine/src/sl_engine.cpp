@@ -78,6 +78,7 @@ struct DeckParams {
     double tempoMode = 1.0;   // 1 = timeStretch (see kDeckTempoMode* below)
     double rate = 1.0;
     double transpose = 0.0;   // semitones on the deck's stretch bus
+    double texture = 0.0;     // 0…1 window texture across the deck's node bank
 };
 
 /** Deck param ids ARE indices into this table — the ABI's keyed-by-name rule.
@@ -88,6 +89,7 @@ const char* const kDeckParamNames[] = {
     "tempoMode",
     "rate",
     "transpose",
+    "texture",
 };
 constexpr std::uint32_t kDeckParamCount =
     static_cast<std::uint32_t>(sizeof(kDeckParamNames) / sizeof(kDeckParamNames[0]));
@@ -1064,7 +1066,11 @@ void sl_deck_clear(sl_engine* e, uint32_t deck) {
     // strip to take this slot would inherit the previous one's sync, which is
     // the "loaded carrying whatever ratio the last map left" bug in a new place.
     e->deckParams[deck] = sl::DeckParams{};
-    e->core.setDeckBusTranspose(static_cast<int>(deck), 0.0); // realtime, not in the world
+    // Both realtime params, held as core atomics rather than in the world, so
+    // clearing the world does not clear them — they need saying explicitly or
+    // the next strip in this slot inherits the last one's pitch and grain.
+    e->core.setDeckBusTranspose(static_cast<int>(deck), 0.0);
+    e->core.setDeckBusTexture(static_cast<int>(deck), 0.0);
     e->core.publishDJWorld(e->deckWorlds, e->mixer);
 }
 
@@ -1157,6 +1163,23 @@ void sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
             p.transpose = value;
             e->core.setDeckBusTranspose(static_cast<int>(deck), value);
             return;
+        case 4: // texture
+            // THE SECOND NON-REPUBLISHING PARAM, for the same reason as
+            // transpose: `setDeckBusTexture` stores a per-deck target the render
+            // reads, so WIN is a knob you can ride rather than one that restages
+            // the world per pixel. All six nodes per deck are pre-allocated at
+            // configure() regardless, so a per-deck target costs nothing extra
+            // (NativeAudioEngineCore.hpp:1635-1639).
+            //
+            // Out of [0,1] is REFUSED, not clamped — the same discipline the rest
+            // of this switch uses. A texture of 1.7 is a caller bug, and clamping
+            // it silently is how a UI ends up showing a value the engine never
+            // took. Like transpose it rides the STRETCH BUS, so it is inaudible
+            // in tempoOnly by design.
+            if (!std::isfinite(value) || value < 0.0 || value > 1.0) return;
+            p.texture = value;
+            e->core.setDeckBusTexture(static_cast<int>(deck), value);
+            return;
         // UNCHANGED IS FREE, and it has to be, because the CALLER DELIBERATELY
         // RE-SENDS EVERYTHING. The plane pushes all of a deck's tempo params on
         // every change rather than diffing against a local guess — the engine is
@@ -1196,6 +1219,7 @@ double sl_param_get(const sl_engine* e, uint32_t deck, int32_t id) {
         case 1: return p.tempoMode;
         case 2: return p.rate;
         case 3: return p.transpose;
+        case 4: return p.texture;
         default: return 0.0;
     }
 }
@@ -1216,6 +1240,22 @@ void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio) {
 
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck) {
     return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckParams[deck].syncRatio;
+}
+
+void sl_deck_skip_step(sl_engine* e, uint32_t deck, int64_t step) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    // A NEGATIVE STEP IS A REFUSAL, not a rewind to the end. The core already
+    // ignores negatives (requestSeek's contract), and stating it here keeps the
+    // refusal at the ABI boundary where a caller can reason about it.
+    if (step < 0) return;
+    // No republish, and no world touch at all: the core applies this at the next
+    // STEP BOUNDARY from a single atomic, which is the whole reason it is a
+    // request rather than a write. Seeking by restaging the world would land the
+    // jump wherever the message thread happened to finish, i.e. audibly late and
+    // never twice the same. Deliberately does NOT start a stopped deck — skip
+    // moves the playhead, transport starts it (the donor's `skipStep` is a
+    // transport op beside play/stop for the same reason).
+    e->core.requestSeek(static_cast<std::size_t>(deck), step);
 }
 
 int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, int32_t start_step) {

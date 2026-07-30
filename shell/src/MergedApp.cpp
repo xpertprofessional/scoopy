@@ -224,6 +224,7 @@ namespace {
 struct ParamMapping { const char* scoopyName; const char* engineName; };
 constexpr ParamMapping kParamMap[] = {
     {"deckTranspose", "transpose"},
+    {"deckBusTexture", "texture"},
 };
 } // namespace
 

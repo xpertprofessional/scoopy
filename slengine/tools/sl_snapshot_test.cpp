@@ -196,16 +196,18 @@ int main() {
         const int32_t modeId  = sl_param_id_for_name("tempoMode");
         const int32_t rateId  = sl_param_id_for_name("rate");
         const int32_t transId = sl_param_id_for_name("transpose");
+        const int32_t texId   = sl_param_id_for_name("texture");
         CHECK(syncId != SL_PARAM_UNKNOWN);
         CHECK(modeId != SL_PARAM_UNKNOWN);
         CHECK(rateId != SL_PARAM_UNKNOWN);
         CHECK(transId != SL_PARAM_UNKNOWN);
+        CHECK(texId != SL_PARAM_UNKNOWN);
         CHECK(sl_param_id_for_name("nosuchparam") == SL_PARAM_UNKNOWN);
         CHECK(sl_param_id_for_name(nullptr) == SL_PARAM_UNKNOWN);
 
         // Name/id introspection round-trips for every declared param — a host
         // enumerating the surface must get back what it resolved.
-        CHECK(sl_param_count() == 4);
+        CHECK(sl_param_count() == 5);
         for (uint32_t k = 0; k < sl_param_count(); ++k) {
             const char* nm = sl_param_name(k);
             CHECK(nm != nullptr);
@@ -236,12 +238,61 @@ int main() {
         CHECK(sl_param_get(e, 1, 99) == 0.0);       // unknown id reads 0, not a neighbour
         CHECK(sl_param_get(nullptr, 1, syncId) == 0.0);
 
-        // Transpose is the one param with a REALTIME setter: it round-trips and
-        // the deck keeps sounding, but it never republishes — nothing here can
-        // observe a world swap, which is exactly the property that matters.
+        // Transpose is one of two params with a REALTIME setter: it round-trips
+        // and the deck keeps sounding, but it never republishes — nothing here
+        // can observe a world swap, which is exactly the property that matters.
         sl_param_set(e, 1, transId, -5.0);          // negative IS valid (down a fourth)
         CHECK(sl_param_get(e, 1, transId) == -5.0);
         sl_param_set(e, 1, transId, 0.0);
+
+        // TEXTURE (WIN) — the donor's deckBusTexture, realtime like transpose.
+        // Unlike transpose it is BOUNDED, and out of [0,1] is REFUSED rather
+        // than clamped: a UI showing 1.7 when the engine took 1.0 is the silent
+        // half-landing this seam's gate exists to prevent.
+        CHECK(sl_param_get(e, 1, texId) == 0.0);    // defaults tight
+        sl_param_set(e, 1, texId, 0.62);
+        CHECK(sl_param_get(e, 1, texId) == 0.62);
+        sl_param_set(e, 1, texId, 1.7);             // above range → refused
+        sl_param_set(e, 1, texId, -0.1);            // below range → refused
+        sl_param_set(e, 1, texId, NAN);             // not a number → refused
+        CHECK(sl_param_get(e, 1, texId) == 0.62);   // all three left it standing
+        sl_param_set(e, 1, texId, 1.0);             // the bounds themselves ARE valid
+        CHECK(sl_param_get(e, 1, texId) == 1.0);
+        sl_param_set(e, 1, texId, 0.0);
+        CHECK(sl_param_get(e, 1, texId) == 0.0);
+
+        // BOTH realtime params reset with the deck. They live as core atomics
+        // rather than in the world, so clearing the world does NOT clear them —
+        // miss this and the next strip in the slot inherits the last one's pitch
+        // and grain. Checked on deck 2 so deck 1's run below is untouched.
+        sl_param_set(e, 2, transId, 7.0);
+        sl_param_set(e, 2, texId, 0.9);
+        CHECK(sl_param_get(e, 2, transId) == 7.0);
+        CHECK(sl_param_get(e, 2, texId) == 0.9);
+        sl_deck_clear(e, 2);
+        CHECK(sl_param_get(e, 2, transId) == 0.0);
+        CHECK(sl_param_get(e, 2, texId) == 0.0);
+
+        // SKIP-STEP — a request applied at the next step boundary inside
+        // render(), so there is nothing to read back here: the property that
+        // matters is that it is REFUSED cleanly and never corrupts the deck.
+        // (Where the playhead lands is the walk's job, not the ABI's.)
+        sl_deck_skip_step(nullptr, 1, 4);            // null engine
+        sl_deck_skip_step(e, 99, 4);                 // out-of-range deck
+        sl_deck_skip_step(e, 1, -1);                 // negative step
+        sl_deck_skip_step(e, 1, 8);                  // valid
+        {
+            double afterSeekPeak = 0.0;
+            for (int block = 0; block < 20; ++block) {
+                std::fill(l.begin(), l.end(), 0.0f);
+                sl_render(e, buses, 2, 512);
+                for (uint32_t i = 0; i < 512; ++i) {
+                    CHECK(std::isfinite(l[i]));
+                    afterSeekPeak = std::fmax(afterSeekPeak, std::fabs((double) l[i]));
+                }
+            }
+            CHECK(afterSeekPeak > 0.0001); // still sounding after the jump
+        }
 
         // ── THE RATIO IS OBSERVED IN THE AUDIO, NOT READ BACK ──────────────
         //
