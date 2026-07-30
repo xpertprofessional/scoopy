@@ -819,3 +819,67 @@ weeks of platform work; naming the interim path costs a paragraph and unblocks u
 decision note pointing at P10. P10's genuinely new work is the `sl_route_*` `virtualDeviceInput`
 kind and wiring a real backend where the fake stands; `host/include/wz_capture.h` and
 ARCHITECTURE.md's macOS tap design stand as written. Nothing in P9 waits on it.
+
+## D-SL-PDC-REF-01 · 2026-07-30 · PDC compensates WET-vs-WET only (settles D-WZ-PDC-01's reference point)
+**Decision:** "parallel-path compensation" means **each host return's wet is delayed by
+(max active return latency − its own) before it sums to main**. Every dry path is untouched.
+Signed live by the user (AskUserQuestion) after the plan audit found the clause had no
+unambiguous reading.
+**Rationale:** ARCHITECTURE.md:236-240 glosses the term as "dry-vs-send alignment", but there
+is no separate monitor path to spare — a strip's dry is written once at `sl_channel.cpp:731-732`
+(the comment says "this is the record tap"), the meter is taken off the same samples, and that
+same buffer pours to main at :752-765. There are no channel inserts at all (source kinds are
+none/tape/gridDeck, `sl_engine.h:360-365`); the only plugin slots are the four per-return ones.
+So the literal dry-vs-send reading delays what the performer hears, which D-WZ-PDC-01 forbids
+two sentences after it requires the compensation. Wet-vs-wet is the only reading that satisfies
+both halves as signed: returns already sit downstream of the monitoring path, so aligning them
+against each other costs the performer nothing.
+**Consequences:** P6-6 is REFUSED as written and splits into P6-6a / P6-6b / P6-6c (see the
+ledger). The dry-vs-send reading is recorded as REFUSED here so it cannot quietly return.
+ARCHITECTURE.md:236-240's gloss is superseded by this entry. Clause 3 (record-stamp
+subtraction) is scoped by this reading: only a record source that can carry return wet is a
+subject, which today is a bus/main capture, never a strip's dry tap.
+
+## D-SL-MAPOPEN-01 · 2026-07-30 · A map open LOADS its strips' sessions, blocking, before the overlay
+**Decision:** `openMap` resolves each grid strip's `sessionId` through `useCompanion.open(sessionId, deck)`
+**before** any overlay op runs, and waits for them. A session that cannot be resolved becomes an
+UNRESOLVED STRIP preserving both the reference and the overlay — the shape MAP-SCHEMA.md:176-178
+already promises — rather than an empty strip that looks like a session with nothing in it.
+Signed live by the user.
+**Rationale:** the plan audit found that opening a map never opens any session at all
+(`mapFiles.ts:70-88` is slMap/open → loadMap → setMap → applyMap and stops; boot is session-free
+at `PlanePanel.tsx:374`). The only production `useCompanion.open()` callers are the manual strip
+menu, the compose return and ComposeWindow. So "reopen → everything back" had no loaded session
+to restore ONTO, and the whole P8 overlay sits on that load path. The symptom already renders
+today — `Inspector.tsx:424-432` says "session not loaded". Blocking rather than progressive
+because P8-3's re-apply needs a deterministic order, and a progressive load makes the overlay
+race the world it is meant to correct.
+**Consequences:** new row **P8-0**, ahead of P8-2, owning the load path. P8-3's re-apply gets a
+completion hook to hang off instead of the fire-and-forget `setTimeout` the audit found. P8-6's
+round-trip gate becomes reachable. A slower map open on a large set is the accepted cost.
+
+## D-SL-E4-HOIST-01 · 2026-07-30 · P3.5-E4 is hoisted ahead of P7
+**Decision:** P3.5-E4 (a grid strip's own channel bus carries nothing — the unbuilt half of
+D-SL-DECKOUT-01) takes a position in the global order **ahead of P7**, rather than staying
+parked with no phase. Signed live by the user.
+**Rationale:** E4 is a hard dependency of P9-1's headline walk (a grid strip's send tap records
+silence without it) and of P7-T4's master sends, and it retires the `setDeckGainOverride`
+projection at `sl_engine.cpp:456-469` that two further phases would otherwise build on top of.
+Finishing the signal path once, while E3 is fresh, is cheaper than unpicking it later.
+**Consequences:** global order becomes … → P6-6a/b/c → P6-AUDIT → **P3.5-E4** → P7 → P8 → P9.
+E4's scope is widened by the audit's finding that `projectToCore` forwards all four SENDS as
+well as level/mute, so retiring only the level/mute projection would double-send.
+
+## D-SL-FACES-01 · 2026-07-30 · Both strip faces render the same state — pads and SYNC do not move
+**Decision:** scene pads and SYNC stay on the COLLAPSED strip face; the expanded deck tile's
+classic rows are the expanded-face instances of the **same store state**, not a rehoming.
+P7-T2's "SYNC promoted out of the grid row" and P7-T3's "P3-U8's pads rehomed" are amended
+accordingly. Signed live by the user.
+**Rationale:** `Strip.tsx:903-921` and :1136 render GridScenes/GridControls unguarded by
+`expanded` today, while :965 shows the file gates deliberately when it means to — "both faces,
+one state" is the built convention, not an accident. Launching a scene from a collapsed strip is
+the plane's primary performance gesture (P3-U8's shipped door), and at 692×612 per expanded tile
+you cannot keep more than one or two decks visible, so the collapsed face has to stay playable.
+**Consequences:** "one control, one home" is explicitly NOT the rule for state that is played —
+it governs verbs with side effects (D4-2's SAVE/⏏), not performance surfaces. P7-T5's tile walk
+must additionally assert the collapsed face still plays.
