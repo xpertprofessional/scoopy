@@ -110,3 +110,47 @@ describe("deck routing", () => {
     expect(frame[HotFrameLayout.trackStep0]).toBe(-1);
   });
 });
+
+/**
+ * THE SINGLE-SPACE RULE (B1). `menuTransport` is what the keymap's Space rides,
+ * and NOTHING in the merged host answered it — so Space did nothing in the
+ * compose window and nothing in a deck tile. It routes like every other
+ * deck-scoped intent now: to the handler the owning mount registered.
+ */
+describe("menuTransport — the deck-targeted transport", () => {
+  it("reaches THAT deck's handler, leaving the compose slot silent", async () => {
+    const seen: string[] = [];
+    const compose: string[] = [];
+    link.setTransportHandler((op) => compose.push(op));
+    link.setTransportHandler((op) => seen.push(op), 1);
+
+    expect(await link.command("menuTransport" as never, { op: "play", deck: 1 })).toEqual({
+      ok: true,
+    });
+    expect(seen).toEqual(["play"]);
+    expect(compose).toEqual([]);
+  });
+
+  it("a deckless call still reaches the compose grid — every pre-B1 caller", async () => {
+    const compose: string[] = [];
+    link.setTransportHandler((op) => compose.push(op));
+    await link.command("menuTransport" as never, { op: "stop" });
+    expect(compose).toEqual(["stop"]);
+  });
+
+  it("REFUSES rather than faking success when no mount owns that scope", async () => {
+    // The distinction the bundle exists for: an unanswered transport must read
+    // as unanswered. A silent `{ok:true}` here is exactly how `menuTransport`
+    // looked alive for a whole phase while doing nothing.
+    expect(await link.command("menuTransport" as never, { op: "play", deck: 2 })).toEqual({
+      ok: false,
+    });
+  });
+
+  it("refuses an op it does not implement instead of guessing at one", async () => {
+    const compose: string[] = [];
+    link.setTransportHandler((op) => compose.push(op));
+    expect(await link.command("menuTransport" as never, { op: "bounce" })).toEqual({ ok: false });
+    expect(compose).toEqual([]);
+  });
+});

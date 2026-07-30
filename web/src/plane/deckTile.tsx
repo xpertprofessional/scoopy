@@ -100,6 +100,19 @@ export function useDeckTileBinding(
       toggleLocatorRepeatTrack(trackIndex, deck)
       browserLink.djGridBackend(deck).updatePatternRow(trackIndex, gridDocument(deck))
     }, deck)
+    // THE SINGLE-SPACE RULE (B1): Space in this tile starts THIS deck. The
+    // keymap has always sent `menuTransport`; nothing answered it, so the key
+    // was dead in the merged host. Restart is stop-then-play — a publish is
+    // phase-continuous, so it cannot double as a retrigger.
+    browserLink.setTransportHandler((op) => {
+      const c = useCompanion.getState()
+      if (op === 'play') c.play(deck)
+      else if (op === 'stop') c.stop(deck)
+      else {
+        c.stop(deck)
+        c.play(deck)
+      }
+    }, deck)
     // Both sample doors, deck-scoped — the tile addresses the grid WITH a deck,
     // so its LOAD lands in ITS document (P3.5-E8a shares the registration with
     // the compose window, which had none at all).

@@ -1390,10 +1390,19 @@ export function GridPanel({
     performUndo,
     // menuTransport, NOT transportGlobal*: the menu is deck-targeted (the
     // single-space rule) — the global all-decks controls are the toolbar's.
-    transportPlay: () => void link?.command("menuTransport", { op: "play" }).catch(() => {}),
-    transportStop: () => void link?.command("menuTransport", { op: "stop" }).catch(() => {}),
+    //
+    // ⚠️ IT NOW CARRIES ITS SCOPE, and that is what makes the rule real here.
+    // These went out with no `deck` at all, so even a host that answered them
+    // could not tell WHICH deck the space bar meant; in the merged host nothing
+    // answered `menuTransport` whatsoever, so Space did nothing in compose and
+    // nothing in a deck tile. The companion answers it now (browserLink), and
+    // the scope is how it knows which document to start (B1).
+    transportPlay: () =>
+      void link?.command("menuTransport", { op: "play", ...scope }).catch(() => {}),
+    transportStop: () =>
+      void link?.command("menuTransport", { op: "stop", ...scope }).catch(() => {}),
     transportRestart: () =>
-      void link?.command("menuTransport", { op: "restart" }).catch(() => {}),
+      void link?.command("menuTransport", { op: "restart", ...scope }).catch(() => {}),
     addTrack: () => void link?.command("addTrack", { ...scope }).catch(() => {}),
     requestClearAll: () => {
       const n = tracksRef.current.filter(Boolean).length;

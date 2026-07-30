@@ -116,6 +116,11 @@ export class BrowserLink implements EngineLink {
   private samplePickHandlers = new Map<number, (trackIndex: number) => Promise<void>>();
   /** The grid's ▶/■ — flip the runtime launch gate. */
   private launchToggleHandlers = new Map<number, (trackIndex: number) => void>();
+  /** B1: the deck-targeted transport behind the single-space rule. Registered by
+      whichever mount owns that scope's document, like every handler here — the
+      link stays independent of the store, which is what lets the same class
+      serve the compose window and three deck tiles at once. */
+  private transportHandlers = new Map<number, (op: "play" | "stop" | "restart") => void>();
   /** The S button — flip the runtime solo. */
   private soloToggleHandlers = new Map<number, (trackIndex: number) => void>();
   /** The ↻ locator-repeat toggle — a scene-aware document flip. */
@@ -238,6 +243,10 @@ export class BrowserLink implements EngineLink {
     this.launchToggleHandlers.set(this.scopeOf(deck), fn);
   }
 
+  setTransportHandler(fn: (op: "play" | "stop" | "restart") => void, deck?: number): void {
+    this.transportHandlers.set(this.scopeOf(deck), fn);
+  }
+
   setSoloToggleHandler(fn: (trackIndex: number) => void, deck?: number): void {
     this.soloToggleHandlers.set(this.scopeOf(deck), fn);
   }
@@ -329,6 +338,27 @@ export class BrowserLink implements EngineLink {
 
       case "getSamplePeaks":
         return this.gridFor(p.deck).samplePeaks(p as { trackIndex: number; points: number });
+
+      // THE SINGLE-SPACE RULE, answered at last (B1). `menuTransport` is the
+      // deck-targeted transport the keymap's Space rides — and NOTHING in the
+      // merged host answered it, so Space did nothing in the compose window and
+      // nothing in a deck tile. The companion owns the pattern document and
+      // already has per-deck play/stop, so it is the honest answerer; the
+      // `deck` in the params is the panel's own scope (GridPanel sends it now),
+      // absent for compose.
+      //
+      // RESTART is stop-then-play rather than a seek: a publish is
+      // phase-continuous by design (that is what makes a scene switch
+      // seamless), so it cannot double as a retrigger — the same reasoning the
+      // plane's `onGridTransport` states.
+      case "menuTransport": {
+        const fn = this.transportHandlers.get(this.scopeOf(p.deck));
+        if (!fn) return { ok: false };
+        const op = String(p.op);
+        if (op !== "play" && op !== "stop" && op !== "restart") return { ok: false };
+        fn(op);
+        return { ok: true };
+      }
 
       case "gridEdit":
         // In owner mode the grid applies verifiable edits itself and publishes them; the only intent

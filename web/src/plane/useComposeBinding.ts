@@ -47,6 +47,19 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
       toggleLocatorRepeatTrack(trackIndex, deck)
       browserLink.gridBackend.updatePatternRow(trackIndex, gridDocument(deck))
     })
+    // THE SINGLE-SPACE RULE (B1): Space in the compose window starts the deck
+    // this window is composing. Compose-scoped like the handlers above (this
+    // grid has no deck axis of its own) but aimed at THIS deck, the same
+    // distinction every registration here makes.
+    browserLink.setTransportHandler((op) => {
+      const c = useCompanion.getState()
+      if (op === 'play') c.play(deck)
+      else if (op === 'stop') c.stop(deck)
+      else {
+        c.stop(deck)
+        c.play(deck)
+      }
+    })
     // P3.5-E8a — THE DOORS THIS BINDING NEVER REGISTERED. `GridPanel` draws a
     // LOAD button on every audio row and takes a browser row dropped on it, but
     // both are intents `BrowserLink` forwards to a handler; with none
