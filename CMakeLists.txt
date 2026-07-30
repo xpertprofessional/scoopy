@@ -5,6 +5,21 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# An unset CMAKE_BUILD_TYPE means NO optimisation flags at all — not a mild
+# default, but a bare `-std=c++20 -arch arm64 -isysroot ...` with no -O and no
+# -DNDEBUG. `cmake -B build` said nothing about it, so the tree everyone ran the
+# app and took every latency measurement from was -O0 for the whole DSP path.
+# Measured on this machine, 2026-07-30: sl_tape_stretch_test 3.38s vs 0.28s
+# (12.1x) and sl_tape_varispeed_test 1.39s vs 0.09s (15.4x). That is the
+# difference between three decks with extreme stretch and one deck struggling —
+# the user found it in the real host, not a gate.
+# Debug is still one flag away: cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING
+        "Build type; empty means -O0, which is never what this app wants" FORCE)
+    message(STATUS "CMAKE_BUILD_TYPE was unset — defaulting to Release (-O3)")
+endif()
+
 # Obj-C++ is a first-class language of this build (P6-1: the vendored
 # NativePluginHost.mm compiles into WizardMerged as real Obj-C++). Enabled HERE,
 # not in shell/ — enable_language() in a subdirectory loads the language's rule
