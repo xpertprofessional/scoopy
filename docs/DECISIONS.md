@@ -1062,3 +1062,54 @@ renamed `wizard` and kept. `host-hygiene` pushes there. Signed live.
 default `git push` and `gh` invocation aimed at the wrong project — `P3-PUSH` never running is
 the only reason that never landed anywhere wrong. The user confirmed scoopy is the remote.
 **Consequences:** `wizard` stays configured, so the donor-era history remains reachable.
+
+## D-SL-SAVE-01 · 2026-07-31 · ⌘S saves the SESSION, everywhere
+**Decision:** `⌘S` saves the **session**; `⇧⌘S` saves the **map**. One meaning for `⌘S` on
+every surface — the mapless compose window and the plane behave identically. Signed live,
+settling P7-K0b.
+**Rationale:** the donor's `⌘S` saves the session (`quickSaveSession`), and the map is the
+outer container that changes far less often, so it takes the modified chord. The alternative —
+context-sensitive, map on the plane and session in compose — makes one key do two things
+depending on which window has focus, which is exactly what stops muscle memory transferring
+between the two surfaces B5 exists to make equal.
+**Consequences:** the compose window's save UI and the plane's keymap both bind `⌘S` to the
+session save. ⚠️ The plane AUTOSAVES the map already (`attachAutosave`), so `⇧⌘S` is a flush +
+name-it path rather than the only way a map survives — it must not imply the map is otherwise
+unsaved.
+
+## D-SL-UNDO-01 · 2026-07-31 · Topology is undoable; other companion edits are not, and say so
+**Decision:** `undoStore` gains ONE new entry kind — **topology** (add / remove track). `bpm`,
+`masterVolume` and `loadSample` stay outside undo and are written down as such. Signed live.
+**Rationale:** `undoStore` is per-track and pattern-shaped (`UndoEntry` carries a `trackIndex`
+and two `GridPatternState`s), so it cannot express a topology or document change at all — this
+is a new kind, not a flag. The donor scopes its entries (`pushCompletedUndoEntry(scope:
+.topology)`) and brackets `addTrackInternal` in one. Scoping to topology takes the case the
+ledger row names — *"an accidental append is the easiest edit to want back"* — without making
+every document mutator bracket itself, and without `loadSample` undo having to restore a kit
+reference as well as a row.
+**Consequences:** row P3.5-E8g-h-b closes for topology and stays open, explicitly, for the
+rest. ⌘Z after `setBpm` continues to do nothing and that is now a stated behaviour rather than
+an omission.
+
+## D-SL-ECHO-01 · 2026-07-31 · The owner-echo guard gets a release that this stack can fire
+**Decision:** close P3.5-E8g-g. The companion emits the equivalent of Swift's `swiftEdit` when
+it pushes a document change from a non-grid source, so `GridPanel`'s `adoptNextEcho` escape
+actually releases. Signed live.
+**Rationale:** the guard drops any `gridPattern/<i>` landing within `OWNER_ECHO_QUIET_MS`
+(300 ms) of the panel's own publish, and its ONLY escape fires on an event the merged stack
+never emits — the guard came across from the donor and its release did not, the same species as
+P7-K7 and P8-P1. Nothing is known to hit it today, but it is a silent-drop path with no owner,
+which is the defect class this project keeps paying for.
+**Consequences:** the escape needs a trigger the companion can actually raise; the guard itself
+stays (it exists to stop the grid re-rendering its own echo, and removing it risks a feedback
+loop on every edit).
+
+## D-SL-CHOOSER-01 · 2026-07-31 · The launch chooser remembers, and defaults to it
+**Decision:** the PLANE / COMPOSE chooser (D-SL-LAUNCH-01) **pre-selects the last choice**, so
+Enter goes where you usually go. It still appears every launch. Signed live.
+**Rationale:** the donor skips asking entirely and restores the last face from session metadata
+(`AutoSaveManager.isDJMode`). That respects habit but removes the choice; a chooser that
+remembers keeps both. Always-asking-neutrally adds a decision to a moment already decided.
+**Consequences:** one persisted setting for the last choice. A "don't ask again" path was
+considered and NOT taken — it would reintroduce the donor's invisible-restore behaviour behind
+a checkbox, and the chooser is the thing the user asked for.
