@@ -302,3 +302,42 @@ describe("addTrack — the verb that existed and reached nothing", () => {
     expect(useCompanion.getState().error).toContain(String(MAX_TRACKS));
   });
 });
+
+/**
+ * P3.5-E8c — ⌥ SURVIVES THE HOP.
+ *
+ * `FileBrowserPanel` has sent `asStretch: e.altKey` on both load paths since it
+ * was written, and `browserLink` called the handler with TWO arguments — so
+ * holding ⌥ did exactly what not holding it did, while the panel's tooltip
+ * promised otherwise. The intent arrived and half of it was discarded.
+ */
+describe("the ⌥ flag reaches the door", () => {
+  it("passes asStretch through from the fileBrowser load intent", async () => {
+    const link = new BrowserLink();
+    const seen: { trackIndex: number | null; path: string; asStretch: boolean }[] = [];
+    link.setSampleLoadHandler(async (trackIndex, path, asStretch) => {
+      seen.push({ trackIndex, path, asStretch });
+    });
+
+    await link.command("fileBrowser" as never, {
+      op: "load",
+      path: "/a.wav",
+      trackIndex: 2,
+      asStretch: true,
+    });
+    expect(seen).toEqual([{ trackIndex: 2, path: "/a.wav", asStretch: true }]);
+  });
+
+  it("reports a plain load as NOT stretched, rather than undefined", async () => {
+    // The handler's third argument is a boolean by contract: `undefined` would
+    // be falsy today and a silent behaviour change the moment anyone wrote
+    // `asStretch !== false`.
+    const link = new BrowserLink();
+    const seen: boolean[] = [];
+    link.setSampleLoadHandler(async (_i, _p, asStretch) => {
+      seen.push(asStretch);
+    });
+    await link.command("fileBrowser" as never, { op: "load", path: "/a.wav", trackIndex: 0 });
+    expect(seen).toEqual([false]);
+  });
+});

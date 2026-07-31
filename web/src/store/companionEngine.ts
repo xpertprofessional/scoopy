@@ -44,6 +44,7 @@ import { worldFromSession } from "../audio/worldFromSession.ts";
 import { useCapabilitiesStore } from "../state/capabilitiesStore.ts";
 import { kitSamples } from "../persist/kit.ts";
 import { recordTopology, resetUndo } from "../state/undoStore.ts";
+import { stretchRow } from "../panels/stretchImport.ts";
 import { decodePatternFileAnyVersion } from "../persist/migrations.ts";
 import type { DocRow } from "./gridProjection.ts";
 import type { TrackRuntimeInfo } from "./gridBackend.ts";
@@ -1897,6 +1898,34 @@ export function toggleLocatorRepeatTrack(trackIndex: number, deck = 0): void {
  * (D-SL-UNDO-01). Publishes and autosaves like the mutator it reverses, so an
  * undone add-track is gone from the engine and the file, not just the screen.
  */
+/**
+ * ⌥-STRETCH a loaded track (P3.5-E8c). Applies `stretchRow` to the SAME row in
+ * every section — the donor's `tracks[i]` is one row per track, and here the
+ * eight sections are eight views of that row, so stretching only section A
+ * would make the track stretch in scene A and retrigger in B–H.
+ */
+export function configureTrackAsStretch(trackIndex: number, deck = 0): void {
+  const d = deckOf(useCompanion.getState(), deck);
+  if (!d.session || trackIndex < 0) return;
+  const pattern = { ...(d.session.pattern as Record<string, unknown>) };
+  let touched = false;
+  for (const key of SECTION_KEYS) {
+    const rows = pattern[key];
+    if (!Array.isArray(rows) || !rows[trackIndex]) continue;
+    const next = [...rows];
+    next[trackIndex] = stretchRow(rows[trackIndex] as Record<string, unknown>);
+    pattern[key] = next;
+    touched = true;
+  }
+  if (!touched) return;
+  const next: WorkingSession = { ...d.session, pattern: pattern as WorkingSession["pattern"] };
+  useCompanion.setState((s) => patchDeck(s, deck, { session: next }));
+  // A non-grid document write — the grid must adopt the push (D-SL-ECHO-01).
+  announceDocumentEdit?.(deck, "pattern");
+  publish(useCompanion.getState(), deck, deckOf(useCompanion.getState(), deck).playing);
+  autosaver.schedule(next);
+}
+
 export function applyTopologyUndo(deck: number, pattern: unknown): void {
   const d = deckOf(useCompanion.getState(), deck);
   if (!d.session) return;

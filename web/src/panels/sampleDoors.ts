@@ -19,6 +19,7 @@
 import { BrowserLink } from "../browserLink.ts";
 import {
   gridDocument,
+  configureTrackAsStretch,
   gridDocumentId,
   gridPeakPaths,
   gridRuntimeInfos,
@@ -216,7 +217,7 @@ export function registerSampleDoors(
   //
   // Deliberately NOT "create when nothing is selected": that is one gesture doing two
   // things depending on invisible state, which is the confusion E8g-e came out of.
-  link.setSampleLoadHandler(async (trackIndex, path) => {
+  link.setSampleLoadHandler(async (trackIndex, path, asStretch) => {
     let target = trackIndex;
     if (target === null) {
       target = await useCompanion.getState().appendTrack(deck);
@@ -228,7 +229,11 @@ export function registerSampleDoors(
       // measured, and pinned in `sampleDoors.test.ts`.)
       if (target === null) return;
     }
-    await useCompanion.getState().loadSample(target, path, deck);
+    await useCompanion.getState().loadSample(target, path, deck)
+    // ⌥ = STRETCH (P3.5-E8c + E8g-h-a). The donor configures the track AFTER the
+    // sample lands, because the algorithm sizes the first cell to the pattern's
+    // step count — it needs a loaded row to reshape.
+    if (asStretch) configureTrackAsStretch(target, deck);
     // A created track is a TOPOLOGY change — `gridMeta.trackCount` moved, and the
     // runtime push alone cannot draw a row the backend has never heard of. The new
     // row takes the cursor, which is what the original does on this exact path

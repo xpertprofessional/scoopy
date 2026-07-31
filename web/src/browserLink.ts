@@ -108,7 +108,7 @@ export class BrowserLink implements EngineLink {
    */
   private sampleLoadHandlers = new Map<
     number,
-    (trackIndex: number | null, path: string) => Promise<void>
+    (trackIndex: number | null, path: string, asStretch: boolean) => Promise<void>
   >();
   /** Create a track (⌘T · the MasterRow `+` · an untargeted library load). */
   private addTrackHandlers = new Map<number, () => Promise<number | null>>();
@@ -226,7 +226,7 @@ export class BrowserLink implements EngineLink {
   }
 
   setSampleLoadHandler(
-    fn: (trackIndex: number | null, path: string) => Promise<void>,
+    fn: (trackIndex: number | null, path: string, asStretch: boolean) => Promise<void>,
     deck?: number,
   ): void {
     this.sampleLoadHandlers.set(this.scopeOf(deck), fn);
@@ -505,7 +505,13 @@ export class BrowserLink implements EngineLink {
         // still looking like a targeted load.
         if (p.op === "load" && this.sampleLoadHandlers.get(COMPOSE_SCOPE) && typeof p.path === "string") {
           const trackIndex = p.trackIndex == null ? null : Number(p.trackIndex);
-          void this.sampleLoadHandlers.get(COMPOSE_SCOPE)!(trackIndex, p.path);
+          // ⌥-STRETCH SURVIVES THE HOP (P3.5-E8c). `FileBrowserPanel` has sent
+          // `asStretch: e.altKey` on BOTH load paths since it was written, and
+          // this call took two arguments — so holding ⌥ did exactly what not
+          // holding it did, while the panel's own tooltip promised otherwise.
+          // The intent arrived and half of it was dropped: the silent-accept
+          // shape, one door along from the one E8a fixed.
+          void this.sampleLoadHandlers.get(COMPOSE_SCOPE)!(trackIndex, p.path, p.asStretch === true);
           return { notice: null };
         }
         return this.browser.handle(
