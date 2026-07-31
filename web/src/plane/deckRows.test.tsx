@@ -175,13 +175,20 @@ describe('row 3 — the scene controls (B2 completes P7-T3)', () => {
     )
   })
 
-  it('points at the pin door and names only what is STILL missing', () => {
-    // A pin belongs to the parameter, not to this row — it rides each
-    // DragBox's right-click menu, where the donor puts it too. The note tracks
-    // reality: pins landed in B2/5, the mute group has not.
+  it('carries MUTE, and points at the pin door for what is not a row control', () => {
+    // A pin belongs to the parameter, not to this row — it rides each DragBox's
+    // right-click menu, where the donor puts it too. MUTE is a row control
+    // because the group is a deck-level gesture.
     const out = html(<DeckSceneRow {...props()} />)
+    expect(out).toContain('MUTE')
     expect(out).toContain('right-click any value to pin it to this scene')
-    expect(out).toContain('MUTE group still to come')
+  })
+
+  it('teaches how a mute group is BUILT when it is still empty', () => {
+    // An empty group silences nothing, so the control has to say what to do
+    // next rather than looking broken when pressing it changes nothing.
+    const out = html(<DeckSceneRow {...props()} />)
+    expect(out).toContain('engage the group, then a track')
   })
 })
 

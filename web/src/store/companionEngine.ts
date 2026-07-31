@@ -253,6 +253,15 @@ export interface DeckState {
    * The PIN half lands with the override ops; this carries the switch.
    */
   sceneLatched: boolean;
+  /**
+   * MUTE — the group is engaged, so every member is silenced together.
+   *
+   * RUNTIME, like the donor's `muteGroupActive` (BeatSequencer.swift:1957,
+   * "Not persisted, reset to false on load"). Membership is the DOCUMENT's
+   * (`pattern.muteGroupMemberIndices`) because a group is something you build;
+   * being engaged is something you do.
+   */
+  muteGroupActive: boolean;
 }
 
 export function idleDeck(): DeckState {
@@ -272,6 +281,7 @@ export function idleDeck(): DeckState {
     switchMode: "scheduled",
     cleanCut: false,
     sceneLatched: false,
+    muteGroupActive: false,
   };
 }
 
@@ -411,6 +421,18 @@ interface CompanionState {
   /** B2: the keys pinned to this deck's current scene — what a control reads to
       wear its pinned ring. */
   pinnedKeys(deck?: number): string[];
+  /** B2: engage/release the mute group — every member silences together. */
+  setMuteGroupActive(on: boolean, deck?: number): void;
+  /**
+   * B2: add/remove a track. While the group is ENGAGED the change is audible
+   * immediately — a track added mutes, a track removed unmutes (the donor's
+   * `toggleMuteGroupMembership`).
+   */
+  toggleMuteGroupMember(trackIndex: number, deck?: number): void;
+  /** B2: release the group and empty it. */
+  clearMuteGroup(deck?: number): void;
+  /** B2: this deck's mute-group membership, by track index. */
+  muteGroupMembers(deck?: number): number[];
   /**
    * P3-U8: grow (or shrink) the session's scene row — a DOCUMENT edit
    * (`pattern.enabledSceneCount`, clamped 1..8), autosaved like any other.
@@ -479,6 +501,28 @@ function mergeKeyIntoBase(
   tracks[idx] = { ...(tracks[idx] ?? {}), [field]: src[field] };
   base.trackSettings = tracks;
   return base;
+}
+
+/** This pattern's mute-group membership, by track index. The donor persists
+    INDICES rather than ids for the same reason it says out loud: loaded tracks
+    are reassigned new UUIDs, so the ids would not match on the way back in. */
+function muteGroupOf(pattern: Record<string, unknown>): number[] {
+  const raw = pattern.muteGroupMemberIndices;
+  return Array.isArray(raw) ? (raw as number[]).filter((n) => Number.isInteger(n)) : [];
+}
+
+/** Write membership back to the document, republish and autosave. */
+function writeMuteGroup(deck: number, members: number[]): void {
+  const st = useCompanion.getState();
+  const d = deckOf(st, deck);
+  if (!d.session) return;
+  const pattern = {
+    ...(d.session.pattern as Record<string, unknown>),
+    muteGroupMemberIndices: members,
+  };
+  const next: WorkingSession = { ...d.session, pattern: pattern as typeof d.session.pattern };
+  useCompanion.setState((s) => patchDeck(s, deck, { session: next }));
+  autosaver.schedule(next);
 }
 
 /** Write a deck's layers (and optionally its base) back, republish, autosave. */
@@ -575,6 +619,12 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
       sampleRates,
       stoppedTracks: new Set(d.stoppedTracks),
       soloedTracks: new Set(d.soloedTracks),
+      // The mute group, only while ENGAGED — membership alone silences nothing,
+      // which is what makes a group something you can build ahead of time and
+      // drop in when you want it.
+      mutedTracks: d.muteGroupActive
+        ? new Set(muteGroupOf(d.session.pattern as Record<string, unknown>))
+        : undefined,
       // The HOST decides (P6-3): the merged shell hosts return plugins now and
       // answers returnFx true, so the tracks' send levels must travel; the
       // browser companion still answers false (a WASM worklet hosts no AU) and
@@ -1376,6 +1426,49 @@ export const useCompanion = create<CompanionState>((set, get) => ({
   pinnedKeys(deck = 0) {
     const d = deckOf(get(), deck);
     return d.session ? pinnedKeysFor(d.session.pattern, d.scene) : [];
+  },
+
+  /**
+   * THE MUTE GROUP (B2). Membership is the document's, engagement is runtime —
+   * see `DeckState.muteGroupActive` for why they split that way here when the
+   * donor writes `isMuted` directly.
+   */
+  setMuteGroupActive(on, deck = 0) {
+    if (deck < 0 || deck >= MAX_DECKS) return;
+    if (deckOf(get(), deck).muteGroupActive === on) return; // the donor's guard
+    set((s) => patchDeck(s, deck, { muteGroupActive: on }));
+    if (audio.running && deckOf(get(), deck).session)
+      publish(get(), deck, deckOf(get(), deck).playing);
+  },
+
+  toggleMuteGroupMember(trackIndex, deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session || trackIndex < 0) return;
+    const members = muteGroupOf(d.session.pattern);
+    const next = members.includes(trackIndex)
+      ? members.filter((i) => i !== trackIndex)
+      : [...members, trackIndex].sort((a, b) => a - b);
+    writeMuteGroup(deck, next);
+    // While ENGAGED the change is audible at once: added → mutes, removed →
+    // unmutes. That immediacy is the whole gesture — the donor marks it
+    // "audio-critical" and pushes state even mid-playback.
+    if (deckOf(get(), deck).muteGroupActive && audio.running)
+      publish(get(), deck, deckOf(get(), deck).playing);
+  },
+
+  clearMuteGroup(deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session) return;
+    // Release BEFORE emptying, or the members would be dropped while still
+    // counted as muted and never unmute — the donor orders it the same way.
+    if (d.muteGroupActive) get().setMuteGroupActive(false, deck);
+    writeMuteGroup(deck, []);
+    if (audio.running) publish(get(), deck, deckOf(get(), deck).playing);
+  },
+
+  muteGroupMembers(deck = 0) {
+    const d = deckOf(get(), deck);
+    return d.session ? muteGroupOf(d.session.pattern) : [];
   },
 
   selectScene(scene, opts) {

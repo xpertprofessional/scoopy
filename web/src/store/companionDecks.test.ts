@@ -399,3 +399,68 @@ describe("scene overrides", () => {
     expect(useCompanion.getState().pinToScene("bpm", 2)).toBe(false);
   });
 });
+
+/**
+ * B2 — the mute group.
+ *
+ * Membership is the DOCUMENT's, engagement is RUNTIME. That split is a stated
+ * divergence: the donor writes `tracks[i].isMuted` (a persisted field) and gets
+ * away with it because saving is explicit there. Here every document write
+ * autosaves, so activating a group would persist its mutes and the next load
+ * would show muted tracks with no group engaged and nothing explaining why.
+ */
+describe("the mute group", () => {
+  const members = (deck: number) =>
+    (companionDeck(deck).session?.pattern as { muteGroupMemberIndices?: number[] })
+      ?.muteGroupMemberIndices ?? [];
+
+  it("builds membership on the document, so a group survives a reload", () => {
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().toggleMuteGroupMember(2, 0);
+    useCompanion.getState().toggleMuteGroupMember(0, 0);
+    expect(members(0)).toEqual([0, 2]); // sorted — a group is a set, not a history
+  });
+
+  it("toggles a member off again", () => {
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().toggleMuteGroupMember(1, 0);
+    useCompanion.getState().toggleMuteGroupMember(1, 0);
+    expect(members(0)).toEqual([]);
+  });
+
+  it("keeps ENGAGEMENT out of the document — it resets with the deck", () => {
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().setMuteGroupActive(true, 0);
+    expect(companionDeck(0).muteGroupActive).toBe(true);
+    expect(companionDeck(0).session?.pattern).not.toHaveProperty("muteGroupActive");
+    useCompanion.getState().closeDeck(0);
+    expect(companionDeck(0).muteGroupActive).toBe(false);
+  });
+
+  it("clear releases BEFORE emptying, so no member is left silently muted", () => {
+    // Order matters: dropping the members first would leave them counted as
+    // muted with nothing left to unmute them.
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().toggleMuteGroupMember(0, 0);
+    useCompanion.getState().setMuteGroupActive(true, 0);
+    useCompanion.getState().clearMuteGroup(0);
+    expect(companionDeck(0).muteGroupActive).toBe(false);
+    expect(members(0)).toEqual([]);
+  });
+
+  it("re-engaging the same state is a no-op, like the donor's guard", () => {
+    setDeck(0, { session: session("beach") });
+    useCompanion.getState().setMuteGroupActive(false, 0);
+    expect(companionDeck(0).muteGroupActive).toBe(false);
+  });
+
+  it("leaves every other deck's group alone", () => {
+    setDeck(0, { session: session("beach") });
+    setDeck(1, { session: session("forest") });
+    useCompanion.getState().toggleMuteGroupMember(1, 1);
+    useCompanion.getState().setMuteGroupActive(true, 1);
+    expect(members(0)).toEqual([]);
+    expect(members(1)).toEqual([1]);
+    expect(companionDeck(0).muteGroupActive).toBe(false);
+  });
+});

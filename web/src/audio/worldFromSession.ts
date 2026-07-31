@@ -237,6 +237,20 @@ export interface WorldOptions {
    */
   stoppedTracks?: ReadonlySet<number>;
   /**
+   * RUNTIME mute, by section index — the MUTE GROUP's members while the group is
+   * active (B2). Folds into `mixMuted` beside solo, so a grouped track dims on
+   * the same ~4 ms ramp and keeps choking its peers.
+   *
+   * ⚠️ DELIBERATE DIVERGENCE, stated. The donor writes `tracks[i].isMuted`
+   * directly (BeatSequencer.swift:9996-10010), which is a PERSISTED field, and
+   * gets away with it because saving is explicit there. Here every document
+   * write autosaves — so activating a group would persist its mutes, and the
+   * next load would show muted tracks with no active group and nothing on
+   * screen explaining why. The membership is persisted (it is a thing you
+   * build); the muting is runtime (it is a thing you do).
+   */
+  mutedTracks?: ReadonlySet<number>;
+  /**
    * RUNTIME solo, by section index — solo is never persisted (`isSoloed` is not a document field;
    * BeatSequencer.swift:8268 "a transient UI state that resets on load"). Mirrors the desktop's
    * derivation exactly (BeatSequencer.swift:6626-6643): when ANY track is soloed, every un-soloed
@@ -315,6 +329,7 @@ export function worldFromSession(
     }
     const stopped = options.stoppedTracks ? options.stoppedTracks.has(index) : track.isStopped;
     const soloed = options.soloedTracks?.has(index) ?? false;
+    const groupMuted = options.mutedTracks?.has(index) ?? false;
 
     // Free-rate pitch factor for T+P (varispeed) — AudioEngineFacade.swift:2080-2090: in T+P the
     // free rate ALSO pitches each grain on top of the multiply; gated to REG playback with the
@@ -359,7 +374,7 @@ export function worldFromSession(
       // trackType: a non-audio track's sample lane is off (SMP toggle); the WASM world does not
       // carry trackType (P8-9), so without this term the browser played samples the desktop mutes.
       muted: stopped || track.isPaused || track.trackType !== TRACK_TYPE_AUDIO,
-      mixMuted: track.isMuted || (anySolo && !soloed),
+      mixMuted: track.isMuted || groupMuted || (anySolo && !soloed),
       reversed: track.playbackDirection === DIRECTION_BACKWARD,
       polyphonic: track.voiceMode === "poly",
       stereoMode: track.stereoMode,

@@ -572,6 +572,12 @@ export function DeckSceneRow({ element, locked = false }: DeckRowsProps) {
   const mode = useCompanion((c) => c.decks[deck]?.switchMode ?? 'scheduled')
   const cleanCut = useCompanion((c) => c.decks[deck]?.cleanCut ?? false)
   const latched = useCompanion((c) => c.decks[deck]?.sceneLatched ?? false)
+  const muteActive = useCompanion((c) => c.decks[deck]?.muteGroupActive ?? false)
+  const muteCount = useCompanion(
+    (c) =>
+      ((c.decks[deck]?.session?.pattern as { muteGroupMemberIndices?: number[] } | undefined)
+        ?.muteGroupMemberIndices ?? []).length,
+  )
 
   return (
     <div className="ds-row strip-row deckrow deckrow-scene" data-no-drag>
@@ -619,14 +625,35 @@ export function DeckSceneRow({ element, locked = false }: DeckRowsProps) {
       >
         SCN
       </button>
-      {/* SCENE PINS ARE LIVE (B2/5) — they are not a control on this row: a pin
-          belongs to the PARAMETER, so it rides each DragBox's right-click menu
-          ("Make Scene-Specific", "Reset to Global", "Push Value to All
-          Scenes"), which is where the donor puts it too. The note names what is
-          still missing rather than what already works. */}
-      <span className="dr-note mono">
-        right-click any value to pin it to this scene · MUTE group still to come
-      </span>
+      {/* MUTE — the group, engaged. Membership is built on the tracks
+          themselves (their M buttons, while this is lit); this control is the
+          one that drops them all at once. Right-click clears the group. */}
+      <button
+        type="button"
+        className={`dr mono${muteActive ? ' latched' : ''}`}
+        disabled={locked}
+        onClick={() => useCompanion.getState().setMuteGroupActive(!muteActive, deck)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          useCompanion.getState().clearMuteGroup(deck)
+        }}
+        title={
+          locked
+            ? LOCKED_TITLE
+            : muteActive
+              ? `MUTE engaged — ${muteCount} track${muteCount === 1 ? '' : 's'} silenced; right-click to clear the group`
+              : muteCount === 0
+                ? 'MUTE — engage the group, then a track’s M adds it (right-click clears)'
+                : `MUTE — silence the ${muteCount} track${muteCount === 1 ? '' : 's'} in this group`
+        }
+      >
+        MUTE
+      </button>
+      {/* SCENE PINS ARE LIVE (B2/5) — not a control on this row: a pin belongs
+          to the PARAMETER, so it rides each DragBox's right-click menu ("Make
+          Scene-Specific", "Reset to Global", "Push Value to All Scenes"), which
+          is where the donor puts it too. */}
+      <span className="dr-note mono">right-click any value to pin it to this scene</span>
     </div>
   )
 }

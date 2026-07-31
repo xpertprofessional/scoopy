@@ -237,8 +237,8 @@ check('the tile carries the four classic deck rows (B1 + B2\'s scene row)',
     ['TR', 'TP', 'WIN', 'BR', 'REV'].every((v) => sync.includes(v)) &&
       (sync.includes('SYNC') || sync.includes('FREE')), sync)
   const scene = (await page.textContent('.deckrow-scene')) ?? ''
-  check('the scene row carries the switch-mode cycler, CU and SCN (B2)',
-    ['SCHED', 'CU', 'SCN'].every((v) => scene.includes(v)), scene)
+  check('the scene row carries the switch-mode cycler, CU, SCN and MUTE (B2)',
+    ['SCHED', 'CU', 'SCN', 'MUTE'].every((v) => scene.includes(v)), scene)
   const view = (await page.textContent('.deckrow-view')) ?? ''
   check('the view row carries GRID and PERF',
     view.includes('GRID') && view.includes('PERF'), view)
