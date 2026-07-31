@@ -202,6 +202,17 @@ export interface World {
  * the core's own integer math). Broadcast finer than one step; `time` is the AudioContext clock.
  */
 export interface EnginePosition {
+  /**
+   * WHOSE CLOCK THIS IS (P11-3a-b). A broadcast used to carry a bare `step`
+   * with no owner, and every consumer read it as "the" step — so on the plane,
+   * where three decks run at three tempos, a scene queued on strip B committed
+   * against strip A's grid. The donor never had one shared step:
+   * `AudioEngineFacade.publish(deckA:deckB:deckC:)` carries `launchArmedA/B/C`
+   * and `QuantizePollTracker` is per-sequencer.
+   *
+   * The browser companion has one deck by definition and always reports 0.
+   */
+  deck: number;
   playing: boolean;
   /** The master step counter — monotonic from play (which always starts at step 0 here). */
   step: number;
@@ -269,7 +280,10 @@ export class ScoopyAudio {
           // The transport mirror's broadcast — NOT acked (it is outbound-only telemetry). Message
           // events keep firing in a hidden tab (audio keeps running), so a scheduled scene switch
           // hooked here survives backgrounding where a rAF-driven check would stall.
-          const pos = data as unknown as EnginePosition;
+          // The worklet knows nothing about decks — the browser companion runs
+          // ONE session — so the owner is stamped here rather than sent over the
+          // message port. Deck 0 is not a guess: it is the only deck there is.
+          const pos = { ...(data as unknown as EnginePosition), deck: 0 };
           this.lastPos = pos;
           this.posCbs.forEach((cb) => cb(pos));
         }

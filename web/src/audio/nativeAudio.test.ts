@@ -28,7 +28,11 @@ import { switchBoundary } from "./patternClock.ts";
  * A link whose HotFrame channel we drive by hand, so a test can say "the engine
  * reached step N" the same way the shell's 30 Hz timer does.
  */
-function stubLink(): { link: EngineLink; frame(step: number): void; subscribers: number } {
+function stubLink(): {
+  link: EngineLink;
+  frame(step: number, perDeck?: number[]): void;
+  subscribers: number;
+} {
   const cbs = new Set<(f: Float64Array) => void>();
   const link = {
     command: vi.fn(async () => ({ applied: true })),
@@ -42,9 +46,15 @@ function stubLink(): { link: EngineLink; frame(step: number): void; subscribers:
   } as unknown as EngineLink;
   return {
     link,
-    frame(step: number) {
+    /** Drive deck 0 (the common case) or every deck at once. */
+    frame(step: number, perDeck?: number[]) {
       const f = new Float64Array(HOT_FRAME_LENGTH);
+      const layout = HotFrameLayout as unknown as Record<string, number>;
       f[HotFrameLayout.playheadStepDeck0] = step;
+      perDeck?.forEach((v, d) => {
+        const idx = layout[`playheadStepDeck${d}`];
+        if (idx !== undefined) f[idx] = v;
+      });
       for (const cb of cbs) cb(f);
     },
     get subscribers() {
@@ -71,9 +81,12 @@ describe("NativeWorldSink — position fan-out (P11-3a)", () => {
     // THE WHOLE ROW. At HEAD this array stayed empty forever.
     frame(7);
 
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.step).toBe(7);
-    expect(seen[0]!.playing).toBe(true);
+    // ONE BROADCAST PER DECK since P11-3a-b — each stamped with its owner.
+    expect(seen).toHaveLength(3);
+    expect(seen.map((p) => p.deck)).toEqual([0, 1, 2]);
+    const deck0 = seen.find((p) => p.deck === 0)!;
+    expect(deck0.step).toBe(7);
+    expect(deck0.playing).toBe(true);
   });
 
   it("carries deck 0's playhead, frame after frame", async () => {
@@ -83,11 +96,54 @@ describe("NativeWorldSink — position fan-out (P11-3a)", () => {
     sink.publish(world(true));
 
     const steps: number[] = [];
-    sink.onPosition((p) => steps.push(p.step));
-    [0, 1, 1, 2, 5].forEach(frame);
+    sink.onPosition((p) => {
+      if (p.deck === 0) steps.push(p.step);
+    });
+    [0, 1, 1, 2, 5].forEach((n) => frame(n));
 
     // Every frame, not only step edges — `ScoopyAudio`'s contract.
     expect(steps).toEqual([0, 1, 1, 2, 5]);
+  });
+
+  /**
+   * P11-3a-b — THE DEFECT P11-3a EXPOSED. `EnginePosition` carried a bare step
+   * sourced from `playheadStepDeck0`, and the consumer looped every deck
+   * against it: a scene queued on strip B committed on strip A's grid, and a
+   * stopped strip A gated B and C entirely through the `playing` early-return.
+   */
+  it("gives each deck its OWN step, not deck 0's", async () => {
+    const { link, frame } = stubLink();
+    const sink = new NativeWorldSink(link);
+    await sink.start("");
+    sink.publish(world(true), 0);
+    sink.publish(world(true), 1);
+    sink.publish(world(true), 2);
+
+    const byDeck = new Map<number, number>();
+    sink.onPosition((p) => byDeck.set(p.deck, p.step));
+    frame(0, [11, 22, 33]);
+
+    // Three decks at three tempos are the normal case on the plane, not an
+    // exception — sharing one clock is what made a queued pad fire on the
+    // wrong grid.
+    expect([byDeck.get(0), byDeck.get(1), byDeck.get(2)]).toEqual([11, 22, 33]);
+  });
+
+  it("gives each deck its OWN transport state", async () => {
+    const { link, frame } = stubLink();
+    const sink = new NativeWorldSink(link);
+    await sink.start("");
+    sink.publish(world(false), 0); // strip A stopped…
+    sink.publish(world(true), 1); // …strip B running
+
+    const playing = new Map<number, boolean>();
+    sink.onPosition((p) => playing.set(p.deck, p.playing));
+    frame(0, [0, 4, 0]);
+
+    // The consumer's `if (!pos.playing) return` used to read DECK 0 for every
+    // deck, so a stopped strip A silently froze B's and C's scene queues.
+    expect(playing.get(0)).toBe(false);
+    expect(playing.get(1)).toBe(true);
   });
 
   it("the unsubscribe handle actually detaches", async () => {
@@ -96,7 +152,9 @@ describe("NativeWorldSink — position fan-out (P11-3a)", () => {
     await sink.start("");
 
     const seen: number[] = [];
-    const off = sink.onPosition((p) => seen.push(p.step));
+    const off = sink.onPosition((p) => {
+      if (p.deck === 0) seen.push(p.step);
+    });
     frame(1);
     off();
     frame(2);
@@ -109,7 +167,9 @@ describe("NativeWorldSink — position fan-out (P11-3a)", () => {
     const sink = new NativeWorldSink(link);
 
     const seen: number[] = [];
-    sink.onPosition((p) => seen.push(p.step));
+    sink.onPosition((p) => {
+      if (p.deck === 0) seen.push(p.step);
+    });
     frame(3); // never started — no HotFrame subscription exists yet
     expect(seen).toEqual([]);
 
@@ -127,7 +187,9 @@ describe("NativeWorldSink — position fan-out (P11-3a)", () => {
     await sink.start("");
 
     let pos: EnginePosition | null = null;
-    sink.onPosition((p) => (pos = p));
+    sink.onPosition((p) => {
+      if (p.deck === 0) pos = p;
+    });
     frame(9);
 
     // quantize.md §3: a made-up `stepFrame` would drive a scheduler to fire at
@@ -232,7 +294,12 @@ describe("NativeWorldSink — the scene commit it now drives", () => {
     // rather than "never delivered" — the two are indistinguishable from `fired`
     // alone, and at HEAD it was the second one.
     let delivered = 0;
-    sink.onPosition(() => delivered++);
+    // Deck 0's broadcasts only — the sink emits one per deck since P11-3a-b,
+    // and this test is about deck 0's transport being declined, not about how
+    // many decks exist.
+    sink.onPosition((p) => {
+      if (p.deck === 0) delivered++;
+    });
     const { fired } = commitOn(sink, 16);
     for (let s = 0; s <= 32; s++) frame(s);
 
@@ -248,7 +315,7 @@ describe("NativeWorldSink — the scene commit it now drives", () => {
 
     const { fired } = commitOn(sink, 16);
     // The pathological case: the shell's timer misses step 15 entirely.
-    [12, 14, 16].forEach(frame);
+    [12, 14, 16].forEach((n) => frame(n));
 
     // Late by one step rather than never — the failure mode an equality test
     // would have had. 30 Hz only skips a 16th above ~450 BPM, so this is the

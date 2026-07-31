@@ -1545,28 +1545,36 @@ export function enginePosition(): EnginePosition | null {
  * step 0. Hooked on the message channel, not rAF, so a hidden tab keeps switching on time.
  */
 audio.onPosition((pos) => {
+  // ⚠️ THIS BROADCAST BELONGS TO ONE DECK (P11-3a-b), and both lines below
+  // depend on it. It used to carry a bare step with no owner while this handler
+  // looped over every deck against it, so on the plane — three decks at three
+  // tempos — a scene queued on strip B committed on strip A's grid. And this
+  // early-return read DECK 0's transport, so a stopped strip A silently gated
+  // B and C entirely. The sink stamps the owner now: `playing` is this deck's,
+  // and the work below is this deck's.
+  //
+  // Two grid strips can each have a scene queued and they will NOT share a
+  // boundary — their patterns have different LCMs, which is the whole reason
+  // the boundary is computed per session rather than from a global bar count.
   if (!pos.playing) return;
-  // EVERY deck with a switch armed, not just deck 0. Two grid strips can each
-  // have a scene queued, and they will not share a boundary — their patterns
-  // have different LCMs, which is the whole reason the boundary is computed per
-  // session rather than taken from a global bar count.
+  const deck = pos.deck;
   const st = useCompanion.getState();
-  // THE ONE-SHOT STOP, on the same broadcast as the scene commit below and for
-  // the same reason: it must fire on the message channel rather than rAF, or a
-  // hidden tab one-shots forever. The donor's law verbatim
-  // (BeatSequencer.swift:4220-4225) — `currentStep >= target → stop()`, which
-  // stops on ENTERING the final step of the cycle.
-  for (let deck = 0; deck < st.decks.length; deck++) {
+  {
+    // THE ONE-SHOT STOP, on the same broadcast as the scene commit below and for
+    // the same reason: it must fire on the message channel rather than rAF, or a
+    // hidden tab one-shots forever. The donor's law verbatim
+    // (BeatSequencer.swift:4220-4225) — `currentStep >= target → stop()`, which
+    // stops on ENTERING the final step of the cycle.
     const d = st.decks[deck];
-    if (!d || d.stopAtStep === null || !d.playing) continue;
-    if (pos.step < d.stopAtStep) continue;
-    useCompanion.setState((s) => patchDeck(s, deck, { stopAtStep: null }));
-    useCompanion.getState().stop(deck);
+    if (d && d.stopAtStep !== null && d.playing && pos.step >= d.stopAtStep) {
+      useCompanion.setState((s) => patchDeck(s, deck, { stopAtStep: null }));
+      useCompanion.getState().stop(deck);
+    }
   }
-  for (let deck = 0; deck < st.decks.length; deck++) {
+  {
     const d = st.decks[deck];
-    if (!d?.scheduledScene || d.switchBoundaryStep === null) continue;
-    if (pos.step < d.switchBoundaryStep - 1) continue;
+    if (!d?.scheduledScene || d.switchBoundaryStep === null) return;
+    if (pos.step < d.switchBoundaryStep - 1) return;
     const target = d.scheduledScene;
     useCompanion.setState((s) =>
       patchDeck(s, deck, { scene: target, scheduledScene: null, switchBoundaryStep: null }),

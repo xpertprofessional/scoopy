@@ -23,6 +23,12 @@ import { HotFrameLayout } from "../../protocol/schema.ts";
 import type { EngineLink } from "../engineLink.ts";
 import type { EnginePosition, World } from "./scoopyAudio.ts";
 
+/** How many decks the position fan-out covers. Matches the engine's grid-deck
+    count (`sl_deck_count()` = 3, pinned by `kMaxDecks`); a HotFrame with fewer
+    `playheadStepDeck*` slots simply reports 0 for the missing ones rather than
+    throwing, so this cannot outrun the schema. */
+const MAX_POSITION_DECKS = 3;
+
 /**
  * The surface `companionEngine` and `sampleStore` actually use. Narrow on
  * purpose: it is the contract both sinks must honour, and writing it down is
@@ -48,7 +54,11 @@ export interface WorldSink {
    */
   publish(world: World, deck?: number): void;
   setMainGain(value: number): void;
-  position(): EnginePosition | null;
+  /** This deck's latest transport position. `deck` defaults to 0, which is what
+      every pre-P11-3a-b caller meant and what the browser companion (one deck)
+      always means. */
+  position(deck?: number): EnginePosition | null;
+  /** Position broadcasts, one per deck per frame, each stamped with `deck`. */
   onPosition(cb: (pos: EnginePosition) => void): () => void;
   level(): number;
   levels(): { rms: number; peak: number };
@@ -82,6 +92,8 @@ export class NativeWorldSink implements WorldSink {
    * refusal is surfaced through `lastError` rather than swallowed.
    */
   private publishedPlaying = new Map<number, boolean>();
+  /** Every deck's latest playhead step, read straight off the HotFrame. */
+  private steps: number[] = [];
 
   // ⚠️ THERE WAS AN `onPublished` HOOK HERE and it is gone (P3-2). It existed
   // for exactly one subscriber: `sl_snapshot_begin` reset every deck's
@@ -119,7 +131,14 @@ export class NativeWorldSink implements WorldSink {
     // Subscribe to the sequencer playhead the engine already broadcasts, so
     // `position()` is the ENGINE's truth rather than a UI-side estimate.
     this.offHotFrame = this.link.onHotFrame((frame) => {
-      this.step = frame[HotFrameLayout.playheadStepDeck0] ?? 0;
+      // EVERY DECK'S PLAYHEAD, not just deck 0's (P11-3a-b). The HotFrame has
+      // carried `playheadStepDeck0..2` all along; only deck 0 was ever read, so
+      // three decks at three tempos shared one clock downstream.
+      for (let d = 0; d < MAX_POSITION_DECKS; d++) {
+        const idx = (HotFrameLayout as Record<string, number>)[`playheadStepDeck${d}`];
+        this.steps[d] = idx === undefined ? 0 : (frame[idx] ?? 0);
+      }
+      this.step = this.steps[0] ?? 0;
       // ── THE FAN-OUT (P11-3a) ────────────────────────────────────────────
       // Without this, `positionCbs` was added to and deleted from and NEVER
       // ITERATED, so `companionEngine`'s switch commit never ran on the JUCE
@@ -130,8 +149,14 @@ export class NativeWorldSink implements WorldSink {
       // Fanned out on EVERY frame, not only when the step changes, because that
       // is `ScoopyAudio`'s contract ("position broadcasts, ~every 1024 frames")
       // and a subscriber that wants edges can compare steps itself.
-      const pos = this.position();
-      if (pos) for (const cb of this.positionCbs) cb(pos);
+      // ONE BROADCAST PER DECK, each stamped with its owner. A consumer that
+      // cares about one deck filters; one that cares about all of them sees each
+      // on its own clock. Fanning out a single position and letting consumers
+      // assume it was theirs is precisely the defect this replaces.
+      for (let d = 0; d < MAX_POSITION_DECKS; d++) {
+        const pos = this.position(d);
+        if (pos) for (const cb of this.positionCbs) cb(pos);
+      }
     });
   }
 
@@ -215,7 +240,7 @@ export class NativeWorldSink implements WorldSink {
    */
   setMainGain(_value: number): void {}
 
-  position(): EnginePosition | null {
+  position(deck = 0): EnginePosition | null {
     if (!this.started) return null;
     // Only `step` has a native source today — it is what the sequencer readout
     // and the scene scheduler consume. The sub-step fields are reported as 0
@@ -230,8 +255,9 @@ export class NativeWorldSink implements WorldSink {
     // transport state published for DECK 0, which is the deck `step` itself
     // comes from (`playheadStepDeck0`) — the two agree about whose clock this is.
     return {
-      playing: this.publishedPlaying.get(0) ?? false,
-      step: this.step,
+      deck,
+      playing: this.publishedPlaying.get(deck) ?? false,
+      step: this.steps[deck] ?? 0,
       stepFrame: 0,
       framesPerStep: 0,
       time: 0,
