@@ -419,6 +419,58 @@ naming its donor binding, the rows it consumes, and its door.
 
 ---
 
+## 10c. Handoff — state at 2026-07-31, end of the autonomous run
+
+**B1 and B2 are both done** bar what only the user can settle. Eleven commits,
+tree green at every one.
+
+| | |
+|---|---|
+| **B1** deck transport | engine seam (`sl_deck_skip_step`, deck param `texture`) · companion verbs (one-shot, BR shift, the instant double) · four deck rows on the tile · `menuTransport` answered, so **Space starts a deck** for the first time · the rows rebuilt to `docs/DESIGN.md` after a first cut that broke three of its rules |
+| **B2** scenes | switch modes SCHED/RUN/START + CU + SCN · scene overrides (pin/unpin/push-to-all) with a drift guard · the pin MENU repointed off a topic nobody publishes · MUTE group, membership included · `P11-3a-b` per-deck position · `P11-3b` the quantized-launch ABI |
+
+**Verified at HEAD:** ctest 44/44 · vitest 1757/1757 · ten drift gates green ·
+walks 7×2 green · bundle fresh.
+
+### ⚠️ THE PATTERN THIS RUN FOUND, and it matters more than any single row
+
+**Three features had complete UI, complete wire, complete store, and no join.**
+
+- **Space** sent `menuTransport`; nothing had ever answered it.
+- **The scene-pin menu** was built, wired onto every DragBox and passed a key by
+  `MasterRow` — and fed by a `scenes` topic nothing publishes, so it rendered as
+  `[]`. Structurally invisible, not broken.
+- **The mute group** was severed in three places at once: the meta flag
+  hardcoded false, the op unhandled, the membership field never passed.
+
+None of these is a bug a test would catch, because nothing is *wrong* — the
+pieces simply are not connected. **That is what "the bindings never came across"
+means in practice, and it means the 48-unanswered-commands count UNDERSTATES the
+gap.** When picking up a feature that looks missing, check whether it is
+actually present and unjoined before building it.
+
+### Awaiting the user — the loop stopped here because everything left needs you
+
+1. **The launch quantum ruling (P11-3c).** The donor uses ONE global quantum
+   with an auto-chosen reference deck (`LaunchQuantize`, `DJModeView.swift:96`,
+   persisted as `djMode.globalLaunchQuantize`); `quantize.md` replaces a shipped
+   answer. The ABI beneath it is done and callerless until this is settled.
+2. **P6-AUDIT's gate** — load a plugin on FX1, hear a strip's send through it,
+   tweak it, save the map, reopen. **B3 (mixer/FX sends) is blocked behind it**:
+   P7-MIX-0 is `blocked(P6-AUDIT not signed)`, and P3.5-E4 is hoisted to run
+   after it.
+3. **Real-host walks owed.** B1's rows (expand a grid strip: ▸ one-shot, »
+   skip, TP+SYNC/TR exclusion, WIN, DBL) · B2's scene row · **P11-3a-b's
+   specifically: queue a pad on strip B with strip A STOPPED — it must switch on
+   B's own cycle.**
+4. **`B1-RETIRE`** — deliberately not run autonomously. It deletes
+   `TransportPanel`/`DjPanel` and needs four test files rehomed first; deleting
+   coverage while nobody is watching is how a green suite quietly loses it.
+5. **~45 commits unpushed.** `P3-PUSH` has never run. Confirm the remote and
+   your intent.
+
+---
+
 ## 10b. Handoff — state at 2026-07-31
 
 **B1 (deck transport) landed**, five commits, tree green at each: the engine seam
