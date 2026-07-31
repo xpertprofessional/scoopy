@@ -16,6 +16,7 @@ import { deckInSlot, toggleProjection, type Slot } from "./djProjection.ts";
 import { WaitingForState } from "./WaitingForState.tsx";
 import { attachMenuBridge } from "../commands/menuBridge.ts";
 import "./deckmixer.css";
+import { beatRepeatLabel } from "../plane/stripOps.ts";
 
 /**
  * Transport row — mirrors the native structure (GlobalToolbarView
@@ -44,21 +45,6 @@ function winMs(texture: number): number {
   const lo = WIN_NODES_MS[i]!;
   const hi = WIN_NODES_MS[i + 1]!;
   return lo * Math.pow(hi / lo, t - i);
-}
-
-/**
- * The beat-repeat length readout — ONE fused scale, two notations.
- *
- * `nudgeBeatRepeatScale` walks 16…2, 1, then 1/2…1/32, where the tail is a re-triggering roll:
- * length pins to 1 and the SUBDIVISION carries the value (BeatSequencer:19436). So the number on
- * screen comes from whichever half of the scale is live — read `beatRepeatLength` alone and the
- * six micro settings all render "1", which is why the subdivision had to join the wire.
- */
-export function beatRepeatLabel(s: {
-  beatRepeatLength: number;
-  beatRepeatSubdivision: number;
-}): string {
-  return s.beatRepeatSubdivision > 1 ? `1/${s.beatRepeatSubdivision}` : `${s.beatRepeatLength}`;
 }
 
 export function TransportPanel({ link }: { link: EngineLink | null }) {

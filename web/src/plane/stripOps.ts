@@ -559,6 +559,21 @@ export const BR_SCALE: { label: string; length: number; subdivision?: number }[]
   { label: '1/32', length: 1, subdivision: 32 },
 ]
 
+/**
+ * The beat-repeat length readout — ONE fused scale, two notations.
+ *
+ * `nudgeBeatRepeatScale` walks 16…2, 1, then 1/2…1/32, where the tail is a re-triggering roll:
+ * length pins to 1 and the SUBDIVISION carries the value (BeatSequencer:19436). So the number on
+ * screen comes from whichever half of the scale is live — read `beatRepeatLength` alone and the
+ * six micro settings all render "1", which is why the subdivision had to join the wire.
+ */
+export function beatRepeatLabel(s: {
+  beatRepeatLength: number;
+  beatRepeatSubdivision: number;
+}): string {
+  return s.beatRepeatSubdivision > 1 ? `1/${s.beatRepeatSubdivision}` : `${s.beatRepeatLength}`;
+}
+
 /** The scale row a beat-repeat window is wearing, for the cycler + label.
     −1 = not on the scale (a hand-built window) — cycling starts from '2'. */
 export function brScaleIndex(br: { length: number; subdivision?: number } | null): number {

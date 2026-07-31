@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { beatRepeatLabel } from "./TransportPanel.tsx";
+// REHOMED (B1-RETIRE): this pure readout lived in `TransportPanel`, which is
+// being deleted — its every verb is unanswered. The scale it reads is the same
+// one `BR_SCALE` walks, so `stripOps` is where it belongs. The PIN moved with
+// it rather than being deleted: the fused-scale law is still live on the deck
+// row's BR control.
+import { beatRepeatLabel } from "../plane/stripOps.ts";
 
 /**
  * The BR length cycler. Native's `nudgeBeatRepeatScale` walks ONE fused scale and the readout
