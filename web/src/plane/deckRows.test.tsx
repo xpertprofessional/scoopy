@@ -175,9 +175,13 @@ describe('row 3 — the scene controls (B2 completes P7-T3)', () => {
     )
   })
 
-  it('SAYS what is still missing, rather than showing controls that do nothing', () => {
+  it('points at the pin door and names only what is STILL missing', () => {
+    // A pin belongs to the parameter, not to this row — it rides each
+    // DragBox's right-click menu, where the donor puts it too. The note tracks
+    // reality: pins landed in B2/5, the mute group has not.
     const out = html(<DeckSceneRow {...props()} />)
-    expect(out).toContain('MUTE group and scene pins arrive with the override ops')
+    expect(out).toContain('right-click any value to pin it to this scene')
+    expect(out).toContain('MUTE group still to come')
   })
 })
 

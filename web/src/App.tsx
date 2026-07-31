@@ -102,7 +102,9 @@ export function App() {
   useEffect(() => {
     if (!link) return;
     const offLearn = attachMidiLearn(link);
-    const offPins = attachScenePins(link);
+    // B2: companion-backed now (it owns the pattern document); the `scenes`
+    // topic it used to mirror was never published by anything.
+    const offPins = attachScenePins();
     // P8-9: host capabilities — shared components render native-only surfaces
     // (plugin/MIDI/output-assign) inert on hosts that answer them false. The
     // default is full caps, so the desktop never changes.

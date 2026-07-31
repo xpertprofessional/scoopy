@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { BrowserLink } from '../browserLink.ts'
 import { DeckSceneRow, DeckSyncRow, DeckToolbarRow, DeckViewRow } from './deckRows.tsx'
+import { attachScenePins } from '../state/scenePins.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
@@ -48,11 +49,21 @@ type GridElement = Extract<StripDoc['element'], { kind: 'grid' }>
 /** Which deck holds the keyboard claim, and who to tell when it moves. */
 let keyboardDeck: number | null = null
 const keyboardWatchers = new Map<number, () => void>()
+/** The live scene-pin subscription, so re-claiming REPLACES it rather than
+    stacking another store listener on every pointerdown. */
+let offScenePins: (() => void) | null = null
 
-/** Give the arrow keys to `deck` — called on pointerdown in a tile. */
+/** Give the arrow keys to `deck` — called on pointerdown in a tile.
+ *
+ * It also moves the SCENE-PIN state (B2): "the deck being edited" is the same
+ * question both answer, and two mounted tiles would otherwise fight over one
+ * global pin store. Whichever tile you last touched is the one whose pins a
+ * right-click menu talks about — the same arbitration, one claim. */
 export function claimKeyboard(deck: number): void {
   if (keyboardDeck === deck) return
   keyboardDeck = deck
+  offScenePins?.()
+  offScenePins = attachScenePins(deck)
   keyboardWatchers.forEach((refresh) => refresh())
 }
 
@@ -158,7 +169,13 @@ export function useDeckTileBinding(
       keyboardWatchers.delete(deck)
       // An unmounting tile releases its claim — a hidden panel must not keep
       // answering the arrow keys.
-      if (keyboardDeck === deck) keyboardDeck = null
+      if (keyboardDeck === deck) {
+        keyboardDeck = null
+        // The pin state goes with the claim: a hidden tile must not keep
+        // answering what "the deck being edited" means.
+        offScenePins?.()
+        offScenePins = null
+      }
       browserLink.djGridBackend(deck).setMetaFacts({ keyboardActive: false })
     }
   }, [browserLink, deck, element, masterBpm, nudge])

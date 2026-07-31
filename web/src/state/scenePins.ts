@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { SceneUiState } from "../../protocol/schema.ts";
-import type { EngineLink } from "../engineLink.ts";
 import type { MenuItem } from "../design/ContextMenu.tsx";
+import {
+  PINNABLE_MASTER_KEYS,
+  PINNABLE_TRACK_FIELDS,
+  isPinnableKey as isPinnableHere,
+  pinnedKeysFor,
+  scenesWithOverrides,
+} from "../audio/sceneOverrides.ts";
+import { SCENE_LETTERS } from "../audio/sceneProjection.ts";
+import { deckOf, useCompanion } from "../store/companionEngine.ts";
 
 /**
  * Scene overrides (CM-3) — native `sceneOverrideContextMenuItems`
@@ -41,29 +49,59 @@ const EMPTY: SceneUiState = {
 
 interface Store {
   state: SceneUiState;
-  link: EngineLink | null;
+  /** Which deck the pinnable state describes — "the deck being EDITED". */
+  deck: number;
 }
 
-export const useScenePinStore = create<Store>(() => ({ state: EMPTY, link: null }));
+export const useScenePinStore = create<Store>(() => ({ state: EMPTY, deck: 0 }));
 
 /**
- * Mirror the deck-less "scenes" topic — the deck whose grid is being EDITED.
- * (The per-deck `scenes/<d>` topics belong to the transport strip's pads.)
+ * THE FEED, REPOINTED AT THE COMPANION (B2).
+ *
+ * ⚠️ This used to mirror a `scenes` UiState topic and `getUiState` it on mount.
+ * **Nothing has ever published that topic** — not `SlDispatch`, not
+ * `MergedApp`, not `browserLink` — so `state` sat at `EMPTY` forever, which
+ * made `isPinnableKey` false for every key, which made `buildScenePinItems`
+ * return `[]` every time. The whole pin menu was structurally invisible: built,
+ * wired onto every DragBox, and unreachable. `MasterRow` has been passing
+ * `scenePin={{ key: "bpm", deck }}` the entire time.
+ *
+ * The companion owns the pattern document, so it is the honest source. This
+ * derives the wire shape from it rather than waiting for a publisher.
  */
-export function attachScenePins(link: EngineLink): () => void {
-  useScenePinStore.setState({ link });
-  const off = link.onUiState("scenes", (raw) => {
-    const parsed = SceneUiState.safeParse(raw);
-    if (!parsed.success) {
-      console.error("scenes rejected:", parsed.error.issues, raw);
-      return;
-    }
-    useScenePinStore.setState({ state: parsed.data });
-  });
-  link.command("getUiState", { topic: "scenes" }).catch(() => {});
+function stateFor(deck: number): SceneUiState {
+  const d = deckOf(useCompanion.getState(), deck);
+  const pattern = d.session?.pattern;
+  if (!pattern) return EMPTY;
+  const idx = SCENE_LETTERS.indexOf(d.scene);
+  return {
+    ...EMPTY,
+    current: d.scene,
+    switchMode: d.switchMode === "seamless" ? "seamlessImmediate" : d.switchMode === "restart" ? "restartImmediate" : "scheduled",
+    cleanCut: d.cleanCut,
+    latched: d.sceneLatched,
+    // The label a pad wears: scenes persist as letters and display as 1–8.
+    sceneLabel: String((idx < 0 ? 0 : idx) + 1),
+    pinnedKeys: pinnedKeysFor(pattern, d.scene),
+    // ⚠️ OUR sets, not the donor's wider ones — pinning a key the projection
+    // ignores would store state and change nothing audible. See
+    // `audio/sceneOverrides.ts`'s header.
+    pinnableMasterKeys: [...PINNABLE_MASTER_KEYS],
+    pinnableTrackFields: [...PINNABLE_TRACK_FIELDS],
+    scenesWithOverrides: scenesWithOverrides(pattern),
+  };
+}
+
+/** Point the pin state at `deck` and keep it fresh. Called by whichever binding
+    owns the grid being edited; the last mount wins, which is what "the deck
+    being EDITED" means. */
+export function attachScenePins(deck = 0): () => void {
+  const refresh = () => useScenePinStore.setState({ deck, state: stateFor(deck) });
+  refresh();
+  const off = useCompanion.subscribe(refresh);
   return () => {
     off();
-    useScenePinStore.setState({ link: null, state: EMPTY });
+    useScenePinStore.setState({ state: EMPTY, deck: 0 });
   };
 }
 
@@ -74,6 +112,9 @@ export function attachScenePins(link: EngineLink): () => void {
  */
 export function isPinnableKey(key: string, state: SceneUiState): boolean {
   if (!key) return false;
+  // Still driven by the STATE's sets rather than the module constant, because a
+  // host that publishes a different vocabulary must be able to say so — but the
+  // state is now seeded from `sceneOverrides`, so the two cannot disagree here.
   if (state.pinnableMasterKeys.includes(key)) return true;
   const parts = key.split(".");
   if (parts.length !== 3 || parts[0] !== "track") return false;
@@ -81,16 +122,30 @@ export function isPinnableKey(key: string, state: SceneUiState): boolean {
   return state.pinnableTrackFields.includes(parts[2] ?? "");
 }
 
+/** Re-exported so a caller with no `SceneUiState` in hand (a menu builder
+    outside the store) can ask the same question. */
+export { isPinnableHere };
+
 export function isPinnedToCurrentScene(key: string, state: SceneUiState): boolean {
   return state.pinnedKeys.includes(key);
 }
 
+/**
+ * THE ACTIONS, REPOINTED TOO. They sent `sceneOverride` — the second half of
+ * the same dead pair, unanswered by every host. They call the companion's
+ * override ops now.
+ *
+ * A target that names its own deck wins; one that does not uses the deck the
+ * store is pointed at, which is the grid being edited. `MasterRow` passes a
+ * deck; some track controls do not, and falling back to a hardcoded 0 would
+ * pin deck 2's control onto deck 0's document.
+ */
 function send(op: "pin" | "unpin" | "pushToAll", t: ScenePinTarget) {
-  const { link } = useScenePinStore.getState();
-  if (!link) return;
-  const params: Record<string, unknown> = { op, key: t.key };
-  if (t.deck !== undefined) params.deck = t.deck;
-  link.command("sceneOverride", params).catch(() => {});
+  const deck = t.deck ?? useScenePinStore.getState().deck;
+  const c = useCompanion.getState();
+  if (op === "pin") c.pinToScene(t.key, deck);
+  else if (op === "unpin") c.unpinFromScene(t.key, deck);
+  else c.pushSceneKeyToAll(t.key, deck);
 }
 
 export const pinToScene = (t: ScenePinTarget) => send("pin", t);

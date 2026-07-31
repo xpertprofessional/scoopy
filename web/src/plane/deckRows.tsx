@@ -619,8 +619,13 @@ export function DeckSceneRow({ element, locked = false }: DeckRowsProps) {
       >
         SCN
       </button>
+      {/* SCENE PINS ARE LIVE (B2/5) — they are not a control on this row: a pin
+          belongs to the PARAMETER, so it rides each DragBox's right-click menu
+          ("Make Scene-Specific", "Reset to Global", "Push Value to All
+          Scenes"), which is where the donor puts it too. The note names what is
+          still missing rather than what already works. */}
       <span className="dr-note mono">
-        MUTE group and scene pins arrive with the override ops
+        right-click any value to pin it to this scene · MUTE group still to come
       </span>
     </div>
   )

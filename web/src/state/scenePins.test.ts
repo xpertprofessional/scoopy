@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SceneUiState } from "../../protocol/schema.ts";
 import {
+  attachScenePins,
   buildScenePinItems,
   isPinnableKey,
   isPinnedToCurrentScene,
+  useScenePinStore,
   type ScenePinTarget,
 } from "./scenePins.ts";
+import { MAX_DECKS, idleDeck, useCompanion } from "../store/companionEngine.ts";
+import type { WorkingSession } from "../store/sessionStore.ts";
 
 /** The sets Swift publishes (BeatSequencer :10938/:10945), trimmed to what we assert. */
 const scene = (over: Partial<SceneUiState> = {}): SceneUiState => ({
@@ -99,5 +103,84 @@ describe("buildScenePinItems", () => {
     }
     expect(unpin).toHaveBeenCalledWith(PAN);
     expect(pushToAll).toHaveBeenCalledWith(PAN);
+  });
+});
+
+/**
+ * B2 — THE DOOR, which is what this whole mechanism was missing.
+ *
+ * Every piece of the pin UI has existed for phases: `buildScenePinItems` builds
+ * the menu, `useScenePinned` rings the control, `DragBox` wires both, and
+ * `MasterRow` has been passing `scenePin={{ key: "bpm", deck }}` all along. The
+ * store behind them mirrored a `scenes` UiState topic that NOTHING has ever
+ * published, so `state` sat at EMPTY, `isPinnableKey` was false for every key,
+ * and the menu section rendered as `[]` — structurally invisible rather than
+ * broken. These pin the repointing.
+ */
+describe("the pin menu, fed from the companion (B2)", () => {
+  const session = (name: string) =>
+    ({
+      name,
+      pattern: { bpm: 120, sectionA: [{}, {}] },
+      kit: { id: "k", name: "kit", samples: [] },
+      extras: new Map(),
+    }) as unknown as WorkingSession;
+
+  beforeEach(() => {
+    useCompanion.setState({ decks: Array.from({ length: MAX_DECKS }, idleDeck) });
+  });
+
+  it("offers NOTHING while no session is loaded, exactly as before", () => {
+    const off = attachScenePins(0);
+    expect(buildScenePinItems({ key: "bpm" }, useScenePinStore.getState().state)).toEqual([]);
+    off();
+  });
+
+  it("offers the pin item once a deck has a document — the door opens", () => {
+    useCompanion.setState((s) => ({
+      decks: s.decks.map((d, i) => (i === 0 ? { ...d, session: session("beach") } : d)),
+    }));
+    const off = attachScenePins(0);
+    const items = buildScenePinItems({ key: "bpm" }, useScenePinStore.getState().state);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ label: expect.stringContaining("Make Scene-Specific") });
+    off();
+  });
+
+  it("flips to Reset/Push once the key is pinned, and rings the control", () => {
+    useCompanion.setState((s) => ({
+      decks: s.decks.map((d, i) => (i === 0 ? { ...d, session: session("beach") } : d)),
+    }));
+    const off = attachScenePins(0);
+    useCompanion.getState().pinToScene("bpm", 0);
+    const state = useScenePinStore.getState().state;
+    expect(isPinnedToCurrentScene("bpm", state)).toBe(true);
+    expect(buildScenePinItems({ key: "bpm" }, state).map((i) => (i as { label: string }).label))
+      .toEqual(["Reset to Global", "Push Value to All Scenes"]);
+    off();
+  });
+
+  it("offers nothing for a key the projection does not honour", () => {
+    // `trackRowControls` passes `track.<i>.sampleStartMs`, which the donor allows
+    // and our projection ignores. The menu must stay EMPTY for it rather than
+    // storing a pin that changes nothing audible.
+    useCompanion.setState((s) => ({
+      decks: s.decks.map((d, i) => (i === 0 ? { ...d, session: session("beach") } : d)),
+    }));
+    const off = attachScenePins(0);
+    expect(
+      buildScenePinItems({ key: "track.0.sampleStartMs" }, useScenePinStore.getState().state),
+    ).toEqual([]);
+    off();
+  });
+
+  it("names the CURRENT scene in the pin label, not always scene 1", () => {
+    useCompanion.setState((s) => ({
+      decks: s.decks.map((d, i) => (i === 0 ? { ...d, session: session("beach"), scene: "C" } : d)),
+    }));
+    const off = attachScenePins(0);
+    const [item] = buildScenePinItems({ key: "bpm" }, useScenePinStore.getState().state);
+    expect((item as { label: string }).label).toContain("Scene 3");
+    off();
   });
 });

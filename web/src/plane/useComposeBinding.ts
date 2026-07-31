@@ -10,6 +10,7 @@ import { useEffect } from 'react'
 import type { EngineLink } from '../engineLink.ts'
 import { BrowserLink } from '../browserLink.ts'
 import { registerSampleDoors } from '../panels/sampleDoors.ts'
+import { attachScenePins } from '../state/scenePins.ts'
 import { projectScene } from '../audio/sceneProjection.ts'
 import {
   applyGridRow,
@@ -60,6 +61,9 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
         c.play(deck)
       }
     })
+    // B2: the pin state follows the grid being EDITED, and in this window that
+    // is unambiguous — one compose window, one deck.
+    const offPins = attachScenePins(deck)
     // P3.5-E8a — THE DOORS THIS BINDING NEVER REGISTERED. `GridPanel` draws a
     // LOAD button on every audio row and takes a browser row dropped on it, but
     // both are intents `BrowserLink` forwards to a handler; with none
@@ -68,6 +72,7 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
     // accepted the click and did nothing. Compose-scoped (this grid has no deck
     // axis) but written into THIS deck's document, like every handler above.
     registerSampleDoors(browserLink, deck, 'compose')
+    return offPins
   }, [browserLink, deck])
 
   useEffect(() => {
