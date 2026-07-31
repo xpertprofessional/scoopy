@@ -160,6 +160,17 @@ protected:
         run a line of the bundle, so every assertion would race the boot. */
     virtual void firstPageLoaded(PanelWindow&) {}
 
+    /**
+     * Which face to open at boot, or `{}` to ASK (D-SL-CHOOSER-01).
+     *
+     * ⚠️ THE WALK MUST NOT BE ASKED. `merged_walk` inherits `initialise()`, and
+     * a chooser it never clicks is a gate that hangs rather than fails — the
+     * worst shape a test can have. It overrides this to name "plane" outright,
+     * which is also honest about what that walk covers: the plane's boot path,
+     * not the chooser's.
+     */
+    virtual juce::String launchFaceOverride() const { return {}; }
+
     void openPanel(const juce::String& panel, const juce::String& arg, bool isMain = false);
 
     sl_engine* engine = nullptr;

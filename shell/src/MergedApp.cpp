@@ -298,11 +298,69 @@ void MergedApplication::initialise(const juce::String&) {
     jassert(sl_abi_version() == SL_ABI_VERSION);
     backend = std::make_unique<Backend>(engine);
 
-    // The primary window is the PLANE — the merged app's top-level surface
-    // (merge P2 step 4): strips, their elements and the patchbay. The
-    // companion shell stays reachable as a spawned panel; it is where a
-    // session is composed, which is a different job from performing a set.
-    openPanel("plane", "", /*isMain*/ true);
+    // THE LAUNCH CHOOSER (P7-L2 · D-SL-LAUNCH-01, D-SL-CHOOSER-01).
+    //
+    // This was an unconditional `openPanel("plane")`, which made the plane the
+    // only way into the app — and therefore made composing a session require
+    // opening a map first, for no reason the document model asks for. The user
+    // asked for the other door: "at app launch we are prompted for PLANE or
+    // COMPOSE and via this path we can launch a compose window with all
+    // possibilities (load and save) without having to open the map / plane
+    // first."
+    //
+    // ⚠️ THE COMPOSE PATH IS MAPLESS. It opens the compose window with NO arg
+    // and creates no map document at all — which is why B5/1 had to make an
+    // unaddressed compose window a valid state rather than a refusal, and why
+    // its boot effect starts the engine sink even with nothing addressed.
+    //
+    // IT REMEMBERS (D-SL-CHOOSER-01): the last choice is pre-selected, so Enter
+    // goes where you usually go. The donor skips asking entirely and restores
+    // the last face from session metadata (`AutoSaveManager.isDJMode`); this
+    // keeps the choice and borrows the habit half. Deliberately NOT a
+    // "don't ask again" — that would reintroduce the invisible restore behind a
+    // checkbox, and the chooser is the thing that was asked for.
+    // A caller that already knows the face skips the question entirely — the
+    // walk does exactly this, because a dialog nobody clicks would hang it.
+    if (const auto forced = launchFaceOverride(); forced.isNotEmpty()) {
+        openPanel(forced, "", /*isMain*/ true);
+        startTimerHz(30);
+        return;
+    }
+
+    const auto remembered = backend->settings.get("launch.face").toString();
+    const bool composeDefault = remembered == "compose";
+    // ASYNC, and not merely because `JUCE_MODAL_LOOPS_PERMITTED` is off in this
+    // build: a modal loop inside `initialise()` would pump the message thread
+    // before the application has finished coming up, which is the failure
+    // JUCE's own docs warn that mode "can cause problems". The window opens
+    // when the answer arrives.
+    //
+    // The REMEMBERED face is the first button — JUCE gives button 0 the return
+    // key, so Enter honours the habit without removing the choice.
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions()
+            .withIconType(juce::MessageBoxIconType::NoIcon)
+            .withTitle("scoopy")
+            .withMessage("Where would you like to start?\n\n"
+                         "PLANE — strips, routing, a set.\n"
+                         "COMPOSE — one session, no map.")
+            .withButton(composeDefault ? "COMPOSE" : "PLANE")
+            .withButton(composeDefault ? "PLANE" : "COMPOSE"),
+        [this, composeDefault](int chosen) {
+            const bool compose = (chosen == 0) == composeDefault;
+            backend->settings.set("launch.face", compose ? "compose" : "plane");
+            if (compose) {
+                // No arg: an empty studio. `session ▾` is how it gets filled
+                // (B5/1), which is why an unaddressed compose window had to
+                // become a valid state rather than a refusal.
+                openPanel("compose", "", /*isMain*/ true);
+            } else {
+                // The PLANE — the merged app's top-level surface (merge P2 step
+                // 4): strips, their elements and the patchbay.
+                openPanel("plane", "", /*isMain*/ true);
+            }
+        });
+
     startTimerHz(30); // the HotFrame broadcast
 }
 

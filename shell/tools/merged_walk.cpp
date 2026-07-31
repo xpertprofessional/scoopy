@@ -211,6 +211,13 @@ public:
     static int exitCode;
 
 protected:
+    /** The walk drives the PLANE's boot path, so it names it rather than being
+        asked (D-SL-CHOOSER-01). A chooser this script never clicks would hang
+        the gate — and a hanging gate is worse than a failing one, because it
+        reports nothing at all. The chooser's own path is covered by the boot
+        walk in `web/tools`, which can click. */
+    juce::String launchFaceOverride() const override { return "plane"; }
+
     void firstPageLoaded(wizard::merged::PanelWindow& w) override {
         // The page has run its bundle, but React mounts on its own schedule.
         // A short settle beats racing the first paint: this is not a
