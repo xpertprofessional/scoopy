@@ -88,6 +88,10 @@ export function useDeckTileBinding(
   // The transient hold-to-bend (P3-D4-2) — folded into the resolved-tempo
   // display so the strike-through shows what the deck runs at UNDER the hand.
   const nudge = useNudge((s) => s.deltas[deck] ?? 0)
+  // Read REACTIVELY, or the meta below would only pick engagement up on the
+  // next unrelated re-render — the M buttons would keep editing their own mute
+  // until something else moved.
+  const muteGroupActive = useCompanion((c) => c.decks[deck]?.muteGroupActive ?? false)
   const browserLink = link instanceof BrowserLink ? link : null
 
   // The per-deck handler slots — every gesture the dj band fires lands on THIS
@@ -110,6 +114,10 @@ export function useDeckTileBinding(
     browserLink.setLocatorRepeatHandler((trackIndex) => {
       toggleLocatorRepeatTrack(trackIndex, deck)
       browserLink.djGridBackend(deck).updatePatternRow(trackIndex, gridDocument(deck))
+    }, deck)
+    browserLink.setMuteGroupHandler((trackIndex) => {
+      useCompanion.getState().toggleMuteGroupMember(trackIndex, deck)
+      browserLink.djGridBackend(deck).updateRuntime(gridRuntimeInfos(deck))
     }, deck)
     // THE SINGLE-SPACE RULE (B1): Space in this tile starts THIS deck. The
     // keymap has always sent `menuTransport`; nothing answered it, so the key
@@ -162,6 +170,8 @@ export function useDeckTileBinding(
         deckIndex: deck,
         syncedBpm: deckTempoIntent(element, masterBpm, nudge).syncedBpm,
         keyboardActive: keyboardDeck === deck,
+        // CM-5b: with the group engaged, this grid's M buttons edit MEMBERSHIP.
+        muteGroupActive,
       })
     refresh()
     keyboardWatchers.set(deck, refresh)
@@ -178,7 +188,7 @@ export function useDeckTileBinding(
       }
       browserLink.djGridBackend(deck).setMetaFacts({ keyboardActive: false })
     }
-  }, [browserLink, deck, element, masterBpm, nudge])
+  }, [browserLink, deck, element, masterBpm, nudge, muteGroupActive])
 
   return { session, scene }
 }

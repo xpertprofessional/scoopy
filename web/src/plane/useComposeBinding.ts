@@ -48,6 +48,10 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
       toggleLocatorRepeatTrack(trackIndex, deck)
       browserLink.gridBackend.updatePatternRow(trackIndex, gridDocument(deck))
     })
+    browserLink.setMuteGroupHandler((trackIndex) => {
+      useCompanion.getState().toggleMuteGroupMember(trackIndex, deck)
+      browserLink.gridBackend.updateRuntime(gridRuntimeInfos(deck))
+    })
     // THE SINGLE-SPACE RULE (B1): Space in the compose window starts the deck
     // this window is composing. Compose-scoped like the handlers above (this
     // grid has no deck axis of its own) but aimed at THIS deck, the same

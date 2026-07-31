@@ -72,6 +72,11 @@ export interface GridMetaFacts {
       the compose grid has no transport strip to put it on, which is why this
       was hardcoded false until B1 built one. */
   performActive: boolean;
+  /** CM-5b: the mute group is ENGAGED, so a track's M edits MEMBERSHIP rather
+      than its own mute. `trackRowControls` has branched on this since it was
+      written; nothing ever set it true, so the M button could only ever mute
+      one track and the group was unbuildable. */
+  muteGroupActive: boolean;
 }
 
 /** What the engine/store must tell the grid about each track's loaded sample. */
@@ -84,6 +89,9 @@ export interface TrackRuntimeInfo {
   isStopped?: boolean;
   /** RUNTIME solo — lights the S button and the recede/halo language. */
   soloed?: boolean;
+  /** CM-5: this track is in the master MUTE group. Lights its M while the group
+      is engaged, so membership is visible while you are building it. */
+  muteGroupMember?: boolean;
 }
 
 export interface GridBackendHooks {
@@ -131,6 +139,7 @@ export class GridBackend {
     keyboardActive: false,
     syncedBpm: null,
     performActive: false,
+    muteGroupActive: false,
   };
 
   constructor(
@@ -303,7 +312,7 @@ export class GridBackend {
       // tile now HAS one — the deck view row.
       performActive: this.facts.performActive,
       bpm: this.bpm,
-      muteGroupActive: false,
+      muteGroupActive: this.facts.muteGroupActive,
       masterVolume: this.masterVolume,
       masterDrive: this.masterDrive,
       // Mount-owned facts (P3-D4-1): the compose defaults are the historical
@@ -318,7 +327,13 @@ export class GridBackend {
   }
 
   private pattern(i: number): GridPatternState {
-    return toGridPattern(this.rows[i]!);
+    // `muteGroupMember` is the FILE's top-level list, not the track's — which is
+    // why `toGridPattern` takes it as an option rather than reading the row.
+    // It was never passed, so every M button read "not a member" and membership
+    // was invisible even once the group could be built.
+    return toGridPattern(this.rows[i]!, {
+      muteGroupMember: this.runtime[i]?.muteGroupMember ?? false,
+    });
   }
 
   private runtimeState(i: number): GridRuntimeState {

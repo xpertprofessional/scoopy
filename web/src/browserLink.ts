@@ -121,6 +121,8 @@ export class BrowserLink implements EngineLink {
       link stays independent of the store, which is what lets the same class
       serve the compose window and three deck tiles at once. */
   private transportHandlers = new Map<number, (op: "play" | "stop" | "restart") => void>();
+  /** CM-5b: a track's M while the mute group is engaged — membership, not mute. */
+  private muteGroupHandlers = new Map<number, (trackIndex: number) => void>();
   /** The S button — flip the runtime solo. */
   private soloToggleHandlers = new Map<number, (trackIndex: number) => void>();
   /** The ↻ locator-repeat toggle — a scene-aware document flip. */
@@ -245,6 +247,10 @@ export class BrowserLink implements EngineLink {
 
   setTransportHandler(fn: (op: "play" | "stop" | "restart") => void, deck?: number): void {
     this.transportHandlers.set(this.scopeOf(deck), fn);
+  }
+
+  setMuteGroupHandler(fn: (trackIndex: number) => void, deck?: number): void {
+    this.muteGroupHandlers.set(this.scopeOf(deck), fn);
   }
 
   setSoloToggleHandler(fn: (trackIndex: number) => void, deck?: number): void {
@@ -386,6 +392,15 @@ export class BrowserLink implements EngineLink {
         // (launch-quantize scheduling is desktop-only; `launchScheduled` stays false here).
         if (p.op === "toggleLaunch" && this.launchToggleHandlers.get(scope)) {
           this.launchToggleHandlers.get(scope)!(track());
+          return { ok: true };
+        }
+        // CM-5b: with the mute group ENGAGED, a track's M edits MEMBERSHIP
+        // rather than its own mute. `trackRowControls` has branched on
+        // `muteGroupActive` since it was written and sent this op; nothing has
+        // ever handled it, so the click was accepted and dropped — the group
+        // could not be built, which made the MUTE control itself pointless.
+        if (p.op === "toggleMuteGroup" && this.muteGroupHandlers.get(scope)) {
+          this.muteGroupHandlers.get(scope)!(track());
           return { ok: true };
         }
         // Solo — the same runtime shape: never persisted (on either host), rides the world's

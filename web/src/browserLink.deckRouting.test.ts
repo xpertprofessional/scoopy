@@ -154,3 +154,28 @@ describe("menuTransport — the deck-targeted transport", () => {
     expect(compose).toEqual([]);
   });
 });
+
+/**
+ * CM-5b — a track's M while the mute group is ENGAGED edits MEMBERSHIP.
+ *
+ * `trackRowControls` has branched on `muteGroupActive` and sent this op since it
+ * was written, and nothing ever handled it: the click was accepted and dropped,
+ * so the group could not be built — which made the MUTE control itself
+ * pointless even once it existed.
+ */
+describe("toggleMuteGroup — building the group", () => {
+  it("reaches THAT deck's handler", async () => {
+    const seen: number[] = [];
+    link.setMuteGroupHandler((i) => seen.push(i), 1);
+    await link.command("trackEdit" as never, { op: "toggleMuteGroup", trackIndex: 3, deck: 1 });
+    expect(seen).toEqual([3]);
+  });
+
+  it("leaves the compose slot silent when the op names a deck", async () => {
+    const compose: number[] = [];
+    link.setMuteGroupHandler((i) => compose.push(i));
+    link.setMuteGroupHandler(() => {}, 1);
+    await link.command("trackEdit" as never, { op: "toggleMuteGroup", trackIndex: 3, deck: 1 });
+    expect(compose).toEqual([]);
+  });
+});

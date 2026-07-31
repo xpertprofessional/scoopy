@@ -1894,6 +1894,7 @@ export function gridRuntimeInfos(deck = 0): TrackRuntimeInfo[] {
   const tracks = (d.session.pattern.sectionA as { sampleId?: string }[] | undefined) ?? [];
   const stopped = new Set(d.stoppedTracks);
   const soloed = new Set(d.soloedTracks);
+  const inGroup = new Set(muteGroupOf(d.session.pattern as Record<string, unknown>));
   return tracks.map((t, i) => {
     const sample = t.sampleId ? byId.get(t.sampleId) : undefined;
     return {
@@ -1904,6 +1905,9 @@ export function gridRuntimeInfos(deck = 0): TrackRuntimeInfo[] {
       // waveform in the companion.
       sampleDurationMs: sample ? sampleDurations.get(sample.filePath) ?? 0 : 0,
       samplePeakGain: 1,
+      // CM-5: in the master MUTE group, so its M lights while the group is being
+      // built. Membership is the document's; the flag is just how the row sees it.
+      muteGroupMember: inGroup.has(i),
       // The RUNTIME launch gate — so the grid's ▶/■ shows the truth (it used to show every
       // stopped track as running).
       isStopped: stopped.has(i),
