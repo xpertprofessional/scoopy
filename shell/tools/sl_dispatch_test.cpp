@@ -267,6 +267,30 @@ int main(int argc, char* argv[]) {
             CHECK(replyOk(deckParam(R"({"action":"skipStep","deck":0,"step":-4})")));
             CHECK(replyOk(deckParam(R"({"action":"skipStep","deck":0})")));
 
+            // QUANTIZED LAUNCH (P11-3c) — the wire. Before this the engine's
+            // requestQuantizedLaunch was reachable from C and unreachable from
+            // the app; a route that answers is the whole row.
+            CHECK(replyOk(deckParam(
+                R"({"action":"requestQuantizedLaunch","deck":1,"refDeck":0,"quantizeSteps":16})")));
+            // The engine's own refusals ride underneath (zero quantum, a deck
+            // waiting on itself); the COMMAND is still understood, so it answers
+            // ok — the same shape setTempoMode uses for a refused value.
+            CHECK(replyOk(deckParam(
+                R"({"action":"requestQuantizedLaunch","deck":1,"refDeck":1,"quantizeSteps":16})")));
+            CHECK(replyOk(deckParam(
+                R"({"action":"requestQuantizedLaunch","deck":1,"refDeck":0,"quantizeSteps":0})")));
+            CHECK(replyOk(deckParam(R"({"action":"cancelQuantizedLaunch","deck":1})")));
+            // Cancelling nothing is safe — a UI that disarms on every stop must
+            // not have to know whether anything was armed.
+            CHECK(replyOk(deckParam(R"({"action":"cancelQuantizedLaunch","deck":1})")));
+
+            // THE FIRED COUNTER, which is how a pending lamp clears honestly:
+            // the armed flag says the request was accepted, this says the audio
+            // started. Nothing has fired here, so it reads 0 rather than absent.
+            const auto fired = deckParam(R"({"action":"launchFired","deck":1})");
+            CHECK(replyOk(fired));
+            CHECK((int) result(fired).getProperty("count", -1) == 0);
+
             CHECK(!replyOk(deckParam(R"({"action":"nope","deck":0})")));
             CHECK(!replyOk(dispatch("slDeck", juce::var(), settings, nullptr)));
             sl_deck_clear(e, 0); // leave the ground as it was found

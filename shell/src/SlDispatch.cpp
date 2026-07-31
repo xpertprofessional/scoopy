@@ -983,6 +983,36 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             sl_deck_clear(engine, deck);
             return ok(okFlag());
         }
+        // QUANTIZED LAUNCH (P11-3c) — the wire for the ABI P11-3b built. Without
+        // this the engine's `requestQuantizedLaunch` was reachable from C and
+        // unreachable from the app, which is the exact defect class this
+        // project keeps paying for.
+        //
+        // The deck must already be published as active with its start step set
+        // (the core's stated precondition); the engine half sets `launchArmed`
+        // and republishes before requesting, so the caller here only has to
+        // name the reference and the granularity.
+        if (action == "requestQuantizedLaunch") {
+            sl_deck_request_quantized_launch(
+                engine, deck, static_cast<uint32_t>(intProp(params, "refDeck")),
+                static_cast<uint16_t>(intProp(params, "quantizeSteps")));
+            return ok(okFlag());
+        }
+        if (action == "cancelQuantizedLaunch") {
+            sl_deck_cancel_quantized_launch(engine, deck);
+            return ok(okFlag());
+        }
+        // HOW A CALLER KNOWS IT ACTUALLY CAME IN. The armed flag says the
+        // request was accepted; this monotonic counter says the audio started.
+        // A pending lamp cleared on the former reports success too early.
+        if (action == "launchFired") {
+            return ok([&] {
+                auto* o = new juce::DynamicObject();
+                o->setProperty("ok", true);
+                o->setProperty("count", (int) sl_deck_launch_fired_count(engine, deck));
+                return juce::var(o);
+            }());
+        }
         // SKIP-STEP — the deck transport verb with no other home. play/stop live
         // on the companion (it owns the pattern document), but a playhead jump is
         // the engine's: it has to land on a step boundary the render decides, and

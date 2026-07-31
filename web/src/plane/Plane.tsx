@@ -36,6 +36,7 @@ import {
 import { DST_KIND, NO_INDEX, SRC_KIND } from '../persist/mapApply.ts'
 import { cellsOf, inputFor, inputRoute } from './stripOps.ts'
 import { send } from './send.ts'
+import { stopAndDisarm } from './launch.ts'
 import { Strip } from './Strip.tsx'
 
 const MIN_SCALE = 0.2
@@ -64,6 +65,7 @@ export function Plane({
   onLoadSession,
   onDropElement,
   onDouble,
+  onLaunch,
   onCompose,
   composingDecks,
   onRecordIntoLooper,
@@ -78,6 +80,9 @@ export function Plane({
   onDropElement?: (stripKey: string) => void
   /** DBL — clone `stripKey`'s session onto the strip owning `targetDeck`. */
   onDouble?: (stripKey: string, targetDeck: number) => void
+  /** Launch a grid strip through the quantum (P11-3c). The PANEL owns it: it
+      holds the note line the fallbacks are reported on. */
+  onLaunch?: (stripKey: string, deck: number) => void
   /** Open the composer beside the map, bound to a deck. */
   onCompose?: (deck: number) => void
   /** P3-C2: decks whose publishes a compose window owns — their strips lock. */
@@ -638,9 +643,17 @@ export function Plane({
               // retrigger.
               onGridTransport={(action) => {
                 if (deck < 0) return
-                if (action === 'play') playDeck(deck)
-                else if (action === 'stop') stopDeck(deck)
+                // PLAY GOES THROUGH THE QUANTUM (P11-3c): on the beat when
+                // there is a beat to be on, immediately when there is not, and
+                // the note says which of the four ways it ended up immediate.
+                if (action === 'play') onLaunch?.(s.key, deck)
+                // Stop always disarms — a UI that stops a deck must not have to
+                // know whether a launch was waiting.
+                else if (action === 'stop') stopAndDisarm(link, deck)
                 else {
+                  // RESTART is deliberately NOT quantized: it means "from the
+                  // top, now". Waiting for a boundary would make it a different
+                  // verb from the one on the strip beside it.
                   stopDeck(deck)
                   playDeck(deck)
                 }

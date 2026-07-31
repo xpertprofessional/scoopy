@@ -62,6 +62,7 @@ import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import { encodeComposeArg } from './composeArg.ts'
 import { handlePanelClosed } from './composeOwnership.ts'
+import { armOrPlay, launchNote } from './launch.ts'
 import './plane.css'
 
 /**
@@ -1228,6 +1229,11 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           onLoadSession={(key, id) => void loadSession(key, id)}
           onDropElement={dropElement}
           onDouble={doubleOnto}
+          onLaunch={(stripKey, deck) => {
+            const outcome = armOrPlay(link, getMap(), stripKey, deck)
+            const note = launchNote(outcome)
+            if (note) setNote(note)
+          }}
           onCompose={composeDeck}
           composingDecks={composingDecks}
           onRecordIntoLooper={(key) => void recordIntoLooper(key)}
