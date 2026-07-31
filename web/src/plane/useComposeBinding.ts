@@ -14,6 +14,8 @@ import { attachScenePins } from '../state/scenePins.ts'
 import { projectScene } from '../audio/sceneProjection.ts'
 import {
   applyGridRow,
+  applyTopologyUndo,
+  setDocumentEditAnnouncer,
   gridDocument,
   gridPeakPaths,
   gridRuntimeInfos,
@@ -52,6 +54,10 @@ export function useComposeBinding(link: EngineLink | null, deck: number) {
       useCompanion.getState().toggleMuteGroupMember(trackIndex, deck)
       browserLink.gridBackend.updateRuntime(gridRuntimeInfos(deck))
     })
+    browserLink.setTopologyUndoHandler((d, pattern) => applyTopologyUndo(d, pattern))
+    setDocumentEditAnnouncer((d, scope) =>
+      browserLink.emitEvent({ type: 'swiftEdit', scope }),
+    )
     // THE SINGLE-SPACE RULE (B1): Space in the compose window starts the deck
     // this window is composing. Compose-scoped like the handlers above (this
     // grid has no deck axis of its own) but aimed at THIS deck, the same

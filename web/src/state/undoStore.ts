@@ -73,7 +73,31 @@ export interface SwiftUndoEntry {
   label: string;
 }
 
-export type UndoEntry = PatternUndoEntry | SwiftUndoEntry;
+/**
+ * A TOPOLOGY edit the COMPANION made and can replay: adding or removing a track
+ * (D-SL-UNDO-01).
+ *
+ * ⚠️ THE HEADER ABOVE SAYS TOPOLOGY "STAYS SWIFT'S". That was true when it was
+ * written and is not now — Swift is carved off, the companion owns the document,
+ * and `swiftUndo` reaches a host that does not answer it. So a topology edit
+ * that pushed only a marker pushed a step that could never be taken: ⌘Z after
+ * adding a track did nothing at all, which is the row this closes.
+ *
+ * It carries the whole PATTERN either side rather than a track index, because
+ * appending a row touches all eight sections plus `baseSettings.trackSettings`
+ * — reconstructing that from an index would be re-implementing the mutator
+ * backwards. Cheap for the same reason a pattern entry is: the mutators are
+ * immutable-update shaped, so this holds a pointer, not a copy.
+ */
+export interface TopologyUndoEntry {
+  kind: "topology";
+  deck: number;
+  before: unknown;
+  after: unknown;
+  label: string;
+}
+
+export type UndoEntry = PatternUndoEntry | SwiftUndoEntry | TopologyUndoEntry;
 
 /**
  * ONE ordered stack, not one per track.
@@ -151,6 +175,20 @@ export function pushSwiftMarker(label: string): void {
 }
 
 /** Record a DISCRETE edit (no gesture bracket around it). */
+/**
+ * Record a topology edit (D-SL-UNDO-01). Takes its place in the ONE ordered
+ * stack, so ⌘Z walks an add-track and a cell edit in the order they happened —
+ * the property the per-track store structurally could not express.
+ */
+export function recordTopology(
+  deck: number,
+  before: unknown,
+  after: unknown,
+  label: string,
+): void {
+  push({ kind: "topology", deck, before, after, label });
+}
+
 export function recordEdit(
   trackIndex: number,
   before: GridPatternState,

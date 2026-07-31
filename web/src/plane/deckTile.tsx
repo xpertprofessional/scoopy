@@ -44,6 +44,8 @@ import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 import type { WorkingSession } from '../store/sessionStore.ts'
 import {
   applyGridRow,
+  applyTopologyUndo,
+  setDocumentEditAnnouncer,
   gridDocument,
   gridPeakPaths,
   gridRuntimeInfos,
@@ -126,6 +128,10 @@ export function useDeckTileBinding(
       useCompanion.getState().toggleMuteGroupMember(trackIndex, deck)
       browserLink.djGridBackend(deck).updateRuntime(gridRuntimeInfos(deck))
     }, deck)
+    browserLink.setTopologyUndoHandler((d, pattern) => applyTopologyUndo(d, pattern), deck)
+    setDocumentEditAnnouncer((d, scope) =>
+      browserLink.emitEvent({ type: 'swiftEdit', scope, deck: d }),
+    )
     // THE SINGLE-SPACE RULE (B1): Space in this tile starts THIS deck. The
     // keymap has always sent `menuTransport`; nothing answered it, so the key
     // was dead in the merged host. Restart is stop-then-play — a publish is

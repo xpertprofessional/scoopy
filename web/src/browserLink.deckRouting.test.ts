@@ -179,3 +179,29 @@ describe("toggleMuteGroup — building the group", () => {
     expect(compose).toEqual([]);
   });
 });
+
+/**
+ * D-SL-UNDO-01 — topology undo. `undoStore` is per-track and pattern-shaped, so
+ * an add-track could only ever push a `swift` MARKER, and that marker delegates
+ * to `swiftUndo` — a method no host in this app answers. ⌘Z after adding a
+ * track therefore took a step that could never be taken.
+ */
+describe("topologyUndo — replaying a document edit", () => {
+  it("reaches THAT deck's handler with the pattern to restore", async () => {
+    const seen: { deck: number; pattern: unknown }[] = [];
+    link.setTopologyUndoHandler((deck, pattern) => seen.push({ deck, pattern }), 1);
+    const pattern = { bpm: 120, sectionA: [{}] };
+
+    expect(await link.command("topologyUndo" as never, { deck: 1, pattern })).toEqual({ ok: true });
+    expect(seen).toEqual([{ deck: 1, pattern }]);
+  });
+
+  it("REFUSES rather than faking success when no mount owns that scope", async () => {
+    // The distinction that matters: an unanswered undo must read as unanswered.
+    // A silent `{ok:true}` here is exactly how `swiftUndo` looked alive while
+    // doing nothing.
+    expect(await link.command("topologyUndo" as never, { deck: 2, pattern: {} })).toEqual({
+      ok: false,
+    });
+  });
+})

@@ -43,7 +43,7 @@ import {
 import { worldFromSession } from "../audio/worldFromSession.ts";
 import { useCapabilitiesStore } from "../state/capabilitiesStore.ts";
 import { kitSamples } from "../persist/kit.ts";
-import { resetUndo } from "../state/undoStore.ts";
+import { recordTopology, resetUndo } from "../state/undoStore.ts";
 import { decodePatternFileAnyVersion } from "../persist/migrations.ts";
 import type { DocRow } from "./gridProjection.ts";
 import type { TrackRuntimeInfo } from "./gridBackend.ts";
@@ -452,6 +452,28 @@ interface CompanionState {
  * of thing: the one place a particular slice of the document is written.
  */
 
+/**
+ * ANNOUNCE A NON-GRID DOCUMENT WRITE (D-SL-ECHO-01).
+ *
+ * ⚠️ THE GUARD CAME ACROSS FROM THE DONOR AND ITS RELEASE DID NOT.
+ * `GridPanel` drops any `gridPattern/<i>` push landing within
+ * `OWNER_ECHO_QUIET_MS` (300 ms) of its own publish — that is how it ignores
+ * its own round-trip. The escape hatch, `adoptNextEcho`, fires on Swift's
+ * `swiftEdit` event, which the donor emits from its mutators and this stack
+ * never did. So a document write from a NON-GRID source inside that window was
+ * discarded with no marker anywhere: same species as P7-K7 and P8-P1, a
+ * mechanism whose two halves were separated by the merge.
+ *
+ * Installed by the bindings (they hold the link); a store must not import one.
+ */
+let announceDocumentEdit: ((deck: number, scope: string) => void) | null = null;
+
+export function setDocumentEditAnnouncer(
+  fn: ((deck: number, scope: string) => void) | null,
+): void {
+  announceDocumentEdit = fn;
+}
+
 /** This pattern's scene layers, always an object so callers need no null dance. */
 function sceneLayersOf(pattern: Record<string, unknown>): SceneLayers {
   const raw = pattern.sceneSettingsLayers;
@@ -541,6 +563,9 @@ function writeSceneLayers(
   };
   const next: WorkingSession = { ...d.session, pattern: pattern as typeof d.session.pattern };
   useCompanion.setState((s) => patchDeck(s, deck, { session: next }));
+  // The grid must ADOPT the push this causes rather than mistaking it for its
+  // own echo (D-SL-ECHO-01) — a pin write is a non-grid source.
+  announceDocumentEdit?.(deck, "global");
   // Audible NOW — a pin that only took effect after a reload would read as
   // broken at exactly the moment it is used.
   publish(useCompanion.getState(), deck, deckOf(useCompanion.getState(), deck).playing);
@@ -1047,6 +1072,11 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     }
 
     const next: WorkingSession = { ...session, pattern: pattern as WorkingSession["pattern"] };
+    // UNDOABLE (D-SL-UNDO-01). The ledger's own words for why this one and not
+    // the others: "an accidental append is the easiest edit to want back".
+    // Recorded BEFORE the store moves, so the entry holds the pattern as it was
+    // rather than as it became.
+    recordTopology(deck, session.pattern, next.pattern, `add track ${index + 1}`);
     set((s) => patchDeck(s, deck, { session: next }));
     // A document edit like `setBpm`: the world carries the new (silent) track to
     // the engine, and the session autosaves. Republishing here rather than
@@ -1862,6 +1892,24 @@ export function toggleLocatorRepeatTrack(trackIndex: number, deck = 0): void {
  * scene, so pushing sectionA while scene C is live would repaint the row with a
  * pattern the engine is not playing.
  */
+/**
+ * Apply a topology undo/redo — restore a whole pattern to this deck
+ * (D-SL-UNDO-01). Publishes and autosaves like the mutator it reverses, so an
+ * undone add-track is gone from the engine and the file, not just the screen.
+ */
+export function applyTopologyUndo(deck: number, pattern: unknown): void {
+  const d = deckOf(useCompanion.getState(), deck);
+  if (!d.session) return;
+  const next: WorkingSession = { ...d.session, pattern: pattern as WorkingSession["pattern"] };
+  useCompanion.setState((s) => patchDeck(s, deck, { session: next }));
+  // A restore rewrites every row and pushes it back; without the announcement
+  // the owner-quiet window would swallow it and leave the grid re-publishing
+  // the un-undone state (D-SL-ECHO-01).
+  announceDocumentEdit?.(deck, "topology");
+  publish(useCompanion.getState(), deck, deckOf(useCompanion.getState(), deck).playing);
+  autosaver.schedule(next);
+}
+
 export function gridDocument(deck = 0): Record<string, unknown> {
   const d = deckOf(useCompanion.getState(), deck);
   // No session ⇒ an empty document, so `docRows` finds no row and the republish is a

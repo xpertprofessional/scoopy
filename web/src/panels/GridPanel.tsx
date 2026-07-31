@@ -1266,6 +1266,27 @@ export function GridPanel({
       reportUndo();
       return;
     }
+    // TOPOLOGY (D-SL-UNDO-01) — the companion owns add/remove-track now, so it
+    // can replay one. This used to fall through to the `swiftUndo` delegate
+    // below, which reaches a host that does not answer: ⌘Z after adding a track
+    // took a step that could never be taken.
+    //
+    // The whole PATTERN is restored, and the next echo must be ADOPTED for the
+    // same reason the Swift path adopts one — the restore rewrites every row and
+    // pushes it back, so the owner-quiet window would otherwise swallow it and
+    // leave TS re-publishing the un-undone state.
+    if (entry && entry.kind === "topology") {
+      adoptNextEcho.current.fill(true);
+      // Through the LINK, never a store import: this panel is the same
+      // component the desktop runs and must not know who is answering it
+      // (the EngineLink promise). The companion registers the handler.
+      link?.command("topologyUndo", {
+        deck: entry.deck,
+        pattern: redo ? entry.after : entry.before,
+      }).catch(() => {});
+      reportUndo();
+      return;
+    }
     // Two cases arrive here, and they delegate identically:
     //
     //   1. A SWIFT MARKER (MB-1) — a native edit (the Pattern menu, a hotkey, the track clipboard,

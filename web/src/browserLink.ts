@@ -123,6 +123,8 @@ export class BrowserLink implements EngineLink {
   private transportHandlers = new Map<number, (op: "play" | "stop" | "restart") => void>();
   /** CM-5b: a track's M while the mute group is engaged — membership, not mute. */
   private muteGroupHandlers = new Map<number, (trackIndex: number) => void>();
+  /** D-SL-UNDO-01: replay a topology edit — the companion owns the document. */
+  private topologyUndoHandlers = new Map<number, (deck: number, pattern: unknown) => void>();
   /** The S button — flip the runtime solo. */
   private soloToggleHandlers = new Map<number, (trackIndex: number) => void>();
   /** The ↻ locator-repeat toggle — a scene-aware document flip. */
@@ -253,6 +255,10 @@ export class BrowserLink implements EngineLink {
     this.muteGroupHandlers.set(this.scopeOf(deck), fn);
   }
 
+  setTopologyUndoHandler(fn: (deck: number, pattern: unknown) => void, deck?: number): void {
+    this.topologyUndoHandlers.set(this.scopeOf(deck), fn);
+  }
+
   setSoloToggleHandler(fn: (trackIndex: number) => void, deck?: number): void {
     this.soloToggleHandlers.set(this.scopeOf(deck), fn);
   }
@@ -357,6 +363,17 @@ export class BrowserLink implements EngineLink {
       // phase-continuous by design (that is what makes a scene switch
       // seamless), so it cannot double as a retrigger — the same reasoning the
       // plane's `onGridTransport` states.
+      // TOPOLOGY UNDO (D-SL-UNDO-01). The companion owns add/remove-track, so
+      // it is the only thing that can replay one — `swiftUndo` reaches a host
+      // that does not answer, which is why ⌘Z after adding a track used to take
+      // a step that could never be taken.
+      case "topologyUndo": {
+        const fn = this.topologyUndoHandlers.get(this.scopeOf(p.deck));
+        if (!fn) return { ok: false };
+        fn(Number(p.deck ?? 0), p.pattern);
+        return { ok: true };
+      }
+
       case "menuTransport": {
         const fn = this.transportHandlers.get(this.scopeOf(p.deck));
         if (!fn) return { ok: false };
