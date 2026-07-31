@@ -24,6 +24,15 @@ import { lcmForScene, switchBoundary } from "../audio/patternClock.ts";
 import { oneShotStopStep, shiftBeatRepeatWindow } from "../audio/deckTransport.ts";
 import { resolveSwitchAction, type SwitchMode } from "../audio/sceneSwitch.ts";
 import {
+  clearSceneOverrides as clearLayerOverrides,
+  isPinnableKey,
+  pinKey,
+  pinnedKeysFor,
+  pushKeyToAll,
+  unpinKey,
+  type SceneLayers,
+} from "../audio/sceneOverrides.ts";
+import {
   SCENE_LETTERS,
   SECTION_KEYS,
   projectScene,
@@ -385,6 +394,24 @@ interface CompanionState {
   /** B2: SCN — the scene-edit latch. */
   toggleSceneLatch(deck?: number): void;
   /**
+   * B2: pin a parameter to the deck's CURRENT scene, so it forks off the shared
+   * base (`BeatSequencer.pinToCurrentScene`). Returns false when the key is
+   * outside the pinnable vocabulary — the caller should not have offered it.
+   */
+  pinToScene(key: string, deck?: number): boolean;
+  /** B2: "reset to global" — the value reverts to the base everywhere. */
+  unpinFromScene(key: string, deck?: number): void;
+  /**
+   * B2: make this key global again — writes the current value into the base and
+   * drops the pin from EVERY scene. ⚠️ Not "copy into every scene".
+   */
+  pushSceneKeyToAll(key: string, deck?: number): void;
+  /** B2: drop every override of a scene, so it mirrors the base again. */
+  clearSceneOverrides(scene: SceneLetter, deck?: number): void;
+  /** B2: the keys pinned to this deck's current scene — what a control reads to
+      wear its pinned ring. */
+  pinnedKeys(deck?: number): string[];
+  /**
    * P3-U8: grow (or shrink) the session's scene row — a DOCUMENT edit
    * (`pattern.enabledSceneCount`, clamped 1..8), autosaved like any other.
    * Shrinking below the active/queued scene falls back to scene A immediately:
@@ -396,6 +423,86 @@ interface CompanionState {
   /** Flip a track's solo — desktop semantics: peers ride the mixMuted gain ramp, triggers keep firing. */
   toggleSoloTrack(trackIndex: number, deck?: number): void;
   dismissNotice(): void;
+}
+
+/**
+ * THE PIN HELPERS (B2). Kept beside `patchDeck` because they are the same kind
+ * of thing: the one place a particular slice of the document is written.
+ */
+
+/** This pattern's scene layers, always an object so callers need no null dance. */
+function sceneLayersOf(pattern: Record<string, unknown>): SceneLayers {
+  const raw = pattern.sceneSettingsLayers;
+  return raw && typeof raw === "object" ? ({ ...(raw as SceneLayers) }) : {};
+}
+
+/**
+ * What a pin forks OFF — the settings as they sound right now: the shared base
+ * with the current scene's layer already applied.
+ *
+ * The donor calls this `captureLiveSettings` and flushes it into the base before
+ * forking, so a pin starts from what you are hearing rather than from what was
+ * last written to disk. Here the base IS the document, so the capture is the
+ * overlay rather than a separate live buffer.
+ */
+function captureLiveSettings(
+  pattern: Record<string, unknown>,
+  scene: SceneLetter,
+): Record<string, unknown> {
+  const base = (pattern.baseSettings as Record<string, unknown> | undefined) ?? {};
+  const layer = sceneLayersOf(pattern)[scene];
+  return { ...base, ...(layer?.values ?? {}) };
+}
+
+/**
+ * Merge ONE key's live value into the base — push-to-all's other half. Only the
+ * pushed key moves: writing the whole live capture would drag every other
+ * currently-forked value into the base with it, silently globalising things
+ * nobody asked about.
+ */
+function mergeKeyIntoBase(
+  pattern: Record<string, unknown>,
+  key: string,
+  live: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = { ...((pattern.baseSettings as Record<string, unknown> | undefined) ?? {}) };
+  if (key === "bpm") {
+    if (live.bpm !== undefined) base.bpm = live.bpm;
+    return base;
+  }
+  const [, idxRaw, field] = key.split(".");
+  const idx = Number(idxRaw);
+  const liveTracks = (live.trackSettings as Record<string, unknown>[] | undefined) ?? [];
+  const src = liveTracks[idx];
+  if (!Number.isInteger(idx) || !src || !field) return base;
+  const tracks = [...(((base.trackSettings as Record<string, unknown>[] | undefined) ?? []))];
+  tracks[idx] = { ...(tracks[idx] ?? {}), [field]: src[field] };
+  base.trackSettings = tracks;
+  return base;
+}
+
+/** Write a deck's layers (and optionally its base) back, republish, autosave. */
+function writeSceneLayers(
+  deck: number,
+  layers: SceneLayers,
+  baseSettings?: Record<string, unknown>,
+): void {
+  const st = useCompanion.getState();
+  const d = deckOf(st, deck);
+  if (!d.session) return;
+  const pattern = {
+    ...(d.session.pattern as Record<string, unknown>),
+    sceneSettingsLayers: layers,
+    ...(baseSettings ? { baseSettings } : {}),
+  };
+  const next: WorkingSession = { ...d.session, pattern: pattern as typeof d.session.pattern };
+  useCompanion.setState((s) => patchDeck(s, deck, { session: next }));
+  // Audible NOW — a pin that only took effect after a reload would read as
+  // broken at exactly the moment it is used.
+  publish(useCompanion.getState(), deck, deckOf(useCompanion.getState(), deck).playing);
+  // Persisted, unlike the runtime scene state: the point of a pin is that the
+  // scene keeps its own value across a reload.
+  autosaver.schedule(next);
 }
 
 /** Write one deck's slice, leaving every other deck alone. The one place decks
@@ -1219,6 +1326,56 @@ export const useCompanion = create<CompanionState>((set, get) => ({
   toggleSceneLatch(deck = 0) {
     if (deck < 0 || deck >= MAX_DECKS) return;
     set((s) => patchDeck(s, deck, { sceneLatched: !deckOf(get(), deck).sceneLatched }));
+  },
+
+  /**
+   * THE PIN OPS. All four rewrite `pattern.sceneSettingsLayers`, which
+   * `resolveSceneSettings` has read since P5-06 and NOTHING has ever written —
+   * the read half shipped without its writer, so every pinnable control on the
+   * desktop had no counterpart here at all.
+   *
+   * A document edit like `setBpm`: republish so the change is audible now, then
+   * autosave. Pins are persisted state, not runtime — the whole point is that a
+   * scene keeps its own value across a reload.
+   */
+  pinToScene(key, deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session || !isPinnableKey(key)) return false;
+    // The live capture the fork starts from — the donor flushes live settings
+    // into the base first (`commitLiveSettings`) so the scene's copy is what you
+    // are HEARING, not what was last written to disk.
+    const live = captureLiveSettings(d.session.pattern, d.scene);
+    const layers = pinKey(sceneLayersOf(d.session.pattern), d.scene, key, live);
+    writeSceneLayers(deck, layers);
+    return true;
+  },
+
+  unpinFromScene(key, deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session) return;
+    writeSceneLayers(deck, unpinKey(sceneLayersOf(d.session.pattern), d.scene, key));
+  },
+
+  pushSceneKeyToAll(key, deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session || !isPinnableKey(key)) return;
+    // THE VALUE GOES TO THE BASE, and the forks go away. Writing it into every
+    // layer instead would leave eight values that agree today and drift the
+    // moment one is touched — the opposite of what the gesture means.
+    const live = captureLiveSettings(d.session.pattern, d.scene);
+    const { layers } = pushKeyToAll(sceneLayersOf(d.session.pattern), key);
+    writeSceneLayers(deck, layers, mergeKeyIntoBase(d.session.pattern, key, live));
+  },
+
+  clearSceneOverrides(scene, deck = 0) {
+    const d = deckOf(get(), deck);
+    if (!d.session) return;
+    writeSceneLayers(deck, clearLayerOverrides(sceneLayersOf(d.session.pattern), scene));
+  },
+
+  pinnedKeys(deck = 0) {
+    const d = deckOf(get(), deck);
+    return d.session ? pinnedKeysFor(d.session.pattern, d.scene) : [];
   },
 
   selectScene(scene, opts) {

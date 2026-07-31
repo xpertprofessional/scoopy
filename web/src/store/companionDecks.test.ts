@@ -343,3 +343,59 @@ describe("shifting a latched beat repeat", () => {
     expect(companionDeck(1).beatRepeat?.startStep).toBe(7);
   });
 });
+
+/**
+ * B2 — the pin ops, at the store level.
+ *
+ * The pure layer maths is pinned in `audio/sceneOverrides.test.ts`; what
+ * matters here is that a pin reaches the DOCUMENT (it is persisted state, not
+ * runtime) and lands on the right deck's scene.
+ */
+describe("scene overrides", () => {
+  const layers = (deck: number) =>
+    (companionDeck(deck).session?.pattern as { sceneSettingsLayers?: Record<string, unknown> })
+      ?.sceneSettingsLayers ?? {};
+
+  it("pins to the deck's CURRENT scene, not to scene A", () => {
+    setDeck(0, { session: session("beach"), scene: "C" });
+    expect(useCompanion.getState().pinToScene("bpm", 0)).toBe(true);
+    expect(Object.keys(layers(0))).toEqual(["C"]);
+  });
+
+  it("refuses a key the projection does not honour, and says so in the return", () => {
+    // The caller can then decline to offer it — a pin that stores and changes
+    // nothing audible is the failure this vocabulary is narrowed to avoid.
+    setDeck(0, { session: session("beach") });
+    expect(useCompanion.getState().pinToScene("track.0.lfoPitchDepth", 0)).toBe(false);
+    expect(Object.keys(layers(0))).toEqual([]);
+  });
+
+  it("unpin removes the layer entirely once its last key goes", () => {
+    setDeck(0, { session: session("beach"), scene: "A" });
+    useCompanion.getState().pinToScene("bpm", 0);
+    useCompanion.getState().unpinFromScene("bpm", 0);
+    expect(Object.keys(layers(0))).toEqual([]);
+  });
+
+  it("push-to-all clears the fork from every scene rather than copying into them", () => {
+    setDeck(0, { session: session("beach"), scene: "A" });
+    useCompanion.getState().pinToScene("bpm", 0);
+    setDeck(0, { ...companionDeck(0), scene: "B" } as never);
+    useCompanion.getState().pinToScene("bpm", 0);
+    expect(Object.keys(layers(0)).sort()).toEqual(["A", "B"]);
+    useCompanion.getState().pushSceneKeyToAll("bpm", 0);
+    expect(Object.keys(layers(0))).toEqual([]);
+  });
+
+  it("reports the current scene's pinned keys, and leaves peers alone", () => {
+    setDeck(0, { session: session("beach"), scene: "A" });
+    setDeck(1, { session: session("forest"), scene: "A" });
+    useCompanion.getState().pinToScene("track.0.pan", 1);
+    expect(useCompanion.getState().pinnedKeys(1)).toEqual(["track.0.pan"]);
+    expect(useCompanion.getState().pinnedKeys(0)).toEqual([]);
+  });
+
+  it("no session, no pin — the verb refuses quietly like every deck-scoped op", () => {
+    expect(useCompanion.getState().pinToScene("bpm", 2)).toBe(false);
+  });
+});
