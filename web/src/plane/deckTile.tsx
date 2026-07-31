@@ -25,6 +25,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserLink } from '../browserLink.ts'
 import { DeckSceneRow, DeckSyncRow, DeckToolbarRow, DeckViewRow } from './deckRows.tsx'
 import { attachScenePins } from '../state/scenePins.ts'
+// ⚠️ REHOMED (B1-RETIRE). `djmode.css` styles `.track-strips.density-dj` — the
+// DJ-density track rows THIS tile mounts — and its only importer was
+// `DjPanel`, which is deleted. Panels share one bundle, so the stylesheet
+// arrived globally and nothing pointed at the dependency; removing that panel
+// would have stripped the tile's row metrics with no error anywhere. The
+// import belongs with the surface that needs it.
+import '../panels/djmode.css'
 import type { EngineLink } from '../engineLink.ts'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'

@@ -37,7 +37,6 @@ function state(over: Partial<CommandState> = {}): CommandState {
     transportRestart: vi.fn(),
     addTrack: vi.fn(),
     requestClearAll: vi.fn(),
-    toggleDjMode: vi.fn(),
     ...over,
   };
 }
@@ -67,17 +66,17 @@ describe("command registry (MB-2)", () => {
     for (const sec of tree) expect(sec.items.length).toBeGreaterThan(0);
   });
 
-  test("labels flip with state: Play/Pause and Switch to DJ/Compose", () => {
+  test("labels flip with state: Play/Pause", () => {
+    // ⚠️ `dj.toggleView` was the second half of this pin and is RETIRED
+    // (B1-RETIRE). It flipped between "Switch to DJ Mode" and "Switch to
+    // Compose Mode" and called `toggleDjMode` — a verb no host ever answered.
+    // There is no DJ mode to switch to any more: the expanded deck tile IS the
+    // deck view (D-SL-DECKFULL-01), reached by a strip's ⤢ rather than a global
+    // mode. The Play/Pause half is the live law and stays.
     const find = (tree: ReturnType<typeof menuTree>, id: string) =>
       tree.flatMap((s) => s.items).find((i) => i.id === id)!;
     expect(find(menuTree(state({ isPlaying: false })), "transport.playPause").label).toBe("Play");
     expect(find(menuTree(state({ isPlaying: true })), "transport.playPause").label).toBe("Pause");
-    expect(find(menuTree(state({ djMode: false })), "dj.toggleView").label).toBe(
-      "Switch to DJ Mode",
-    );
-    expect(find(menuTree(state({ djMode: true })), "dj.toggleView").label).toBe(
-      "Switch to Compose Mode",
-    );
   });
 
   test("undo label carries what it will undo, and enablement follows the stack", () => {
@@ -106,8 +105,6 @@ describe("command registry (MB-2)", () => {
     expect(s.transportRestart).toHaveBeenCalled();
     runCommand("pattern.clearAll", s);
     expect(s.requestClearAll).toHaveBeenCalled();
-    runCommand("dj.toggleView", s);
-    expect(s.toggleDjMode).toHaveBeenCalled();
     runCommand("track.add", s);
     expect(s.addTrack).toHaveBeenCalled();
   });

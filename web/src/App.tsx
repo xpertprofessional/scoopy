@@ -24,9 +24,7 @@ import { PerfPanel } from "./panels/PerfPanel.tsx";
 import { DeckMixerPanel } from "./panels/DeckMixerPanel.tsx";
 import { FxSlotPanel } from "./panels/FxSlotPanel.tsx";
 import { InstrumentPanel } from "./panels/InstrumentPanel.tsx";
-import { TransportPanel } from "./panels/TransportPanel.tsx";
 import { GridPanel } from "./panels/GridPanel.tsx";
-import { DjPanel } from "./panels/DjPanel.tsx";
 import { FileBrowserPanel } from "./panels/FileBrowserPanel.tsx";
 import { CapturePanel } from "./panels/CapturePanel.tsx";
 import { CompanionPanel } from "./panels/CompanionPanel.tsx";
@@ -166,7 +164,6 @@ function PanelRoute({
   if (panel === "deckmixer") return <DeckMixerPanel link={link} />;
   if (panel === "fxslot") return <FxSlotPanel link={link} />;
   if (panel === "instrument") return <InstrumentPanel link={link} />;
-  if (panel === "transport") return <TransportPanel link={link} />;
   // No "toolbartools" panel (TB-1): the tools row was a strip of dead controls
   // (settings/zoom/wave all no-ops once the web grid replaced the SwiftUI one)
   // wrapped around two live meters. The meters moved into the console — OUT to
@@ -175,7 +172,6 @@ function PanelRoute({
   // The compose WINDOW (P3-C1): the real composer, addressed to one deck +
   // session via __slPanelArg. Spawned per strip by the plane's COMPOSE ⇱.
   if (panel === "compose") return <ComposeWindow link={link} />;
-  if (panel === "djmode") return <DjPanel link={link} />;
   if (panel === "filebrowser") return <FileBrowserPanel link={link} />;
   if (panel === "capture") return <CapturePanel link={link} />;
   if (panel === "companion") return <CompanionPanel link={link} />;

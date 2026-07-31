@@ -73,14 +73,20 @@ describe("FileBrowserPanel", () => {
  * again. This pins that: no private `.dj-browser-*` chrome may come back.
  */
 describe("BR-5 — one browser shell, not two", () => {
-  it("DjPanel renders its session list through BrowserShell", () => {
-    const src = read("./DjPanel.tsx");
+  // REPOINTED (B1-RETIRE). The DJ session browser was the second browser this
+  // rule existed to keep on the shared shell; `DjPanel` is deleted, so there is
+  // now exactly ONE browser — which is the rule's goal reached rather than the
+  // rule becoming moot. What is still worth guarding is that the survivor uses
+  // the shell, and that the private chrome stays gone from the stylesheet.
+  it("the surviving browser renders through BrowserShell", () => {
+    const src = read("./FileBrowserPanel.tsx");
     expect(src).toContain("BrowserShell");
     expect(src).toContain("BrowserRow");
-    expect(src).not.toMatch(/className="dj-browser/);
   });
 
   it("the old dj-browser chrome is gone from the stylesheet", () => {
+    // `djmode.css` outlives DjPanel: it styles `.track-strips.density-dj`, the
+    // rows the deck TILE mounts, and its import moved to `plane/deckTile.tsx`.
     expect(read("./djmode.css")).not.toContain(".dj-browser");
   });
 });

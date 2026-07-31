@@ -55,8 +55,7 @@ export type CommandId =
   | "transport.stop"
   | "transport.restart"
   | "track.add"
-  | "pattern.clearAll"
-  | "dj.toggleView";
+  | "pattern.clearAll";
 
 /**
  * Everything a command may read or drive. The page that hosts the registry
@@ -95,7 +94,6 @@ export interface CommandState {
    * the MB-1b reducer — per track). The CONFIRM lives in the page: a registry
    * must never own UI, only intent. */
   requestClearAll: () => void;
-  toggleDjMode: () => void;
 }
 
 export interface Command {
@@ -218,15 +216,6 @@ export const COMMANDS: readonly Command[] = [
     run: (s) => s.requestClearAll(),
   },
   // --- DJ ----------------------------------------------------------------
-  {
-    id: "dj.toggleView",
-    label: (s) => (s.djMode ? "Switch to Compose Mode" : "Switch to DJ Mode"),
-    // No shortcut: ⇧Tab (native, HotkeyManager) owns the view toggle. The ⌘D
-    // this carried shadowed HotkeyManager's duplicate-track — the collision
-    // the MB-6 keymap surfaced; user resolved it this way 2026-07-21.
-    section: "DJ",
-    run: (s) => s.toggleDjMode(),
-  },
 ];
 
 const byId = new Map<CommandId, Command>(COMMANDS.map((c) => [c.id, c]));

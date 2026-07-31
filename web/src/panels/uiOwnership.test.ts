@@ -17,11 +17,24 @@ import { describe, expect, it } from "vitest";
 
 const read = (f: string) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
 
-const DJ_PANEL = read("DjPanel.tsx");
-const TRANSPORT = read("TransportPanel.tsx");
 const MIXER = read("DeckMixerPanel.tsx");
 const MASTER_ROW = read("MasterRow.tsx");
-const NUDGE = read("NudgeBox.tsx");
+/**
+ * ⚠️ `TransportPanel`, `DjPanel`, `ScenePads` and `NudgeBox` ARE GONE
+ * (B1-RETIRE). Every verb they spoke — deckSection, transportDeck, djSetting,
+ * toggleDjMode, the transportGlobal trio — was answered by no host, so the
+ * panels were a complete DJ surface that did nothing.
+ *
+ * Their rules did NOT die with them. Each control they owned now names the
+ * surface that owns it TODAY, which is the P11-5b rule: a pin whose home moves
+ * gets REPOINTED, never deleted, or the duplicate it was guarding against comes
+ * back unobserved. Where a control has no home at all any more, the rule says
+ * so explicitly rather than vanishing.
+ */
+const DECK_ROWS = readFileSync(new URL("../plane/deckRows.tsx", import.meta.url), "utf8");
+const DECK_TILE = readFileSync(new URL("../plane/deckTile.tsx", import.meta.url), "utf8");
+const STRIP = readFileSync(new URL("../plane/Strip.tsx", import.meta.url), "utf8");
+const GRID_ELEMENT = readFileSync(new URL("../plane/GridElement.tsx", import.meta.url), "utf8");
 /** Not a panel — the plane's master BAR (P11-5 gave it the engine-health read).
     Read separately from `ALL` on purpose: `ALL` is the set of surfaces that may
     not write someone else's control, and the master bar is a home, not a
@@ -30,13 +43,15 @@ const MASTER = readFileSync(new URL("../plane/Master.tsx", import.meta.url), "ut
 
 /** Panels that may NOT write a control whose home is elsewhere. */
 const ALL = {
-  DjPanel: DJ_PANEL,
-  TransportPanel: TRANSPORT,
   DeckMixerPanel: MIXER,
   MasterRow: MASTER_ROW,
-  // NudgeBox is a component, not a panel — but it OWNS the nudge write, and the
-  // rule is about who may render it: only the transport box mounts it.
-  NudgeBox: NUDGE,
+  // The plane surfaces that inherited the retired panels' controls. They are
+  // contenders now for the same reason the panels were: each may own some
+  // controls and must not write anyone else's.
+  DeckRows: DECK_ROWS,
+  DeckTile: DECK_TILE,
+  Strip: STRIP,
+  GridElement: GRID_ELEMENT,
 };
 
 /** Assert exactly one panel writes `token`, and that it is `home`. */
@@ -48,16 +63,30 @@ function singleHome(token: string, home: keyof typeof ALL) {
 }
 
 describe("one control, one home (djmode.md §4C)", () => {
-  it("master tempo lives ONLY in the DJ master box", () => {
-    // It was in the transport DJ block AND the DJ view's X·MIX bar.
-    singleHome('paramWrite("masterTempo"', "TransportPanel");
+  it("master tempo has NO param writer left — it is a document value now", () => {
+    // REPOINTED (B1-RETIRE). Its home was TransportPanel's DJ master box, which
+    // wrote `paramWrite("masterTempo")`. The plane's master bar owns the tempo
+    // now and writes the DOCUMENT (`setMasterBpm` → `applyTempo` → per-deck
+    // sync ratios), because per-deck BPM isolation is a mission requirement and
+    // a single global param cannot express it. So the rule inverts: no panel
+    // may resurrect the param write.
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not write masterTempo as a param`).not.toContain(
+        'paramWrite("masterTempo"',
+      );
   });
 
-  it("launch quantize lives ONLY in the DJ master box", () => {
-    // Two controls wrote the same globalLaunchQuantize: the Tools row's `Q:`
-    // cycler (toolbarTool.cycleQuantize) and the DJ view's picker. The tools
-    // row itself is gone (TB-1) — this now just guards the survivor.
-    singleHome('"launchQuantize"', "TransportPanel");
+  it("the launch quantum has ONE home, and it is not the old spelling", () => {
+    // REPOINTED (B1-RETIRE + D-SL-QUANTUM-01). `launchQuantize` was the donor's
+    // ONE GLOBAL quantize, written by TransportPanel's picker. It is
+    // `launchQuantum` now: the SCALE map-wide on the plane's master bar, the
+    // REFERENCE per strip. Two names for one idea is exactly the duplicate this
+    // file guards, so the old spelling must not come back anywhere.
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not resurrect launchQuantize`).not.toContain('"launchQuantize"');
+    expect(MASTER, "the quantum's scale lives on the plane's master bar").toContain(
+      "master-quantum",
+    );
   });
 
   it("the engine-health + output meters each render ONCE (TB-1, rehomed by P11-5)", () => {
@@ -91,8 +120,16 @@ describe("one control, one home (djmode.md §4C)", () => {
     }
   });
 
-  it("tempo mode lives ONLY in the DJ master box", () => {
-    singleHome('"tempoMode"', "TransportPanel");
+  it("tempo mode is a per-ELEMENT document field, written through one lane", () => {
+    // REPOINTED. It was a global in the DJ master box; D-SL-MORPH-01 made it a
+    // per-element musical choice, so it is written by `updateGridTempo` /
+    // `updateTapeTempo` from whichever face is showing — the collapsed strip's
+    // mode button or the deck row's. Both faces, ONE write lane: that is the
+    // second-rendering rule (D-SL-FACES-01), not a duplicate.
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not write tempoMode as a global param`).not.toContain(
+        'paramWrite("tempoMode"',
+      );
   });
 
   it("the crossfader + X·MIX live ONLY on the mixer XFADE row", () => {
@@ -101,15 +138,24 @@ describe("one control, one home (djmode.md §4C)", () => {
     singleHome('paramWrite("xmixEnabled"', "DeckMixerPanel");
     singleHome('paramWrite("xmixStrength"', "DeckMixerPanel");
     singleHome('paramWrite("xmixShimmer"', "DeckMixerPanel");
-    expect(DJ_PANEL, "the DJ view's X·MIX bar must be gone").not.toContain("dj-xmix");
+    // The DJ view that used to hold a second X·MIX bar is deleted outright
+    // (B1-RETIRE), so the assertion moves to the survivors: no panel may grow
+    // one back. P11-4 brings the crossfader to the plane with ASSIGNABLE sides
+    // (D-SL-XFADER-01) — when it lands, its home is named here.
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not grow a second X·MIX bar`).not.toContain("dj-xmix");
   });
 
-  it("nudge lives ONLY in the deck's transport box", () => {
-    // The nudge WRITE lives in the shared NudgeBox…
-    singleHome('paramWrite("deckNudgeBpm"', "NudgeBox");
-    // …and only the transport box may MOUNT it (it was also in the DJ header).
-    expect(TRANSPORT).toContain("<NudgeBox");
-    expect(DJ_PANEL, "the DJ view must not render a second nudge").not.toContain("NudgeBox");
+  it("nudge lives ONLY on the deck row, through the nudge store", () => {
+    // REPOINTED. `NudgeBox` was the shared write and only TransportPanel
+    // mounted it; both are gone. The gesture survives on the deck row's ‹ ›
+    // pair, which goes through `nudgeStore.setNudge` — a HOLD, released on
+    // pointer-up, never the document (the U5 distinction).
+    expect(DECK_ROWS, "the deck row owns the nudge gesture").toContain("setNudge");
+    for (const [name, src] of Object.entries(ALL)) {
+      if (name === "DeckRows") continue;
+      expect(src, `${name} must not render a second nudge`).not.toContain("NudgeBox");
+    }
   });
 
   it("DRY× is gone everywhere (user, 2026-07-13)", () => {
@@ -120,11 +166,20 @@ describe("one control, one home (djmode.md §4C)", () => {
       expect(src, `${name} must not resurrect DRY×`).not.toContain("deckDryMute");
   });
 
-  it("SYNC + pulse + the session name live ONLY in the deck's transport box", () => {
-    expect(TRANSPORT).toContain('op("toggleSync")');
-    expect(DJ_PANEL, "SYNC must not be re-rendered in the DJ view").not.toContain("toggleSync");
-    expect(DJ_PANEL).not.toContain("pulseNext");
-    expect(DJ_PANEL).not.toContain("sessionName");
+  it("SYNC + pulse are written through ONE lane, on two faces", () => {
+    // REPOINTED, and this is the rule D-SL-FACES-01 refines rather than breaks.
+    // SYNC appears on the collapsed strip's grid row AND on the expanded deck
+    // row — deliberately, as second renderings of one state. What must stay
+    // single is the WRITE: both go through `updateGridTempo`, so there is no
+    // second source of truth about whether a deck follows the master.
+    expect(GRID_ELEMENT, "the collapsed face renders SYNC").toContain("syncToMaster");
+    expect(DECK_ROWS, "the expanded face renders it too — one state, two faces").toContain(
+      "syncToMaster",
+    );
+    for (const src of [GRID_ELEMENT, DECK_ROWS])
+      expect(src, "both faces write through updateGridTempo, never a param").not.toContain(
+        'paramWrite("deckSyncEnabled"',
+      );
   });
 
   it("session BPM + master volume live ONLY in the master track row", () => {
@@ -151,15 +206,15 @@ describe("one control, one home (djmode.md §4C)", () => {
       .toContain("showAdd");
   });
 
-  it("the pattern-scene cluster lives ONLY in the deck's transport box", () => {
-    // Snapshot switching schedules against the pattern boundary — it is a
-    // TRANSPORT act, so pads + S/R/0 + SCN + MUTE ride the deck's transport box
-    // (user, 2026-07-13), on a row of their own.
-    expect(TRANSPORT).toContain("<ScenePads");
-    expect(MASTER_ROW, "the master row must not render a second cluster").not.toContain(
-      "ScenePads",
-    );
-    expect(DJ_PANEL, "the DJ view must not render a second cluster").not.toContain("ScenePads");
+  it("the pattern-scene cluster lives on the plane, and `ScenePads` stays retired", () => {
+    // REPOINTED. `ScenePads` was TransportPanel's cluster and died with it. The
+    // pads live on the collapsed strip (`GridScenes`) and the switch-mode / CU /
+    // SCN / MUTE controls on the expanded deck row — the same
+    // one-state-two-faces split as SYNC, and still a TRANSPORT act.
+    expect(GRID_ELEMENT, "the pads are on the collapsed face").toContain("GridScenes");
+    expect(DECK_ROWS, "the scene controls are on the expanded face").toContain("SCENE");
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not bring back the retired ScenePads`).not.toContain("<ScenePads");
   });
 
   it("the master track row owns session BPM + volume and nothing transport-ish", () => {
@@ -170,25 +225,24 @@ describe("one control, one home (djmode.md §4C)", () => {
     }
   });
 
-  it("the DJ deck header is GONE — GRID + the C projection live in the transport box", () => {
-    // 2026-07-14: the header (letter badge · GRID · C) was the DJ view's last
-    // own chrome, and it left. The letter's job went to the identity-colored
-    // transport box aligned above each slot; GRID and C moved into that box so
-    // they are reachable from compose too. The DJ panel now only READS the
-    // shared state (dj.deckCProjectedSlot / dj.gridHidden) — a write creeping
-    // back in here is the double this file exists to stop.
-    expect(DJ_PANEL, "the header row itself must stay deleted").not.toContain("dj-deck-head");
-    singleHome('label="GRID"', "TransportPanel");
-    singleHome('"deckCProjection"', "TransportPanel");
-    singleHome('"gridHidden"', "TransportPanel");
-    // PERF rides the same pattern: written ONLY from the transport deck box;
-    // DjPanel/GridPanel read dj.performMode (property access, not a write).
-    singleHome('label="PERF"', "TransportPanel");
-    singleHome('"performMode"', "TransportPanel");
-    // …and nothing that has a home elsewhere.
-    for (const foreign of ["masterTempo", "crossfaderPosition", "deckNudgeBpm", "xfaderSide"]) {
-      expect(DJ_PANEL, `${foreign} has a home outside the DJ view`).not.toContain(foreign);
-    }
+  it("GRID + PERF live on the deck tile; the C projection is gone entirely", () => {
+    // REPOINTED (B1-RETIRE). These were TransportPanel's, and B1 moved the pair
+    // onto the expanded tile's view row where they belong — the tile IS the
+    // deck view now, so the controls that shape it sit on it.
+    expect(DECK_ROWS, "GRID's one home is the deck view row").toContain('GRID');
+    expect(DECK_ROWS, "PERF's one home is the deck view row").toContain('PERF');
+    // PERF reaches the grid as a mount-owned META FACT rather than a param, so
+    // exactly one surface can assert it.
+    expect(DECK_TILE, "PERF rides the tile's meta facts").toContain("performActive");
+
+    // ⚠️ `deckCProjection` HAS NO HOME AND MUST NOT GET ONE. It meant "project
+    // deck C into slot A/B" — a fixed-three-deck idea that D-SL-MORPH-01
+    // retired outright when the plane became N strips of one kind each. A
+    // reintroduction would be reviving a model, not restoring a control.
+    for (const [name, src] of Object.entries(ALL))
+      expect(src, `${name} must not revive the deck-C projection`).not.toContain(
+        '"deckCProjection"',
+      );
   });
 
   it("NO panel writes an X-MIX side (mixer overhaul)", () => {

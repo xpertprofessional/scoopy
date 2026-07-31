@@ -12,7 +12,7 @@ import type { MethodOf, ParamsOf, ResultOf } from "./types.ts";
  * Bump SCHEMA_VERSION on any breaking change and update both sides in the
  * same increment. Publishes across mismatched versions are refused.
  */
-export const SCHEMA_VERSION = 96; // v96: A PLUGIN CAN BE REMEMBERED (P6-5a) — `getFxSlotState` reports per return the identifier a plugin can be found by again (JUCE's createIdentifierString, NOT the display name — a name collides across formats and vendors) plus its opaque state; `selectFxPlugin` gains an optional `state` applied AT INSTANTIATION, so a restored plugin is never briefly heard at its defaults. A read COMMAND rather than a toolbar field because a blob runs to hundreds of KB. A blob the plugin rejects leaves it loaded at defaults: a map that remembers wrong beats a map that will not open. Document side is P6-5b. // v95: THE PLUGIN EDITOR IS REACHABLE (P6-4) — `fxSlot` is finally ANSWERED (the method existed in this file and no host handled it): op `toggleEditor` opens/hides a return's plugin editor window, and the toolbar push's `editorVisible` stops being a hardcoded false while a new optional `editorAvailable` says whether the plugin has an editor at all. Both are read from the ENGINE, never echoed from the request: the window can be closed by its own close box and "show" is a no-op on a plugin with no editor, so an echoing UI lights a lamp over nothing. The other three fxSlot ops are refused BY NAME until the mixer strip lands (P7-MIX-0). // v94: DECK OUT AS A ROUTE SOURCE (P3.5-E3) — slRoute srcKind gains 4 = deckOut, a GRID DECK's dry stereo output (index = deck, not channel). Closes a defect against shipped P3-R3: a grid deck's channel is a projection with an EMPTY bus (the core owns that deck's gain stage and already summed it), so the looper that gesture spawned was patched from silence. The deck is now named directly rather than making channelOut mean two things. // v93: PER-STRIP DRV (P3-X2) — slChannel gains setDrive (curve 0 soft · 1 tanh · 2 hard · 3 fold; amount [1,32], 1 = off), the core's pre-sum deck drive stage at the strip channel tier: post-element PRE-level, so character stays constant while fading. Tape/input strips only — a grid strip's DRV writes the session DOCUMENT (masterClipperDrive/Curve), because the core's per-deck stage is document-fed and a live projection would be stomped by the next republish. // v92: CARVE LANDS (P3-U7) — slFiles gains the read-only "/takes" mount, so a kit sample's filePath can reference the recorder's WAV directly (carve's invariant: a grid track and a tape share ONE take, no copy). Writes/removes under /takes are refused — the take library has its own verbs. // v91: OVERDUB MADE WHOLE (P3-U3) — slTape/overdubStart gains the record-source args + sourceDesc/bpmAtStart and BRACKETS A TAKE (the RAM mix is destructive; each pass persists as its own crash-safe stamped file, D-WZ-OVERDUB-01); overdubStop closes it and returns the pass's path. Before this, a punch through the dispatcher layered SILENCE (no source set) and persisted NOTHING (no take bracket). v90: TAPE timeStretch (P3-2b-5) — slTape gains setTempoMode (0 timePitch · 1 timeStretch); the engine's per-tape Signalsmith stretcher holds pitch while the timeline runs at the sync ratio, the varispeed reader staging its input (TAPE-STRETCH.md). v89: TAPE TEMPO IDENTITY, document side (P3-2b-1) — slRecord/start gains optional `bpmAtStart` (the MASTER tempo when capture began, stamped into the take's sidecar by the host; the datum a recorded loop needs to state its own bpm and sync later, MAP-SCHEMA "dual stamps"). Sidecar field is OMITTED when the caller had no tempo, so old sidecars and tempo-less ones parse identically. v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
+export const SCHEMA_VERSION = 97; // v97: NINE DEAD VERBS RETIRED (B1-RETIRE) — `transportGlobalPlay/Stop/Restart`, `transportDeck`, `deckSection`, `djSetting`, `djBrowser` and `toggleDjMode` leave the protocol. They were declared here and answered by NOBODY: not SlDispatch, not MergedApp, not browserLink. Their only callers were `TransportPanel` and `DjPanel`, a complete DJ surface where every control did nothing, both now deleted. What replaced them is not a rename but a different shape — deck transport is the companion's (it owns the pattern document) with `slDeck` for the engine's half, the DJ view is the expanded deck tile rather than a global mode (D-SL-DECKFULL-01), and the launch quantum is `launchQuantum` on the map with a per-strip reference (D-SL-QUANTUM-01). `menuTransport` is deliberately NOT in this list: B1/4a gave it a real answerer, so Space finally starts a deck. // v96: A PLUGIN CAN BE REMEMBERED (P6-5a) — `getFxSlotState` reports per return the identifier a plugin can be found by again (JUCE's createIdentifierString, NOT the display name — a name collides across formats and vendors) plus its opaque state; `selectFxPlugin` gains an optional `state` applied AT INSTANTIATION, so a restored plugin is never briefly heard at its defaults. A read COMMAND rather than a toolbar field because a blob runs to hundreds of KB. A blob the plugin rejects leaves it loaded at defaults: a map that remembers wrong beats a map that will not open. Document side is P6-5b. // v95: THE PLUGIN EDITOR IS REACHABLE (P6-4) — `fxSlot` is finally ANSWERED (the method existed in this file and no host handled it): op `toggleEditor` opens/hides a return's plugin editor window, and the toolbar push's `editorVisible` stops being a hardcoded false while a new optional `editorAvailable` says whether the plugin has an editor at all. Both are read from the ENGINE, never echoed from the request: the window can be closed by its own close box and "show" is a no-op on a plugin with no editor, so an echoing UI lights a lamp over nothing. The other three fxSlot ops are refused BY NAME until the mixer strip lands (P7-MIX-0). // v94: DECK OUT AS A ROUTE SOURCE (P3.5-E3) — slRoute srcKind gains 4 = deckOut, a GRID DECK's dry stereo output (index = deck, not channel). Closes a defect against shipped P3-R3: a grid deck's channel is a projection with an EMPTY bus (the core owns that deck's gain stage and already summed it), so the looper that gesture spawned was patched from silence. The deck is now named directly rather than making channelOut mean two things. // v93: PER-STRIP DRV (P3-X2) — slChannel gains setDrive (curve 0 soft · 1 tanh · 2 hard · 3 fold; amount [1,32], 1 = off), the core's pre-sum deck drive stage at the strip channel tier: post-element PRE-level, so character stays constant while fading. Tape/input strips only — a grid strip's DRV writes the session DOCUMENT (masterClipperDrive/Curve), because the core's per-deck stage is document-fed and a live projection would be stomped by the next republish. // v92: CARVE LANDS (P3-U7) — slFiles gains the read-only "/takes" mount, so a kit sample's filePath can reference the recorder's WAV directly (carve's invariant: a grid track and a tape share ONE take, no copy). Writes/removes under /takes are refused — the take library has its own verbs. // v91: OVERDUB MADE WHOLE (P3-U3) — slTape/overdubStart gains the record-source args + sourceDesc/bpmAtStart and BRACKETS A TAKE (the RAM mix is destructive; each pass persists as its own crash-safe stamped file, D-WZ-OVERDUB-01); overdubStop closes it and returns the pass's path. Before this, a punch through the dispatcher layered SILENCE (no source set) and persisted NOTHING (no take bracket). v90: TAPE timeStretch (P3-2b-5) — slTape gains setTempoMode (0 timePitch · 1 timeStretch); the engine's per-tape Signalsmith stretcher holds pitch while the timeline runs at the sync ratio, the varispeed reader staging its input (TAPE-STRETCH.md). v89: TAPE TEMPO IDENTITY, document side (P3-2b-1) — slRecord/start gains optional `bpmAtStart` (the MASTER tempo when capture began, stamped into the take's sidecar by the host; the datum a recorded loop needs to state its own bpm and sync later, MAP-SCHEMA "dual stamps"). Sidecar field is OMITTED when the caller had no tempo, so old sidecars and tempo-less ones parse identically. v88: the SPLIT TAP (merge P2-5) — slChannel/setMonitor puts sl_channel_set_monitor on the wire and one appended HotFrame scalar (slChanMonitorMask) reports the engine's own state, because the engine opens the switch at record-start and closes it at the Law C-3 handoff (D-WZ-MON-01/02). Fixes a strip arriving with its input permanently patched and audible, where the only control that stopped the feedback (`M`) also silenced the tape. v87: the plane (merge P2 step 4) — slChannel/slTape/slRoute/slRouteList/slRecord/slTakes put the merged engine's strip surface (sl_channel_*/sl_tape_*/sl_route_*) on the wire, plus 42 appended HotFrame scalars (per-channel peaks, tape playhead/state/cap, the watchdog lamp). Answered by WizardMerged only; ScoopyLoops.app refuses them like any unimplemented method. v86: shared-envelope convergence (shared/ROLLOUT.md phase 5 / merge P0-A) — command replies carry `ok` ({id, ok, result?, error?}, mirrors shared/protocol/envelope.ts), every schema object is `.strict()`. v85: MOD-11 "SHAPES" — ModChannelState gains warp/curve/fold/quant/chaos macros + stageCount/stageLevels/stageGlide step layer.
 
 // ---------------------------------------------------------------------------
 // ParamWrite — fine-grained live controls (audio-thread atomics on the
@@ -740,9 +740,6 @@ export const COMMANDS = {
   },
   // Transport (panels/toolbar.md §4). Master ops act on activeSequencers;
   // deck ops target one deck (0=A, 1=B, 2=C).
-  transportGlobalPlay: { params: z.object({}).strict(), result: z.object({}).strict() },
-  transportGlobalStop: { params: z.object({}).strict(), result: z.object({}).strict() },
-  transportGlobalRestart: { params: z.object({}).strict(), result: z.object({}).strict() },
   /**
    * MB-4 (v77): the MENU's transport — deck-targeted, NOT global. `play`
    * routes through `HotkeyManager.spaceTransport()` (the single-space rule:
@@ -773,15 +770,7 @@ export const COMMANDS = {
     params: z.object({ op: z.enum(["new", "save", "saveAs", "load", "bounceToggle", "exportZip"]) }).strict(),
     result: z.object({}).strict(),
   },
-  transportDeck: {
-    params: z.object({
-      deck: z.number().int().min(0).max(2),
-      op: z.enum(["play", "stop", "playOnce", "skipStep"]),
-    }).strict(),
-    result: z.object({}).strict(),
-  },
   // DJ/compose view switch (app-level UI state; host wires the binding).
-  toggleDjMode: { params: z.object({}).strict(), result: z.object({}).strict() },
   // NK-1: Musical Keyboard Mode — the "piano" (there is no on-screen keyboard
   // anywhere in this app, and never was: the mode REMAPS the computer keyboard
   // into a piano layout, A W S E D F… = C C# D D#…, and plays the selected
@@ -813,56 +802,11 @@ export const COMMANDS = {
   // Per-deck section ops (panels/toolbar.md row 2). Sync/pulse/TR mirror the
   // native controls' mode-aware semantics (TP: sync⊕TR mutually exclusive).
   // select/eject/double/saveAs run through host-wired closures.
-  deckSection: {
-    params: z.object({
-      deck: z.number().int().min(0).max(2),
-      op: z.enum([
-        "select", "open", "eject", "double", "quickSave",
-        "toggleSync", "pulsePrev", "pulseNext",
-        "toggleTranspose", "trDown", "trUp",
-        "toggleBeatRepeat", "brFiner", "brCoarser", "brShiftLeft", "brShiftRight",
-      ]),
-    }).strict(),
-    result: z.object({}).strict(),
-  },
   // DJ enum settings (P6-02). Everything continuous or boolean rides the
   // ParamWrite lane; this carries the CHOICES, whose values are raw strings
   // from the Swift enums (DJTempoMode / LaunchQuantize / XfaderSide / the
   // deck-C projection slot). Domain Ownership holds: DJModeManager stays the
   // owner — the web sends intents, exactly like scenes.
-  djSetting: {
-    params: z.object({
-      op: z.enum([
-        "tempoMode", // value: timePitch | timeStretch | tempoOnly
-        "launchQuantize", // value: off|1|2|4|8|16|cycle (LaunchQuantize raw)
-        // NOTE: the deck-scoped xfader-side op USED to live here. Phase XN retired it — a
-        // crossfader side is not a deck property, it belongs to any signal the X-MIX carve
-        // can eat, so it moved to the node-scoped `setXmixSide` below. Deliberately NOT kept
-        // alongside: two commands writing one control is how a second home creeps back in.
-        // (xmixNodes.test.ts greps this file to keep the retired op from reappearing.)
-        "modifiersInRows", // value: on | off — show mod-depth slots in the deck rows
-        // Deck-C projection (value: a | b | none — ABSOLUTE, not a toggle: the C
-        // flip button lives in the transport strip while the deck windows live in
-        // the djmode page, and two webviews toggling one bit is a double-flip
-        // race). Owner: DJModeManager.deckCProjectedSlot (revised 2026-07-14 —
-        // was view-local in DjPanel until the flip button moved webviews).
-        "deckCProjection",
-        // Per-DECK "hide the DJ grid" (value: on = hidden | off; `deck` names the
-        // deck). Web-only UI state, but read by the djmode page and written from
-        // the transport strip → Swift-owned like the projection.
-        "gridHidden",
-        // Per-DECK perform mode (value: on | off; `deck` names the deck, so the
-        // mode follows C through a projection). When on, pointer input on that
-        // deck's grid sets the per-track locator repeat window instead of
-        // composing. Written from the transport strip, read by the djmode page
-        // → Swift-owned like gridHidden. Session-lifetime, not persisted.
-        "performMode",
-      ]),
-      deck: z.number().int().min(0).max(2).optional(),
-      value: z.string(),
-    }).strict(),
-    result: z.object({}).strict(),
-  },
   // setXmixSide RETIRED (mixer overhaul, 2026-07-14): the per-channel X picker cost more
   // mixer space than it earned, so sides are FIXED POLICY in DJModeManager.init — deck A → a,
   // deck B → b, everything else (deck C, FX returns, input) own — until the planned X-MIX
@@ -876,14 +820,6 @@ export const COMMANDS = {
   // there is exactly one load implementation. `notice` carries back what the
   // native browser would have shown as a toast (e.g. "Stop Deck A before
   // loading a new session.").
-  djBrowser: {
-    params: z.object({
-      op: z.enum(["chooseFolder", "refresh", "load"]),
-      path: z.string().optional(), // load: the session to load
-      deck: z.number().int().min(0).max(2).optional(), // load: destination deck
-    }).strict(),
-    result: z.object({ notice: z.string().nullable() }).strict(),
-  },
   // Compose sample browser (BR-2). Mirrors djBrowser's shape so the two
   // browsers stay symmetrical — and, like it, `load` is an INTENT: Swift keeps
   // ONE loader (addTrack / loadAudioFile), so the ⌥-stretch config, the

@@ -1413,7 +1413,6 @@ export function GridPanel({
         if (tracksRef.current[i]) sendEdit({ op: "clearGrid", trackIndex: i });
       }
     },
-    toggleDjMode: () => void link?.command("toggleDjMode", {}).catch(() => {}),
   });
   const menuBridgeRef = useRef<import("../commands/menuBridge.ts").MenuBridge | null>(null);
   useEffect(() => {

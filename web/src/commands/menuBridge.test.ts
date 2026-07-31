@@ -53,7 +53,6 @@ function state(over: Partial<CommandState> = {}): CommandState {
     transportRestart: vi.fn(),
     addTrack: vi.fn(),
     requestClearAll: vi.fn(),
-    toggleDjMode: vi.fn(),
     ...over,
   };
 }
