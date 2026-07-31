@@ -1242,6 +1242,63 @@ double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck) {
     return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckParams[deck].syncRatio;
 }
 
+/**
+ * QUANTIZED LAUNCH (P11-3b) — arm `deck` to start the instant `ref_deck`
+ * crosses its next step that is a multiple of `quantize_steps`.
+ *
+ * The core has implemented this the whole time and NOTHING called it: it is
+ * `requestQuantizedLaunch` (NativeAudioEngineCore.hpp:1547), reached in the
+ * donor through `AudioEngineFacade.requestQuantizedLaunch(deck:refDeck:
+ * quantizeSteps:)`. This is the missing wire, not new behaviour.
+ *
+ * ORDER IS THE CONTRACT, not a style choice. The core's own comment: "The deck
+ * must already be published into the world as active + launchArmed with
+ * snapshot.startStep set to the desired start step." So the flag goes on, the
+ * world is published, and only then is the boundary requested — arming after
+ * the request would leave the render branch looking at a deck the world does
+ * not say is waiting.
+ *
+ * The boundary is resolved INSIDE render() against the reference deck's live
+ * transport, which is what buys sample accuracy: no UI-thread poll can be
+ * jitter-free, and the donor moved this into the audio callback for that reason.
+ */
+void sl_deck_request_quantized_launch(sl_engine* e, uint32_t deck, uint32_t ref_deck,
+                                      uint16_t quantize_steps) {
+    if (e == nullptr || deck >= kMaxDecks || ref_deck >= kMaxDecks) return;
+    // A zero quantum is a division by nothing downstream, not "launch now" —
+    // refused rather than rounded into 1, the discipline the param setters use.
+    if (quantize_steps == 0) return;
+    // A deck cannot wait on ITSELF: the boundary would be resolved against the
+    // clock it is not running yet, so it would never arrive.
+    if (deck == ref_deck) return;
+    e->deckWorlds[deck].launchArmed = true;
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+    e->core.requestQuantizedLaunch(static_cast<std::size_t>(deck),
+                                   static_cast<std::size_t>(ref_deck), quantize_steps);
+}
+
+/** Disarm a pending launch. Safe to call when nothing is armed. */
+void sl_deck_cancel_quantized_launch(sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    e->core.cancelQuantizedLaunch(static_cast<std::size_t>(deck));
+    e->deckWorlds[deck].launchArmed = false;
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+}
+
+/**
+ * How many times a quantized launch has FIRED for this deck — monotonic.
+ *
+ * The host tracks the last value it saw and compares: a bump means the audio
+ * actually started, which is the only honest way to clear a "pending" lamp.
+ * Reading the armed flag instead would clear it when the request was accepted,
+ * not when the deck came in — the donor keeps the same counter
+ * (`launchFiredSequence`) for exactly this distinction.
+ */
+uint32_t sl_deck_launch_fired_count(const sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return 0;
+    return e->core.launchFiredSequence(static_cast<std::size_t>(deck));
+}
+
 void sl_deck_skip_step(sl_engine* e, uint32_t deck, int64_t step) {
     if (e == nullptr || deck >= kMaxDecks) return;
     // A NEGATIVE STEP IS A REFUSAL, not a rewind to the end. The core already
@@ -1264,6 +1321,14 @@ int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, i
     // committing one strip's deck does not wipe the rest. Each deck's own bpm
     // lives on its own snapshot — the per-deck-BPM isolation the merge requires.
     DeckWorld& d = e->deckWorlds[deck];
+    // A PENDING LAUNCH OUTLIVES A REBUILD (P11-3b). This used to be reset to
+    // false below, which meant any world publish — and a grid edit IS a world
+    // publish — silently disarmed a deck waiting on its boundary. Exactly the
+    // shape of the tempo-axis bug two lines down, in a different field: the
+    // launch is a TRANSPORT intent, and rebuilding the session's content is not
+    // a statement about it. The donor keeps it for the same reason
+    // (`launchArmed` survives publish, AudioEngineFacade:1457).
+    const bool wasLaunchArmed = d.launchArmed;
     d.snapshot = NativeSequencerSnapshot{};
     d.snapshot.bpm = bpm;
     d.snapshot.isPlaying = is_playing != 0;
@@ -1271,7 +1336,7 @@ int sl_snapshot_begin(sl_engine* e, uint32_t deck, double bpm, int is_playing, i
     d.active = true;             // this deck slot now renders
     d.crossfaderGain = 1.0f;     // full into the main mix (no DJ crossfade yet)
     d.dedicatedOutput = false;
-    d.launchArmed = false;
+    d.launchArmed = wasLaunchArmed;
     // THE TEMPO AXIS IS NOT THE SESSION'S, so rebuilding the session does not
     // reset it. This line used to be `d.tempoSyncRatio = 1.0`, which meant every
     // grid edit silently un-synced every synced deck and the plane carried a

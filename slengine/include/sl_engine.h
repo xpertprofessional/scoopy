@@ -797,6 +797,37 @@ void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
     sl_param_get(e, deck, id_of("syncRatio")). */
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck);
 
+/* ── Quantized launch (P11-3b) ───────────────────────────────────────────────
+ *
+ * Arm a deck to come in ON the beat, resolved inside the audio callback rather
+ * than by a UI-thread poll. The core has carried this since it was vendored
+ * (`requestQuantizedLaunch`, NativeAudioEngineCore.hpp:1547) with NO caller
+ * anywhere in the tree; the donor reached it through
+ * `AudioEngineFacade.requestQuantizedLaunch(deck:refDeck:quantizeSteps:)`.
+ *
+ * The guarantees are the donor's and must be kept by anything built on top:
+ * a held deck stays WARM (its stretcher keeps running, so it does not have to
+ * spin up at the boundary), the boundary is CYCLE-relative rather than
+ * clock-relative, and a launch waits an extra block rather than align to a grid
+ * that is about to move. */
+
+/** Arm `deck` to start when `ref_deck` next crosses a multiple of
+    `quantize_steps`. Sets the deck's `launchArmed` and republishes before
+    requesting, which is the core's stated precondition. `quantize_steps == 0`,
+    `deck == ref_deck` (it would wait on a clock it is not running), an
+    out-of-range index or a null engine is IGNORED. */
+void sl_deck_request_quantized_launch(sl_engine* e, uint32_t deck, uint32_t ref_deck,
+                                      uint16_t quantize_steps);
+
+/** Disarm a pending launch. Safe when nothing is armed. */
+void sl_deck_cancel_quantized_launch(sl_engine* e, uint32_t deck);
+
+/** Monotonic count of launches that have FIRED for `deck`. A host compares it
+    against the last value it saw: a bump means the audio actually started,
+    which is when a "pending" lamp may honestly clear — the armed flag only says
+    the request was accepted. */
+uint32_t sl_deck_launch_fired_count(const sl_engine* e, uint32_t deck);
+
 /** SKIP-STEP: jump `deck`'s playhead to absolute `step` at the next step
     boundary, and keep playing. The donor spells this `transportDeck` /
     `skipStep`, beside play and stop (WebToolbarBinding.swift), and it is the one

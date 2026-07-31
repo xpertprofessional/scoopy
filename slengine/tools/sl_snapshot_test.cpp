@@ -273,6 +273,54 @@ int main() {
         CHECK(sl_param_get(e, 2, transId) == 0.0);
         CHECK(sl_param_get(e, 2, texId) == 0.0);
 
+        // ── QUANTIZED LAUNCH (P11-3b) ──────────────────────────────────
+        //
+        // The core has implemented this since it was vendored and NOTHING
+        // called it. What is pinned here is the WIRE and its refusals; that the
+        // boundary lands sample-accurately is the core's own property, resolved
+        // inside render() where no test up here can observe the instant.
+        //
+        // THE ONE BEHAVIOUR THIS LEVEL CAN PROVE, and the row's real risk: a
+        // pending launch must SURVIVE A REBUILD. `sl_snapshot_begin` used to
+        // hardcode launchArmed=false, so any world publish — and a grid edit IS
+        // a publish — silently disarmed a deck waiting on its boundary.
+        {
+            // Deck 2 is the one being armed; deck 1 is the reference (it is the
+            // deck this test has been running).
+            sl_deck_request_quantized_launch(nullptr, 2, 1, 16);   // null engine
+            sl_deck_request_quantized_launch(e, 99, 1, 16);        // deck out of range
+            sl_deck_request_quantized_launch(e, 2, 99, 16);        // ref out of range
+            sl_deck_request_quantized_launch(e, 2, 1, 0);          // zero quantum
+            sl_deck_request_quantized_launch(e, 2, 2, 16);         // waiting on itself
+            CHECK(sl_deck_launch_fired_count(e, 2) == 0);          // nothing fired
+            CHECK(sl_deck_launch_fired_count(nullptr, 2) == 0);
+            CHECK(sl_deck_launch_fired_count(e, 99) == 0);
+
+            // A real arm, then a REBUILD of the same deck's session.
+            sl_deck_request_quantized_launch(e, 2, 1, 16);
+            sl_snapshot_begin(e, 2, 120.0, 0, 0);
+            sl_snapshot_commit(e);
+            // Mutation check: restore `d.launchArmed = false` in
+            // sl_snapshot_begin and the deck comes back disarmed — the launch is
+            // dropped and the pad waits forever. There is no getter for the flag
+            // (an ABI point only a test uses is the dead ABI the coverage gate
+            // exists for), so this asserts the engine still renders finite audio
+            // with a deck held armed across a publish, and the flag's survival is
+            // read from the source beside the mutation.
+            for (int block = 0; block < 20; ++block) {
+                std::fill(l.begin(), l.end(), 0.0f);
+                sl_render(e, buses, 2, 512);
+                for (uint32_t i = 0; i < 512; ++i) CHECK(std::isfinite(l[i]));
+            }
+
+            // Cancel is safe when nothing is armed, and safe twice.
+            sl_deck_cancel_quantized_launch(e, 2);
+            sl_deck_cancel_quantized_launch(e, 2);
+            sl_deck_cancel_quantized_launch(nullptr, 2);
+            sl_deck_cancel_quantized_launch(e, 99);
+            sl_deck_clear(e, 2);
+        }
+
         // SKIP-STEP — a request applied at the next step boundary inside
         // render(), so there is nothing to read back here: the property that
         // matters is that it is REFUSED cleanly and never corrupts the deck.
