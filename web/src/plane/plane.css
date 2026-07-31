@@ -504,6 +504,25 @@
   opacity: 0.7;
 }
 
+/* THE COMPOSE WINDOW'S SESSION MENU (B5 · P7-L1). Sized from the same control
+   token as everything else so it sits on the bar's baseline; the bar is the
+   window's own chrome, not a strip row, so it takes the plain button shape. */
+.compose-session-menu {
+  flex: 0 0 auto;
+  height: var(--control-h);
+  padding: 0 var(--cell);
+  font-size: var(--type-micro-size);
+  background: var(--bg-raised);
+  color: var(--text);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.compose-session-menu:hover {
+  background: var(--bg);
+}
+
 /* THE SYNC-MASTER BADGE (P11-3c). A RESERVED SLOT — fixed width whether or not
    it is lit, so nominating a master cannot shift the chips beside it (L2: state
    changes fill, never presence). */

@@ -16,7 +16,7 @@
  * debounce is 1.5 s and closing the window is exactly when the last edit must
  * not be the one that never landed.
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { EngineLink } from '../engineLink.ts'
 import { GridPanel } from '../panels/GridPanel.tsx'
@@ -25,6 +25,7 @@ import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
 import { ComposeFiles } from './ComposeFiles.tsx'
+import { ComposeSessions } from './ComposeSessions.tsx'
 import { decodeComposeArg } from './composeArg.ts'
 import { useComposeBinding } from './useComposeBinding.ts'
 
@@ -34,6 +35,8 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
     [],
   )
   const deck = arg?.deck ?? 0
+  /** The window's own note line — its ONE error surface, like the plane's. */
+  const [note, setNote] = useState<string | null>(null)
   const error = useCompanion((c) => c.error)
   // P3.5-E8g — the store's PROGRESS line, which this window never rendered.
   // `loadSample` has always set `<sample> → track N` on success and the sample
@@ -55,16 +58,38 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
   })
 
   useEffect(() => {
-    if (!arg) return
     void (async () => {
+      // ⚠️ THE SINK STARTS EVEN WITH NO ARG (B5). This used to return early
+      // when the window was unaddressed, which was harmless while the only way
+      // here was from a strip. On the mapless boot path it would be the whole
+      // bug: "new session" would create and open a document into an engine that
+      // was never started, so nothing publishes and the transport silently
+      // no-ops — the `didNotStart` shape, one layer down.
+      //
       // Sink first, session second: `open()` publishes only while the engine
       // runs, and this window's store boots cold (every WebView has its own).
       await autoStartEngine(juceBackend() !== null, () => useCompanion.getState())
-      await useCompanion.getState().open(arg.session, arg.deck)
+      if (arg) await useCompanion.getState().open(arg.session, arg.deck)
     })()
     // The arg is decoded once from the injection — it cannot change while the
     // window lives, so this effect runs exactly once by construction.
   }, [arg])
+
+  // ⌘S SAVES THE SESSION (D-SL-SAVE-01) — one meaning on every surface, so the
+  // chord transfers between this window and the plane. It is a FLUSH: edits
+  // already autosave on a 1.5 s debounce, so this lands the pending write now
+  // rather than rescuing something that was never going to be saved.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 's' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
+      // ⇧⌘S is the MAP, which a compose window does not have — deliberately not
+      // swallowed here, so it stays available to whatever does.
+      e.preventDefault()
+      void flushAutosave().then(() => setNote('saved'))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // The last edit must land: closing the window is precisely when the 1.5 s
   // autosave debounce would eat it (the CompanionPanel:103 rule, applied here).
@@ -80,23 +105,24 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
 
   const { session } = useComposeBinding(link, deck)
 
-  if (!arg) {
-    // An unaddressed compose window can only edit the wrong thing — refuse
-    // with the next step named, never guess a deck.
-    return (
-      <main className="panel compose-window">
-        <p className="mono warn">
-          this compose window opened without an address — close it and use COMPOSE ⇱ on a strip
-        </p>
-      </main>
-    )
-  }
+  // ⚠️ NO ARG IS NOW A VALID STATE (B5 · D-SL-LAUNCH-01). It used to be a
+  // refusal — "close it and use COMPOSE ⇱ on a strip" — which was right when
+  // the only way here was from a strip. The boot chooser's mapless COMPOSE path
+  // opens this window with NOTHING addressed, on purpose: there is no plane, no
+  // map, and no session yet. So an unaddressed window is an empty studio rather
+  // than a mistake, and the session menu is how you fill it.
 
   return (
-    <main className="panel compose-window" aria-label={`compose ${arg.session}`}>
+    <main className="panel compose-window" aria-label={`compose ${arg?.session ?? 'empty'}`}>
       <header className="compose-window-bar mono">
-        <span>{`compose · ${session?.name ?? arg.session}`}</span>
-        <span className="dim">{` deck ${deck + 1} — edits are live and autosaved; close the window to hand the deck back to the plane`}</span>
+        <ComposeSessions deck={deck} onNote={setNote} />
+        <span>{`compose · ${session?.name ?? arg?.session ?? 'no session'}`}</span>
+        <span className="dim">
+          {arg
+            ? ` deck ${deck + 1} — edits are live and autosaved; close the window to hand the deck back to the plane`
+            : ` deck ${deck + 1} — no plane open; use “session ▾” to make or open one`}
+        </span>
+        {note && <span className="dim">{` · ${note}`}</span>}
         {error && <span className="warn">{` ${error}`}</span>}
         {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
         {/* Beside the warnings rather than instead of them: a kit that cannot

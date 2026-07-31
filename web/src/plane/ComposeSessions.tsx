@@ -1,0 +1,150 @@
+/**
+ * THE COMPOSE WINDOW'S SESSION VERBS (B5 · P7-L1, D-SL-LAUNCH-01).
+ *
+ * New · open · save · rename · export, on the compose window's own bar — so a
+ * compose window is a place you can WORK, not just a place you can edit
+ * something the plane handed you.
+ *
+ * ⚠️ IT MUST WORK WITH NO PLANE AND NO MAP ALIVE. That is the whole point of
+ * D-SL-LAUNCH-01's mapless COMPOSE path: the boot chooser can open this window
+ * with nothing else in the app, so every verb here goes to `sessionStore` and
+ * the companion, never through `mapStore`. A door that needed the plane's
+ * library would make the mapless path a dead end at "how do I open anything".
+ *
+ * The verbs already existed — `sessionStore` owns save/open/create/rename/
+ * delete/import/export and has since P3-SES-1. Autosave-only UI was the gap,
+ * not the machinery, which is why this is a surface rather than a subsystem.
+ *
+ * A MENU, not a row of buttons: choosing from a list of sessions is not a
+ * one-handed live gesture (pd-strip-anatomy §3.1, the same rule that puts the
+ * strip's input picker and launch reference in menus). What stays on the bar is
+ * the RESULT — the session's name, already there.
+ */
+import { useState } from 'react'
+
+import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
+import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import {
+  createSession,
+  exportSession,
+  listSessions,
+  renameSession,
+  type SessionSummary,
+} from '../store/sessionStore.ts'
+
+/**
+ * The menu's rows, pure — exported for the same reason `launchMenuItems` and
+ * `inputDeviceMenuItems` are: the menu is built inside an event handler and
+ * rendered through a portal, so the built section is the only thing a test can
+ * assert.
+ */
+export function sessionMenuItems(
+  sessions: SessionSummary[],
+  current: string | null,
+  on: {
+    create: () => void
+    open: (name: string) => void
+    save: () => void
+    rename: () => void
+    exportZip: () => void
+  },
+): MenuItem[] {
+  const items: MenuItem[] = [
+    { kind: 'info', label: 'session' },
+    { kind: 'item', label: 'new', onSelect: on.create },
+    // SAVE IS ⌘S (D-SL-SAVE-01), and the row says so — a verb whose shortcut is
+    // invisible is one people never learn.
+    { kind: 'item', label: 'save  ⌘S', disabled: !current, onSelect: on.save },
+    { kind: 'item', label: 'rename…', disabled: !current, onSelect: on.rename },
+    { kind: 'item', label: 'export…', disabled: !current, onSelect: on.exportZip },
+    { kind: 'sep' },
+    { kind: 'info', label: 'open' },
+  ]
+  // ⚠️ THE EMPTY CASE IS RENDERED, not hidden. On the mapless boot path this
+  // window may be the only thing running, so "there is nothing to open yet" has
+  // to be readable HERE — a section that vanishes teaches nothing, and the
+  // plane's library (the other place that would say it) may not exist.
+  if (sessions.length === 0) {
+    items.push({ kind: 'info', label: 'none yet — “new” makes one' })
+  } else {
+    for (const s of sessions) {
+      items.push({
+        kind: 'item',
+        label: s.name,
+        checked: s.name === current,
+        onSelect: () => on.open(s.name),
+      })
+    }
+  }
+  return items
+}
+
+/** The bar control. `deck` is the deck this window composes. */
+export function ComposeSessions({ deck, onNote }: { deck: number; onNote: (n: string) => void }) {
+  const { openMenu } = useContextMenu()
+  const current = useCompanion((c) => c.decks[deck]?.session?.name ?? null)
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+
+  /** Every verb funnels one way: do → refresh → say so on failure. The compose
+      window's note line is its ONE error surface, exactly as the plane's is. */
+  const run = (label: string, op: () => Promise<unknown>) => {
+    void op()
+      .then(() => listSessions().then(setSessions))
+      .catch((err: unknown) => onNote(`${label} failed — ${(err as Error).message}`))
+  }
+
+  const open = (e: React.MouseEvent) => {
+    // Ask the disk as the menu opens: another window may have added a session
+    // since this one booted, and a stale list is a door onto the wrong thing.
+    void listSessions()
+      .then((list) => {
+        setSessions(list)
+        openMenu(
+          sessionMenuItems(list, current, {
+            create: () =>
+              run('new session', async () => {
+                const s = await createSession()
+                await useCompanion.getState().open(s.name, deck)
+                onNote(`created ${s.name}`)
+              }),
+            open: (name) => run(`open ${name}`, () => useCompanion.getState().open(name, deck)),
+            // SAVE IS A FLUSH. Edits autosave on a 1.5 s debounce, so "save"
+            // means "land the pending write NOW" rather than "write something
+            // that would otherwise be lost" — and saying that is what stops it
+            // reading as though the session were unsaved until pressed.
+            save: () =>
+              run('save', async () => {
+                await flushAutosave()
+                onNote('saved')
+              }),
+            rename: () =>
+              run('rename', async () => {
+                if (!current) return
+                const next = window.prompt('rename session', current)
+                if (!next || next === current) return
+                await renameSession(current, next)
+                await useCompanion.getState().open(next, deck)
+              }),
+            exportZip: () =>
+              run('export', async () => {
+                const s = useCompanion.getState().decks[deck]?.session
+                if (!s) return
+                const { missing } = await exportSession(s)
+                // A partial export is reported, never silent: a package missing
+                // audio opens somewhere else as a session full of dead rows.
+                onNote(missing.length ? `exported — ${missing.length} sample(s) missing` : 'exported')
+              }),
+          }),
+          e.clientX,
+          e.clientY,
+        )
+      })
+      .catch((err: unknown) => onNote(`library unavailable — ${(err as Error).message}`))
+  }
+
+  return (
+    <button type="button" className="compose-session-menu mono" onClick={open}>
+      {'session ▾'}
+    </button>
+  )
+}
