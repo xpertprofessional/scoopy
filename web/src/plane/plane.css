@@ -1459,6 +1459,16 @@
    Deliberately the SAME button language as BR/REV next door rather than a new
    one: they are all master-scope verbs on one bar, and a second visual dialect
    would be a second thing to learn for no gain. */
+/* THE LAUNCH QUANTUM (P11-3c) — beside the clock, same shape: a dim caption and
+   a compact control wearing its value. It reuses `.clock-src` for the button so
+   the two groups cannot drift apart visually; they answer adjacent questions
+   (where the tempo comes from, and when a thing you start comes in). */
+.master-quantum {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cell);
+}
+
 .master-clock {
   display: inline-flex;
   align-items: center;

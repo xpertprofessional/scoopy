@@ -23,6 +23,7 @@ import { GeoRange } from '../design/controls.tsx'
 import { HealthReadout } from '../design/HealthReadout.tsx'
 import { useCapabilities } from '../state/capabilitiesStore.ts'
 import { externalClockState, tapTempo } from './masterClock.ts'
+import type { LaunchQuantum } from '../audio/launchQuantum.ts'
 import { send } from './send.ts'
 
 const METER_W = 90
@@ -45,6 +46,8 @@ export function Master({
   onToggleBeatRepeat,
   onCycleBeatRepeat,
   onToggleReverse,
+  quantum = 'cycle',
+  onCycleQuantum,
 }: {
   link: EngineLink | null
   level: number
@@ -55,6 +58,11 @@ export function Master({
   synced?: { pulse: string; bpm: string }[]
   onLevel: (v: number) => void
   onBpm: (v: number) => void
+  /** The launch quantum (D-SL-QUANTUM-01). The SCALE is map-wide — one musical
+      grid size for the set; WHICH grid it counts against is per strip, and
+      lives there. */
+  quantum?: LaunchQuantum
+  onCycleQuantum?: () => void
   onPlay: () => void
   onStop: () => void
   onRestart: () => void
@@ -354,6 +362,38 @@ export function Master({
             title="tap the beat — four taps, and a fumbled one is out-voted"
           >
             {tapCount > 0 ? `TAP ${tapCount}` : 'TAP'}
+          </button>
+        </span>
+        {/* THE LAUNCH QUANTUM (P11-3c, D-SL-QUANTUM-01). Beside the clock
+            because it answers the next question the clock raises: I know where
+            the tempo comes from — now, when does a thing I start actually come
+            in.
+
+            ⚠️ THE SCALE IS HERE; THE REFERENCE IS NOT. One musical grid size
+            for the set is a master property, but WHOSE grid a given strip
+            counts against is that strip's own (the plane has N strips, so
+            there is no single "other deck" to mean). Putting the reference here
+            too would recreate the fixed-deck-pair model D-SL-MORPH-01 retired.
+
+            A CYCLER wearing its value, not seven buttons — the idiom
+            `strip-tempomode` already uses for a multi-way musical choice
+            (docs/DESIGN.md §1). */}
+        <span className="master-quantum" role="group" aria-label="launch quantum">
+          <span className="mono dim">quantum</span>
+          <button
+            type="button"
+            className={`clock-src mono${quantum === 'off' ? '' : ' latched'}`}
+            disabled={!onCycleQuantum}
+            onClick={onCycleQuantum}
+            title={
+              quantum === 'off'
+                ? 'launch quantum OFF — a strip starts the instant you press it'
+                : quantum === 'cycle'
+                  ? 'launch quantum: a full cycle of whatever grid the strip launches against'
+                  : `launch quantum: every ${quantum} steps of the strip's reference grid`
+            }
+          >
+            {quantum === 'cycle' ? 'CYCLE' : quantum.toUpperCase()}
           </button>
         </span>
         {/* WHAT THE MASTER IS ACTUALLY DOING TO THE DECKS. A master tempo with no

@@ -20,6 +20,7 @@ import {
   bootMap,
   checkBudget,
   getMap,
+  setLaunchQuantum,
   setMasterBpm,
   getMapName,
   setMasterLevel,
@@ -56,6 +57,7 @@ import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
 import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo.ts'
+import { nextQuantum } from '../audio/launchQuantum.ts'
 import { applyTempo, updateStrip } from '../state/mapStore.ts'
 import { Composer } from './Composer.tsx'
 import { encodeComposeArg } from './composeArg.ts'
@@ -175,6 +177,7 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
   const strips = useMapStore((s) => s.map.strips)
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
   const masterLevel = useMapStore((s) => s.map.transport.masterLevel)
+  const launchQuantum = useMapStore((s) => s.map.transport.launchQuantum)
   const dirty = useMapStore((s) => s.dirty)
   const [note, setNote] = useState<string | null>(null)
   const [matrix, setMatrix] = useState(false)
@@ -1155,6 +1158,10 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
           // ⚠️ TAKES THE LINK. `setMasterBpm` used to write the document and
           // stop, so the master tempo moved on screen and changed nothing.
           onBpm={(bpm) => setMasterBpm(bpm, link)}
+          // The SCALE, map-wide. No link: it reaches the engine only as the
+          // `quantize_steps` argument at the moment of a launch.
+          quantum={launchQuantum}
+          onCycleQuantum={() => setLaunchQuantum(nextQuantum(launchQuantum))}
           // The master transport drives EVERY loaded deck, through the same
           // companion path a strip's own transport uses (P3-1) — one vocabulary,
           // two scopes. Restart is stop-then-play for the same reason it is on a

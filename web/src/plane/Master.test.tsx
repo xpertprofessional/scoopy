@@ -210,3 +210,64 @@ describe('P11-2 · the master clock has a door in the centre zone', () => {
     expect(centre(render(0))).toContain('master-clock')
   })
 })
+
+/**
+ * THE LAUNCH QUANTUM (P11-3c, D-SL-QUANTUM-01).
+ *
+ * The SCALE lives on the master bar because one musical grid size for the set
+ * is a master property. WHOSE grid a strip counts against does NOT: the plane
+ * has N strips, so there is no single "other deck" to mean, and putting the
+ * reference here would recreate the fixed deck-pair model D-SL-MORPH-01
+ * retired. These pin that split as much as the control.
+ */
+describe('the launch quantum', () => {
+  const withQuantum = (quantum: 'off' | '4' | 'cycle', onCycle?: () => void) =>
+    renderToStaticMarkup(
+      <Master
+        link={null}
+        level={1}
+        masterBpm={120}
+        synced={[]}
+        onLevel={() => {}}
+        onBpm={() => {}}
+        onPlay={() => {}}
+        onStop={() => {}}
+        onRestart={() => {}}
+        deckCount={1}
+        quantum={quantum}
+        onCycleQuantum={onCycle}
+      />,
+    )
+
+  it('wears its value, so the current quantum is readable without pressing it', () => {
+    expect(withQuantum('cycle', () => {})).toContain('CYCLE')
+    expect(withQuantum('4', () => {})).toContain('>4<')
+  })
+
+  it('reads OFF unlatched — the one value that is not a boundary', () => {
+    const off = withQuantum('off', () => {})
+    expect(off).toContain('OFF')
+    // `off` means "start the instant you press it", so a latched face would
+    // claim a quantum is in force when none is.
+    expect(off).toMatch(/class="clock-src mono"[^>]*>OFF/)
+  })
+
+  it('says what CYCLE counts against — the strip\'s reference, not a fixed bar', () => {
+    // The whole point of the split: the scale is global, the grid is per strip.
+    expect(withQuantum('cycle', () => {})).toContain(
+      'a full cycle of whatever grid the strip launches against',
+    )
+  })
+
+  it('disables itself when no handler is wired, rather than looking live', () => {
+    expect(withQuantum('cycle')).toMatch(/class="clock-src mono latched" disabled/)
+  })
+
+  it('does NOT put the reference on the master bar', () => {
+    // A sync-master nomination is a per-strip badge; a reference picker here
+    // would be the fixed-deck-pair model in a new coat.
+    const out = withQuantum('cycle', () => {})
+    expect(out).not.toContain('reference')
+    expect(out).not.toContain('sync master')
+  })
+})

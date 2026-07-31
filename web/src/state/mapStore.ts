@@ -17,6 +17,7 @@
  */
 import { create } from "zustand";
 import type { EngineLink } from "../engineLink.ts";
+import { nextQuantum, type LaunchQuantum } from "../audio/launchQuantum.ts";
 import { ask, send } from "../plane/send.ts";
 import {
   captureFxSlots,
@@ -125,6 +126,31 @@ export function setMasterBpm(masterBpm: number, link: EngineLink | null): void {
     dirty: true,
   }));
   void applyTempo(link);
+}
+
+/**
+ * THE LAUNCH QUANTUM (D-SL-QUANTUM-01) — map-wide, document state.
+ *
+ * No `link` argument, and that is not an oversight: unlike the master tempo,
+ * this reaches the engine only at the MOMENT OF A LAUNCH, as the
+ * `quantize_steps` argument of `sl_deck_request_quantized_launch`. There is
+ * nothing to push now, so a signature that took a link would promise a push
+ * that never happens — the inverse of the bug `setMasterBpm`'s required `link`
+ * exists to prevent.
+ */
+export function setLaunchQuantum(launchQuantum: LaunchQuantum): void {
+  useMapStore.setState((st) => ({
+    map: { ...st.map, transport: { ...st.map.transport, launchQuantum } },
+    dirty: true,
+  }));
+}
+
+/** Nominate (or clear) the sync-master strip — step 2 of the reference order. */
+export function setSyncMaster(syncMasterKey: string | null): void {
+  useMapStore.setState((st) => ({
+    map: { ...st.map, transport: { ...st.map.transport, syncMasterKey } },
+    dirty: true,
+  }));
 }
 
 export function setMasterLevel(masterLevel: number): void {

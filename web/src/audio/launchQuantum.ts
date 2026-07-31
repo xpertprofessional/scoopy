@@ -21,6 +21,12 @@ export type LaunchQuantum = (typeof LAUNCH_QUANTA)[number];
 /** The donor's default (`DJModeManager.globalLaunchQuantize = .cycle`). */
 export const DEFAULT_QUANTUM: LaunchQuantum = "cycle";
 
+/** Walk the scale — what the master bar's cycler does on each press. Wraps, so
+    `off` is one press past `cycle` rather than a dead end at either edge. */
+export function nextQuantum(q: LaunchQuantum): LaunchQuantum {
+  return LAUNCH_QUANTA[(LAUNCH_QUANTA.indexOf(q) + 1) % LAUNCH_QUANTA.length]!;
+}
+
 /**
  * Steps per boundary, or null when the number is not a constant.
  *
