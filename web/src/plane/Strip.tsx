@@ -39,7 +39,7 @@ import type { EngineLink } from '../engineLink.ts'
 import { Button, GeoRange } from '../design/controls.tsx'
 import { semanticColor } from '../design/tokens.ts'
 import type { SceneLetter } from '../audio/sceneProjection.ts'
-import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+import type { PlaneMap, Strip as StripDoc } from '../persist/mapDocument.ts'
 import {
   checkBudget,
   flushLiveEdits,
@@ -51,8 +51,10 @@ import {
   setMonitor,
   setMute,
   updateGridTempo,
+  setSyncMaster,
   updateStrip,
   updateTapeTempo,
+  useMapStore,
 } from '../state/mapStore.ts'
 import { tapeEffectiveRate } from '../persist/tempo.ts'
 import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
@@ -81,6 +83,7 @@ import {
   type Live,
 } from './stripOps.ts'
 import { setNudge, useNudge } from '../state/nudgeStore.ts'
+import { launchReferenceLabel, resolveLaunchReference } from '../audio/launchQuantum.ts'
 
 /** Interior padding and the meter gutter, from the §4.1 pixel budget. Geometry
     constants live here, not in tokens: `check:tokens` gates colour and type,
@@ -164,6 +167,78 @@ export function inputDeviceMenuItems(
     // label the status line exists to prevent.
     items.push({ kind: 'info', label: 'no input devices reported' })
   }
+  return items
+}
+
+
+/**
+ * THE "LAUNCHES AGAINST" SECTION of the ⋯ menu (P11-3c, D-SL-QUANTUM-01).
+ *
+ * A MENU section, not a control on the object, for the same reason the input
+ * picker is one: choosing from a list of strips is not something you do
+ * one-handed with sound running (pd-strip-anatomy §3.1). What stays on the
+ * object is the RESULT — the master badge, when this strip wears it.
+ *
+ * `auto` shows what it CURRENTLY resolves to. The whole reason it is the
+ * default is that it costs no setup, and that only holds if you can see what it
+ * decided — an `auto` you cannot read is a mystery, not a convenience.
+ *
+ * Exported and pure for the same reason `inputDeviceMenuItems` is: the menu is
+ * built inside an event handler and rendered through a portal, so this is the
+ * only shape in which it can be asserted at all.
+ */
+export function launchMenuItems(
+  map: PlaneMap,
+  stripKey: string,
+  isDeckPlaying: (deck: number) => boolean,
+): MenuItem[] {
+  const launchStrips = map.strips.map((st, i) => ({
+    key: st.key,
+    index: i,
+    launchRef: st.element.kind === 'none' ? 'auto' : st.element.launchRef,
+    deck: st.element.kind === 'grid' ? st.element.deck : null,
+    playing: st.element.kind === 'grid' ? isDeckPlaying(st.element.deck) : false,
+  }))
+  const nameOf = (key: string) => map.strips.find((st) => st.key === key)?.name ?? key
+  const resolved = resolveLaunchReference(launchStrips, stripKey, map.transport.syncMasterKey)
+  const self = map.strips.find((st) => st.key === stripKey)
+  const mine = !self || self.element.kind === 'none' ? 'auto' : self.element.launchRef
+  const isMaster = map.transport.syncMasterKey === stripKey
+
+  const items: MenuItem[] = [
+    { kind: 'sep' },
+    { kind: 'info', label: 'launches against' },
+    {
+      kind: 'item',
+      label: `auto — ${launchReferenceLabel(resolved, nameOf)}`,
+      checked: mine === 'auto',
+      onSelect: () =>
+        updateStrip(stripKey, (st) =>
+          st.element.kind === 'none' ? st : { ...st, element: { ...st.element, launchRef: 'auto' } },
+        ),
+    },
+  ]
+  for (const p of map.strips) {
+    if (p.key === stripKey || p.element.kind === 'none') continue
+    items.push({
+      kind: 'item',
+      label: p.name,
+      checked: mine === p.key,
+      onSelect: () =>
+        updateStrip(stripKey, (st) =>
+          st.element.kind === 'none' ? st : { ...st, element: { ...st.element, launchRef: p.key } },
+        ),
+    })
+  }
+  // Separated because it is the one row here that changes what OTHER strips do:
+  // the badge is map-wide state, set from a strip.
+  items.push({ kind: 'sep' })
+  items.push({
+    kind: 'item',
+    label: isMaster ? 'stop being the sync master' : 'make this the sync master',
+    checked: isMaster,
+    onSelect: () => setSyncMaster(isMaster ? null : stripKey),
+  })
   return items
 }
 
@@ -288,6 +363,9 @@ export function Strip({
   onDouble?: (targetDeck: number) => void
 }) {
   const tape = strip.element.kind === 'tape' ? strip.element.index : null
+  // Read REACTIVELY: the badge is map state another strip's menu can move, so a
+  // snapshot would leave the old master lit until something else re-rendered it.
+  const isSyncMaster = useMapStore((m) => m.map.transport.syncMasterKey === strip.key)
   const channels = useDeviceStore((d) => d.channels)
   const devices = useDeviceStore((d) => d.devices)
   const currentDevice = useDeviceStore((d) => d.current)
@@ -628,6 +706,13 @@ export function Strip({
     // transport and tempo surface) unreachable, with the UI silent about why.
     // A control that is absent teaches nothing; one that says what it needs
     // teaches the next step.
+    items.push(
+      ...launchMenuItems(
+        getMap(),
+        strip.key,
+        (deck) => useCompanion.getState().decks[deck]?.playing ?? false,
+      ),
+    )
     if (onLoadSession) {
       items.push({ kind: 'sep' })
       items.push({ kind: 'info', label: 'load a session' })
@@ -828,6 +913,24 @@ export function Strip({
             SYNC out of this span now moves the span itself. */}
         {/* The feedback lamp's slot is reserved at all times (L2), so an alarm
             cannot shift the state word sideways. */}
+        {/* THE SYNC-MASTER BADGE (D-SL-QUANTUM-01). Map-wide state, set from a
+            strip menu — so unlike the reference itself it has to be visible ON
+            the object: "which grid is everything launching against" is a
+            question you ask at a glance mid-set, and an answer that lives only
+            inside a menu is one you have to go looking for. Reserved slot (L2):
+            the span always exists so lighting it cannot shift the chips beside
+            it sideways. */}
+        <span
+          className={`strip-master mono${isSyncMaster ? ' latched' : ''}`}
+          title={
+            isSyncMaster
+              ? 'sync master — strips on `auto` launch against this one'
+              : ''
+          }
+          aria-hidden={!isSyncMaster}
+        >
+          {isSyncMaster ? 'M' : ''}
+        </span>
         {/* THE OUT CHIP — where this strip's signal goes, stated on the object.
             `→ main` is the resting state and is shown ANYWAY: a strip that is
             not on main is the interesting case, and you can only see that if

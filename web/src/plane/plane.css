@@ -504,6 +504,21 @@
   opacity: 0.7;
 }
 
+/* THE SYNC-MASTER BADGE (P11-3c). A RESERVED SLOT — fixed width whether or not
+   it is lit, so nominating a master cannot shift the chips beside it (L2: state
+   changes fill, never presence). */
+.strip-master {
+  flex: 0 0 auto;
+  min-width: 1.2ch;
+  text-align: center;
+  font-size: var(--type-micro-size);
+  color: var(--text-dim);
+}
+
+.strip-master.latched {
+  color: var(--accent);
+}
+
 /* THE LCM BAR (P3-D4-2): the deck's position in its pattern cycle, between the
    GridPanel region and the channel rows. Fill width is painted at HotFrame
    rate via a ref — no React re-render. */

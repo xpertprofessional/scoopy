@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Strip, formatGain, formatRate, inputDeviceMenuItems, waveWidth } from './Strip.tsx'
+import { launchMenuItems, Strip, formatGain, formatRate, inputDeviceMenuItems, waveWidth } from './Strip.tsx'
 import type { MenuItem } from '../design/ContextMenu.tsx'
 import { newGridElement, newStrip, newTapeElement } from './stripOps.ts'
-import type { Strip as StripDoc } from '../persist/mapDocument.ts'
+import { emptyMap, type Strip as StripDoc } from '../persist/mapDocument.ts'
 
 /**
  * The strip is rendered server-side and asserted on as markup — the house
@@ -519,5 +519,77 @@ describe('P9-5a · the input device section', () => {
     expect(rows.map((r) => r.checked)).toEqual([false, true])
     for (const r of rows) r.onSelect()
     expect(picked).toEqual(['Built-in', 'BlackHole 2ch'])
+  })
+})
+
+/**
+ * P11-3c — the "launches against" menu section and the sync-master badge.
+ *
+ * ⚠️ Same limit as the input-picker pins below: the menu is built inside
+ * `openSourceMenu` and rendered through `useContextMenu`'s portal, so no static
+ * render contains it. `launchMenuItems` is exported pure for exactly that
+ * reason — asserting the built section is the only honest way to check it.
+ */
+describe('what a strip launches against (D-SL-QUANTUM-01)', () => {
+  const gridStrip = (key: string, name: string, over: Record<string, unknown> = {}) => ({
+    ...base({ element: newGridElement(0, 'ses', 120) }),
+    key,
+    name,
+    ...over,
+  })
+
+  const mapOf = (strips: unknown[], syncMasterKey: string | null = null) =>
+    ({
+      ...emptyMap(),
+      strips,
+      transport: { ...emptyMap().transport, syncMasterKey },
+    }) as never
+
+  const labels = (items: { kind: string; label?: string }[]) =>
+    items.filter((i) => i.kind === 'item').map((i) => i.label)
+
+  it('offers `auto` first, showing what it CURRENTLY resolves to', () => {
+    // An `auto` you cannot read is a mystery, not a convenience — the whole
+    // reason it is the default is that it costs no setup.
+    const map = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B')])
+    const items = launchMenuItems(map, 'b', () => true)
+    expect(labels(items)[0]).toBe('auto — DECK A (auto)')
+  })
+
+  it('says NOTHING IS PLAYING rather than naming a grid that is stopped', () => {
+    const map = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B')])
+    const items = launchMenuItems(map, 'b', () => false)
+    expect(labels(items)[0]).toContain('nothing playing — launches now')
+  })
+
+  it('marks the master in the label when one is nominated', () => {
+    const map = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B')], 'a')
+    const items = launchMenuItems(map, 'b', () => true)
+    expect(labels(items)[0]).toBe('auto — DECK A (master)')
+  })
+
+  it('lists every OTHER strip as an explicit target, never itself', () => {
+    // A strip cannot wait on its own boundary: it is not running yet.
+    const map = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B'), gridStrip('c', 'LOOP')])
+    const items = launchMenuItems(map, 'b', () => true)
+    expect(labels(items)).toContain('DECK A')
+    expect(labels(items)).toContain('LOOP')
+    expect(labels(items)).not.toContain('DECK B')
+  })
+
+  it('offers the master badge, and offers to give it up once worn', () => {
+    const map = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B')])
+    expect(labels(launchMenuItems(map, 'a', () => true))).toContain('make this the sync master')
+    const withMaster = mapOf([gridStrip('a', 'DECK A'), gridStrip('b', 'DECK B')], 'a')
+    expect(labels(launchMenuItems(withMaster, 'a', () => true))).toContain(
+      'stop being the sync master',
+    )
+  })
+
+  it('reserves the badge slot so nominating a master never shifts the chips', () => {
+    // L2: state changes FILL, never presence. A badge that appeared would move
+    // every chip beside it the moment someone nominated a master.
+    const html = render(base({ element: newGridElement(0, 'ses', 120) }))
+    expect(html).toContain('strip-master')
   })
 })
