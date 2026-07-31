@@ -1023,3 +1023,42 @@ verbs and land with **B2**, because five controls that reach nothing are worse t
 honest gap. Retiring the nine dead verbs is row **B1-RETIRE**: it forces deleting
 `TransportPanel`/`DjPanel`, and four test files pin live laws through them that must be
 rehomed, not dropped.
+
+## D-SL-QUANTUM-01 · 2026-07-31 · Every strip names what it launches against, and 'auto' is the answer that needs no setup
+**Decision:** the launch quantum's reference is **per strip**, on grid strips AND tape/looper
+strips alike, defaulting to **`auto`**. `auto` resolves in a stated order:
+
+1. the **sync-master** strip, if one wears the badge;
+2. else the **lowest-numbered PLAYING** strip;
+3. else nothing to wait for — the launch fires immediately.
+
+A strip may instead name a specific reference. The strip surface shows what `auto` resolved
+to, so it is never a mystery which grid a launch is waiting on. Signed live, the user's words:
+*"in most cases we'll have only 2 decks active, but the new loopers also need to quantize their
+launch sensefully… choose a target per strip? use a logical default order that can be easily
+adjusted by user."*
+
+**Rationale:** `quantize.md` §4.2 offered three answers and recommended an explicit sync-master
+(B). The user's framing adds two facts that change it. First, the common case is **two active
+decks**, where any explicit nomination is a setup step for a question with one obvious answer —
+so the default must be automatic. Second, **loopers launch too**, which §4.2 did not consider:
+a tape strip's ⟳/▸ wants the same grid a deck's does, and a looper spawned mid-set must not
+require a configuration step before it can land on the beat. A per-strip field with an `auto`
+default is the only shape that is free in the common case and still exact when a looper needs
+to lock to something specific. The resolution ORDER is what makes `auto` predictable rather
+than clever — the donor's "first audibly-playing deck" is the same instinct, stated.
+
+**Consequences:** a per-strip document field (MAP schema bump) on both element kinds, so it is
+a document change and not only a control. Row P11-3c, plus the quantum control itself and the
+sync-master badge. The engine ABI beneath it is already done (P11-3b) and stays unchanged —
+`sl_deck_request_quantized_launch` already takes `ref_deck` per call, which is exactly what a
+per-strip reference resolves to. ⚠️ Tape strips have no `launchArmed` equivalent in the engine
+yet; quantized LOOPER launch needs that seam before its control can ship, and it is a row.
+
+## D-SL-REMOTE-01 · 2026-07-31 · `scoopy` is the remote; wizard is the old tree
+**Decision:** `origin` points at **github.com/xpertprofessional/scoopy**; the former origin is
+renamed `wizard` and kept. `host-hygiene` pushes there. Signed live.
+**Rationale:** `origin` still pointed at the wizard repo this tree partly came from, so every
+default `git push` and `gh` invocation aimed at the wrong project — `P3-PUSH` never running is
+the only reason that never landed anywhere wrong. The user confirmed scoopy is the remote.
+**Consequences:** `wizard` stays configured, so the donor-era history remains reachable.
