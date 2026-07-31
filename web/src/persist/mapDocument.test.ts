@@ -46,6 +46,7 @@ const tape = (stereo: boolean, takeRef: string | null = null) => ({
   syncToMaster: false,
   tempoMode: 'timePitch' as const,
   pulseRelation: 'auto' as const,
+  launchRef: 'auto',
 })
 
 // Spelled out rather than built from `plane/stripOps.newGridElement`: this file
@@ -60,7 +61,7 @@ const grid = () => ({
   tempoMode: 'timeStretch' as const,
   pulseRelation: 'auto' as const,
   transpose: 0,
-  pitchMode: false,
+  pitchMode: false, launchRef: 'auto',
 })
 
 describe('map document', () => {
@@ -93,7 +94,7 @@ describe('map document', () => {
           feedback: true,
         },
       ],
-      transport: { masterBpm: 174, masterLevel: 0.8 },
+      transport: { masterBpm: 174, masterLevel: 0.8, launchQuantum: 'cycle' as const, syncMasterKey: null },
     }
 
     const doc = saveMap(map)
@@ -232,6 +233,54 @@ describe('map document', () => {
       expect(r.ok).toBe(true)
       if (!r.ok) return
       expect(r.map.strips[0]?.element.kind).toBe('tape')
+    })
+  })
+
+  describe('the v9 → v10 migration (strips name what they launch against)', () => {
+    /** A v9 document: no `launchRef` on either element, no quantum on transport. */
+    const v9Doc = () => {
+      const doc = saveMap({
+        ...emptyMap(),
+        strips: [strip({ element: grid() }), strip({ key: 'b', channel: 1, element: tape(false) })],
+      }) as unknown as {
+        schemaVersion: number
+        map: { strips: { element: Record<string, unknown> }[]; transport: Record<string, unknown> }
+      }
+      doc.schemaVersion = 9
+      for (const s of doc.map.strips) delete s.element.launchRef
+      delete doc.map.transport.launchQuantum
+      delete doc.map.transport.syncMasterKey
+      return doc
+    }
+
+    it('opens a v9 map BEHAVING THE SAME — every strip on auto, no master', () => {
+      const r = loadMap(v9Doc())
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.migratedFrom).toBe(9)
+      // v9 had no reachable quantized launch at all, so every launch fired
+      // immediately — which is what `auto` resolves to when nothing is playing,
+      // and something sensible when it is. Naming a sync master here would
+      // invent a relationship the saved set never had.
+      for (const st of r.map.strips) {
+        if (st.element.kind === 'none') continue
+        expect(st.element.launchRef).toBe('auto')
+      }
+      expect(r.map.transport.syncMasterKey).toBeNull()
+    })
+
+    it('gives BOTH element kinds the field — a looper launches too', () => {
+      const r = loadMap(v9Doc())
+      if (!r.ok) return
+      const kinds = r.map.strips.map((st) => st.element.kind)
+      expect(kinds).toContain('grid')
+      expect(kinds).toContain('tape')
+    })
+
+    it("takes the donor's own default quantum", () => {
+      const r = loadMap(v9Doc())
+      if (!r.ok) return
+      expect(r.map.transport.launchQuantum).toBe('cycle')
     })
   })
 

@@ -35,7 +35,7 @@ const gridEl = (deck: number, sessionId: string, bpm: number) =>
     syncToMaster: false,
     tempoMode: 'timeStretch',
     pulseRelation: 'auto',
-    transpose: 0, pitchMode: false,
+    transpose: 0, pitchMode: false, launchRef: 'auto',
   }) as const
 
 const indexOfOp = (ops: EngineOp[], pred: (o: EngineOp) => boolean) => ops.findIndex(pred)
@@ -217,7 +217,7 @@ describe('planApply', () => {
     // developed behaviour the merge exists not to lose.
     const map: PlaneMap = {
       ...emptyMap(),
-      transport: { masterBpm: 140, masterLevel: 1 },
+      transport: { masterBpm: 140, masterLevel: 1, launchQuantum: 'cycle' as const, syncMasterKey: null },
       strips: [
         strip({
           key: 'a',
@@ -239,7 +239,7 @@ describe('planApply', () => {
     // keeps playing the way it did.
     const map: PlaneMap = {
       ...emptyMap(),
-      transport: { masterBpm: 140, masterLevel: 1 },
+      transport: { masterBpm: 140, masterLevel: 1, launchQuantum: 'cycle' as const, syncMasterKey: null },
       strips: [
         strip({
           key: 'a',
@@ -263,7 +263,7 @@ describe('planApply', () => {
       ...emptyMap(),
       strips: [
         strip({
-          element: { ...gridEl(1, 's', 120), tempoMode: 'timePitch', transpose: -3, pitchMode: false },
+          element: { ...gridEl(1, 's', 120), tempoMode: 'timePitch', transpose: -3, pitchMode: false, launchRef: 'auto' },
         }),
       ],
     }
@@ -277,7 +277,7 @@ describe('planApply', () => {
     // loaded map — a stretched deck with nothing in the document explaining it.
     const map: PlaneMap = {
       ...emptyMap(),
-      transport: { masterBpm: 140, masterLevel: 1 },
+      transport: { masterBpm: 140, masterLevel: 1, launchQuantum: 'cycle' as const, syncMasterKey: null },
       strips: [
         strip({
           element: { ...gridEl(2, 's', 70), syncToMaster: false },
@@ -308,6 +308,7 @@ describe('planApply', () => {
             syncToMaster: false,
             tempoMode: 'timePitch',
             pulseRelation: 'auto',
+            launchRef: 'auto',
           },
         }),
       ],
@@ -337,6 +338,7 @@ describe('planApply', () => {
             syncToMaster: true,
             tempoMode: 'timePitch',
             pulseRelation: '1:1',
+            launchRef: 'auto',
           },
         }),
       ],
@@ -363,6 +365,7 @@ describe('planApply', () => {
             syncToMaster: false,
             tempoMode: 'timePitch',
             pulseRelation: 'auto',
+            launchRef: 'auto',
           },
         }),
       ],

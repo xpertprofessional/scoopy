@@ -255,6 +255,9 @@ export function newTapeElement(index: number, stereo: boolean): TapeElement {
     syncToMaster: false,
     tempoMode: 'timePitch',
     pulseRelation: 'auto',
+    // A looper launches too (D-SL-QUANTUM-01) — `auto` so one spawned mid-set
+    // lands on the beat with nothing to configure first.
+    launchRef: 'auto',
   }
 }
 
@@ -289,6 +292,9 @@ export function newGridElement(deck: number, sessionId: string, bpm: number): Gr
     // TP mode OFF, the donor's own default: sync and transpose coexist until
     // someone asks for the exclusion. A new strip and the v8→v9 migration agree.
     pitchMode: false,
+    // AUTO: no setup, and with two decks running it simply means "the other
+    // one" (D-SL-QUANTUM-01).
+    launchRef: 'auto',
   }
 }
 

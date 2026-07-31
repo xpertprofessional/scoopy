@@ -50,6 +50,7 @@ describe('the DRV section (P3-X2)', () => {
           syncToMaster: false,
           tempoMode: 'timePitch',
           pulseRelation: 'auto',
+          launchRef: 'auto',
         },
         drive: { curve: 1, amount: 8 },
       }),
@@ -78,7 +79,7 @@ describe('the DRV section (P3-X2)', () => {
           syncToMaster: false,
           tempoMode: 'timeStretch',
           pulseRelation: '1:1',
-          transpose: 0, pitchMode: false,
+          transpose: 0, pitchMode: false, launchRef: 'auto',
         },
       }),
     )

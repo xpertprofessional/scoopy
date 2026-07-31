@@ -119,7 +119,7 @@ describe('mapTempoIntents', () => {
   it('resolves against the map’s master, not each strip’s', () => {
     const map: PlaneMap = {
       ...emptyMap(),
-      transport: { masterBpm: 90, masterLevel: 1 },
+      transport: { masterBpm: 90, masterLevel: 1, launchQuantum: 'cycle' as const, syncMasterKey: null },
       strips: [strip(gridEl({ bpm: 90, pulseRelation: '1:1' }))],
     }
     expect(mapTempoIntents(map)[0]?.syncedBpm).toBeCloseTo(90, 4)
@@ -128,7 +128,7 @@ describe('mapTempoIntents', () => {
   it('folds the per-deck nudge in — and only for the deck under the hand (P3-D4-2)', () => {
     const map: PlaneMap = {
       ...emptyMap(),
-      transport: { masterBpm: 120, masterLevel: 1 },
+      transport: { masterBpm: 120, masterLevel: 1, launchQuantum: 'cycle' as const, syncMasterKey: null },
       strips: [
         strip(gridEl({ deck: 0, bpm: 120, pulseRelation: '1:1' })),
         strip(gridEl({ deck: 1, bpm: 120, pulseRelation: '1:1' })),
@@ -200,6 +200,7 @@ describe('tapeEffectiveRate (P3-2b-3 — tape sync v1, timePitch)', () => {
     syncToMaster: true,
     tempoMode: 'timePitch' as const,
     pulseRelation: '1:1' as const,
+    launchRef: 'auto',
     ...over,
   })
 

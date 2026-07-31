@@ -43,7 +43,7 @@ function fakeHost(seed: Record<string, string> = {}) {
 
 const populated = (): PlaneMap => ({
   ...emptyMap(),
-  transport: { masterBpm: 174, masterLevel: 0.8 },
+  transport: { masterBpm: 174, masterLevel: 0.8, launchQuantum: 'cycle' as const, syncMasterKey: null },
   strips: [
     {
       key: 'a',
@@ -61,6 +61,7 @@ const populated = (): PlaneMap => ({
         syncToMaster: false,
         tempoMode: 'timePitch' as const,
         pulseRelation: 'auto' as const,
+        launchRef: 'auto',
       },
       level: 0.6,
       mute: false,
@@ -91,7 +92,7 @@ describe('save and open', () => {
       // Deep equality, because a save/load that quietly drops one field is the
       // failure that only shows up on stage.
       expect(opened.map.strips[0]?.element).toEqual(populated().strips[0]?.element)
-      expect(opened.map.transport).toEqual({ masterBpm: 174, masterLevel: 0.8 })
+      expect(opened.map.transport).toEqual({ masterBpm: 174, masterLevel: 0.8, launchQuantum: 'cycle' as const, syncMasterKey: null })
     }
   })
 
@@ -156,6 +157,7 @@ describe('save and open', () => {
         syncToMaster: false,
         tempoMode: 'timePitch' as const,
         pulseRelation: 'auto' as const,
+        launchRef: 'auto',
       },
       level: 1,
       mute: false,

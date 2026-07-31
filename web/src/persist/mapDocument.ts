@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 /** Bump when the shape changes; add a named migration in MIGRATIONS below. */
-export const MAP_SCHEMA_VERSION = 9
+export const MAP_SCHEMA_VERSION = 10
 
 /* ── the lane budget (decision 6, 2026-07-25) ──────────────────────────────
  *
@@ -79,6 +79,16 @@ export const ElementSchema = z.discriminatedUnion('kind', [
       tempoMode: z.enum(['timePitch', 'timeStretch']),
       /** Musical relation to the master — same vocabulary as the grid. */
       pulseRelation: z.enum(['auto', '1:3', '1:2', '2:3', '1:1', '3:2', '2:1', '3:1']),
+      /** LAUNCH REFERENCE (D-SL-QUANTUM-01) — whose grid this strip waits on
+          when it launches quantized. `'auto'` resolves by a stated order
+          (sync-master → lowest-numbered playing strip → nothing, launch now);
+          any other value names a strip's key.
+
+          On BOTH element kinds on purpose: a looper launches too, and one
+          spawned mid-set must land on the beat without being configured first.
+          A reference naming a strip that is gone or stopped falls through to
+          auto rather than freezing the launch — see `audio/launchQuantum.ts`. */
+      launchRef: z.string(),
     })
     .strict(),
   /** A scoopy session — sequenced sampler tracks. Always stereo. */
@@ -126,6 +136,16 @@ export const ElementSchema = z.discriminatedUnion('kind', [
           one: both may be on at once, exactly as every map written before v9
           behaved. */
       pitchMode: z.boolean(),
+      /** LAUNCH REFERENCE (D-SL-QUANTUM-01) — whose grid this strip waits on
+          when it launches quantized. `'auto'` resolves by a stated order
+          (sync-master → lowest-numbered playing strip → nothing, launch now);
+          any other value names a strip's key.
+
+          On BOTH element kinds on purpose: a looper launches too, and one
+          spawned mid-set must land on the beat without being configured first.
+          A reference naming a strip that is gone or stopped falls through to
+          auto rather than freezing the launch — see `audio/launchQuantum.ts`. */
+      launchRef: z.string(),
     })
     .strict(),
 ])
@@ -328,7 +348,18 @@ export const MapSchema = z
         loading a session changes your front-of-house level — the last thing
         that should happen mid-set. */
     transport: z
-      .object({ masterBpm: z.number().positive(), masterLevel: z.number().min(0) })
+      .object({
+        masterBpm: z.number().positive(),
+        masterLevel: z.number().min(0),
+        /** The launch quantum, map-wide — the donor's `globalLaunchQuantize`,
+            default `cycle`. The SCALE is global (one musical grid size for the
+            set); WHICH grid it counts against is per strip. */
+        launchQuantum: z.enum(['off', '1', '2', '4', '8', '16', 'cycle']),
+        /** The strip wearing the sync-master badge, or null. Step 2 of the
+            reference order: a whole-map answer that every `auto` strip follows
+            without naming it. */
+        syncMasterKey: z.string().nullable(),
+      })
       .strict(),
     /** THE FX RETURNS' PLUGINS (P6-5b) — the user's own requirement, verbatim:
         "so we can also restore these settings (like a plugin loaded) within a
@@ -545,6 +576,38 @@ const MIGRATIONS: Record<number, { to: number; name: string; run: (m: RawMap) =>
       }
     },
   },
+  9: {
+    to: 10,
+    name: 'strips name what they launch against (D-SL-QUANTUM-01)',
+    run: (m) => {
+      const map = (m.map ?? {}) as RawMap
+      const strips = Array.isArray(map.strips) ? (map.strips as RawMap[]) : []
+      const transport = (map.transport ?? {}) as RawMap
+      return {
+        ...m,
+        map: {
+          ...map,
+          // AUTO on every strip, and NO sync master. That is what a v9 map
+          // behaved like: there was no quantized launch reachable at all, so
+          // every launch fired immediately — which is exactly what `auto`
+          // resolves to when nothing is playing, and what it resolves to
+          // sensibly when something is. Naming a master here would invent a
+          // relationship the saved set never had.
+          strips: strips.map((st) => {
+            const element = (st.element ?? {}) as RawMap
+            if (element.kind !== 'grid' && element.kind !== 'tape') return st
+            return { ...st, element: { ...element, launchRef: 'auto' } }
+          }),
+          transport: {
+            ...transport,
+            // The donor's own default (`globalLaunchQuantize = .cycle`).
+            launchQuantum: 'cycle',
+            syncMasterKey: null,
+          },
+        },
+      }
+    },
+  },
   8: {
     to: 9,
     name: 'a grid strip carries its TP mode (B1/P7-T2)',
@@ -605,7 +668,14 @@ export function emptyMap(): PlaneMap {
     plane: { scale: 1, panX: 0, panY: 0 },
     strips: [],
     routes: [],
-    transport: { masterBpm: 120, masterLevel: 1 },
+    transport: {
+      masterBpm: 120,
+      masterLevel: 1,
+      // The donor's own default (`globalLaunchQuantize = .cycle`), and no
+      // master nominated — `auto` needs none with two decks running.
+      launchQuantum: 'cycle',
+      syncMasterKey: null,
+    },
     fx: emptyFxSlots(),
   }
 }

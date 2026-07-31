@@ -306,7 +306,7 @@ describe('grid decks — the third index space', () => {
       transpose: 0,
       // TP mode off (v9): sync and transpose coexist until asked otherwise —
       // the donor's default, and what every map written before v9 behaved like.
-      pitchMode: false,
+      pitchMode: false, launchRef: 'auto',
     })
   })
 })

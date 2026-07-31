@@ -19,6 +19,7 @@ const tapeStrip = (key: string, channel: number, takeRef: string | null): Strip 
     syncToMaster: false,
     tempoMode: 'timePitch',
     pulseRelation: 'auto',
+    launchRef: 'auto',
   },
   level: 1,
   mute: false,
@@ -88,7 +89,7 @@ describe('collect-on-export', () => {
   it('preserves everything else about the document', () => {
     const map: PlaneMap = {
       ...withTakes(['/takes/a.wav']),
-      transport: { masterBpm: 174, masterLevel: 0.7 },
+      transport: { masterBpm: 174, masterLevel: 0.7, launchQuantum: 'cycle' as const, syncMasterKey: null },
       routes: [
         {
           src: { kind: 'channelOut', index: 0, sub: null },
@@ -102,7 +103,7 @@ describe('collect-on-export', () => {
     if (!r.ok) return
     const back = unpackMap(r.bytes)
     if (!back.ok) return
-    expect(back.map.transport).toEqual({ masterBpm: 174, masterLevel: 0.7 })
+    expect(back.map.transport).toEqual({ masterBpm: 174, masterLevel: 0.7, launchQuantum: 'cycle' as const, syncMasterKey: null })
     expect(back.map.routes[0]?.feedback).toBe(true)
     expect(back.map.routes[0]?.gain).toBe(0.5)
   })

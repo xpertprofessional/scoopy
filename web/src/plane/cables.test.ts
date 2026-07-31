@@ -44,7 +44,7 @@ const gridEl = (deck: number) =>
     syncToMaster: false,
     tempoMode: 'timeStretch' as const,
     pulseRelation: '1:1' as const,
-    transpose: 0, pitchMode: false,
+    transpose: 0, pitchMode: false, launchRef: 'auto',
   })
 
 describe('which routes become cables', () => {
