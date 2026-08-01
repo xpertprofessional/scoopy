@@ -1890,7 +1890,9 @@ export function TrackBand({
   onClearTrack,
   registerLed,
 }: BandCtx & {
-  variant?: "compose" | "dj";
+  /** "perform" is a THIRD level below "dj", not a peer of it — see `dj`/`perf`
+      below. Everything dj hides, perform hides too. */
+  variant?: "compose" | "dj" | "perform";
   openInstrumentWindow?: (trackIndex: number) => void;
   /** C3: this track is in the ⌘-click multi-selection. */
   selected?: boolean;
@@ -1905,7 +1907,15 @@ export function TrackBand({
 }) {
   /** The SAMPLE output. `trackType` is no longer a type — it is this switch. */
   const audio = t.trackType === "audio";
-  const dj = variant === "dj";
+  /** ⚠️ NOT `variant === "dj"`. "perform" is a step further DOWN the same
+      ladder, so every cluster the dj row already hides must stay hidden — a
+      strict equality here would have silently brought all of them BACK the
+      moment PERF was armed, which is the opposite of what PERF is for. */
+  const dj = variant !== "compose";
+  /** The third level (DECKPLUGIN v2 §5): mid-set, the waveform and the playhead
+      are the information. These three clusters are the ones you do not reach
+      for during a transition, and their height is worth more as cells. */
+  const perf = variant === "perform";
   const caps = useCapabilities();
 
   // TR-RND — CLEAR's two-click safety. Local to this row (each track arms on its
@@ -2440,7 +2450,7 @@ export function TrackBand({
           A note-emitting track lives here too: its ROOT and GATE are its pitch
           and its length. And on a track with NO audio path of its own, the
           volume/pan/tone dials keep their shape but speak MIDI — CC 7, 10, 74. */}
-      {(hasAudioPath || notes) && (
+      {!perf && (hasAudioPath || notes) && (
         <div className="trk-ctrl-row">
           {hasAudioPath && (
           <Paired
@@ -2759,7 +2769,7 @@ export function TrackBand({
       )}
 
       {/* R3b — mapped modifier slots (only what the user routed) */}
-      {t.modSlots.length > 0 && (
+      {!perf && t.modSlots.length > 0 && (
         <div className="trk-ctrl-row trk-wrap">
           {t.modSlots.map((s) => (
             <ModSlot
@@ -2777,7 +2787,7 @@ export function TrackBand({
           P8-9: gone entirely on a host with no return-FX section (caps.returnFx —
           the browser) — a send whose return plays hardcoded defaults is not a
           control, and the world zeroes the levels to match. */}
-      {caps.returnFx && hasAudioPath && (
+      {!perf && caps.returnFx && hasAudioPath && (
         <div className="trk-ctrl-row">
           {([1, 2, 3, 4] as const).map((n) => {
             const field = `send${n}Level` as keyof GridTrackState;

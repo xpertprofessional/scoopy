@@ -73,6 +73,29 @@ public:
         the shape that outlives its target. Message thread only. */
     std::function<void(const juce::String&, const juce::var&)> emitToEditor;
 
+    /** Ask the editor to resize itself. Same lifetime contract as
+        `emitToEditor` — registered on editor construction, cleared on
+        destruction, never a raw editor pointer. Null when no window is open,
+        which is the normal state of a plugin the DAW is merely playing. */
+    std::function<void(int, int)> resizeEditor;
+
+    /** THE EDITOR'S SIZE, PERSISTED (DECKPLUGIN v2 §5).
+     *
+     *  The editor has always been resizable and the size was never written
+     *  down, so every reopen threw away the window the user had arranged —
+     *  inside a DAW, where the plugin window is furniture you set up once.
+     *
+     *  Two sizes, because PERF is a different shape of window (a compact deck
+     *  face, not a compose surface) and switching modes should not cost you the
+     *  other mode's arrangement. Both ride the state chunk.
+     *
+     *  Zero = "never set", which restores the built-in default rather than
+     *  collapsing the window to nothing — the shape a v1/v2 chunk written
+     *  before this restores as. */
+    int editorW = 0, editorH = 0;         // the composing window
+    int performW = 0, performH = 0;       // the PERF deck face
+    bool editorPerforming = false;        // which of the two is showing
+
     /** The startStep the last host-driven launch actually published. Exists
         for the phase-alignment gate: reading it back beats inferring the
         alignment from a rendered transient, which would also be measuring the

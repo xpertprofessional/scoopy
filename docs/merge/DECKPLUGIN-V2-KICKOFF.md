@@ -23,7 +23,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §6 LCM meter | **DONE** (geometry; the data was never broken here — see §6) | |
 | §8 keyboard | **PART DONE** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) blocked on NAV-SHORTCUTS §7 reconciliation (R-2, R-4) |
 | §4 multi-out | **PART DONE** — cut to 5 (Main + Send 1–4) and the sends now actually emit; the **Live instantiation diagnosis is still owed** and needs the DAW |
-| §5 PERF deck view + window persistence | open |
+| §5 PERF deck view + window persistence | **DONE** | |
 | §7 tempo morph plumbing | open |
 | §9 multi-deck | open — rescoped by D4 from registry to N decks in one instance |
 
@@ -219,16 +219,39 @@ randomize/clear (`:2280`), the compose H row (`:2328`) and choke/voice/stereo
 (`:2652`). What is still full-fat at dj density: the DSP band (`:2443`), the mod
 slots (`:2762`) and the S1–S4 row (`:2780`).
 
-**Fix:** extend the variant into a **third level** — `"compose" | "dj" |
-"perform"` on `GridSource.density` (`GridPanel.tsx:285`), add `METRICS.perform`
-(`:289`), and gate `:2443` / `:2762` / `:2780`. Drive it off `meta.performActive`
-so **PERF *is* the reduced view** rather than a separate switch (it is currently
-read only at `:390` for pointer routing and never influences what renders).
-Then have the editor `setSize()` on the PERF edge and persist width/height in
-the state chunk.
+**DONE 2026-08-01.** `Density` is a third level — `"compose" | "dj" | "perform"`
+— DERIVED in GridPanel from `meta.performActive` rather than carried on
+`GridSource`, because a source is memoized per deck and cannot see a mid-session
+mode flip. `METRICS.perform` trades band height for cell height (`bandH` 74→44,
+`cellRowH` 40→56): mid-set the waveform and the playhead *are* the information.
 
-**Verify:** `browser_plugindeck_test` at two viewport sizes plus a PERF toggle,
-asserting the control count drops and nothing overflows.
+⚠️ The subtle one: `trackRowControls`' `dj` flag became `variant !== "compose"`,
+NOT `variant === "dj"`. Strict equality there would have brought every cluster
+the dj row already hides straight BACK the moment PERF was armed — the opposite
+of the feature. Perform additionally drops the DSP band, the mod slots and the
+S1–S4 row. The rows wear `density-dj density-perform` together so every
+compact-horizontal dj rule still applies and the two cannot drift.
+
+Compose is deliberately excluded: PERF there still means "drag sets a locator
+window", and stripping a composer's DSP band out from under them because they
+armed a perform gesture would be a different feature wearing this one's name.
+
+**Window:** two sizes (compose + perform), kept NATIVE on the processor and
+ridden in the state chunk, because a reopened project must give back the window
+the user arranged and the web tier is not running when the DAW restores one. The
+page reports only the PERF **edge** via `editorSize`; the processor decides
+whether it has a remembered size to apply, and a zero ("never set", which is
+also what a pre-§5 chunk restores as) leaves the window alone rather than
+collapsing it.
+
+**Verified:** the walk asserts perform density engages, the control count drops
+(136 → 96), the DSP band goes, and nothing overflows in PERF.
+`plugin_processor_test` round-trips both sizes through the chunk and pins that
+the edge fires once per CHANGE — and that it is a quiet no-op with no editor
+open, which is the normal state of a plugin the DAW is merely playing.
+⚠️ The S1–S4 half of the reduction is not observable in the walk: `?host=browser`
+reports `returnFx:false` honestly, so that row is already absent there. The DSP
+band is the witness instead.
 
 ---
 

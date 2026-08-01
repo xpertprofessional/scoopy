@@ -193,6 +193,39 @@ const perfState = () =>
 const before = await perfState()
 check('the deck has track rows with locator readouts', before.length > 0, `${before.length} rows`)
 
+// ── PERF IS THE REDUCED VIEW (DECKPLUGIN v2 §5) ────────────────────────────
+//
+// `meta.performActive` was read in exactly ONE place — the pointer router,
+// deciding drag-sets-locator vs select-cells — and influenced nothing that
+// rendered. So PERF changed what the mouse did while leaving a full-fat row on
+// screen. It is a third DENSITY now: everything `dj` hides, plus the DSP band,
+// the mod slots and the S1-S4 row.
+const rowShape = () =>
+  page.evaluate(() => ({
+    // Every control the track rows carry. The count is the claim: it must DROP.
+    controls: document.querySelectorAll(
+      '.track-strips .ds-dragbox, .track-strips .ds-georange, .track-strips .trk-tog',
+    ).length,
+    ctrlRows: document.querySelectorAll('.track-strips .trk-ctrl-row').length,
+    // The DSP band's first control. Chosen as the witness because it is the one
+    // of PERF's three dropped clusters that RENDERS in this host: the S1-S4 row
+    // is already absent under `?host=browser` (BrowserLink reports
+    // returnFx:false honestly — see §3), so asserting on it would pass whether
+    // or not perform density did anything.
+    gains: document.querySelectorAll('.track-strips [data-focus-id$="/gain"]').length,
+    sends: document.querySelectorAll('.track-strips [data-focus-id$="/send1"]').length,
+    perform: document.querySelectorAll('.track-strips.density-perform').length,
+    dj: document.querySelectorAll('.track-strips.density-dj').length,
+    docScrollH: document.documentElement.scrollHeight,
+    viewportH: window.innerHeight,
+  }))
+const shapeBefore = await rowShape()
+check(
+  'the deck row starts at DJ density',
+  shapeBefore.dj > 0 && shapeBefore.perform === 0,
+  JSON.stringify(shapeBefore),
+)
+
 const perfBtn = await page.$('.deckrow-view .dr:has-text("PERF")')
 check('the PERF control exists', perfBtn !== null)
 if (perfBtn) {
@@ -206,6 +239,35 @@ if (perfBtn) {
   )
   check('PERF latches when clicked', latched)
 }
+
+const shapeAfter = await rowShape()
+check(
+  'PERF switches the rows to PERFORM density',
+  shapeAfter.perform > 0,
+  JSON.stringify(shapeAfter),
+)
+check(
+  'perform still wears density-dj — it is a step DOWN the same ladder, not a peer',
+  shapeAfter.dj > 0,
+  `dj=${shapeAfter.dj}`,
+)
+check(
+  'the control count DROPS — PERF is the reduced view, not just a pointer mode',
+  shapeAfter.controls < shapeBefore.controls,
+  `${shapeBefore.controls} → ${shapeAfter.controls}`,
+)
+check(
+  'the DSP band is among what goes',
+  shapeBefore.gains > 0 && shapeAfter.gains === 0,
+  `gain controls ${shapeBefore.gains} → ${shapeAfter.gains}`,
+)
+// A reduced view that overflows has reduced nothing: in a plugin there is no
+// page to scroll, so anything below the fold is simply unreachable.
+check(
+  'nothing overflows the window in PERF',
+  shapeAfter.docScrollH <= shapeAfter.viewportH + 2,
+  `scrollHeight=${shapeAfter.docScrollH} viewport=${shapeAfter.viewportH}`,
+)
 
 // The cells are drawn to a canvas, so a gate cannot address "step N" (the same
 // limit browser_grid_test documents). It does not need to: the claim under test
@@ -421,7 +483,8 @@ console.log(
       .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
     `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
-    `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}"`,
+    `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}" · ` +
+    `PERF controls ${shapeBefore.controls}→${shapeAfter.controls}`,
 )
 
 if (failures.length) {

@@ -323,6 +323,14 @@ class MergedLink extends BrowserLink {
     //              owns the ratio, and the processor's pump defers. On the app
     //              host it is refused honestly like any unimplemented method.
     "hostSyncConfig",
+    //   editorSize      ScoopyDeck only, same shape and same reason as
+    //              hostSyncConfig: the PROCESSOR answers it, not SlDispatch. It
+    //              reports the PERF edge so the window can change shape with the
+    //              view, and the sizes themselves live native because they ride
+    //              the state chunk — a reopened project must give back the
+    //              window the user arranged, and the web tier is not running
+    //              when the DAW restores one.
+    "editorSize",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

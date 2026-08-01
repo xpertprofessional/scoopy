@@ -409,6 +409,32 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         return okEnvelope(juce::var(out));
     }
 
+    // editorSize: the web tier telling us PERF was armed or released, so the
+    // WINDOW can change shape with the view (§5). The sizes themselves live
+    // here rather than in the page because they must survive a closed editor —
+    // they ride the state chunk, like the sync recipe above.
+    //
+    // `{}` is a pure read, same contract as hostSyncConfig.
+    if (method == "editorSize") {
+        if (params.hasProperty("perform")) {
+            const bool want = (bool) params["perform"];
+            if (want != editorPerforming) {
+                editorPerforming = want;
+                const int w = want ? performW : editorW;
+                const int h = want ? performH : editorH;
+                // Only drive the window when we actually have a remembered size
+                // for the mode being entered; otherwise leave it where the user
+                // put it. A zero here would collapse the window.
+                if (w > 0 && h > 0 && resizeEditor) resizeEditor(w, h);
+            }
+        }
+        auto* out = new juce::DynamicObject();
+        out->setProperty("perform", editorPerforming);
+        out->setProperty("width", editorPerforming ? performW : editorW);
+        out->setProperty("height", editorPerforming ? performH : editorH);
+        return okEnvelope(juce::var(out));
+    }
+
     // Journal every sample the UI registers, so the project can rebuild itself
     // with no editor running (see CachedSample in the header).
     if (method == "slWorld" &&
@@ -514,6 +540,17 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     recipe->setProperty("followTransport", r.followTransport);
     recipe->setProperty("masterBpm", r.masterBpm);
     index->setProperty("recipe", juce::var(recipe));
+
+    // THE WINDOW IS FURNITURE. A DAW project reopened should give back the
+    // editor the user arranged, not the built-in default (§5). Both modes'
+    // sizes travel, plus which one was showing.
+    auto* win = new juce::DynamicObject();
+    win->setProperty("w", editorW);
+    win->setProperty("h", editorH);
+    win->setProperty("performW", performW);
+    win->setProperty("performH", performH);
+    win->setProperty("perform", editorPerforming);
+    index->setProperty("window", juce::var(win));
     index->setProperty("masterLevel", sl_master_level(engine));
 
     const auto header = juce::JSON::toString(juce::var(index), true);
@@ -632,6 +669,17 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         // is what those projects were actually doing.
         r.masterBpm = (double) recipe.getProperty("masterBpm", 0.0);
         sync.setRecipe(r);
+    }
+
+    // Absent in a chunk written before §5 → zeros → "never set", which restores
+    // the built-in default rather than collapsing the window to nothing.
+    if (const auto win = header.getProperty("window", juce::var());
+        win.getDynamicObject() != nullptr) {
+        editorW = (int) win.getProperty("w", 0);
+        editorH = (int) win.getProperty("h", 0);
+        performW = (int) win.getProperty("performW", 0);
+        performH = (int) win.getProperty("performH", 0);
+        editorPerforming = (bool) win.getProperty("perform", false);
     }
 
     if (engine != nullptr)
