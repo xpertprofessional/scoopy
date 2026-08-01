@@ -22,7 +22,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §3 sends (capability + masterSends) | **DONE** | `35d6790` |
 | §6 LCM meter | **DONE** (geometry; the data was never broken here — see §6) | |
 | §8 keyboard | **PART DONE** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) blocked on NAV-SHORTCUTS §7 reconciliation (R-2, R-4) |
-| §4 multi-out in Live | open — D1 settled the bus count at 5; the Live diagnosis remains |
+| §4 multi-out | **PART DONE** — cut to 5 (Main + Send 1–4) and the sends now actually emit; the **Live instantiation diagnosis is still owed** and needs the DAW |
 | §5 PERF deck view + window persistence | open |
 | §7 tempo morph plumbing | open |
 | §9 multi-deck | open — rescoped by D4 from registry to N decks in one instance |
@@ -178,12 +178,26 @@ DAW; `browser_plugindeck_test` gains an assertion that the S-row exists.
    Logic as a control — `auval` already passes, so a Live-only failure points at
    1 or 2.
 
-**Bus count.** 11 was mapping the engine's useful lanes, not a product
-decision: Main, Deck, Cue, Send 1–4, Return 1–4. Two are known-questionable —
-**Deck reads silent by design** (per-deck lanes fill only when
-`djMode && dedicatedOutput`, and enabling that **splits the deck out of Main**),
-and **Cue currently duplicates Main**. **See Decision D1.** Recommendation:
-Main + Return 1–4 (+ Deck once its semantics are settled) = 5–6.
+**Bus count — SETTLED AND DONE.** Now **five: Main + Send 1–4**.
+
+D1 first read "Main + Return 1–4", but the engine says otherwise and the code
+won: the **Return lanes carry the wet output of the engine's INTERNAL return
+processors**, and this host has none — the legacy internal delay was retired in
+P6-3 and hosted plugins are forbidden by D-SL-DECKPLUGIN-01. Four buses of
+guaranteed silence. What actually leaves the building is **Send 1–4**; the DAW
+track you route one into *is* the return. Re-confirmed with the user 2026-08-01.
+Deck (silent unless `djMode && dedicatedOutput`, which **splits the deck out of
+Main**) and Cue (a duplicate of Main) are cut.
+
+⚠️ **The bus cut alone was not enough, and this is the part that would have
+shipped silent.** The core defaults every return to **host-plugin mode**, where
+the send is handed to a hosted effect and its wet summed into main — so in a
+host that can never load one, all four sends were consumed by an empty slot.
+`setReturnMode` had **no caller anywhere in this tree**. There is now an ABI
+door (`sl_return_set_external`) and the processor flips all four returns to
+external at engine create, beside the watchdog line. Pinned by
+`plugin_processor_test`: with send 1 up, bus "Send 1" peaks 0.354 while 2–4 stay
+at 0 — which also proves the lane map is not smearing one send across four.
 
 **Verify:** load in Live, confirm the multi-out variant instantiates and each
 declared bus appears as a routable source; keep `auval` green.

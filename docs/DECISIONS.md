@@ -1146,14 +1146,24 @@ third case: this executable deliberately OMITS it.
 ## D-SL-DECKPLUGIN-02 · 2026-08-01 · ScoopyDeck v2: the four kickoff forks, signed
 **Decision:** the four blocking decisions in `docs/merge/DECKPLUGIN-V2-KICKOFF.md`
 ("Decisions needed", D1–D4) are answered as follows. Signed live 2026-08-01.
-  · **D1 — Five output buses: Main + Return 1–4.** Cue and Deck are CUT. Cue duplicated
-    Main and carried nothing of its own; the Deck bus read silent by design (per-deck lanes
-    fill only when `djMode && dedicatedOutput`) and enabling it **removed the deck from
-    Main**, which is a routing surprise, not a tap. This **amends DECKPLUGIN-01's**
-    "main/deck/cue/4 return-wet pairs" consequence line. The 4 mono **send** buses are
-    unaffected — sends are how the deck reaches DAW effects, and returns come back wet.
-    The smaller layout is also the leading suspect-fix for the Live instantiation failure
-    (kickoff §4), which stays to be diagnosed on its own terms.
+  · **D1 — Five output buses: Main + Send 1–4.** Deck, Cue and Return 1–4 are CUT. This
+    **amends DECKPLUGIN-01's** "main/deck/cue/4 return-wet pairs" consequence line.
+    ⚠️ **Signed first as "Main + Return 1–4" and CORRECTED the same day**, on the user's
+    re-confirmation, after measuring the engine: the Return lanes carry the wet output of
+    the core's INTERNAL return processors, and this host has none — the legacy internal
+    delay was retired (P6-3) and hosted plugins are forbidden outright by DECKPLUGIN-01.
+    Four buses of guaranteed silence. What actually leaves the plugin is the SEND lanes;
+    the DAW track a send is routed into IS the return, processed there and summed in the
+    DAW's mixer. That is what "a return is external via multi-out" means here, and it is
+    the same fact `HostServices::externalReturns` reports. Cue duplicated Main; the Deck
+    bus read silent by design (per-deck lanes fill only when `djMode && dedicatedOutput`)
+    and enabling it **removed the deck from Main**, a routing surprise rather than a tap.
+    **Consequence that had no caller anywhere:** the core defaults every return to
+    host-plugin mode, so a plugin-less host consumed all four sends into an empty slot and
+    the send buses were silent. `sl_return_set_external` is the new ABI door and
+    ScoopyDeck flips all four at engine create. The smaller layout is also the leading
+    suspect-fix for the Live instantiation failure (kickoff §4), which stays to be
+    diagnosed on its own terms.
   · **D2 — Tempo source and transport source are TWO switches.** `CLK HOST/INT` keeps its
     current meaning and governs `followTransport` **only**. A second control picks the
     master-BPM source: host, or the typed master-BPM box. All four combinations are

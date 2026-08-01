@@ -58,18 +58,40 @@ struct BusSpec {
  * a plugin whose multi-out mode does not load — is not honesty anyone can use.
  * Reported by the user in Logic, 2026-08-01.
  */
+/*
+ * FIVE BUSES (D-SL-DECKPLUGIN-02 · D1, refined by measurement 2026-08-01).
+ *
+ * It was ELEVEN — Main, Deck, Cue, Send 1-4, Return 1-4 — which was a map of
+ * the engine's useful lanes rather than a product decision. Four of the six
+ * that went were carrying nothing anyone could use:
+ *
+ *   Cue       duplicated Main. Nothing routed to it that was not already there.
+ *   Deck      SILENT BY DESIGN. The per-deck lanes fill only when
+ *             `djMode && dedicatedOutput`, and enabling that REMOVES the deck
+ *             from Main — so the bus is either silent or a surprise re-route,
+ *             never a tap.
+ *   Return 1-4  the wet output of the engine's INTERNAL return processors. In
+ *             this host there are none: the internal delay was retired (P6-3)
+ *             and hosted plugins are forbidden outright
+ *             (D-SL-DECKPLUGIN-01 — no plugin-in-plugin, ever). Four buses of
+ *             guaranteed silence, named in a way that promised otherwise.
+ *
+ * What is left is what actually leaves the building. SEND 1-4 are the taps: the
+ * DAW track you route one into IS the return, processed by Ableton or Logic and
+ * summed in the DAW's own mixer. That is what "a return is external via
+ * multi-out" means here, and why `PluginBackend` sets
+ * `services.externalReturns` — the send section is real precisely because these
+ * four lanes exist, not because anything comes back inside the plugin.
+ *
+ * Fewer buses is also the leading suspect-fix for Live refusing the multi-out
+ * variant; that diagnosis is still owed on its own terms (kickoff §4).
+ */
 inline constexpr BusSpec kOutputBuses[] = {
     {"Main", false, laneMainL},
-    {"Deck", false, laneDeckA_L},
-    {"Cue", false, laneCueL},
     {"Send 1", true, laneSend1},
     {"Send 2", true, laneSend2},
     {"Send 3", true, laneSend3},
     {"Send 4", true, laneSend4},
-    {"Return 1", false, laneReturn1L},
-    {"Return 2", false, laneReturn2L},
-    {"Return 3", false, laneReturn3L},
-    {"Return 4", false, laneReturn4L},
 };
 inline constexpr int kNumOutputBuses = (int) std::size(kOutputBuses);
 

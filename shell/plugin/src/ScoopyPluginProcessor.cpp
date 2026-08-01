@@ -44,6 +44,20 @@ ScoopyPluginProcessor::ScoopyPluginProcessor()
     // chain is the protection layer here. The APP keeps its watchdog.
     if (engine != nullptr) sl_watchdog_set_enabled(engine, 0);
 
+    // EVERY RETURN IS EXTERNAL HERE, and this is the line that makes the send
+    // buses carry anything at all.
+    //
+    // The core defaults each return to HOST PLUGIN mode, where the send is fed
+    // to a hosted effect and its wet is summed into main. ScoopyDeck hosts no
+    // plugins by decision, so that effect can never exist: every send was being
+    // consumed by a slot that would stay empty forever, and all four Send output
+    // buses read silent with nothing anywhere to say why. In external mode the
+    // send leaves on its own lane instead — which is the whole architecture
+    // D-SL-DECKPLUGIN-02 · D1 settled on. The DAW track you route it into IS
+    // the return, and it is also why `services.externalReturns` is true.
+    if (engine != nullptr)
+        for (uint32_t r = 1; r <= 4; ++r) sl_return_set_external(engine, r, 1);
+
     // Warm the stretchers inside prepareToPlay rather than behind it. Set here,
     // BEFORE any configure that matters: a DAW may roll the transport the
     // instant prepareToPlay returns, and a bus still warming is on its dry path

@@ -832,6 +832,13 @@ void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled) {
     if (e != nullptr) e->watchdog.setEnabled(enabled);
 }
 
+void sl_return_set_external(sl_engine* e, uint32_t return_index, uint32_t external) {
+    // 1 = external out, 2 = host plugin. The core validates the index; this is
+    // a pure pass-through so the two spellings of the mode live in one place.
+    if (e != nullptr)
+        e->core.setReturnMode(static_cast<int>(return_index), external != 0 ? 1 : 2);
+}
+
 /* ── FX-return plugin slots (P6-2) ──────────────────────────────────────────
  *
  * Thin doors onto core.returnPluginSlot(). The whole family is guarded: on a

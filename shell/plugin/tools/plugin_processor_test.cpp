@@ -54,7 +54,7 @@ public:
 
 /** Publish a 220 Hz tone on all 8 steps of deck 0 — the smallest world that
     is audible, in the shape worldFromSession actually emits. */
-bool publishTone(ScoopyPluginProcessor& p, double bpm, bool playing) {
+bool publishTone(ScoopyPluginProcessor& p, double bpm, bool playing, double send1 = 0.0) {
     auto* left = new juce::Array<juce::var>();
     for (int i = 0; i < 4800; ++i)
         left->add(0.5 * std::sin(2.0 * 3.14159265358979 * 220.0 * i / 48000.0));
@@ -74,7 +74,9 @@ bool publishTone(ScoopyPluginProcessor& p, double bpm, bool playing) {
     const juce::String worldJson =
         R"({"action":"publish","world":{"deck":0,"bpm":)" + juce::String(bpm) +
         R"(,"isPlaying":)" + (playing ? "true" : "false") +
-        R"(,"startStep":0,"tracks":[{"sampleId":"tone","steps":[1,1,1,1,1,1,1,1],"volume":1.0}]}})";
+        R"(,"startStep":0,"tracks":[{"sampleId":"tone","steps":[1,1,1,1,1,1,1,1],"volume":1.0)" +
+        (send1 > 0.0 ? R"(,"send1Level":)" + juce::String(send1) : juce::String()) +
+        R"(}]}})";
     const auto reply = p.dispatchFromUi("slWorld", juce::JSON::parse(worldJson));
     return (bool) reply.getProperty("ok", false);
 }
@@ -290,7 +292,12 @@ int main() {
         CHECK(laidOut);
 
         p.prepareToPlay(48000.0, 512);
-        CHECK(publishTone(p, 120.0, true));
+        // SEND 1 UP. The whole reason the five buses are Main + Send 1-4 (D1) is
+        // that the sends are how this deck reaches the DAW's effect tracks — so
+        // a test that only ever renders with every send at zero would report
+        // "silent" for the four buses that carry the feature, and could not tell
+        // that apart from a broken lane mapping.
+        CHECK(publishTone(p, 120.0, true, /*send1=*/1.0));
 
         juce::AudioBuffer<float> buf(p.getTotalNumOutputChannels(), 512);
         juce::MidiBuffer midi;
@@ -314,18 +321,43 @@ int main() {
         // multi-out layout broke the mix, which is the regression that matters.
         CHECK(busPeak[0] > 1e-4);
 
-        // ⚠️ THE "Deck" BUS IS SILENT HERE, AND THAT IS THE ENGINE'S CURRENT
-        // TRUTH, NOT A MAPPING BUG. The core fills deckA_L/R only when
-        // `renderWorld_->djMode` AND `decks[i].dedicatedOutput` are set
-        // (NativeAudioEngineCore.cpp §"Master stage on dedicated deck lanes").
-        // A compose-mode publish sets neither, so the deck's audio is IN main.
+        // FIVE BUSES, AND THEY ARE THE FIVE THAT CARRY AUDIO (D1). Deck, Cue
+        // and Return 1-4 are gone: Cue duplicated Main, Deck is silent unless
+        // `djMode && dedicatedOutput` — which SPLITS the deck out of Main
+        // rather than tapping it — and the Return lanes are the wet output of
+        // internal return processors this host does not have (the internal
+        // delay was retired in P6-3; hosted plugins are forbidden by
+        // D-SL-DECKPLUGIN-01). Four buses of guaranteed silence with names that
+        // promised otherwise.
         //
-        // Turning dedicatedOutput on is not a free win either: that same code
-        // SPLITS the deck OUT of the main bus, so a user enabling the Deck stem
-        // would silently empty Main. Which of those a single-deck plugin should
-        // do is a product decision, tracked for v1 — recorded here so the next
-        // reader knows the zero below was measured, not overlooked.
-        CHECK(busPeak[0] > 1e-4);
+        // Pinned by NAME, not just by count, because a reordering that kept the
+        // count would route the wrong lane to a named output silently — the
+        // exact failure LaneMap's header warns about.
+        CHECK(wizard::plugin::kNumOutputBuses == 5);
+        CHECK(juce::String(wizard::plugin::kOutputBuses[0].name) == "Main");
+        for (int i = 1; i <= 4; ++i) {
+            CHECK(juce::String(wizard::plugin::kOutputBuses[i].name) == "Send " + juce::String(i));
+            // The engine's send lanes are MONO and mirrored L→R by
+            // LaneMap::finish; the host still sees stereo (Logic will not lay
+            // out an instrument with a mono aux).
+            CHECK(wizard::plugin::kOutputBuses[i].monoLane);
+        }
+
+        // AND SEND 1 CARRIES AUDIO. This is the claim D1 rests on: the deck
+        // reaches a DAW effect track through this bus, and the DAW track is the
+        // return. Buses 2-4 stay silent because only send 1 was raised — which
+        // also proves the lane mapping is not smearing one send across all four.
+        CHECK(busPeak[1] > 1e-4);
+        CHECK(busPeak[2] < 1e-6);
+        CHECK(busPeak[3] < 1e-6);
+        CHECK(busPeak[4] < 1e-6);
+
+        // The engine's send lane is MONO and LaneMap::finish mirrors it L→R, so
+        // a host that only listens to the right channel is not handed silence.
+        {
+            auto view = p.getBusBuffer(buf, false, 1);
+            CHECK(view.getNumChannels() == 2);
+        }
     }
 
     // ── §2b-2 WARM ON RETURN FROM prepareToPlay ─────────────────────────────

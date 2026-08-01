@@ -642,6 +642,23 @@ double sl_watchdog_gain(const sl_engine* e);
     clean. */
 void sl_watchdog_set_enabled(sl_engine* e, uint32_t enabled);
 
+/** THE RETURN'S DESTINATION. `1` = EXTERNAL (the send leaves on its own send
+    lane and nothing comes back into the main sum); `2` = HOST PLUGIN (a hosted
+    effect processes it and its wet is summed into main). Two is the core's
+    default; mode 0, the legacy internal delay, is retired.
+
+    Exposed because it had NO caller anywhere in this tree, and the default is
+    wrong for one of the hosts: ScoopyDeck hosts no plugins by decision
+    (D-SL-DECKPLUGIN-01), so every send was being handed to an effect that can
+    never exist and consumed there. Its four Send output buses — the entire
+    point of the five-bus layout D-SL-DECKPLUGIN-02 · D1 settled on — were
+    therefore silent, with nothing on screen or in a log to say why.
+
+    Per-return, so a host can mix the two: the APP leaves its returns on host
+    mode and only a plugin-less host flips them. Message thread; the audio side
+    reads it lock-free and picks it up on the next block. */
+void sl_return_set_external(sl_engine* e, uint32_t return_index, uint32_t external);
+
 /* ── FX-return plugin slots (P6-2) ──────────────────────────────────────────
  *
  * Doors onto the core's per-return NativePluginSlot machinery (compiled in
