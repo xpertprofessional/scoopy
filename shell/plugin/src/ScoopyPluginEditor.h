@@ -70,6 +70,19 @@ private:
     std::unique_ptr<juce::WebBrowserComponent> webView;
     juce::Label loadError; // shown ONLY when the embedded bundle is absent
     std::vector<double> hotFrameBuf;
+    /** THE STRIP'S READOUT, painted NATIVELY (2026-08-01).
+     *
+     *  "Playhead is not working" is three different faults wearing one symptom:
+     *  the deck's clock is not running, the frames are not reaching the page, or
+     *  the page is not drawing them. From inside a DAW they are
+     *  indistinguishable — there is no console, and the web tier cannot report
+     *  on its own absence.
+     *
+     *  So the chrome strip says what the ENGINE says, straight from
+     *  `sl_hotframe`, with no web tier in the path at all. A moving step here
+     *  and a still grid is a web bug; a still step here is the clock. */
+    int lastShownStep = -2; // -2 = never painted, so the first tick always does
+    bool lastShownPlaying = false;
     int toolbarTick = 0; // 30 Hz ÷ 15 → the ~2 Hz toolbar push, same as the app
     HostSync::Snapshot lastTransport; // change-detected → hostTransport slEvent
     juce::StringArray warnedParams;

@@ -1,5 +1,8 @@
 #include "ScoopyPluginEditor.h"
 
+// The generated lane indices — the strip reads the engine's clock directly.
+#include "sl_hotframe.inc"
+
 #include "EmbeddedWeb.h"
 #include "WebResources.h"
 #include "sl_engine.h"
@@ -131,7 +134,16 @@ void ScoopyPluginEditor::paint(juce::Graphics& g) {
     g.setFont(juce::FontOptions(11.0f));
     // Says what the corner does, because an 18px grip on a dark strip is not
     // self-evident, and "the window will not resize" was the actual report.
-    g.drawText(juce::String(getWidth()) + " x " + juce::String(getHeight()) +
+    //
+    // …and what the ENGINE's clock is doing, read from `sl_hotframe` with no web
+    // tier in the path. "Playhead is dead" is three faults wearing one symptom
+    // (clock stopped · frames not arriving · page not drawing) and from inside a
+    // DAW they look identical. A moving number here with a still grid is a web
+    // bug; a still number here is the clock, and the grid is innocent.
+    const juce::String clock =
+        lastShownStep >= 0 ? "step " + juce::String(lastShownStep) : juce::String("step --");
+    g.drawText(juce::String(getWidth()) + " x " + juce::String(getHeight()) + "  -  " + clock +
+                   (lastShownPlaying ? "  -  playing" : "  -  stopped") +
                    "  -  drag the corner to resize",
                strip.withTrimmedRight(kChromeH), juce::Justification::centredLeft, true);
 }
@@ -222,6 +234,18 @@ void ScoopyPluginEditor::timerCallback() {
     frame.ensureStorageAllocated(static_cast<int>(n));
     for (uint32_t i = 0; i < n; ++i) frame.add(hotFrameBuf[i]);
     webView->emitEventIfBrowserIsVisible("slHotFrame", juce::var(frame));
+
+    // The strip's clock readout. Repainted only on CHANGE, and only the strip —
+    // a 30 Hz full repaint behind a WKWebView would be waste for an 18px band.
+    if (n > SL_HF_playheadStepDeck0) {
+        const int step = static_cast<int>(hotFrameBuf[SL_HF_playheadStepDeck0]);
+        const bool playing = deck.hostSync().snapshot().playing;
+        if (step != lastShownStep || playing != lastShownPlaying) {
+            lastShownStep = step;
+            lastShownPlaying = playing;
+            repaint(getLocalBounds().removeFromBottom(kChromeH));
+        }
+    }
 
     // THE HOST TRANSPORT, pushed because nothing else can tell the UI.
     // There is no transport slot in the HotFrame — the web tier mirrors the

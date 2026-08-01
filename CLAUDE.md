@@ -122,6 +122,17 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
   name it; `web/package.json` is the authority.
 - `npm run bundle` must be the LAST step before `git add`, or `.buildhash`
   records a tree that no longer exists (the P3-X4 lesson).
+- ⚠️ **PLUGIN WORK: bundling is not enough, and the failure is silent.** The app
+  serves `webdist/` off disk; a PLUGIN links it *into the binary* (a plugin is
+  copied to machines that never saw this tree). So a DAW runs the UI frozen at
+  the last `cmake --build`, and a web fix tested there looks exactly like a fix
+  that did not work. This cost two full round-trips on 2026-08-01 — a playhead
+  fix verified by pixels was reported dead twice because it was never in the
+  binary. After bundling, for anything a DAW will load:
+  `cmake --build build --target ScoopyDeck_All ScoopyTape_All`, then **reload the
+  plugin in the host** (DAWs cache the binary in-process). `npm run plugin:check`
+  is the gate — it fails when the built plugin embeds an older bundle than
+  `webdist/`.
 - Bundle + `webdist/` freshness and the Chromium walk gates per the ledger row's gate
   line. **Never commit a red tree.** One coherent step per commit — a bundle spans
   several; the ledger row closes on the last one.

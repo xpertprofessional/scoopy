@@ -27,6 +27,7 @@
     "trackparams:generate": "node --experimental-strip-types scripts/generateTrackParams.ts",
     "typecheck": "tsc --noEmit",
     "webdist:check": "node --experimental-strip-types scripts/webdistFresh.ts --check",
+    "plugin:check": "node --experimental-strip-types scripts/pluginFresh.ts",
     "worldmap:check": "node --experimental-strip-types scripts/generateWorldMap.ts --check",
     "worldmap:generate": "node --experimental-strip-types scripts/generateWorldMap.ts",
     "nativemethods:check": "node --experimental-strip-types scripts/checkNativeMethods.ts"

@@ -43,6 +43,7 @@ import { SCENE_LETTERS, enabledScenes } from '../audio/sceneProjection.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { GridScenes } from './GridElement.tsx'
+import { HotFrameLayout } from '../../protocol/schema.ts'
 import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
 import { listSessions } from '../store/sessionStore.ts'
 import { silenceNote } from '../store/sampleReport.ts'
@@ -252,6 +253,39 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     if (!link || !session) return
     void link.command('pluginSession' as never, { name: session.name }).catch(() => {})
   }, [link, session?.name])
+
+  /**
+   * ARE ENGINE FRAMES ARRIVING? (real-host debug, 2026-08-01)
+   *
+   * "The playhead is dead" is three faults wearing one symptom — the clock is
+   * stopped, the frames are not reaching the page, or the page is not drawing
+   * them — and inside a DAW there is no console to tell them apart. The chrome
+   * strip answers the first natively; this answers the second, which is the one
+   * only the page can see.
+   *
+   * It is a WARNING, not a readout: silent when telemetry is flowing, and it
+   * says so when it stops. A UI quietly showing stale numbers because its feed
+   * died is the failure this exists to name.
+   */
+  const [framesStalled, setFramesStalled] = useState(false)
+  useEffect(() => {
+    if (!link) return
+    let seen = 0
+    let last = -1
+    const off = link.onHotFrame((frame) => {
+      seen = frame[HotFrameLayout.frameCounter] ?? 0
+    })
+    // 1.5 s: the editor broadcasts at 30 Hz, so a gap this long is a real stop,
+    // not a scheduling hiccup or a hidden window skipping a few.
+    const id = window.setInterval(() => {
+      setFramesStalled(seen === last)
+      last = seen
+    }, 1500)
+    return () => {
+      off()
+      window.clearInterval(id)
+    }
+  }, [link])
 
   // THE ARROW KEYS, without having to click first.
   //
@@ -601,6 +635,14 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
           ⤢
         </button>
         {note && <span className="dim">{` · ${note}`}</span>}
+        {/* Only when it is true. A telemetry feed that has stopped must SAY so —
+            every meter, LED and playhead on this face is fed by it, and stale
+            numbers that look live are worse than blank ones. */}
+        {framesStalled && (
+          <span className="warn" title="the editor is not receiving HotFrames from the engine — meters, LEDs and the playhead are frozen">
+            {' no engine frames'}
+          </span>
+        )}
         {error && <span className="warn">{` ${error}`}</span>}
         {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
         {!error && notice && <span className="dim">{` · ${notice}`}</span>}

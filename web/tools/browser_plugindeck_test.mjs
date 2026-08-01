@@ -89,6 +89,30 @@ await page.waitForSelector('.ds-menu-item', { timeout: 5000 })
 const menuLabels = await page.evaluate(() =>
   [...document.querySelectorAll('.ds-menu-item')].map((e) => e.textContent.trim()),
 )
+// THE FOLDER DOOR MUST ASK FOR A DIRECTORY. A native panel cannot be driven
+// from here, but the thing that broke can: the input is built with
+// `webkitdirectory` as an ATTRIBUTE, which is what WebKit reads when it fills
+// `WKOpenPanelParameters.allowsDirectories` — the flag JUCE turns into
+// `canSelectDirectories`. The first cut set the PROPERTY on a detached element
+// and the panel came up unable to select a folder.
+await page.evaluate(() => {
+  const proto = HTMLInputElement.prototype
+  const real = proto.click
+  let seen = null
+  proto.click = function () {
+    seen = {
+      type: this.type,
+      attr: this.hasAttribute('webkitdirectory'),
+      inDom: this.isConnected,
+    }
+    // Swallowed: opening a real panel would hang this headless run.
+  }
+  window.__dirProbe = () => seen
+  window.__dirRestore = () => {
+    proto.click = real
+  }
+})
+
 // TWO import rows, and the FOLDER one matters most: a `.scoopySession` is a
 // directory on disk, and a plain file input cannot select one — the picker
 // simply would not show a session ("cant recognize .scoopy folder in
@@ -103,6 +127,34 @@ check(
   menuLabels.some((l) => l.startsWith('import .zip')),
   JSON.stringify(menuLabels),
 )
+// Fire the folder door and inspect the input it built.
+await page.evaluate(() => {
+  const el = [...document.querySelectorAll('.ds-menu-item')].find(
+    (e) => e.textContent.trim() === 'import folder…',
+  )
+  el?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
+await page.waitForTimeout(200)
+const dirInput = await page.evaluate(() => {
+  const seen = window.__dirProbe()
+  window.__dirRestore()
+  return seen
+})
+check('the folder door opens a picker', dirInput !== null, 'no input.click()')
+check(
+  'it asks for a DIRECTORY — the attribute WebKit reads, not the property',
+  dirInput?.attr === true,
+  JSON.stringify(dirInput),
+)
+check(
+  '…from an input that is IN the document',
+  dirInput?.inDom === true,
+  JSON.stringify(dirInput),
+)
+
+// Reopen the menu (the click above closed it) and go in through `new`.
+await page.click('.compose-session-menu')
+await page.waitForSelector('.ds-menu-item', { timeout: 5000 })
 await page.evaluate(() => {
   const el = [...document.querySelectorAll('.ds-menu-item')].find(
     (e) => e.textContent.trim() === 'new',

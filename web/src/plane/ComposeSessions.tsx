@@ -124,16 +124,29 @@ function pickSession(kind: 'folder' | 'file'): Promise<File[] | null> {
     const input = document.createElement('input')
     input.type = 'file'
     if (kind === 'folder') {
-      // Non-standard but universal, and the ONLY attribute that makes a picker
-      // take a directory. React/TS have no typing for it.
-      ;(input as unknown as Record<string, unknown>).webkitdirectory = true
+      // ⚠️ setAttribute, NOT the property, and BOTH spellings. The first cut set
+      // `input.webkitdirectory = true` on a detached element and the panel came
+      // up as an ordinary file picker with the folder greyed out — "cant
+      // recognize .scoopy folder in documentpicker" (real host, 2026-08-01).
+      // WebKit reads the ATTRIBUTE when it builds `WKOpenPanelParameters`, which
+      // is what JUCE turns into `canSelectDirectories`; `Library.tsx`'s working
+      // door has always been attribute-based JSX for the same reason.
+      input.setAttribute('webkitdirectory', '')
+      input.setAttribute('directory', '') // Firefox's spelling; harmless elsewhere
     } else {
       input.accept = `${SESSION_EXTENSION},.zip`
     }
+    // IN THE DOCUMENT before clicking. A detached input opens the panel in
+    // Chrome but WebKit is stricter about synthesising the gesture, and a
+    // picker that silently never appears is indistinguishable from one that
+    // appeared and refused the folder.
+    input.style.display = 'none'
+    document.body.appendChild(input)
     let settled = false
     const done = (f: File[] | null) => {
       if (settled) return
       settled = true
+      input.remove()
       resolve(f)
     }
     input.addEventListener('change', () => {

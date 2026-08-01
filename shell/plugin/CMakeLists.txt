@@ -124,7 +124,8 @@ target_include_directories(ScoopyDeck PRIVATE
     src
     ${CMAKE_SOURCE_DIR}/shell/src        # MergedApp.h (kScoopySchemaVersion), SlDispatch, WebResources
     ${CMAKE_SOURCE_DIR}/host/src         # RecordService, SlTakeDrainSource
-    ${CMAKE_SOURCE_DIR}/slengine/include)
+    ${CMAKE_SOURCE_DIR}/slengine/include
+    ${CMAKE_SOURCE_DIR}/slengine/generated)
 
 target_compile_definitions(ScoopyDeck PRIVATE
     JUCE_WEB_BROWSER=1
@@ -228,7 +229,8 @@ target_include_directories(ScoopyTape PRIVATE
     src
     ${CMAKE_SOURCE_DIR}/shell/src
     ${CMAKE_SOURCE_DIR}/host/src
-    ${CMAKE_SOURCE_DIR}/slengine/include)
+    ${CMAKE_SOURCE_DIR}/slengine/include
+    ${CMAKE_SOURCE_DIR}/slengine/generated)
 
 target_compile_definitions(ScoopyTape PRIVATE
     JUCE_WEB_BROWSER=1
@@ -333,7 +335,8 @@ target_include_directories(tape_plugin_processor_test PRIVATE
     src
     ${CMAKE_SOURCE_DIR}/shell/src
     ${CMAKE_SOURCE_DIR}/host/src
-    ${CMAKE_SOURCE_DIR}/slengine/include)
+    ${CMAKE_SOURCE_DIR}/slengine/include
+    ${CMAKE_SOURCE_DIR}/slengine/generated)
 
 target_compile_definitions(tape_plugin_processor_test PRIVATE
     JUCE_WEB_BROWSER=1
