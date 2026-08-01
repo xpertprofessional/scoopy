@@ -278,12 +278,35 @@ endif()
 # quietly rots. Only its ctest registration is conditional.
 option(WIZARD_TEST_REALHOST "Register the real-host walk (MergedWalk) with ctest" OFF)
 if(WIZARD_TEST_REALHOST)
-    add_test(NAME merged_walk
-             COMMAND ${CMAKE_CURRENT_BINARY_DIR}/MergedWalk_artefacts/MergedWalk.app/Contents/MacOS/MergedWalk)
-    set_tests_properties(merged_walk PROPERTIES
-        SKIP_RETURN_CODE 77
-        LABELS "realhost"
-        TIMEOUT 90)
+    # TWO registrations, ONE binary (S1). Every check but the panel-identity one
+    # is face-agnostic, so a second walk source would drift from this one for no
+    # coverage. `SL_WALK_FACE` picks the face and the walk asserts it arrived.
+    #
+    # `studio` first and unsuffixed: it is what the app opens when nobody says
+    # (D-SL-STUDIO-01), and a gate whose default is not the product's default
+    # proves the wrong thing. The plane is FROZEN, not abandoned — freezing a
+    # surface must not mean it stops being tested, or "still compiles" quietly
+    # becomes the only claim anyone can make about it.
+    # ⚠️ `$<TARGET_FILE:...>`, NOT a hand-written artefacts path, and this is a
+    # FIX rather than a style preference. JUCE writes to
+    # `MergedWalk_artefacts/<CONFIG>/MergedWalk.app/…`; the path spelled here
+    # before omitted the config directory, so it named a file that a single-config
+    # build had left behind and that NOTHING relinks. Measured 2026-08-02: the
+    # registered command was a binary three days older than the source, and the
+    # walk passed 6/6 against it while the change under test was absent. That is
+    # this repo's recurring failure — a green gate proving a stale artifact — and
+    # it is the same shape `plugin:check` exists to catch one layer up.
+    foreach(face studio plane)
+        add_test(NAME merged_walk_${face} COMMAND $<TARGET_FILE:MergedWalk>)
+        set_tests_properties(merged_walk_${face} PROPERTIES
+            ENVIRONMENT "SL_WALK_FACE=${face}"
+            SKIP_RETURN_CODE 77
+            LABELS "realhost"
+            # SERIAL: each run opens real windows and the real audio device, so
+            # two at once fight over both.
+            RUN_SERIAL TRUE
+            TIMEOUT 90)
+    endforeach()
 endif()
 
 # ScoopyDeck — the plugin entry point (D-SL-DECKPLUGIN-01). LAST, because it

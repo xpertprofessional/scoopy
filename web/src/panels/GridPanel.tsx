@@ -381,6 +381,45 @@ export const djSource = (deck: number): GridSource => ({
   density: "dj",
 });
 
+/**
+ * THE STUDIO SOURCE (S1 · D-SL-STUDIO-01) — the compose DOCUMENT, the deck's
+ * TELEMETRY. It is `COMPOSE_SOURCE` with exactly three indices moved, and the
+ * three are the ones the merged engine actually writes.
+ *
+ * ⚠️ WHY IT EXISTS. `COMPOSE_SOURCE` reads `trackStep0/trackPos0/trackLevel0`,
+ * and **nothing in the merged engine writes those lanes** — `sl_engine.cpp`
+ * fills `playheadStepDeck0..2` plus the per-deck `djTrack*` blocks and stops.
+ * So a plain compose mount here shows a playhead frozen forever. That is not a
+ * bug in this file; it is the merge's missing emitter, and `PluginDeckPanel`
+ * documents having measured the same thing.
+ *
+ * WHY NOT JUST `djSource(0)`, which the deck plugin uses. Because the topics
+ * and the telemetry are separate axes and only ONE of them is broken. Switching
+ * source wholesale would also move the DOCUMENT onto `djMeta/0`+`djPattern/0/*`
+ * — the backend `useComposeBinding` does not feed — and take the compose
+ * surface's doors with it: LOAD and sample browse (the dj row deliberately has
+ * neither, "sound design, not performance"), the sample doors, the scene pins,
+ * and the P5-04 shadow store. Studio is the surface a person loads samples IN,
+ * so it keeps the compose half and borrows only the lanes.
+ *
+ * WHY DECK 0 IS THE RIGHT LANE, and why this is not a coincidence: with DJ mode
+ * gone there is ONE engine, and the compose store publishes its world to deck 0
+ * (`sl_engine.cpp:1536` sets `d.active = true` on every world publish, so the
+ * `live` gate on the telemetry is satisfied by the same publish that carries the
+ * pattern). Deck 0 *is* the session now — that is the whole content of the
+ * single-engine ruling, expressed as three array indices.
+ *
+ * `shadow` stays TRUE, unlike every dj source. The stated hazard was three DECKS
+ * interleaving patterns under one track-index key; Studio is one grid on one
+ * engine, which is the case the store was always keyed for.
+ */
+export const STUDIO_SOURCE: GridSource = {
+  ...COMPOSE_SOURCE,
+  hotBase: djTrackStepIndex(0, 0),
+  hotPosBase: djTrackPosIndex(0, 0),
+  hotLevelBase: djTrackLevelIndex(0, 0),
+};
+
 export function GridPanel({
   link,
   source = COMPOSE_SOURCE,
@@ -2941,6 +2980,29 @@ export function GridPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link]);
 
+  /** `announceHostTouch`'s once-per-control set (D-SL-DECKPLUGIN-04). Declared
+   *  HERE rather than beside the function that uses it, because everything
+   *  below this line runs only on renders that HAVE meta.
+   *
+   *  ⚠️ THE LAST HOOK. Nothing below the guard may call one. */
+  const hostTouchedRef = useRef<Set<string>>(new Set());
+
+  // ⚠️ THE HOOK BOUNDARY. Every hook in this component is above this line, and
+  // that is load-bearing rather than tidy: this early return makes the render
+  // that has no meta call FEWER hooks than the render that does, so a hook
+  // placed below it crashes the whole panel with React error 310 ("Rendered
+  // more hooks than during the previous render") the moment a pattern arrives.
+  //
+  // It has happened, and the shape is worth remembering because everything
+  // about it looked safe. `hostTouchedRef` was added down beside
+  // `announceHostTouch`, next to the code that reads it — the tidy place — and
+  // every gate stayed green: `npm test` has no renderer (P3.5-E8g-f), and the
+  // one real-host walk drove the PLANE, where a deck tile mounts with meta
+  // already published so the early return never fires and the hook count never
+  // changes. What it actually broke was every mount that starts EMPTY: the
+  // compose window and ScoopyDeck's freshly-inserted boot — both of which show
+  // a fatal error overlay instead of a grid. Found 2026-08-02 by the Studio
+  // walk, three commits after it shipped.
   if (!meta) {
     return <main className="grid-panel mono dim" ref={panelRef}>waiting for pattern state…</main>;
   }
@@ -3103,7 +3165,9 @@ export function GridPanel({
   // must not become a command per frame; the processor keeps the authoritative
   // guard (a remount would clear this set), so a second call is merely wasted,
   // never wrong.
-  const hostTouchedRef = useRef<Set<string>>(new Set());
+  //
+  // ⚠️ ITS `useRef` LIVES ABOVE THE `if (!meta)` GUARD, with every other hook,
+  // and must stay there — see the note at that guard.
   const announceHostTouch = (params: Record<string, unknown>) => {
     // The plugin host only. In the app and the browser there is no parameter
     // surface to announce to, and `link` is native in BOTH the plugin and the

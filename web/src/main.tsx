@@ -56,10 +56,20 @@ class ErrorBoundary extends React.Component<
   }
   render() {
     if (this.state.error) {
+      // ⚠️ MESSAGE FIRST, then the stack — and the order is the whole point in
+      // THIS host. V8 prefixes `error.stack` with the message, so Chromium
+      // walks showed it for free and nobody noticed the dependency. JavaScriptCore
+      // does NOT: in the WKWebView the stack is frames only, so the overlay
+      // rendered a minified call list and never said what went wrong. Found by
+      // the real-host walk (S1), which is exactly the browser/JUCE blind spot
+      // that walk exists for.
+      const err = this.state.error;
       return (
         <pre className="fatal-error">
           render error:{"\n"}
-          {String(this.state.error?.stack ?? this.state.error)}
+          {String(err?.message ?? err)}
+          {"\n"}
+          {String(err?.stack ?? "")}
         </pre>
       );
     }

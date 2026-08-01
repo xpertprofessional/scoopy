@@ -55,6 +55,24 @@ namespace {
 
 constexpr int kExitSkip = 77; // ctest SKIP_RETURN_CODE
 
+/** WHICH FACE this run drives, from `SL_WALK_FACE`; default `studio`.
+ *
+ * Every check below except the panel-identity one is face-agnostic — they ask
+ * about the bridge, the native functions, the mounted bundle and the HotFrame
+ * broadcast, none of which care what is drawn. So one binary covers both faces
+ * and ctest registers it twice (S1), rather than a second walk drifting from
+ * this one.
+ *
+ * The DEFAULT is `studio` because that is what the app now opens when nobody
+ * says (D-SL-STUDIO-01). A gate whose default path is not the product's default
+ * path proves the wrong thing; the frozen plane keeps its own registration so
+ * freezing does not mean going untested. */
+juce::String walkFace() {
+    if (const char* env = std::getenv("SL_WALK_FACE"); env != nullptr && *env != 0)
+        return juce::String(env);
+    return "studio";
+}
+
 /** One assertion. `script` runs in the page and must evaluate to a STRING:
     empty means pass, anything else is the reason it failed. A boolean would
     tell us a walk broke without telling us what the app actually had. */
@@ -86,10 +104,12 @@ const Step kSteps[] = {
 
     // The P3-4-2 defect class: a window opened without the identity the shell
     // was supposed to inject. Invisible to any browser walk, which sets its own.
+    // `%FACE%` is substituted before evaluation — see evaluateCurrent. The face
+    // is the one thing here that is not the same question on every surface.
     {"panel identity was injected (__slPanel)", 0,
      R"JS((function () {
-        if (window.__slPanel !== 'plane')
-          return '__slPanel is ' + JSON.stringify(window.__slPanel) + ', expected "plane"';
+        if (window.__slPanel !== '%FACE%')
+          return '__slPanel is ' + JSON.stringify(window.__slPanel) + ', expected "%FACE%"';
         return '';
       })())JS"},
 
@@ -98,6 +118,37 @@ const Step kSteps[] = {
         var r = document.getElementById('root');
         if (!r) return 'no #root element - the bundle did not load from the resource provider';
         if (r.children.length === 0) return '#root is empty - React did not mount';
+        return '';
+      })())JS"},
+
+    // ⚠️ THE CHECK ABOVE IS NOT ENOUGH, and finding that out is why this one
+    // exists (S1). `__slPanel` proves what the SHELL injected; `#root` having
+    // children proves React mounted SOMETHING. Neither proves the named face
+    // rendered — App.tsx's route falls through to `DebugPanel` for any panel it
+    // does not know, and DebugPanel satisfies both. A walk against a bundle
+    // built before a new face existed therefore passes 6/6 while the face is
+    // absent, which is precisely the "green gate, feature reaches nothing"
+    // shape this binary was written to catch. Measured, not theorised: it
+    // happened on this walk's first run.
+    {"the named face actually rendered (not the debug fallback)", 0,
+     R"JS((function () {
+        var m = document.querySelector('main.panel');
+        if (!m) {
+          // Say WHAT is there. "nothing rendered" sends you looking at the
+          // route; a React error overlay or an empty root sends you somewhere
+          // else entirely, and the walk is the only place that can see it.
+          var r = document.getElementById('root');
+          var head = r ? r.innerHTML.slice(0, 300) : '(no #root)';
+          return 'no <main class="panel"> - #root contains: ' + head;
+        }
+        var label = m.getAttribute('aria-label') || '';
+        var cls = m.className || '';
+        // Each face names itself: Studio/compose via aria-label, the plane via
+        // its class. A face that identifies itself as neither is the fallback.
+        var ok = label.indexOf('%FACE%') === 0 || cls.indexOf('%FACE%-panel') >= 0;
+        if (!ok)
+          return 'rendered <main class="' + cls + '" aria-label="' + label +
+                 '">, which is not the %FACE% face - the route fell through';
         return '';
       })())JS"},
 
@@ -159,7 +210,8 @@ private:
 
     void evaluateCurrent() {
         const auto& step = kSteps[index];
-        window.evaluate(step.script, [this, name = juce::String(step.name)](
+        const auto script = juce::String(step.script).replace("%FACE%", walkFace());
+        window.evaluate(script, [this, name = juce::String(step.name)](
                                          juce::WebBrowserComponent::EvaluationResult r) {
             Check c;
             c.name = name;
@@ -211,12 +263,15 @@ public:
     static int exitCode;
 
 protected:
-    /** The walk drives the PLANE's boot path, so it names it rather than being
-        asked (D-SL-CHOOSER-01). A chooser this script never clicks would hang
-        the gate — and a hanging gate is worse than a failing one, because it
-        reports nothing at all. The chooser's own path is covered by the boot
-        walk in `web/tools`, which can click. */
-    juce::String launchFaceOverride() const override { return "plane"; }
+    /** The walk names the face it drives rather than taking the app's default,
+        so one binary can cover both and a run says which it covered.
+
+        There is no chooser to dodge any more (D-SL-STUDIO-01 removed it), but
+        naming the face is still right: the walk asserts `__slPanel` equals what
+        it asked for, which is the P3-4-2 defect class — a window opened without
+        the identity the shell was supposed to inject. Reading the app's default
+        instead would make that check agree with itself by construction. */
+    juce::String launchFaceOverride() const override { return walkFace(); }
 
     void firstPageLoaded(wizard::merged::PanelWindow& w) override {
         // The page has run its bundle, but React mounts on its own schedule.
