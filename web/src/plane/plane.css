@@ -562,10 +562,28 @@
 .strip-lcm-label {
   position: absolute;
   right: 3px;
-  top: -1px;
+  /* CENTRED, not `top: -1px`. Nano is 0.7 × caption ≈ 7px, and its line box is
+     taller than that — hung a pixel above an 8px box with `overflow: hidden`,
+     the word was clipped to a sliver, so the bar read as an empty outline with
+     no label at all (DECKPLUGIN v2 §6). Centring costs no layout: the box is
+     `position: relative` and the label is out of flow either way. */
+  top: 50%;
+  transform: translateY(-50%);
+  line-height: 1;
   font-size: var(--type-nano-size);
   color: var(--text-dim);
   pointer-events: none;
+}
+
+/* THE PLUGIN'S LCM BAR IS TALLER. 8px is the PLANE's budget — a collapsed strip
+   is a dense object and every pixel there is spoken for (L1: the box is
+   authoritative). ScoopyDeck has one deck and a resizable window, so the same
+   8px reads as a hairline nobody can see a cycle in; at 14px the fill is legible
+   and the label fits beside it. Scoped to the plugin pane so the plane's saved
+   `cell.h` arithmetic is untouched. */
+.plugin-deck-pane .strip-lcm {
+  flex: 0 0 14px;
+  height: 14px;
 }
 
 .strip-name {

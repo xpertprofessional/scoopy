@@ -361,6 +361,52 @@ check(
   JSON.stringify(sends.labels),
 )
 
+// ── THE LCM BAR IS BIG ENOUGH TO READ (DECKPLUGIN v2 §6) ───────────────────
+//
+// `LcmBar` was mounted the whole time and reported missing, because `.strip-lcm`
+// is `flex: 0 0 8px; overflow: hidden` — the plane's budget for a collapsed
+// strip — with the "LCM" label hung at `top: -1px` INSIDE it. The label was
+// clipped to a sliver and an 8px empty outline reads as nothing at all. A
+// plugin has one deck and a resizable window; it can afford the pixels.
+const lcm = await page.evaluate(() => {
+  const bar = document.querySelector('.plugin-deck-pane .strip-lcm')
+  const lab = document.querySelector('.plugin-deck-pane .strip-lcm-label')
+  if (!bar || !lab) return null
+  const b = bar.getBoundingClientRect()
+  const l = lab.getBoundingClientRect()
+  // ⚠️ MEASURED AGAINST THE PADDING BOX, not the border box. `overflow: hidden`
+  // clips to the padding box, so comparing with getBoundingClientRect() alone
+  // says "inside" for a label that is in fact losing a pixel to the border on
+  // each side — which is exactly what the old `top: -1px` in an 8px box did.
+  const padTop = b.top + bar.clientTop
+  const padBottom = padTop + bar.clientHeight
+  return {
+    h: Math.round(b.height),
+    text: lab.textContent.trim(),
+    inside: l.height > 0 && l.top >= padTop - 0.5 && l.bottom <= padBottom + 0.5,
+    clip: `label ${Math.round(l.top)}…${Math.round(l.bottom)} vs box ${Math.round(padTop)}…${Math.round(padBottom)}`,
+    title: bar.getAttribute('title') ?? '',
+  }
+})
+check('the LCM bar is mounted', lcm !== null, 'no .strip-lcm in the deck pane')
+check(
+  'it is tall enough for a cycle to be visible',
+  lcm !== null && lcm.h >= 12,
+  `height ${lcm?.h}px`,
+)
+check(
+  'its label is INSIDE the box, not clipped by overflow:hidden',
+  lcm?.inside === true && lcm?.text === 'LCM',
+  `text=${JSON.stringify(lcm?.text)} — ${lcm?.clip}`,
+)
+// The bar means nothing without knowing how long the cycle is; the title is
+// where that is said.
+check(
+  'it names the cycle length',
+  /\d+ steps/.test(lcm?.title ?? ''),
+  `title=${JSON.stringify(lcm?.title)}`,
+)
+
 await cleanup()
 server.close()
 
@@ -375,7 +421,7 @@ console.log(
       .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
     `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
-    `master sends ${sends.count}`,
+    `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}"`,
 )
 
 if (failures.length) {

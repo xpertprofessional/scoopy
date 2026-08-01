@@ -5,9 +5,30 @@ working plugin. The root causes are already found; do not re-derive them. Where
 a line number is given it was verified at that time — confirm it still points at
 the same thing, but trust the *finding*.
 
-Signed law: **D-SL-DECKPLUGIN-01** (`docs/DECISIONS.md`). Plugin lives in
-`shell/plugin/`. Web face is `web/src/plane/PluginDeckPanel.tsx` +
+Signed law: **D-SL-DECKPLUGIN-01** and **D-SL-DECKPLUGIN-02** (`docs/DECISIONS.md`).
+Plugin lives in `shell/plugin/`. Web face is `web/src/plane/PluginDeckPanel.tsx` +
 `web/src/plane/pluginDeckMap.ts`.
+
+## STATUS — updated 2026-08-01
+
+The plugin itself is now **committed** (`e79dc67`); it had been living entirely
+in a working tree. The four decisions are **answered and signed** as
+D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
+
+| § | State | Commit |
+|---|---|---|
+| §1 PERF write path | **DONE** | `a63795a` |
+| §2 master-BPM box + TEMPO switch | **DONE** | `853bd2f` |
+| §3 sends (capability + masterSends) | **DONE** | `35d6790` |
+| §6 LCM meter | **DONE** (geometry; the data was never broken here — see §6) | |
+| §8 keyboard | open — start at `djSlotIndex`; D3 makes the OS-focus work a prerequisite |
+| §4 multi-out in Live | open — D1 settled the bus count at 5; the Live diagnosis remains |
+| §5 PERF deck view + window persistence | open |
+| §7 tempo morph plumbing | open |
+| §9 multi-deck | open — rescoped by D4 from registry to N decks in one instance |
+
+**Everything below is the original brief.** Where an item is DONE its section
+has been updated in place with what was actually found; the rest is untouched.
 
 ---
 
@@ -202,21 +223,28 @@ asserting the control count drops and nothing overflows.
 `LcmBar` **is** mounted (`plane/deckTile.tsx:312-344`, rendered by DeckFace).
 Two causes stack:
 
-1. **Data.** It reads `HotFrameLayout["playheadStepDeck" + deck]`.
-   `BrowserLink` stamps those lanes to **−1** in its constructor
-   (`browserLink.ts:141-149`) and its rAF pump (`:611-627`) never writes them
-   again — so `frac` is 0 forever. The native emitter *does* fill
-   `SL_HF_playheadStepDeck0..2`; in the plugin, confirm whether BrowserLink's
-   pump is overwriting the native frame. Options: write the lanes in
-   `browserLink.ts:617`, or point `LcmBar` at the per-deck DJ telemetry
-   (`djTrackStepD<d>T0`) the deck grid already reads.
-2. **Geometry.** `.strip-lcm` is `flex: 0 0 8px; height: 8px; overflow: hidden`
-   (`plane/plane.css:544-552`), and the "LCM" label is absolutely positioned at
-   `top:-1px` inside it — **clipped**. An 8 px empty outline reads as "missing".
-   Raise to ~12–14 px for the plugin, or drop `overflow:hidden` for the label.
+1. **Data — NOT A BUG IN THE PLUGIN. Confirmed 2026-08-01, don't re-chase it.**
+   `BrowserLink` does stamp those lanes to −1 and never writes them again, but
+   **the plugin never runs that pump**: its link is `MergedLink`, whose
+   `onHotFrame` (`engineLink.ts:396`) delegates to the NATIVE frame and only
+   overlays the two preview lanes. The plugin editor broadcasts real frames at
+   30 Hz (`ScoopyPluginEditor.cpp:96,145-152`) and `sl_engine.cpp:1538-1540`
+   fills `SL_HF_playheadStepDeck0..2` from `core.deckPlayheadStep`. So the bar
+   has live data in the plugin; it was **geometry alone** that made it look
+   missing.
+   ⚠️ It IS still dead on the **browser companion** (`?host=browser`, which is
+   what the walk boots) — the WASM tier publishes no per-deck playhead. That is
+   a companion-telemetry gap, not this product's, and it is why the walk asserts
+   the bar's BOX rather than its fill.
+2. **Geometry — FIXED.** `.strip-lcm` was `flex: 0 0 8px; height: 8px;
+   overflow: hidden` with the "LCM" label at `top:-1px` inside it. Measured: the
+   label's box ran 700…708 against a padding box of 701…707, so it lost a pixel
+   top and bottom, and an 8 px outline reads as nothing anyway. The label is
+   centred now, and `.plugin-deck-pane .strip-lcm` is 14 px — scoped to the
+   plugin so the plane's saved `cell.h` arithmetic is untouched.
 
-Also: with no session, `lcm = 0` and the effect **returns before subscribing**
-permanently (`lcm` is a dep) — only bites the empty-deck case.
+Not a bug: with no session `lcm = 0` and the effect returns before subscribing,
+but `lcm` **is** a dep, so it re-subscribes the moment a session arrives.
 
 ---
 
