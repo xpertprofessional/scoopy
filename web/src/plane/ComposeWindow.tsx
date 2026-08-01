@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import type { EngineLink } from '../engineLink.ts'
 import { GridPanel } from '../panels/GridPanel.tsx'
-import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import { useCompanion } from '../store/companionEngine.ts'
 import { silenceNote } from '../store/sampleReport.ts'
 import { juceBackend } from '../../protocol/juceLink.ts'
 import { autoStartEngine } from './bootEngine.ts'
@@ -28,6 +28,7 @@ import { ComposeFiles } from './ComposeFiles.tsx'
 import { ComposeSessions } from './ComposeSessions.tsx'
 import { decodeComposeArg } from './composeArg.ts'
 import { useComposeBinding } from './useComposeBinding.ts'
+import { useComposeLifecycle } from './useComposeLifecycle.ts'
 
 export function ComposeWindow({ link }: { link: EngineLink | null }) {
   const arg = useMemo(
@@ -75,33 +76,10 @@ export function ComposeWindow({ link }: { link: EngineLink | null }) {
     // window lives, so this effect runs exactly once by construction.
   }, [arg])
 
-  // ⌘S SAVES THE SESSION (D-SL-SAVE-01) — one meaning on every surface, so the
-  // chord transfers between this window and the plane. It is a FLUSH: edits
-  // already autosave on a 1.5 s debounce, so this lands the pending write now
-  // rather than rescuing something that was never going to be saved.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 's' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
-      // ⇧⌘S is the MAP, which a compose window does not have — deliberately not
-      // swallowed here, so it stays available to whatever does.
-      e.preventDefault()
-      void flushAutosave().then(() => setNote('saved'))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // The last edit must land: closing the window is precisely when the 1.5 s
-  // autosave debounce would eat it (the CompanionPanel:103 rule, applied here).
-  useEffect(() => {
-    const flush = () => void flushAutosave()
-    window.addEventListener('pagehide', flush)
-    document.addEventListener('visibilitychange', flush)
-    return () => {
-      window.removeEventListener('pagehide', flush)
-      document.removeEventListener('visibilitychange', flush)
-    }
-  }, [])
+  // ⌘S (D-SL-SAVE-01) and the pagehide/visibility flush, shared with every
+  // other session-editing face so the three cannot drift — see the hook's
+  // header for why a copy of this is the kind of bug you find by losing work.
+  useComposeLifecycle(setNote)
 
   const { session } = useComposeBinding(link, deck)
 

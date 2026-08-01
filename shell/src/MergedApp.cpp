@@ -298,68 +298,33 @@ void MergedApplication::initialise(const juce::String&) {
     jassert(sl_abi_version() == SL_ABI_VERSION);
     backend = std::make_unique<Backend>(engine);
 
-    // THE LAUNCH CHOOSER (P7-L2 · D-SL-LAUNCH-01, D-SL-CHOOSER-01).
+    // SCOOPY STUDIO IS THE ONLY DOOR (D-SL-STUDIO-01).
     //
-    // This was an unconditional `openPanel("plane")`, which made the plane the
-    // only way into the app — and therefore made composing a session require
-    // opening a map first, for no reason the document model asks for. The user
-    // asked for the other door: "at app launch we are prompted for PLANE or
-    // COMPOSE and via this path we can launch a compose window with all
-    // possibilities (load and save) without having to open the map / plane
-    // first."
+    // ⚠️ THE CHOOSER IS GONE, and its removal is the decision rather than a
+    // simplification. It asked "PLANE or COMPOSE" (P7-L2 · D-SL-LAUNCH-01) and
+    // remembered the answer (D-SL-CHOOSER-01), which was right while the app
+    // was two products sharing a binary. It is not right now: the plane is
+    // FROZEN, so the question offered a door to a surface that receives no
+    // further work, and every launch charged one click for it. Both of those
+    // decisions are superseded by name in DECISIONS.md.
     //
-    // ⚠️ THE COMPOSE PATH IS MAPLESS. It opens the compose window with NO arg
-    // and creates no map document at all — which is why B5/1 had to make an
-    // unaddressed compose window a valid state rather than a refusal, and why
-    // its boot effect starts the engine sink even with nothing addressed.
+    // The plane is not deleted and this is not a one-way trip — `?panel=plane`
+    // still reaches it, `launchFaceOverride()` below still opens it, and its
+    // tests still run. What changed is what the app opens when nobody says.
     //
-    // IT REMEMBERS (D-SL-CHOOSER-01): the last choice is pre-selected, so Enter
-    // goes where you usually go. The donor skips asking entirely and restores
-    // the last face from session metadata (`AutoSaveManager.isDJMode`); this
-    // keeps the choice and borrows the habit half. Deliberately NOT a
-    // "don't ask again" — that would reintroduce the invisible restore behind a
-    // checkbox, and the chooser is the thing that was asked for.
-    // A caller that already knows the face skips the question entirely — the
-    // walk does exactly this, because a dialog nobody clicks would hang it.
-    if (const auto forced = launchFaceOverride(); forced.isNotEmpty()) {
-        openPanel(forced, "", /*isMain*/ true);
-        startTimerHz(30);
-        return;
-    }
-
-    const auto remembered = backend->settings.get("launch.face").toString();
-    const bool composeDefault = remembered == "compose";
-    // ASYNC, and not merely because `JUCE_MODAL_LOOPS_PERMITTED` is off in this
-    // build: a modal loop inside `initialise()` would pump the message thread
-    // before the application has finished coming up, which is the failure
-    // JUCE's own docs warn that mode "can cause problems". The window opens
-    // when the answer arrives.
+    // ⚠️ STUDIO IS MAPLESS, and inherits the whole of B5/1's lesson from the
+    // compose path it replaces: it opens with NO arg and creates no map
+    // document, so an unaddressed session surface had to become a valid state
+    // rather than a refusal, and its boot effect must start the engine sink
+    // even with nothing to open. Restoring the last session is S7's work; until
+    // then an empty studio SAYS so and puts `session ▾` beside the words.
     //
-    // The REMEMBERED face is the first button — JUCE gives button 0 the return
-    // key, so Enter honours the habit without removing the choice.
-    juce::AlertWindow::showAsync(
-        juce::MessageBoxOptions()
-            .withIconType(juce::MessageBoxIconType::NoIcon)
-            .withTitle("scoopy")
-            .withMessage("Where would you like to start?\n\n"
-                         "PLANE — strips, routing, a set.\n"
-                         "COMPOSE — one session, no map.")
-            .withButton(composeDefault ? "COMPOSE" : "PLANE")
-            .withButton(composeDefault ? "PLANE" : "COMPOSE"),
-        [this, composeDefault](int chosen) {
-            const bool compose = (chosen == 0) == composeDefault;
-            backend->settings.set("launch.face", compose ? "compose" : "plane");
-            if (compose) {
-                // No arg: an empty studio. `session ▾` is how it gets filled
-                // (B5/1), which is why an unaddressed compose window had to
-                // become a valid state rather than a refusal.
-                openPanel("compose", "", /*isMain*/ true);
-            } else {
-                // The PLANE — the merged app's top-level surface (merge P2 step
-                // 4): strips, their elements and the patchbay.
-                openPanel("plane", "", /*isMain*/ true);
-            }
-        });
+    // `launchFaceOverride()` survives the chooser it was written for. It is no
+    // longer about dodging a dialog that would hang a walk — there is no dialog
+    // — but about letting a caller name a face on purpose, which is how
+    // merged_walk covers the plane and Studio separately.
+    const auto forced = launchFaceOverride();
+    openPanel(forced.isNotEmpty() ? forced : "studio", "", /*isMain*/ true);
 
     startTimerHz(30); // the HotFrame broadcast
 }

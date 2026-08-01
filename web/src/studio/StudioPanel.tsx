@@ -1,0 +1,99 @@
+/**
+ * SCOOPY STUDIO — the app's main window (S1 · D-SL-STUDIO-01).
+ *
+ * The standalone product is the original's COMPOSE VIEW, expanded, with no DJ
+ * mode and therefore ONE engine. This face is what `WizardMerged` opens; there
+ * is no launch chooser any more, and the plane is frozen behind `?panel=plane`.
+ *
+ * WHAT MAKES IT DIFFERENT FROM `ComposeWindow`, which it otherwise resembles:
+ *
+ *   IT IS NOT ADDRESSED. The compose window exists because a strip on the plane
+ *   spawned it, so it decodes `__slPanelArg` and opens THAT deck's session.
+ *   Studio is where the app STARTS — nobody addressed it, and deck 0 is not a
+ *   choice it makes but the only deck there is. So the arg is not read at all
+ *   rather than read and defaulted: an address this face could receive but not
+ *   honour would be a lie in the type.
+ *
+ *   IT MOUNTS `STUDIO_SOURCE`. The compose lanes the plain compose grid reads
+ *   are never written by the merged engine, so `ComposeWindow` shows a frozen
+ *   playhead in this host today. `STUDIO_SOURCE` keeps the compose document and
+ *   moves only the three telemetry indices onto deck 0's block, which IS written
+ *   every audio block. See its header in `panels/GridPanel.tsx` — the reasoning
+ *   is the single-engine ruling expressed as three array indices, and it is the
+ *   one thing about this face that would be silently wrong if copied carelessly.
+ *
+ * EMPTY IS A DOOR, not a dead end — the rule `PluginDeckPanel` had to learn in a
+ * DAW. An empty studio SAYS it is empty and puts `session ▾` (new · open ·
+ * import) beside the words, rather than manufacturing an `Untitled` folder in
+ * the user's library on every launch. Restoring the last session is S7's job,
+ * with recents; until then the menu is the door and it is one click.
+ */
+import { useEffect, useState } from 'react'
+
+import type { EngineLink } from '../engineLink.ts'
+import { GridPanel, STUDIO_SOURCE } from '../panels/GridPanel.tsx'
+import { useCompanion } from '../store/companionEngine.ts'
+import { silenceNote } from '../store/sampleReport.ts'
+import { juceBackend } from '../../protocol/juceLink.ts'
+import { autoStartEngine } from '../plane/bootEngine.ts'
+import { ComposeFiles } from '../plane/ComposeFiles.tsx'
+import { ComposeSessions } from '../plane/ComposeSessions.tsx'
+import { useComposeBinding } from '../plane/useComposeBinding.ts'
+import { useComposeLifecycle } from '../plane/useComposeLifecycle.ts'
+import '../plane/plane.css'
+
+/** One engine, one deck. Not a default — the only deck there is (see header). */
+const DECK = 0
+
+export function StudioPanel({ link }: { link: EngineLink | null }) {
+  /** The face's ONE error surface, like the compose window's and the plane's. */
+  const [note, setNote] = useState<string | null>(null)
+  const error = useCompanion((c) => c.error)
+  const notice = useCompanion((c) => c.notice)
+  const engine = useCompanion((c) => c.engine)
+  const decodeFailures = useCompanion((c) => c.decks[DECK]?.decodeFailures)
+  const missingSamples = useCompanion((c) => c.decks[DECK]?.missingSamples)
+
+  // THE SINK STARTS WITH NO SESSION, and that is the whole lesson of B5: this
+  // used to be conditional on having something to open, which meant "new
+  // session" created and opened a document into an engine that was never
+  // started — nothing publishes, the transport silently no-ops. Sink first;
+  // the session menu fills it afterwards.
+  useEffect(() => {
+    void autoStartEngine(juceBackend() !== null, () => useCompanion.getState())
+  }, [])
+
+  useComposeLifecycle(setNote)
+
+  const { session } = useComposeBinding(link, DECK)
+
+  const quiet = silenceNote(session?.name ?? '', {
+    engine,
+    decodeFailures,
+    missingSamples,
+  })
+
+  return (
+    <main className="panel compose-window" aria-label={`studio ${session?.name ?? 'empty'}`}>
+      <header className="compose-window-bar mono">
+        <ComposeSessions deck={DECK} onNote={setNote} />
+        <span>{`studio · ${session?.name ?? 'no session'}`}</span>
+        {!session && (
+          <span className="dim">{' empty studio — use “session ▾” to make or open one'}</span>
+        )}
+        {note && <span className="dim">{` · ${note}`}</span>}
+        {error && <span className="warn">{` ${error}`}</span>}
+        {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
+        {/* Beside the warnings rather than instead of them: a kit that cannot
+            play and a sample that is mid-load are two different facts. */}
+        {!error && notice && <span className="dim">{` · ${notice}`}</span>}
+      </header>
+      <div className="compose-window-body">
+        <div className="compose-grid-pane">
+          <GridPanel link={link} source={STUDIO_SOURCE} />
+        </div>
+        <ComposeFiles link={link} />
+      </div>
+    </main>
+  )
+}

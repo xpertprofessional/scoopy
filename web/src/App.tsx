@@ -29,6 +29,7 @@ import { FileBrowserPanel } from "./panels/FileBrowserPanel.tsx";
 import { CapturePanel } from "./panels/CapturePanel.tsx";
 import { CompanionPanel } from "./panels/CompanionPanel.tsx";
 import { PlanePanel } from "./plane/PlanePanel.tsx";
+import { StudioPanel } from "./studio/StudioPanel.tsx";
 import { ComposeWindow } from "./plane/ComposeWindow.tsx";
 import { PluginDeckPanel } from "./plane/PluginDeckPanel.tsx";
 import { PluginTapePanel } from "./plane/PluginTapePanel.tsx";
@@ -184,10 +185,14 @@ function PanelRoute({
   if (panel === "filebrowser") return <FileBrowserPanel link={link} />;
   if (panel === "capture") return <CapturePanel link={link} />;
   if (panel === "companion") return <CompanionPanel link={link} />;
-  // The merged app's top-level surface (merge P2 step 4): a plane of strips on
-  // the merged engine's tape/channel/routing surface. Answered only by
-  // WizardMerged — ScoopyLoops.app links the pinned core, which has none of
-  // that, so the panel's commands refuse there like any unimplemented method.
+  // SCOOPY STUDIO (D-SL-STUDIO-01) — the app's main window, and the only door.
+  // The original's compose view with no DJ mode, so one engine and one deck.
+  if (panel === "studio") return <StudioPanel link={link} />;
+  // The plane — FROZEN (D-SL-STUDIO-01), not deleted. It was the merged app's
+  // top-level surface (merge P2 step 4): a plane of strips on the merged
+  // engine's tape/channel/routing surface. It still compiles, its tests still
+  // run and this route still reaches it, so un-freezing is a decision rather
+  // than a rebuild — but nothing opens it by default any more.
   if (panel === "plane") return <PlanePanel link={link} />;
   return <DebugPanel link={link} panel={panel} />;
 }
