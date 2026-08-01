@@ -20,14 +20,30 @@ law for the whole Scoopy PLUGIN LINE. See "The plugin line" below.
 |---|---|---|
 | §1a spine made product-neutral | **DONE** | `6806f6e` |
 | §1b the plugin target + gate | **DONE** | `a49a4a6` |
-| §1c the `plugintape` web face + walk | **open** — the remaining half of the door |
+| §1c the `plugintape` web face + walk | **DONE** | `f4650a2` |
 | §2–§8 | **open** |
 
-`Scoopy Tape` builds AU + VST3 + Standalone, `auval -v aumf Tape Scpy` passes
-clean, ctest is 47/47. What does NOT exist yet is the face: the editor points at
-`window.__slPanel = "plugintape"` and nothing answers that route, so the window
-opens on App.tsx's fallback. **§1 is not closed until the walk asserts a real
-layout.**
+**§1 is closed.** `Scoopy Tape` builds AU + VST3 + Standalone, `auval -v aumf
+Tape Scpy` passes clean, and the face does real work: record the DAW input into
+a slot, hear it loop in the same block, scrub it, drag the loop brace, ride
+level and a signed rate, flip between the 8 tapes. Verified at HEAD: ctest 47/47
+· vitest 1828/1828 · both plugin walks green on webkit and chromium · all ten
+drift gates green.
+
+### What §1 owes, and what it does NOT claim
+
+- ⚠️ **A real-host check is owed.** The walk boots `?host=browser`, where
+  `slTape` reaches `BrowserLink` and answers nothing — so the walk proves the
+  BOX, never the sound. Nobody has yet put this plugin on a track in Logic or
+  Live, fed it audio and pressed REC. **That is the next thing to do, before
+  any §2 work**, and it is exactly the class of gap CLAUDE.md's four rules
+  exist for.
+- **Nothing persists.** A DAW project saved now gives back an empty plugin
+  (§3).
+- **Unbuilt verbs are ABSENT from the face, not disabled** — rule 7. The walk
+  asserts zero disabled controls on screen so that stays true. The face
+  therefore looks smaller than the sketch below; the sketch is the target, §1c
+  is what reaches an engine call today.
 
 ---
 
