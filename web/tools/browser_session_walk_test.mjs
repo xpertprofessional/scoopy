@@ -233,15 +233,21 @@ check('the tile carries the four classic deck rows (B1 + B2\'s scene row)',
   check('the toolbar row carries the donor block in the app vocabulary (OPEN ⟳ ▸ ↻ ◼ » DBL SAVE ⏏)',
     ['OPEN', '⟳', '▸', '↻', '◼', '»', 'DBL', 'SAVE', '⏏'].every((v) => rows.includes(v)), rows)
   const sync = (await page.textContent('.deckrow-sync')) ?? ''
-  check('the sync row carries SYNC/FREE · TR · TP · WIN · BR · REV',
-    ['TR', 'TP', 'WIN', 'BR', 'REV'].every((v) => sync.includes(v)) &&
+  // PERF joined this row on 2026-08-01: it is a POINTER MODE (drag a track to
+  // set its locator window live), not a view, and it belongs with BR and REV —
+  // the other live gestures that change what PLAYS without editing the
+  // document. It used to sit beside GRID on the view row, and that adjacency is
+  // part of what made it look like somewhere a view change could be hung.
+  check('the sync row carries SYNC/FREE · TR · TP · WIN · BR · REV · PERF',
+    ['TR', 'TP', 'WIN', 'BR', 'REV', 'PERF'].every((v) => sync.includes(v)) &&
       (sync.includes('SYNC') || sync.includes('FREE')), sync)
   const scene = (await page.textContent('.deckrow-scene')) ?? ''
   check('the scene row carries the switch-mode cycler, CU, SCN and MUTE (B2)',
     ['SCHED', 'CU', 'SCN', 'MUTE'].every((v) => scene.includes(v)), scene)
   const view = (await page.textContent('.deckrow-view')) ?? ''
-  check('the view row carries GRID and PERF',
-    view.includes('GRID') && view.includes('PERF'), view)
+  // GRID ALONE — the view axis. See the sync row above for where PERF went.
+  check('the view row carries GRID, and NOT PERF',
+    view.includes('GRID') && !view.includes('PERF'), view)
 }
 check('the header no longer carries the retired verb span',
   (await page.$('.strip-deckverbs')) === null)
