@@ -162,6 +162,93 @@ if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
 endif()
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ScoopyTape — the looper strip, as an INSERT EFFECT.
+# docs/merge/TAPEPLUGIN-KICKOFF.md §1. Decision A1: a second product, not a
+# second face of ScoopyDeck, because the deck is IS_SYNTH with a five-bus map
+# and changing a shipped plugin's buses changes its ID — which silently breaks
+# every saved project that used it.
+#
+# It shares the spine (EmbeddedWeb · HostSync · PluginBackend) and differs where
+# an effect differs from an instrument. Note what is ABSENT from its sources:
+# `LaneMap.cpp`. That file exists to permute 26 engine lanes onto five buses;
+# this target renders `bus_count = 2` — main L/R, the narrowest sl_render_io
+# call (sl_engine.h §2) — so there is nothing to map.
+# ─────────────────────────────────────────────────────────────────────────────
+juce_add_plugin(ScoopyTape
+    PRODUCT_NAME "Scoopy Tape"
+    COMPANY_NAME "ScoopyLoops"
+    BUNDLE_ID com.scoopyloops.scoopytape
+    PLUGIN_MANUFACTURER_CODE Scpy
+    PLUGIN_CODE ScTp
+    FORMATS AU VST3 Standalone
+    # A PROCESSOR, not a source: it has nothing to loop until audio arrives.
+    # This is the line that makes the DAW list it under effects and give it a
+    # real main input rather than an instrument's optional sidechain.
+    IS_SYNTH FALSE
+    # Declared now though nothing reads it yet — adding a port later changes the
+    # plugin's ID in some hosts, exactly as ScoopyDeck's inert MIDI-out was
+    # declared in v0. Mapping notes/CC to record/overdub/snapshot select is a
+    # named later quality, so the port has to exist from the first ship.
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    # ⚠️ aumf (MusicEffect), NOT aufx (Effect) — an effect that ACCEPTS MIDI.
+    # auval says so itself with kAudioUnitType_Effect declared alongside a MIDI
+    # in port: "WARNING: AU implements MusicDeviceMIDIEvent but is of type
+    # 'aufx' (it should be 'aumf')". The AU type is part of the plugin's
+    # IDENTITY, so correcting it after a ship would break saved projects — the
+    # very thing declaring the MIDI port early exists to prevent. Half-
+    # committing to MIDI would have cost exactly what not committing would.
+    # The gate line is therefore `auval -v aumf ScTp Scpy`.
+    AU_MAIN_TYPE kAudioUnitType_MusicEffect
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Scoopy Tape records audio routed to its input."
+    COPY_PLUGIN_AFTER_BUILD TRUE)
+
+target_sources(ScoopyTape PRIVATE
+    src/ScoopyTapeProcessor.cpp
+    src/ScoopyTapeEditor.cpp
+    src/PluginBackend.cpp
+    src/EmbeddedWeb.cpp
+    src/HostSync.cpp)
+
+target_include_directories(ScoopyTape PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/shell/src
+    ${CMAKE_SOURCE_DIR}/host/src
+    ${CMAKE_SOURCE_DIR}/slengine/include)
+
+target_compile_definitions(ScoopyTape PRIVATE
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0)
+# No MERGED_WEBDIST_DIR, same ruling as the deck: this target must not be ABLE
+# to read the source tree. The bundle arrives through ScoopyPluginWebDist.
+
+target_link_libraries(ScoopyTape PRIVATE
+    ScoopyPluginWebDist
+    wz_sl_engine
+    wz_sl_command
+    wz_sl_world
+    wz_sl_settings   # FileSettingsStore, under ScoopyTape/ — see PluginBackend
+    wz_record        # takes + the drain thread, shared library with the app
+    wz_webresources
+    juce::juce_audio_utils
+    juce::juce_gui_extra
+    PUBLIC
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    target_include_directories(ScoopyTape PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(ScoopyTape PRIVATE
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_VST3=1)
+    target_link_libraries(ScoopyTape PRIVATE juce::juce_audio_processors)
+endif()
+
+# ─────────────────────────────────────────────────────────────────────────────
 # THE GATE: the processor, headless, with no DAW and no window server.
 #
 # It compiles the same sources the plugin does (never a copy) and drives them
@@ -216,13 +303,51 @@ target_link_libraries(embedded_web_test PRIVATE
     ScoopyPluginWebDist wz_webresources juce::juce_recommended_config_flags)
 add_test(NAME embedded_web_test COMMAND embedded_web_test)
 
+# THE INSERT DOES NOT EAT THE TRACK. ScoopyTape's counterpart to
+# plugin_processor_test: an effect's first duty is passing its input through,
+# and every way of failing that is silent in a session.
+add_executable(tape_plugin_processor_test
+    tools/tape_plugin_processor_test.cpp
+    src/ScoopyTapeProcessor.cpp
+    src/ScoopyTapeEditor.cpp
+    src/PluginBackend.cpp
+    src/EmbeddedWeb.cpp
+    src/HostSync.cpp)
+
+target_include_directories(tape_plugin_processor_test PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/shell/src
+    ${CMAKE_SOURCE_DIR}/host/src
+    ${CMAKE_SOURCE_DIR}/slengine/include)
+
+target_compile_definitions(tape_plugin_processor_test PRIVATE
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(tape_plugin_processor_test PRIVATE
+    ScoopyPluginWebDist
+    wz_sl_engine wz_sl_command wz_sl_world wz_sl_settings wz_record wz_webresources
+    juce::juce_audio_utils
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags)
+
+if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
+    target_include_directories(tape_plugin_processor_test PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops)
+    target_compile_definitions(tape_plugin_processor_test PRIVATE
+        JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1)
+    target_link_libraries(tape_plugin_processor_test PRIVATE juce::juce_audio_processors)
+endif()
+
+add_test(NAME tape_plugin_processor_test COMMAND tape_plugin_processor_test)
+
 # Same JUCE 8 gap as the shell's WebView targets: juce_gui_extra declares no
 # linuxPackages, so nothing supplies the GTK/WebKit headers it includes.
 if(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
     pkg_check_modules(WEBKIT2GTK REQUIRED webkit2gtk-4.1)
-    foreach(_t ScoopyDeck plugin_processor_test)
+    foreach(_t ScoopyDeck plugin_processor_test ScoopyTape tape_plugin_processor_test)
         target_include_directories(${_t} PRIVATE ${GTK3_INCLUDE_DIRS} ${WEBKIT2GTK_INCLUDE_DIRS})
         target_link_libraries(${_t} PRIVATE ${GTK3_LIBRARIES} ${WEBKIT2GTK_LIBRARIES})
     endforeach()
