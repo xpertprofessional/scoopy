@@ -20,12 +20,31 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §1 PERF write path | **DONE** | `a63795a` |
 | §2 master-BPM box + TEMPO switch | **DONE** | `853bd2f` |
 | §3 sends (capability + masterSends) | **DONE** | `35d6790` |
-| §6 LCM meter | **DONE** (geometry; the data was never broken here — see §6) | |
-| §8 keyboard | **PART DONE** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) blocked on NAV-SHORTCUTS §7 reconciliation (R-2, R-4) |
-| §4 multi-out | **PART DONE** — cut to 5 (Main + Send 1–4) and the sends now actually emit; the **Live instantiation diagnosis is still owed** and needs the DAW |
-| §5 PERF deck view + window persistence | **DONE** | |
-| §7 tempo morph plumbing | open |
-| §9 multi-deck | open — rescoped by D4 from registry to N decks in one instance |
+| §6 LCM meter | **DONE** — geometry; the data was never broken here | `9e34d9d` |
+| §8 keyboard | **PART** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) held for NAV-SHORTCUTS §7 (R-2, R-4) | `7e4f61f` |
+| §4 multi-out | **PART** — five buses, and the sends actually emit; the **Live diagnosis is still owed** | `1804250` |
+| §5 PERF deck view + window persistence | **DONE** | `31007c0` |
+| §7 tempo morph plumbing | **open** |
+| §9 multi-deck | **open** — rescoped by D4 from registry to N decks in one instance |
+
+### What is left, and where to start
+
+- **§7 tempo morph.** The ramps exist in the core and are unreachable because
+  the snapshot tables do not carry them. The work is: add `rateMorphFrames`,
+  `patternSwitchGlideFrames`, `patternSwitchCut` to the deck-param table and
+  `tpMorphEligible` to the track table, emit them from
+  `worldFromSession`/`publish`, and wire `CU`. ⚠️ Those tables are **generated**
+  (`slengine/generated/*.inc`), so the edit is to the generator input and the
+  `params:check` · `worldmap:check` · `trackparams:check` gates all speak to it —
+  budget for that, it is most of the risk. Deck TEMPO ramping is the one piece
+  that is genuinely new work, not plumbing, and should go last.
+- **§9 multi-deck.** D4 rescoped this from a cross-instance registry to N decks
+  in ONE instance, on top of `sl_deck_request_quantized_launch`. Bitwig no
+  longer matters. Note it now interacts with §5: `PLUGIN_DECK`/`djSlotIndex` are
+  both hard-coded to 0, and D1's five-bus layout has no per-deck stems.
+- **The two DAW checks nobody can run headless:** Live's multi-out
+  instantiation (§4), and whether the `Space` claim D3 signed actually arrives
+  (§8). Both need the host.
 
 **Everything below is the original brief.** Where an item is DONE its section
 has been updated in place with what was actually found; the rest is untouched.
