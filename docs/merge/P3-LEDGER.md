@@ -1,5 +1,42 @@
 # P3 merge ledger — bundles, and the rows they consume
 
+> # ⚠️ RE-SCOPED 2026-08-02 — THIS IS NO LONGER THE QUEUE
+>
+> `D-SL-STUDIO-01` pivots the product. **The queue is now the Scoopy Studio plan
+> (steps S0–S11)**; this file is the row detail those steps draw on. Read the
+> decision first, then come here for a row's specifics.
+>
+> **Two things were already true and neither was written down here:**
+>
+> 1. **~50 of the ~81 open rows are FROZEN, not queued.** The plane surface, the
+>    DJ deck, the map performance overlay (all of P8) and the plane's routing
+>    matrix receive no further work. They are not deleted and their rows are not
+>    struck — the code compiles, the tests stay green, and the rows stay readable
+>    for whoever un-freezes them. They are simply not dispatchable.
+> 2. **The last ~20 commits have no rows in this file at all.** The entire plugin
+>    line — ScoopyDeck v2 §1–§10, ScoopyTape §1a–§1c, host automation, host-grid
+>    launch — was tracked in `DECKPLUGIN-V2-KICKOFF.md` and `TAPEPLUGIN-KICKOFF.md`
+>    instead. This ledger has been describing a smaller project than the one being
+>    built since the plugin line began. Those two files stay the authority for
+>    their own open sections.
+>
+> **Where each bundle went:**
+>
+> | bundle | fate |
+> |---|---|
+> | B1 deck transport · B4 routing matrix | **frozen** (plane / DJ surface) |
+> | B2 scenes + launch quantum | done (machine); the scene half is Studio's, the quantum half freezes |
+> | B3 mixer + FX sends | **S4** — still gated on `P6-AUDIT` |
+> | B5 compose session UI | **S7** — grows into the session library |
+> | B6 keyboard dispatcher | **S11** — minus the `dj` context |
+> | B7 audio devices | **S5** — the output-control half |
+> | B8 MIDI in/out/clock/learn | **S9** — and it is four layers deep, not one |
+>
+> Rows outside a bundle keep their status. `P11-6` (CAPTURE) is **S8**;
+> `P3.5-E4`, `P3.5-E10a` and the `*-AUDIT` gates are unchanged and still owed.
+>
+> ---
+
 > **⚠️ READ THE BUNDLES SECTION FIRST.** As of 2026-07-31 the unit of work is a
 > **donor-binding-sized bundle**, not a row (`PARALLEL-PROTOCOL.md` §0,
 > `ARCHITECTURE.md` §11). The phase blocks below are still the row detail — a

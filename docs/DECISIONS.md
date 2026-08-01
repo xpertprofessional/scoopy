@@ -1293,3 +1293,72 @@ bit-identical, which the DSP characterization gates depend on. State chunk goes 
 chunk rather than loading it with the offsets silently dropped and then overwriting the user's
 project on the next save. No web-tier change and no new protocol command: the surface is the
 host's, not the page's.
+
+## D-SL-STUDIO-01 · 2026-08-02 · Scoopy Studio is the product; the plane is frozen
+
+**Decision:** The standalone app becomes **Scoopy Studio** — the original ScoopyLoops
+**compose view, expanded**, with no DJ mode and therefore **one engine, not three decks**.
+Studio is the only door: the PLANE/COMPOSE launch chooser is removed. Specifically it
+carries the full expanded compose view (all shortcuts, all controls), plugin instruments,
+full transport plus a master tempo applying TS/TP over session BPM, the four FX plugin
+sends with output control on each, a main output with a stereo control — or two level
+controls when output-1/2 mode is on — capture of the stereo sum, and an optional
+**Scoopy Tape** bottom row that is both a looper and an input recorder able to push what
+it captured into the session. Studio additionally **organizes the session folders** the
+whole line plays from, carries **full MIDI output** as the original does, and **owns
+appearance for every Scoopy app**. **Performance moves to the ScoopyDeck VST.**
+
+**The plane surface is FROZEN, not deleted** — `PlanePanel` · `Plane` · `Strip` ·
+`Matrix` · `Cables` · `Inspector` · `Library` and the map document keep compiling, keep
+their tests green, and stay reachable at `?panel=plane`. They receive no further work.
+This is reversible by design; `web/src/plane/` **cannot** be deleted in any case, because
+it also holds the compose window, both plugin faces and the `plane.css` all four import.
+
+**Three laws follow, and they are the point of this entry:**
+
+· **L1 — the component law.** A **face** is a layout; a **block** is a component.
+  **Faces compose blocks; a face never rebuilds a block.** Product difference lives in
+  exactly three places: which blocks a face mounts, what `getCapabilities` answers, and
+  `viewDensity`. The browser companion is a first-class face under this law, not an
+  afterthought. Enforced by a new gate, `faces:check`.
+
+· **L2 — one library, one preset home.** Sessions, samples and takes belong to the
+  person, not to which face of scoopy opened them (`PluginBackend.cpp:17-32` already
+  says so and already shares the library). Studio is the only app that *organizes* them;
+  ScoopyDeck, ScoopyTape and the companion consume the same library. Preset state gets
+  one ruling instead of the three homes that exist today.
+
+· **L3 — appearance is published, not compiled.** One resolved token blob on disk,
+  written by Studio, read at startup and watched by every Scoopy product.
+
+**Rationale:** The merge has been building two products on one surface, and the ledger
+recorded it: ~50 of ~81 open rows were plane / DJ / map-performance / routing work, while
+whole compose-view features the original ships — instruments, MIDI out, output routing —
+were unbuilt. Meanwhile the plugin line shipped ~20 commits with **no ledger rows at
+all**. Choosing Studio collapses the surface count and lets the rows that remain be the
+ones that make the standalone app equal to the original.
+
+The single-engine ruling is what makes it cheap rather than a rewrite. `GridSource`
+already separates data source from view density, and the merged engine writes
+`djTrackStepD*T*` every block while **never** writing the compose lanes `trackStep0..15`
+— so a compose-density mount reads a frozen playhead today. With one engine, deck 0 *is*
+the session, so Studio mounts `djSource(0)` at compose density: the same mount ScoopyDeck
+already proves, at a different density. The two products stop being two implementations.
+
+**Consequences:**
+· `D-SL-CHOOSER-01` and `D-SL-LAUNCH-01` are **superseded** — there is no chooser and no
+  PLANE door to remember. `launchFaceOverride()` survives, because `MergedWalk` needs it
+  and it is how the frozen plane stays reachable.
+· `D-SL-MAPPERF-01` (the map holds the performance) is **dormant, not revoked**: it
+  governs a surface that no longer receives work.
+· `PARALLEL-PROTOCOL.md` is superseded and the three lane worktrees are removed; its §0
+  (work by donor binding) survives and the Studio steps inherit it. `P3-LEDGER.md` is
+  re-scoped from queue to row detail.
+· The CMake target keeps the name `WizardMerged` for now — the product name changes, the
+  build identifier does not, because 124 commits of docs and gate output name it. A
+  target rename is a deliberate all-artifacts increment, per `D-WZ-NAME-01`'s precedent.
+· A new gate, `faces:check`, joins the ten drift gates.
+· Three things this entry does NOT settle, and which must be signed separately: the
+  preset-home ruling under L2; whether the JUCE token header may be edited in
+  `apps/scoopyloops/PluginCommon/` or must move to `xpert/shared/` first (L3); and
+  whether the Chrome-extension bridge follows the DJ deck into freeze.

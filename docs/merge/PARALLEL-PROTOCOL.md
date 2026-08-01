@@ -8,11 +8,22 @@ disagree, the ledger wins.
 Read this together with `docs/ARCHITECTURE.md` §11 (the loop protocol) and
 `CLAUDE.md`.
 
-> **STATUS 2026-07-30 (later session): lanes are PARKED.** The user ruled that
-> feature work now runs as **single-session bundles** (see §0 below and the
-> ledger's BUNDLES section); the conductor/lane machinery below stays as the
-> revival recipe (§8) for when two bundles are truly disjoint. The worktrees
-> remain seeded on disk.
+> **STATUS 2026-08-02: SUPERSEDED. The lanes are gone, not parked.**
+> `D-SL-STUDIO-01` pivots the product to Scoopy Studio, and S0 of that plan
+> **removed the three lane worktrees** — `scoopy-lane-b` · `-c` · `-d` are no
+> longer on disk. The branches survive (`lane/b` holds 3 commits, `lane/c` holds
+> 1; `lane/d` held only uncommitted work, archived at
+> `docs/archive/lane-d-plane-shortcuts/`), so nothing is lost, but §1–§8 below
+> describe machinery that no longer exists. **§8's revival recipe now starts by
+> re-creating the worktrees**, which it does not say.
+>
+> **What is still load-bearing here is §0** — work by donor binding, not by
+> phase. That ruling outlived the lanes and the Studio plan inherits it: its
+> steps S1–S11 are binding-sized bundles under a different name.
+>
+> Everything else is history. Do not orient on it.
+>
+> *(Prior status, 2026-07-30: lanes PARKED, worktrees still seeded on disk.)*
 
 ---
 
