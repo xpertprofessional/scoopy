@@ -51,6 +51,14 @@ target_link_libraries(sl_host_launch_test PRIVATE wz_sl_engine)
 target_include_directories(sl_host_launch_test PRIVATE generated)
 add_test(NAME sl_host_launch_test COMMAND sl_host_launch_test)
 
+# Host modulation offsets (D-SL-DECKPLUGIN-04) — the door a DAW automation lane
+# writes through. Its OWN binary, because several of its claims are comparisons
+# between two independently-rendered engines (idle is bit-identical; a cleared
+# deck renders like a fresh one) and that needs engines this test alone controls.
+add_executable(sl_track_mod_test tools/sl_track_mod_test.cpp)
+target_link_libraries(sl_track_mod_test PRIVATE wz_sl_engine)
+add_test(NAME sl_track_mod_test COMMAND sl_track_mod_test)
+
 # §6 session snapshots: name resolution across the ABI, the refused deck axis,
 # and the thing that matters most — a committed world with a registered sample
 # renders non-silence.

@@ -173,6 +173,62 @@ const char* sl_param_name(uint32_t id);   /* NULL if out of range */
 void   sl_param_set(sl_engine* e, uint32_t deck, int32_t id, double value);
 double sl_param_get(const sl_engine* e, uint32_t deck, int32_t id);
 
+/* ── Host modulation offsets (D-SL-DECKPLUGIN-04) ───────────────────────────
+ *
+ * What a DAW automation lane writes. Every value here is an OFFSET added on
+ * top of what the session already says — 0 is neutral — which is the whole
+ * design: the web UI keeps owning every base value and the host owns only its
+ * contribution, so the two never fight over one number and an idle lane is
+ * bit-identical to no lane at all. It is also the shape the donor's M1–M4
+ * modulation bank used (additive semitones on pitch, additive tone units on
+ * the filter), so replacing that bank with host automation is a change of
+ * SOURCE, not of meaning.
+ *
+ * ⚠️ These are the one param family an audio thread MAY write. Everything else
+ * on this surface republishes a deep-copied world (see sl_param_set above);
+ * these are plain relaxed atomics that the render callback reads as it
+ * composes each track's base ramp, so the plugin applies automation per block
+ * — which is what makes a fast LFO sound like an LFO instead of like the 40 Hz
+ * control pump. Track offsets join the existing 4 ms declick ramp, so they
+ * reach RINGING voices and need no smoothing of their own.
+ *
+ * Track targets, by name:
+ *   pitch          semitones, additive on the track's globalPitchOffset
+ *   volume         linear, composed value clamped to 0…2
+ *   pan            additive, composed value clamped to ±1
+ *   tone           filter cutoff in tone units, composed clamped to ±100
+ *   send1…send4    additive send level, composed clamped at ≥ 0
+ * Deck targets: transpose (semitones) and texture (composed clamped to 0…1).
+ *
+ * A track index beyond the session's track count is accepted and simply does
+ * nothing until a session that deep arrives — a plugin's parameter list is
+ * fixed at load time and cannot wait for a document. */
+
+/** Resolve a track/deck mod target by name; SL_PARAM_UNKNOWN if unknown. */
+int32_t sl_track_mod_id_for_name(const char* name);
+int32_t sl_deck_mod_id_for_name(const char* name);
+
+/** Introspection, so a host can enumerate rather than hardcode. */
+uint32_t    sl_track_mod_count(void);
+const char* sl_track_mod_name(uint32_t id);   /* NULL if out of range */
+uint32_t    sl_deck_mod_count(void);
+const char* sl_deck_mod_name(uint32_t id);    /* NULL if out of range */
+
+/** Write/read a host mod offset. An unknown id, an out-of-range deck or track,
+    a null engine or a non-finite value is IGNORED — never misapplied. RT-safe:
+    callable from the audio thread. */
+void   sl_track_mod_set(sl_engine* e, uint32_t deck, uint32_t track, int32_t id, double value);
+double sl_track_mod_get(const sl_engine* e, uint32_t deck, uint32_t track, int32_t id);
+void   sl_deck_mod_set(sl_engine* e, uint32_t deck, int32_t id, double value);
+double sl_deck_mod_get(const sl_engine* e, uint32_t deck, int32_t id);
+
+/** Master level offset: a GAIN MULTIPLIER on sl_master_set_level's value, 1.0
+    neutral. A multiplier rather than an added dB so the plane's fader and the
+    host's automation compose without either having to know the other's units.
+    Rides the same smoothing ramp as the level itself. RT-safe. */
+void   sl_master_set_mod(sl_engine* e, double gain);
+double sl_master_mod(const sl_engine* e);
+
 /* ── Tape decks (§5) ────────────────────────────────────────────────────────
  *
  * A TAPE is a continuous audio buffer with a playhead: record / scrub /

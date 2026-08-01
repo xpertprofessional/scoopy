@@ -162,6 +162,11 @@ struct sl_engine {
     // a rate change takes the target outright rather than fading in.
     std::atomic<double> masterLevel{1.0};
     double masterSmoothed = -1.0;
+    // The host's automation offset on that level (D-SL-DECKPLUGIN-04), a
+    // multiplier so the plane's fader and a DAW lane compose without either
+    // knowing the other's units. 1.0 neutral, and multiplying by exactly 1.0
+    // keeps the bit-exact master path the ramp below promises.
+    std::atomic<double> masterModGain{1.0};
 
     // P6-3 — the strip→host-return send feed. The channel mixer adds strip
     // sends AFTER core.render, which is where the host plugins consume the
@@ -441,7 +446,8 @@ void renderInto(sl_engine* e,
     // (D-WZ-RAMP-01) and SNAPPED at the target, so a master parked at unity
     // multiplies by exactly 1.0 and the bit-exact paths survive it.
     {
-        const double target = e->masterLevel.load(std::memory_order_relaxed);
+        const double target = e->masterLevel.load(std::memory_order_relaxed)
+                            * e->masterModGain.load(std::memory_order_relaxed);
         const double alpha = 1.0 - std::exp(-1.0 / (0.010 * e->sampleRate));
         float* mL = e->lanes[kLaneMap.mainL].data();
         float* mR = e->lanes[kLaneMap.mainR].data();
@@ -846,6 +852,103 @@ double sl_master_level(const sl_engine* e) {
     return e == nullptr ? 0.0 : e->masterLevel.load(std::memory_order_relaxed);
 }
 
+/* ── Host modulation offsets (D-SL-DECKPLUGIN-04) ─────────────────────────── */
+
+namespace {
+
+// Track mod targets. The ORDER is the id space and is append-only, exactly like
+// kDeckParamNames — a released plugin's automation lanes are addressed by it.
+// Each maps onto one of the core's per-track base-ramp lanes, which is why a
+// host offset inherits the 4 ms declick and reaches ringing voices for free.
+struct TrackModTarget { const char* name; std::size_t lane; };
+constexpr TrackModTarget kTrackModTargets[] = {
+    { "pitch",  kRampChanPitch  },
+    { "volume", kRampChanVolume },
+    { "pan",    kRampChanPan    },
+    { "tone",   kRampChanTone   },
+    { "send1",  0 }, { "send2", 1 }, { "send3", 2 }, { "send4", 3 },
+};
+constexpr uint32_t kTrackModCount =
+    static_cast<uint32_t>(sizeof(kTrackModTargets) / sizeof(kTrackModTargets[0]));
+
+// The core's pitch ramp lane carries track.globalPitchOffset in the UI's
+// HALF-semitone units (the consumer bends by `delta / 2.0 / 12.0` octaves), but
+// this ABI speaks semitones like every other pitch on the surface. One factor,
+// converted here so no caller ever has to know.
+constexpr double kPitchLaneUnitsPerSemitone = 2.0;
+
+constexpr const char* kDeckModNames[] = { "transpose", "texture" };
+constexpr uint32_t kDeckModCount =
+    static_cast<uint32_t>(sizeof(kDeckModNames) / sizeof(kDeckModNames[0]));
+
+} // namespace
+
+int32_t sl_track_mod_id_for_name(const char* name) {
+    if (name == nullptr) return SL_PARAM_UNKNOWN;
+    for (uint32_t i = 0; i < kTrackModCount; ++i)
+        if (std::strcmp(name, kTrackModTargets[i].name) == 0) return static_cast<int32_t>(i);
+    return SL_PARAM_UNKNOWN;
+}
+
+uint32_t sl_track_mod_count(void) { return kTrackModCount; }
+
+const char* sl_track_mod_name(uint32_t id) {
+    return id < kTrackModCount ? kTrackModTargets[id].name : nullptr;
+}
+
+int32_t sl_deck_mod_id_for_name(const char* name) {
+    if (name == nullptr) return SL_PARAM_UNKNOWN;
+    for (uint32_t i = 0; i < kDeckModCount; ++i)
+        if (std::strcmp(name, kDeckModNames[i]) == 0) return static_cast<int32_t>(i);
+    return SL_PARAM_UNKNOWN;
+}
+
+uint32_t sl_deck_mod_count(void) { return kDeckModCount; }
+
+const char* sl_deck_mod_name(uint32_t id) {
+    return id < kDeckModCount ? kDeckModNames[id] : nullptr;
+}
+
+void sl_track_mod_set(sl_engine* e, uint32_t deck, uint32_t track, int32_t id, double value) {
+    if (e == nullptr || id < 0 || static_cast<uint32_t>(id) >= kTrackModCount) return;
+    if (!std::isfinite(value)) return;
+    const auto& target = kTrackModTargets[id];
+    const double scaled = (target.lane == kRampChanPitch)
+                            ? value * kPitchLaneUnitsPerSemitone : value;
+    e->core.setTrackHostMod(static_cast<int>(deck), static_cast<int>(track), target.lane,
+                            static_cast<float>(scaled));
+}
+
+double sl_track_mod_get(const sl_engine* e, uint32_t deck, uint32_t track, int32_t id) {
+    if (e == nullptr || id < 0 || static_cast<uint32_t>(id) >= kTrackModCount) return 0.0;
+    const auto& target = kTrackModTargets[id];
+    const double raw = e->core.trackHostMod(static_cast<int>(deck), static_cast<int>(track),
+                                            target.lane);
+    return (target.lane == kRampChanPitch) ? raw / kPitchLaneUnitsPerSemitone : raw;
+}
+
+void sl_deck_mod_set(sl_engine* e, uint32_t deck, int32_t id, double value) {
+    if (e == nullptr || !std::isfinite(value)) return;
+    if (id == 0)      e->core.setDeckHostTransposeMod(static_cast<int>(deck), value);
+    else if (id == 1) e->core.setDeckHostTextureMod(static_cast<int>(deck), value);
+}
+
+double sl_deck_mod_get(const sl_engine* e, uint32_t deck, int32_t id) {
+    if (e == nullptr) return 0.0;
+    if (id == 0) return e->core.deckHostTransposeMod(static_cast<int>(deck));
+    if (id == 1) return e->core.deckHostTextureMod(static_cast<int>(deck));
+    return 0.0;
+}
+
+void sl_master_set_mod(sl_engine* e, double gain) {
+    if (e == nullptr || !std::isfinite(gain) || gain < 0.0) return;
+    e->masterModGain.store(gain, std::memory_order_relaxed);
+}
+
+double sl_master_mod(const sl_engine* e) {
+    return e == nullptr ? 1.0 : e->masterModGain.load(std::memory_order_relaxed);
+}
+
 /* ── The output watchdog (guard G1) ───────────────────────────────────────── */
 
 uint32_t sl_watchdog_engaged(const sl_engine* e) {
@@ -1106,6 +1209,10 @@ void sl_deck_clear(sl_engine* e, uint32_t deck) {
     // the next strip in this slot inherits the last one's pitch and grain.
     e->core.setDeckBusTranspose(static_cast<int>(deck), 0.0);
     e->core.setDeckBusTexture(static_cast<int>(deck), 0.0);
+    // Host automation offsets are core atomics for the same reason and go the
+    // same way: a fresh strip in this slot must not arrive pre-bent by the
+    // automation the last one was under.
+    e->core.clearHostMods(static_cast<int>(deck));
     e->core.publishDJWorld(e->deckWorlds, e->mixer);
 }
 

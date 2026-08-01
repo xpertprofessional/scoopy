@@ -901,9 +901,15 @@ double NativeAudioEngineCore::pushSpectralParams(std::size_t deck, double sample
     // sounds. The old creative layer (warp shift/alpha, blur, MOD gesture, X-MOD) is hardwired
     // neutral here so the bus is a pure time/pitch stretcher.
     NativeBusStretcher& bus = busStretcher_[deck];
-    bus.setTexture(deckBusTexture_[deck].load(std::memory_order_relaxed));
+    // The host-mod terms (D-SL-DECKPLUGIN-04) are a DAW automation lane's additive offset; both
+    // are 0 unless a plugin instance is driving them, and x + 0.0 is exact, so an un-automated
+    // deck reaches the stretcher with the same bits it always did.
+    bus.setTexture(std::clamp(deckBusTexture_[deck].load(std::memory_order_relaxed)
+                                  + hostDeckTextureMod_[deck].load(std::memory_order_relaxed),
+                              0.0, 1.0));
     const double tSemis = busTransposeSemis_.load(std::memory_order_relaxed)
-                        + deckBusTransposeSemis_[deck].load(std::memory_order_relaxed);
+                        + deckBusTransposeSemis_[deck].load(std::memory_order_relaxed)
+                        + hostDeckTransposeMod_[deck].load(std::memory_order_relaxed);
     bus.setTranspose(tSemis, busTonalityLimit_.load(std::memory_order_relaxed));
     bus.setWarp(0.0, 1.0, 200.0 / sampleRateHz);
     bus.setGestureTarget(0.0);
@@ -3793,6 +3799,61 @@ void NativeAudioEngineCore::setDeckBusTranspose(int deck, double semitones) noex
     deckBusTransposeSemis_[static_cast<std::size_t>(deck)].store(semitones, std::memory_order_relaxed);
 }
 
+void NativeAudioEngineCore::setTrackHostMod(int deck, int track, std::size_t lane,
+                                            float value) noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return;
+    if (track < 0 || static_cast<std::size_t>(track) >= kMaxEnvelopeTracks) return;
+    if (lane >= kTrackRampChannels) return;
+    if (!std::isfinite(value)) return;   // an automation lane that went NaN must not poison a target
+    const float prev = hostTrackMod_[static_cast<std::size_t>(deck)][static_cast<std::size_t>(track)]
+                           [lane].exchange(value, std::memory_order_relaxed);
+    // Maintain the deck's nonzero-lane count only on a zero↔nonzero crossing, so riding a fader
+    // is one exchange and nothing else. Single-writer per lane (the host's audio thread).
+    if ((prev != 0.0f) == (value != 0.0f)) return;
+    if (value != 0.0f) hostModCount_[static_cast<std::size_t>(deck)].fetch_add(1, std::memory_order_relaxed);
+    else               hostModCount_[static_cast<std::size_t>(deck)].fetch_sub(1, std::memory_order_relaxed);
+}
+
+float NativeAudioEngineCore::trackHostMod(int deck, int track, std::size_t lane) const noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return 0.0f;
+    if (track < 0 || static_cast<std::size_t>(track) >= kMaxEnvelopeTracks) return 0.0f;
+    if (lane >= kTrackRampChannels) return 0.0f;
+    return hostTrackMod_[static_cast<std::size_t>(deck)][static_cast<std::size_t>(track)]
+                        [lane].load(std::memory_order_relaxed);
+}
+
+void NativeAudioEngineCore::setDeckHostTransposeMod(int deck, double semitones) noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return;
+    if (!std::isfinite(semitones)) return;
+    hostDeckTransposeMod_[static_cast<std::size_t>(deck)].store(semitones, std::memory_order_relaxed);
+}
+
+double NativeAudioEngineCore::deckHostTransposeMod(int deck) const noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return 0.0;
+    return hostDeckTransposeMod_[static_cast<std::size_t>(deck)].load(std::memory_order_relaxed);
+}
+
+void NativeAudioEngineCore::setDeckHostTextureMod(int deck, double texture) noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return;
+    if (!std::isfinite(texture)) return;
+    hostDeckTextureMod_[static_cast<std::size_t>(deck)].store(texture, std::memory_order_relaxed);
+}
+
+double NativeAudioEngineCore::deckHostTextureMod(int deck) const noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return 0.0;
+    return hostDeckTextureMod_[static_cast<std::size_t>(deck)].load(std::memory_order_relaxed);
+}
+
+void NativeAudioEngineCore::clearHostMods(int deck) noexcept {
+    if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return;
+    const auto di = static_cast<std::size_t>(deck);
+    for (auto& track : hostTrackMod_[di])
+        for (auto& lane : track) lane.store(0.0f, std::memory_order_relaxed);
+    hostModCount_[di].store(0, std::memory_order_relaxed);
+    hostDeckTransposeMod_[di].store(0.0, std::memory_order_relaxed);
+    hostDeckTextureMod_[di].store(0.0, std::memory_order_relaxed);
+}
+
 void NativeAudioEngineCore::setDeckBusSpectral(int deck, double chaos,
                                                double airDb) noexcept {
     if (deck < 0 || static_cast<std::size_t>(deck) >= kMaxDecks) return;
@@ -4870,6 +4931,9 @@ void NativeAudioEngineCore::renderSequencerFrames(const RenderWorld& world,
         const std::size_t rampTrackCount =
             std::min<std::size_t>(snapshot.tracks.size(), kMaxEnvelopeTracks);
         const bool deckValid = instrumentDeck >= 0 && instrumentDeck < static_cast<int>(kMaxDecks);
+        const bool hostModsActive =
+            deckValid && hostModCount_[static_cast<std::size_t>(instrumentDeck)]
+                             .load(std::memory_order_relaxed) != 0;
         for (std::size_t t = 0; t < rampTrackCount; ++t) {
             const auto& tk = snapshot.tracks[t];
             // Output-routing placement weights: 1 on the assigned side while routing is active,
@@ -4914,6 +4978,24 @@ void NativeAudioEngineCore::renderSequencerFrames(const RenderWorld& world,
                         }
                     }
                     // kRampChanAssign1/2 take no live override — always snapshot+flag derived.
+                }
+                // Host automation offset (D-SL-DECKPLUGIN-04), ADDED on top of whatever the
+                // session or a live fader just resolved — so a DAW lane and the UI can both be
+                // moving and neither wins. Clamped to each lane's own domain, because the
+                // consumers downstream assume it (a negative send is negative gain, a pan past
+                // ±1 walks off the end of the pan law). Pitch is deliberately unclamped, like
+                // its base lane. Skipped wholesale when nothing on the deck is automated: the
+                // untouched path must stay bit-identical for the DSP characterization gates.
+                if (hostModsActive) {
+                    const float m = hostTrackMod_[static_cast<std::size_t>(instrumentDeck)][t][n]
+                                        .load(std::memory_order_relaxed);
+                    if (m != 0.0f) {
+                        target += m;
+                        if (n < kNumSends)              target = std::max(0.0f, target);
+                        else if (n == kRampChanVolume)  target = std::clamp(target, 0.0f, 2.0f);
+                        else if (n == kRampChanPan)     target = std::clamp(target, -1.0f, 1.0f);
+                        else if (n == kRampChanTone)    target = std::clamp(target, -100.0f, 100.0f);
+                    }
                 }
                 float& cur = state.trackBaseCurrent[t][n];
                 if (!state.trackBaseSeeded) { cur = target; continue; }

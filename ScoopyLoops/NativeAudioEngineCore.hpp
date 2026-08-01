@@ -1718,6 +1718,30 @@ public:
     // RT-safe (stores an atomic; the render callback applies it via NativeBusStretcher::setTranspose).
     void setDeckBusTranspose(int deck, double semitones) noexcept;
 
+    // ===== Host modulation offsets (D-SL-DECKPLUGIN-04) =====
+    // A DAW automation lane's contribution, ADDITIVE on top of whatever the session already
+    // says — the shape the donor's M1–M4 mod bank used, and the reason there is no two-writer
+    // fight: the UI keeps owning every base value, the host owns only the offset. Zero is
+    // neutral, so an idle lane is not merely quiet but *bit-identical* to no lane at all.
+    //
+    // The track offset joins the per-track base ramp as one more term in its target, which is
+    // why it needs no de-zippering of its own (the 4 ms declick already covers it) and why it
+    // reaches RINGING voices, not just the next trigger. `lane` is a kRampChan* index — the
+    // array is the full ramp width so a future target (Q, drive) is a wrapper-only change.
+    //
+    // RT-SAFE: plain relaxed atomics, no allocation, no lock, no world republish. These are the
+    // one parameter family an audio thread may write, which is what lets the plugin apply
+    // automation per block instead of at the 40 Hz control pump.
+    void setTrackHostMod(int deck, int track, std::size_t lane, float value) noexcept;
+    float trackHostMod(int deck, int track, std::size_t lane) const noexcept;
+    // Deck-bus offsets, added in pushSpectralParams on top of the deck's own transpose/texture.
+    void setDeckHostTransposeMod(int deck, double semitones) noexcept;
+    double deckHostTransposeMod(int deck) const noexcept;
+    void setDeckHostTextureMod(int deck, double texture) noexcept;
+    double deckHostTextureMod(int deck) const noexcept;
+    // Drop every host offset on a deck — the deck axis goes with the deck (see sl_deck_clear).
+    void clearHostMods(int deck) noexcept;
+
     // Per-deck spectral color (realtime): chaos = −1…+1 freeze/extreme-stretch phase
     // character (+1 airy, 0 metallic, −1 rolling drone); airDb = post-stretch HF shelf
     // 0…12 dB.
@@ -1953,6 +1977,16 @@ private:
     // bypasses the world publish (applied every callback ON TOP of the global busTransposeSemis_).
     // Lets each deck sit at its own key while staying tempo-synced (TS sync mode pitch).
     std::array<std::atomic<double>, kMaxDecks> deckBusTransposeSemis_ {};
+    // Host automation offsets (see setTrackHostMod). Indexed [deck][track][kRampChan*] and
+    // sized to the full ramp width so exposing another lane costs nothing here. All zero =
+    // neutral; hostModCount_ counts the NONZERO lanes on a deck so the ramp loop can skip the
+    // whole mechanism with one relaxed load when nobody is automating — that skip is what
+    // keeps the DSP characterization gates' bit-exactness honest.
+    std::array<std::array<std::array<std::atomic<float>, kTrackRampChannels>,
+                          kMaxEnvelopeTracks>, kMaxDecks> hostTrackMod_ {};
+    std::array<std::atomic<std::uint32_t>, kMaxDecks> hostModCount_ {};
+    std::array<std::atomic<double>, kMaxDecks> hostDeckTransposeMod_ {};
+    std::array<std::atomic<double>, kMaxDecks> hostDeckTextureMod_ {};
     // X-MOD onset detector (per deck, audio-thread only): crest-factor onset detection on
     // the LOW BAND (~150 Hz one-pole) of the deck's DRY pre-stretch scratch. The fast/slow
     // follower RATIO self-normalizes, so heavily mastered material still yields full-range
