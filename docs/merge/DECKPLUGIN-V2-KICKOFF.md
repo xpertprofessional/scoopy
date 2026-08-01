@@ -572,9 +572,39 @@ regressions to chase): grid/LCM-locked LFO phase, step-triggered MSEG envelopes,
 audio-rate `freeRate` FM, and four sources summing into one target. Those need an
 in-plugin modulator, which is a different feature.
 
+### `paramTouch` — how a DAW's learn mode finds these (real-host report, 2026-08-02)
+
+**Reported:** Configure in Ableton added nothing, however long you clicked.
+
+**Not a Live bug and not a missing parameter** — `auval` enumerates all 131.
+Live discovers a parameter by watching for one to be **touched**, and this
+window is a WebView: its controls write base values down the command lane and
+never go near a juce parameter, so there were **zero change gestures anywhere in
+the plugin** and Configure had nothing to watch. That is the direct cost of the
+offset separation (page owns bases, host owns offsets) — the discovery workflow
+depends on exactly the coupling the design removes on purpose.
+
+**Fix:** the page names the control it touched (`paramTouch`, a
+processor-answered native method) and the processor emits an **empty gesture**
+on the matching offset — begin, then end, no edit between. The host learns which
+parameter the control belongs to; the value never moves.
+
+⚠️ **First touch per control**, and this is load-bearing, not frugality: a
+gesture is also what puts Live into `touched` state for latch-mode automation,
+so firing on every drag would punch neutral envelopes into a recording project.
+The web-side `Set` in `GridPanel` exists only to stop a drag sending a command
+per frame; `HostParams::announceTouch` holds the authoritative guard.
+
+Covered targets are the eight per-track ones. Deck transpose/texture and master
+level have no touch path yet — reach them from the automation lane's parameter
+chooser, or extend `hostTouchTargetFor` if a touch path is wanted.
+
+Gate on `window.__slPanel === "plugindeck"`: neither a native `link` nor `caps`
+can tell the plugin from the merged desktop shell.
+
 **Still owed — the real-host pass nobody can run headless:** draw an LFO on
-`T01 Pitch` in Live or Logic and confirm it sweeps, and that an idle lane changes
-nothing.
+`T01 Pitch` in Live or Logic and confirm it sweeps, that an idle lane changes
+nothing, and that Configure now captures a control on the first click.
 
 ## Suggested order
 
