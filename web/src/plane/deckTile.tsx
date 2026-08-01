@@ -277,6 +277,7 @@ export function DeckFace({
   locked = false,
   djSlotIndex,
   viewDensity,
+  onLaunch,
 }: {
   link: EngineLink | null
   strip: StripDoc
@@ -297,6 +298,9 @@ export function DeckFace({
       deck face, and COMPOSE is a window you open instead. ScoopyDeck has no
       such window, so its COMPOSE/DECK switch lands here. */
   viewDensity?: Density
+  /** What ⟳ does. Omit for the plane's immediate play; ScoopyDeck passes a
+      host-grid quantized launch. See `DeckRowsProps.onLaunch`. */
+  onLaunch?: () => void
 }) {
   const { session, scene } = useDeckTileBinding(link, element, masterBpm)
   // STABLE identity (the DjPanel DeckSlot rule): GridPanel keys its topic
@@ -332,6 +336,7 @@ export function DeckFace({
     onToggleCells: () => setCellsHidden((v) => !v),
     performActive,
     onTogglePerform: () => setPerformActive((v) => !v),
+    onLaunch,
   }
 
   return (

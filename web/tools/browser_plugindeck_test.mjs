@@ -417,12 +417,26 @@ const bar = await page.evaluate(() => {
   const box = document.querySelector('[data-focus-id$="plugin/masterBpm"]')
   return {
     clk: btn('CLK')?.textContent.trim() ?? null,
+    quantum: btn('Q ')?.textContent.trim() ?? null,
     tempo: btn('TEMPO')?.textContent.trim() ?? null,
     box: box ? { text: box.textContent.trim(), disabled: box.classList.contains('disabled') } : null,
   }
 })
 
 check('the CLK (transport) switch is present', bar.clk !== null, JSON.stringify(bar))
+// Q — the launch quantum (D-SL-DECKPLUGIN-03 step 3). It sits with CLK and
+// TEMPO because it is the third of the same family: which host clock governs
+// transport, tempo, and now which of its BOUNDARIES a launch waits for.
+check(
+  'the Q (launch quantum) picker is present, beside them',
+  bar.quantum !== null,
+  JSON.stringify(bar),
+)
+check(
+  'it defaults to CYCLE — the donor’s own default, so ⟳ already waits',
+  bar.quantum === 'Q cycle',
+  `quantum=${bar.quantum}`,
+)
 check('the TEMPO (master source) switch is present — D2 signed TWO switches', bar.tempo !== null)
 check(
   'CLK and TEMPO are DIFFERENT controls, not one switch relabelled',
@@ -692,7 +706,7 @@ console.log(
       .map(([k, v]) => `${k}=${v?.h}`)
       .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
-    `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
+    `${bar.clk} · ${bar.quantum} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
     `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}" · ` +
     `PERF pointer-only (controls ${shapeBefore.controls}=${shapeAfter.controls}) · ` +
     `LOAD deck ${deckView.loads} → compose ${composeView.loads} · ` +

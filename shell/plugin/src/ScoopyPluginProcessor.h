@@ -131,6 +131,22 @@ public:
      *  remembers its own, and nothing races to be the newest. */
     juce::String sessionName;
 
+    /** THE LAUNCH QUANTUM, per instance (D-SL-DECKPLUGIN-03, step 3).
+     *
+     *  The web's own vocabulary — "off" · "1" · "2" · "4" · "8" · "16" ·
+     *  "cycle" — carried opaquely. The scale, and the fact that the numbers are
+     *  STEPS (16ths, so "16" is a bar of 4/4), belong to `audio/launchQuantum.ts`
+     *  where they were ported from the donor; duplicating that reading here
+     *  would be a second place for it to drift.
+     *
+     *  PER INSTANCE and in the chunk, by user ruling: two decks in one set can
+     *  run different quantums — one on cycle, one on a bar — which is a real
+     *  performance setup a shared preference could not express.
+     *
+     *  Defaults to "cycle", which is the donor's own default
+     *  (`DJModeManager.globalLaunchQuantize`). */
+    juce::String launchQuantum { "cycle" };
+
 
     /** The startStep the last host-driven launch actually published. Exists
         for the phase-alignment gate: reading it back beats inferring the

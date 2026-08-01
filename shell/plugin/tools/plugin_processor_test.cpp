@@ -229,6 +229,16 @@ int main() {
             CHECK((bool) none.getProperty("ok", false));
             CHECK((double) none.getProperty("result", juce::var()).getProperty("frame", -1.0)
                   == 0.0);
+
+            // THE QUANTUM SETTING rides the same method and defaults to the
+            // donor's own default, so a fresh instance behaves like the app.
+            const auto read = p.dispatchFromUi("deckLaunch", juce::JSON::parse("{}"));
+            CHECK(read.getProperty("result", juce::var()).getProperty("quantum", "").toString()
+                  == "cycle");
+            const auto set =
+                p.dispatchFromUi("deckLaunch", juce::JSON::parse(R"({"quantum":"16"})"));
+            CHECK(set.getProperty("result", juce::var()).getProperty("quantum", "").toString()
+                  == "16");
         }
 
         // REFUSALS — each returns 0 so the caller launches now rather than
@@ -580,6 +590,9 @@ int main() {
             // correctly-playing deck — the same call that filled the user's
             // shared library with one `Untitled N` per insert.
             a.dispatchFromUi("pluginSession", juce::JSON::parse(R"({"name":"beach"})"));
+            // …and the launch quantum, which is PER INSTANCE by ruling: two
+            // decks in one set may run different ones.
+            a.dispatchFromUi("deckLaunch", juce::JSON::parse(R"({"quantum":"8"})"));
             a.getStateInformation(saved);
         }
         CHECK(saved.getSize() > 0);
@@ -624,6 +637,12 @@ int main() {
             CHECK(s.getProperty("result", juce::var()).getProperty("name", "").toString() ==
                   "beach");
         }
+        {
+            const auto q = b.dispatchFromUi("deckLaunch", juce::JSON::parse("{}"));
+            CHECK(q.getProperty("result", juce::var()).getProperty("quantum", "").toString()
+                  == "8");
+        }
+
         // A NEVER-USED instance answers an explicit null, not an empty string:
         // "this deck has never held a session" and "it holds one called ''" want
         // opposite behaviour on boot, so the page must be able to tell them apart.

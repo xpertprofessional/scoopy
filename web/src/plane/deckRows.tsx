@@ -84,6 +84,16 @@ export interface DeckRowsProps {
       REV, the other live gestures (user, 2026-08-01). */
   performActive?: boolean
   onTogglePerform?: () => void
+  /** ⟳ OVERRIDE. Omit and ⟳ plays immediately, which is what the plane wants —
+      it arms its own quantized launch from `PlanePanel` before the tile is
+      involved. ScoopyDeck supplies one, because in a plugin the launch has to
+      wait on the DAW's bar grid (D-SL-DECKPLUGIN-03) and there is no plane
+      above it to have done that already.
+
+      Deliberately an override rather than a behaviour change in this row: these
+      rows are SHARED with the plane, and a quantized ⟳ appearing on every strip
+      is not what was asked for. */
+  onLaunch?: () => void
   /** P3-C2: a compose window owns this deck — ONE PUBLISHER AT A TIME. Every
       verb that would write the document or the transport locks with the reason
       in its title until that window closes. SAVE stays live on purpose:
@@ -113,6 +123,7 @@ export function DeckToolbarRow({
   doubleTargets = [],
   onDouble,
   locked = false,
+  onLaunch,
 }: DeckRowsProps) {
   const deck = element.deck
   const playing = useCompanion((c) => c.decks[deck]?.playing ?? false)
@@ -182,7 +193,7 @@ export function DeckToolbarRow({
         type="button"
         className={`dr mono${playing && oneShot === null ? ' latched' : ''}`}
         disabled={locked || !hasSession}
-        onClick={() => useCompanion.getState().play(deck)}
+        onClick={() => (onLaunch ? onLaunch() : useCompanion.getState().play(deck))}
         title={locked ? LOCKED_TITLE : 'play — a pattern loops by nature, so this runs it'}
       >
         ⟳

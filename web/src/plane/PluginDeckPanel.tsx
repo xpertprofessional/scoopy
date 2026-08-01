@@ -44,6 +44,14 @@ import { deckTempoIntent } from '../persist/tempo.ts'
 import type { EngineLink } from '../engineLink.ts'
 import { GridScenes } from './GridElement.tsx'
 import { HotFrameLayout } from '../../protocol/schema.ts'
+import { lcmForScene } from '../audio/patternClock.ts'
+import {
+  DEFAULT_QUANTUM,
+  LAUNCH_QUANTA,
+  nextQuantum,
+  quantumSteps,
+  type LaunchQuantum,
+} from '../audio/launchQuantum.ts'
 import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
 import { listSessions } from '../store/sessionStore.ts'
 import { silenceNote } from '../store/sampleReport.ts'
@@ -146,6 +154,18 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
    *  DECK is the default: a plugin dropped on a track should come up playable,
    *  not in an editing surface. */
   const [composeView, setComposeView] = useState(false)
+  /** THE LAUNCH QUANTUM (D-SL-DECKPLUGIN-03 · step 3) — which boundary on the
+   *  DAW's bar grid ⟳ waits for.
+   *
+   *  The scale is the donor's, ported in `audio/launchQuantum.ts`, and its
+   *  numbers are STEPS (16ths), so "16" is a bar of 4/4. Default `cycle`,
+   *  matching `DJModeManager.globalLaunchQuantize` — in the original app ⟳
+   *  already waits, so this carries the muscle memory across.
+   *
+   *  Held NATIVE (the state chunk) rather than here, per instance: two decks in
+   *  one set may run different quantums, which a shared preference could not
+   *  express. This is the mirror; the processor is the record. */
+  const [quantum, setQuantum] = useState<LaunchQuantum>(DEFAULT_QUANTUM)
 
   // The strip the deck rows read and write. Subscribed through the store so a
   // control's own write re-renders the row that made it.
@@ -237,6 +257,25 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     }
   }, [link])
 
+  // The quantum this INSTANCE was restored with. Read once, like the sync
+  // recipe — the chunk is the record and the editor is only showing it.
+  useEffect(() => {
+    if (!link) return
+    let cancelled = false
+    void link
+      .command('deckLaunch' as never, {})
+      .then((r: unknown) => {
+        if (cancelled) return
+        const q = (r as { quantum?: string } | null)?.quantum
+        if (q && (LAUNCH_QUANTA as readonly string[]).includes(q))
+          setQuantum(q as LaunchQuantum)
+      })
+      .catch(() => {}) // the app host refuses it — nothing to restore
+    return () => {
+      cancelled = true
+    }
+  }, [link])
+
   // A session opened LATER — from the menu, on an instance that booted empty.
   // The map and the ready state have to follow it, or picking a session would
   // leave the deck rows unmounted with a document loaded behind them.
@@ -286,6 +325,37 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
       window.clearInterval(id)
     }
   }, [link])
+
+  /**
+   * ⟳ ON THE HOST'S GRID (D-SL-DECKPLUGIN-03).
+   *
+   * ORDER IS THE CONTRACT, and it is `plane/launch.ts`'s, followed rather than
+   * re-derived: publish the deck as PLAYING first, then arm. The core holds a
+   * deck whose world says active + launchArmed — so the world has to say
+   * playing before the request, or there is nothing for the hold to hold.
+   *
+   * Both fallbacks land the same way, which is why neither needs an error path:
+   * a quantum of `off` (or a session with no resolvable cycle) never arms, and
+   * an arm that answers frame 0 — no playhead, stopped host — means "no grid to
+   * wait on". In every case the deck is ALREADY playing from the line above,
+   * which is exactly the right outcome.
+   */
+  const launchOnHostGrid = () => {
+    const c = useCompanion.getState()
+    c.play(DECK)
+    if (!link) return
+    // ⚠️ AND CHECK THAT IT TOOK. `play` returns early with no session or no
+    // running engine, silently. Arming after a no-op play would hand the core a
+    // deck its world does not say is playing: nothing to hold, nothing to
+    // release, and a ⟳ that waits forever with no error anywhere. The same trap
+    // `launch.ts` documents.
+    if (!useCompanion.getState().decks[DECK]?.playing) return
+    const cycle = session ? lcmForScene(session.pattern, scene) : 0
+    const steps = quantumSteps(quantum, cycle)
+    if (steps <= 0) return // `off`, or no cycle to resolve — already playing
+    // Steps are 16ths; the native arm speaks BEATS. One conversion, here.
+    void link.command('deckLaunch' as never, { quantumBeats: steps / 4 }).catch(() => {})
+  }
 
   // THE ARROW KEYS, without having to click first.
   //
@@ -574,6 +644,31 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
         >
           {composeView ? 'COMPOSE' : 'DECK'}
         </button>
+        {/* Q — the launch quantum. Sits with CLK and TEMPO because it is the
+            third of the same family: those two pick which host clock governs
+            transport and tempo, and this picks which of its BOUNDARIES a launch
+            waits for. Cycling rather than a menu, like the plane's own picker.
+            Steps are 16ths — "16" is a bar of 4/4 — which the title says so the
+            scale is not a thing you have to already know. */}
+        <button
+          type="button"
+          className={`dr mono${quantum !== 'off' ? ' latched' : ''}`}
+          onClick={() => {
+            const next = nextQuantum(quantum)
+            setQuantum(next)
+            // Native is the record (it rides the chunk); this is the mirror.
+            void link?.command('deckLaunch' as never, { quantum: next }).catch(() => {})
+          }}
+          title={
+            quantum === 'off'
+              ? 'Q OFF — ⟳ starts this deck immediately'
+              : quantum === 'cycle'
+                ? '⟳ waits for this deck’s own cycle on the DAW’s grid'
+                : `⟳ waits ${quantum} steps (${Number(quantum) / 4} beats) on the DAW’s grid`
+          }
+        >
+          {`Q ${quantum}`}
+        </button>
         {/* CLK — host transport vs internal clock. The tempo axis is SYNC/FREE
             on the deck row; this is the TRANSPORT axis, and they are
             independent on purpose (see followTransport). */}
@@ -716,6 +811,9 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
               // The COMPOSE/DECK switch. Nothing else feeds it: PERF is a
               // pointer mode and no longer touches the view (user, 2026-08-01).
               viewDensity={composeView ? 'compose' : 'dj'}
+              // ⟳ waits for the DAW's bar grid. The plane omits this and keeps
+              // its immediate play — it arms its own launch a layer up.
+              onLaunch={launchOnHostGrid}
               // ⚠️ THE STRIP MUST FOLLOW THE SESSION. Opening alone leaves
               // `element.sessionId`/`bpm` pointing at the PREVIOUS session, so
               // djSyncLaw divides by a stale denominator, the header shows the

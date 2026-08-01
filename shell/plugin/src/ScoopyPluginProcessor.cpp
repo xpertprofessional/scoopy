@@ -471,10 +471,16 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
     // deck play now rather than leave it held forever — the distinction the
     // web's own `armOrPlay` already draws four different ways.
     if (method == "deckLaunch") {
+        // The persisted SETTING and the transient ARM ride one method, the way
+        // hostSyncConfig carries a recipe that is both written and read. `{}` is
+        // a pure read, which is how the editor learns what this instance was
+        // restored with.
+        if (params.hasProperty("quantum")) launchQuantum = params["quantum"].toString();
         const double beats = params.hasProperty("quantumBeats")
                                  ? (double) params["quantumBeats"]
                                  : 0.0;
         auto* out = new juce::DynamicObject();
+        out->setProperty("quantum", launchQuantum);
         // A double, not an int64: JSON has no 64-bit integer and juce::var's
         // int is 32-bit — a frame counter overflows that in ~12 hours at 48k.
         // Doubles carry frame counts exactly to 2^53, which is 5700 years.
@@ -629,6 +635,7 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     // The document's IDENTITY, so a reloaded project reopens the session it was
     // playing instead of an empty Untitled over the top of it.
     index->setProperty("sessionName", sessionName);
+    index->setProperty("launchQuantum", launchQuantum);
     index->setProperty("masterLevel", sl_master_level(engine));
 
     const auto header = juce::JSON::toString(juce::var(index), true);
@@ -757,6 +764,10 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         editorH = (int) win.getProperty("h", 0);
     }
     sessionName = header.getProperty("sessionName", juce::var()).toString();
+    // Absent in a chunk written before step 3 → the donor's default, which is
+    // also what a fresh instance starts at.
+    if (const auto q = header.getProperty("launchQuantum", juce::var()); !q.isVoid())
+        launchQuantum = q.toString();
 
     if (engine != nullptr)
         sl_master_set_level(engine, (double) header.getProperty("masterLevel", 1.0));
