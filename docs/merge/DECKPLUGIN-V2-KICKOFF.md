@@ -21,7 +21,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §2 master-BPM box + TEMPO switch | **DONE** | `853bd2f` |
 | §3 sends (capability + masterSends) | **DONE** | `35d6790` |
 | §6 LCM meter | **DONE** (geometry; the data was never broken here — see §6) | |
-| §8 keyboard | open — start at `djSlotIndex`; D3 makes the OS-focus work a prerequisite |
+| §8 keyboard | **PART DONE** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) blocked on NAV-SHORTCUTS §7 reconciliation (R-2, R-4) |
 | §4 multi-out in Live | open — D1 settled the bus count at 5; the Live diagnosis remains |
 | §5 PERF deck view + window persistence | open |
 | §7 tempo morph plumbing | open |
@@ -318,6 +318,24 @@ fixes the double-fire and the ring; (ii) route `browserKeymap`'s
 pointerdown outside any tile (§8 plane-wide swallow); (iv) add
 `setWantsKeyboardFocus(true)` + `grabKeyboardFocus()` on `visibilityChanged` /
 `mouseDown` in `ScoopyPluginEditor`; (v) add the keyup lane.
+
+**(i) and (iv) are DONE (2026-08-01).** `DeckFace` takes an optional
+`djSlotIndex`; ScoopyDeck passes **0** (one deck = the first slot, unambiguously)
+and the plane keeps `undefined` deliberately — it has no fixed columns, so there
+is no arrow ring to register with. That re-enables focus ADOPTION
+(`GridPanel.tsx:663`), which is the reported symptom. The launch-transient
+default at `:481` is unchanged: `undefined` and `0` both start active, which is
+what a single-deck host wants. `ScoopyPluginEditor` now sets
+`setWantsKeyboardFocus(true)` and reclaims on both `mouseDown` (the user came
+back) and `visibilityChanged` (the window just opened — requiring a click first
+is itself the "shortcuts don't work" report). D3 makes this a **prerequisite**,
+not a nicety: without OS focus the `Space` claim it signed cannot fire at all.
+
+**(ii), (iii) and (v) are still open, and they are not a plugin job.** Each one
+changes chords that the **plane** also uses, so NAV-SHORTCUTS §7's reconciliation
+comes first — (v) is already filed there as **R-2**, and the no-cleanup hazard
+behind the double-registration is **R-4**. Doing them from inside this brief
+would be exactly the "addition before reconciliation" its own ruling forbids.
 
 **How to review shortcuts for a plugin** (the user's question): there is no way
 to enumerate them from the host — a DAW claims keys before the plugin sees them

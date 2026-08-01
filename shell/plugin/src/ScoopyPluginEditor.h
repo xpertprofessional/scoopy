@@ -25,7 +25,28 @@ public:
 
     void resized() override;
 
+    /** THE EDITOR MUST TAKE OS KEYBOARD FOCUS, or none of the web tier's key
+        handling is reachable inside a DAW (D-SL-DECKPLUGIN-02 · D3).
+        `PluginDeckPanel`'s `claimKeyboard(PLUGIN_DECK)` sets only the
+        WEB-INTERNAL claim — arbitration between mounted decks — and cannot
+        grant first responder. Until the user happened to click inside the
+        webview the DAW kept it, and any click back on a DAW surface took it
+        away again with nothing reclaiming it.
+
+        Both hooks are needed and they cover different moments: `mouseDown` is
+        "the user came back to us", `visibilityChanged` is "the window just
+        opened / was revealed" — a plugin window you have not clicked in yet
+        should still answer the deck's keys. */
+    void mouseDown(const juce::MouseEvent&) override;
+    void visibilityChanged() override;
+
 private:
+    /** Take first responder if we can. Deliberately quiet on failure: a host
+        that refuses focus (some plugin wrappers do) must not produce a log line
+        per click, and the visible controls remain the reliable path — D3's
+        stated cost is that the key claim is BEST-EFFORT. */
+    void reclaimKeyboard();
+
     void timerCallback() override;
     void handleParam(const juce::var& v);
 

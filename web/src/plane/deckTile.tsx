@@ -237,9 +237,23 @@ export function useDeckTileBinding(
 
 /**
  * The expanded face's GridPanel region: the real dj deck rows, scrolling in
- * their own overflow (never the plane's). `djSlotIndex` stays undefined — the
- * plane has no fixed columns, so there is no cross-deck arrow ring here; the
- * keyboard claim above is the arbitration that matters.
+ * their own overflow (never the plane's).
+ *
+ * `djSlotIndex` DEFAULTS to undefined, and on the plane that is still right:
+ * the plane has no fixed columns, so there is no left/right arrow ring to
+ * register with, and the keyboard claim above is the arbitration that matters.
+ *
+ * ScoopyDeck passes 0, because a plugin has exactly ONE deck and it is
+ * unambiguously the first slot. What that buys (all disabled while the prop is
+ * undefined — DECKPLUGIN v2 §8):
+ *   · `GridPanel.tsx:663` — FOCUS ADOPTION. When the keyboard claim lands on
+ *     this deck the ring comes with it. Without the prop the claim moved and
+ *     the ring did not, so ö/ä kept driving whatever box last had it and the
+ *     keys read as doing nothing. This is the reported "focus doesn't stick".
+ *   · `GridPanel.tsx:695` — the cross-deck focus bridge registers. Harmless
+ *     with one deck; correct the day a second exists.
+ * The launch-transient default (`:481`) is unchanged: `undefined` and `0` both
+ * start active, which is what a single-deck host wants.
  */
 export function DeckFace({
   link,
@@ -252,6 +266,7 @@ export function DeckFace({
   doubleTargets = [],
   onDouble,
   locked = false,
+  djSlotIndex,
 }: {
   link: EngineLink | null
   strip: StripDoc
@@ -264,6 +279,9 @@ export function DeckFace({
   onDouble?: (targetDeck: number) => void
   /** P3-C2: a compose window owns this deck — the rows lock with it. */
   locked?: boolean
+  /** Which fixed deck column this face occupies; omit on the plane, which has
+      none. See the note above for exactly what it turns on. */
+  djSlotIndex?: number
 }) {
   const { session, scene } = useDeckTileBinding(link, element, masterBpm)
   // STABLE identity (the DjPanel DeckSlot rule): GridPanel keys its topic
@@ -320,7 +338,12 @@ export function DeckFace({
         // user's first real-host complaint, 2026-07-29).
         onWheel={(e) => e.stopPropagation()}
       >
-        <GridPanel link={link} source={source} cellsHidden={cellsHidden} />
+        <GridPanel
+          link={link}
+          source={source}
+          cellsHidden={cellsHidden}
+          djSlotIndex={djSlotIndex}
+        />
       </div>
       <LcmBar link={link} deck={element.deck} session={session} scene={scene} />
     </>

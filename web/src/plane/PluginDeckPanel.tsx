@@ -511,6 +511,12 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
               element={gridElement}
               masterBpm={masterBpm}
               sessions={sessions}
+              // ONE DECK, so it is unambiguously the first slot — and passing it
+              // is what enables GridPanel's focus ADOPTION (§8). Without it the
+              // keyboard claim moved and the ring stayed where it was, which is
+              // the "focus doesn't stick" report. The plane leaves it undefined
+              // on purpose; see DeckFace.
+              djSlotIndex={0}
               // ⚠️ THE STRIP MUST FOLLOW THE SESSION. Opening alone leaves
               // `element.sessionId`/`bpm` pointing at the PREVIOUS session, so
               // djSyncLaw divides by a stale denominator, the header shows the

@@ -71,6 +71,13 @@ ScoopyPluginEditor::ScoopyPluginEditor(ScoopyPluginProcessor& p)
     setResizeLimits(720, 480, 3000, 2000);
     setSize(1100, 720);
 
+    // D3: ScoopyDeck claims its keys while the WebView holds OS focus. That is
+    // only possible if this component will ACCEPT focus at all — without it,
+    // `grabKeyboardFocus` below is a no-op and the DAW keeps first responder
+    // forever, so every deck shortcut (Space included) is dead in-host no
+    // matter how well the web tier handles it.
+    setWantsKeyboardFocus(true);
+
     // A missing archive would otherwise be a BLANK EDITOR — the silent-failure
     // shape this project keeps paying for. Say it on screen instead.
     jassert(EmbeddedWeb::shared().isValid());
@@ -104,6 +111,32 @@ ScoopyPluginEditor::~ScoopyPluginEditor() {
 void ScoopyPluginEditor::resized() {
     if (webView != nullptr) webView->setBounds(getLocalBounds());
     loadError.setBounds(getLocalBounds());
+}
+
+void ScoopyPluginEditor::reclaimKeyboard() {
+    // The WEBVIEW is the thing that must end up holding it — keys the page
+    // handles are delivered to whatever has first responder, and that is the
+    // child, not this wrapper. Falling back to the editor itself keeps the
+    // no-bundle case (webView pointed at about:blank) from silently doing
+    // nothing at all.
+    if (webView != nullptr && webView->isShowing())
+        webView->grabKeyboardFocus();
+    else if (isShowing())
+        grabKeyboardFocus();
+}
+
+void ScoopyPluginEditor::mouseDown(const juce::MouseEvent&) {
+    // "The user came back to us." A click on any DAW surface hands focus back to
+    // the host, and nothing reclaimed it — so the deck answered keys until the
+    // first time you touched the mixer and then never again.
+    reclaimKeyboard();
+}
+
+void ScoopyPluginEditor::visibilityChanged() {
+    // "The window just opened, or was revealed." A plugin window you have not
+    // clicked in yet should still answer the deck's keys — requiring a click
+    // first is the behaviour that reads as "the shortcuts don't work".
+    if (isVisible()) reclaimKeyboard();
 }
 
 /** THE PARAM LANE. Same two-entry map as the app's PanelWindow, and short for
