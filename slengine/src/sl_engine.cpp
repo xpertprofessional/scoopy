@@ -1242,6 +1242,22 @@ double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck) {
     return (e == nullptr || deck >= kMaxDecks) ? 1.0 : e->deckParams[deck].syncRatio;
 }
 
+uint32_t sl_deck_stretch_latency_frames(const sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return 0;
+    const auto frames = e->core.deckStretchLatencyFrames(static_cast<int>(deck));
+    return frames > 0 ? static_cast<uint32_t>(frames) : 0u;
+}
+
+uint32_t sl_deck_stretch_ready(const sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return 0;
+    return e->core.deckStretchReady(static_cast<int>(deck)) ? 1u : 0u;
+}
+
+void sl_engine_set_sync_stretch_warmup(sl_engine* e, uint32_t enabled) {
+    if (e == nullptr) return;
+    e->core.setStretchWarmupSynchronous(enabled != 0);
+}
+
 /**
  * QUANTIZED LAUNCH (P11-3b) — arm `deck` to start the instant `ref_deck`
  * crosses its next step that is a multiple of `quantize_steps`.

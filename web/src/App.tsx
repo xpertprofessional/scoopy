@@ -30,6 +30,7 @@ import { CapturePanel } from "./panels/CapturePanel.tsx";
 import { CompanionPanel } from "./panels/CompanionPanel.tsx";
 import { PlanePanel } from "./plane/PlanePanel.tsx";
 import { ComposeWindow } from "./plane/ComposeWindow.tsx";
+import { PluginDeckPanel } from "./plane/PluginDeckPanel.tsx";
 import { useCompanion } from "./store/companionEngine.ts";
 
 /**
@@ -172,6 +173,11 @@ function PanelRoute({
   // The compose WINDOW (P3-C1): the real composer, addressed to one deck +
   // session via __slPanelArg. Spawned per strip by the plane's COMPOSE ⇱.
   if (panel === "compose") return <ComposeWindow link={link} />;
+  // SCOOPY DECK's face (D-SL-DECKPLUGIN-01). Its own route rather than a flag
+  // on `compose`, because a plugin must come up PLAYABLE: it ensures a session
+  // instead of waiting to be addressed, which is right for an instrument
+  // somebody just dropped on a track and wrong for a window they opened.
+  if (panel === "plugindeck") return <PluginDeckPanel link={link} />;
   if (panel === "filebrowser") return <FileBrowserPanel link={link} />;
   if (panel === "capture") return <CapturePanel link={link} />;
   if (panel === "companion") return <CompanionPanel link={link} />;

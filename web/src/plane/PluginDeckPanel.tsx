@@ -1,0 +1,458 @@
+/**
+ * SCOOPY DECK — the plugin's face (D-SL-DECKPLUGIN-01).
+ *
+ * A DAW plugin is not a window someone navigated to; it is an instrument
+ * somebody just dropped on a track, and it has to be playable immediately.
+ * That is the one thing the compose WINDOW cannot be, and why this is a
+ * separate route rather than a flag on it:
+ *
+ *   ComposeWindow opens a session only when ADDRESSED (`__slPanelArg`), which
+ *   is right for its two callers — a strip's COMPOSE ⇱, and the app's mapless
+ *   boot, where "empty studio, use session ▾" is a deliberate state a person
+ *   arrived at on purpose. A freshly inserted plugin has no address and nobody
+ *   chose that emptiness, so the grid sat on "waiting for pattern state…"
+ *   (no session → no `gridMeta` → no meta → the placeholder) and read as a
+ *   broken plugin. Verified in Logic, 2026-08-01.
+ *
+ * So this panel ENSURES a session before it renders anything.
+ *
+ * WHAT IT RENDERS IS `DeckFace` — the SAME component the desktop expands a
+ * strip into. Not a reduced imitation assembled here: the first cut hand-wired
+ * the deck rows and PERF did nothing, because PERF has to reach the grid
+ * BACKEND (`setMetaFacts({performActive})`) rather than a React prop. Mounting
+ * the real component makes every such wire right by construction.
+ *
+ * It also settles the density question by evidence rather than taste. Compose
+ * density reads its playhead from `HotFrameLayout.trackStep0` and NOTHING IN
+ * THE MERGED ENGINE WRITES THOSE LANES — the emitter fills
+ * `playheadStepDeck0..2` plus the per-deck DJ telemetry and stops. So a
+ * compose-density grid can only ever show a frozen playhead here, while the
+ * deck source reads `djTrackStepD0T*`, written every block. The deck face is
+ * the one that moves.
+ */
+import { useEffect, useState } from 'react'
+
+// ⚠️ IMPORTED EXPLICITLY, though it arrives globally anyway (panels share one
+// bundle). This face is built out of plane pieces — `.compose-window`,
+// `.compose-window-body`, `.strip-deckface`, `.strip-scenes` — and its only
+// other importer is PlanePanel. That is exactly the dependency deckTile.tsx
+// records getting caught by with djmode.css: delete the panel that happens to
+// import the stylesheet and this one loses its layout with no error anywhere.
+import './plane.css'
+import { SCENE_LETTERS, enabledScenes } from '../audio/sceneProjection.ts'
+import { deckTempoIntent } from '../persist/tempo.ts'
+import type { EngineLink } from '../engineLink.ts'
+import { GridScenes } from './GridElement.tsx'
+import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import { listSessions } from '../store/sessionStore.ts'
+import { silenceNote } from '../store/sampleReport.ts'
+import { useMapStore } from '../state/mapStore.ts'
+import { autoStartEngine } from './bootEngine.ts'
+import { ComposeFiles } from './ComposeFiles.tsx'
+import { ComposeSessions } from './ComposeSessions.tsx'
+import { DeckFace, claimKeyboard } from './deckTile.tsx'
+import {
+  PLUGIN_DECK,
+  PLUGIN_STRIP_KEY,
+  installPluginDeckMap,
+  setPluginMasterBpm,
+  setPluginSession,
+} from './pluginDeckMap.ts'
+
+/** The plugin always fronts deck 0 — it is a ONE deck product by decision. */
+// One deck, and the SAME index the map shim uses — two constants that could
+// disagree about which deck this is would be a bug nobody could see.
+const DECK = PLUGIN_DECK
+
+/** The element's mode vocabulary → the engine's `tempoMode` ints (sl_engine.h
+    §3). The same mapping `persist/tempo.ts` makes; restated because the recipe
+    crosses to C++ where only the int exists. */
+const TEMPO_MODE_ID: Record<string, number> = {
+  timePitch: 0,
+  timeStretch: 1,
+  tempoOnly: 2,
+}
+
+/** The pulse relation as a MULTIPLIER, which is all the native fallback needs:
+    it multiplies the host tempo by this before dividing by the session's. The
+    resolved pulse comes from the law, so `auto` is already decided here. */
+function pulseMultiplierOf(
+  element: { bpm: number; syncToMaster: boolean; tempoMode: string; pulseRelation: string },
+  masterBpm: number,
+): number {
+  const intent = deckTempoIntent(element as never, masterBpm, 0)
+  // syncedBpm ÷ host = the relation, independent of the session's own tempo.
+  if (!intent.syncedBpm || masterBpm <= 0) return 1
+  return intent.syncedBpm / masterBpm
+}
+
+export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
+  const [boot, setBoot] = useState<'starting' | 'ready' | string>('starting')
+  const [note, setNote] = useState<string | null>(null)
+  const [hostPlaying, setHostPlaying] = useState(false)
+  const [sessions, setSessions] = useState<{ name: string }[]>([])
+  /** CLK — does the DAW's transport start and stop this deck?
+   *
+   *  ON (default): host play launches the deck on the host's bar grid, host
+   *  stop stops it. OFF is the INTERNAL CLOCK: the deck answers only its own
+   *  transport glyphs and ignores the DAW's play head entirely.
+   *
+   *  Deliberately separate from SYNC/FREE, which is the TEMPO axis. The four
+   *  combinations are all musically real — a deck can follow the host's tempo
+   *  while being started by hand (SYNC + INT), or run at its own tempo but
+   *  start with the DAW (FREE + HOST). Collapsing them into one switch would
+   *  remove two of those. */
+  const [followTransport, setFollowTransport] = useState(true)
+
+  // The strip the deck rows read and write. Subscribed through the store so a
+  // control's own write re-renders the row that made it.
+  const strip = useMapStore((s) => s.map.strips.find((x) => x.key === PLUGIN_STRIP_KEY) ?? null)
+  const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
+  const gridElement = strip?.element.kind === 'grid' ? strip.element : null
+
+  const session = useCompanion((c) => c.decks[DECK]?.session ?? null)
+  // Scene state for the pads. `scheduledScene` is the one armed for the next
+  // cycle boundary — the pad shows it as QUEUED so a click has visible effect
+  // before the switch actually lands, which is most of what makes scheduled
+  // switching usable.
+  // The strip follows whatever session is actually open, however it got there
+  // — the deck row's OPEN, the `session ▾` menu, or a project restore. One
+  // effect rather than a rewrite at each call site, so a new door cannot
+  // forget it and leave the sync denominator stale.
+  useEffect(() => {
+    if (!session || !gridElement) return
+    const bpm = (session.pattern as { bpm?: number }).bpm ?? gridElement.bpm
+    if (session.name === gridElement.sessionId && bpm === gridElement.bpm) return
+    setPluginSession(session.name, bpm)
+  }, [session?.name, session?.pattern, gridElement?.sessionId, gridElement?.bpm])
+
+  const scene = useCompanion((c) => c.decks[DECK]?.scene ?? 'A')
+  const queued = useCompanion((c) => c.decks[DECK]?.scheduledScene ?? null)
+  const enabledSceneRow = session ? enabledScenes(session.pattern) : SCENE_LETTERS.slice(0, 8)
+
+  const error = useCompanion((c) => c.error)
+  const notice = useCompanion((c) => c.notice)
+  const engine = useCompanion((c) => c.engine)
+  const decodeFailures = useCompanion((c) => c.decks[DECK]?.decodeFailures)
+  const missingSamples = useCompanion((c) => c.decks[DECK]?.missingSamples)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        // Sink FIRST, document second — the B5 ordering. `open`/`newSession`
+        // publish only while the engine runs, and every WebView boots its own
+        // store cold, so a document opened before the sink is a document
+        // nothing hears.
+        await autoStartEngine(true, () => useCompanion.getState())
+        if (cancelled) return
+
+        // Adopt whatever is already open (a reloaded DAW project may have
+        // restored one) rather than stacking a second empty session on top.
+        if (!useCompanion.getState().decks[DECK]?.session) {
+          await useCompanion.getState().newSession()
+          if (cancelled) return
+        }
+        const open = useCompanion.getState().decks[DECK]?.session
+        if (open) {
+          // The one-strip map the deck rows write through. Its master tempo is
+          // the HOST's — see pluginDeckMap.ts.
+          installPluginDeckMap({
+            sessionId: open.name,
+            bpm: (open.pattern as { bpm?: number }).bpm ?? 120,
+            syncToMaster: true,
+            tempoMode: 'timeStretch' as never,
+            hostBpm: 0,
+          })
+        }
+        setBoot(open ? 'ready' : 'no session')
+      } catch (err) {
+        // Say it on screen. A plugin that fails to boot its document and shows
+        // a placeholder is indistinguishable from a plugin that is simply
+        // broken, which is the whole defect this panel exists to end.
+        if (!cancelled) setBoot(`could not start: ${(err as Error).message}`)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // THE ARROW KEYS, without having to click first.
+  //
+  // `keyboardActive` is an ARBITRATION: the plane can mount three deck tiles
+  // and they would all answer every keystroke, so the claim goes to whichever
+  // tile you last pointed at and starts unheld. A plugin has exactly ONE deck,
+  // so there is nothing to arbitrate and an unclaimed start just means the
+  // arrow keys silently do nothing until you happen to click the grid.
+  useEffect(() => {
+    claimKeyboard(PLUGIN_DECK)
+  }, [])
+
+  // THE RECIPE, pushed to native — the closed-editor fallback.
+  //
+  // With the editor open the web owns the sync ratio (djSyncLaw). But a DAW
+  // can play a project whose plugin window was never opened, and then there is
+  // no web tier at all: the processor's own pump has to keep the deck locked
+  // to the host. It cannot run djSyncLaw, so it gets the RESOLVED recipe here
+  // and does the one multiplication that must survive. Sent on change only —
+  // the values move at human rate.
+  // READ FIRST. The recipe rides the plugin state chunk, so a project saved
+  // with the internal clock has already restored `followTransport: false` by
+  // the time this editor mounts — pushing our own default before reading would
+  // silently undo the user's setting on every window open. An empty payload is
+  // a pure read (the processor replies with the effective recipe).
+  const [seeded, setSeeded] = useState(false)
+  useEffect(() => {
+    if (!link) return
+    let cancelled = false
+    void link
+      .command('hostSyncConfig' as never, {})
+      .then((r: unknown) => {
+        if (cancelled) return
+        const ft = (r as { followTransport?: boolean } | null)?.followTransport
+        if (typeof ft === 'boolean') setFollowTransport(ft)
+      })
+      .catch(() => {}) // the app host refuses it — nothing to seed from
+      .finally(() => {
+        if (!cancelled) setSeeded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [link])
+
+  useEffect(() => {
+    if (!link || !gridElement || !seeded) return
+    void link
+      .command('hostSyncConfig' as never, {
+        sessionBpm: gridElement.bpm,
+        tempoMode: TEMPO_MODE_ID[gridElement.tempoMode] ?? 1,
+        pulseMultiplier: pulseMultiplierOf(gridElement, masterBpm),
+        syncEnabled: gridElement.syncToMaster,
+        followTransport,
+      })
+      // The app host refuses this method; that is correct and not worth a
+      // console line on every tempo change.
+      .catch(() => {})
+  }, [
+    link,
+    gridElement?.bpm,
+    gridElement?.tempoMode,
+    gridElement?.syncToMaster,
+    gridElement?.pulseRelation,
+    masterBpm,
+    followTransport,
+    seeded,
+  ])
+
+  // The library, for the deck row's OPEN. Refreshed on mount and whenever the
+  // session menu reports it did something.
+  const refreshSessions = () => void listSessions().then(setSessions).catch(() => {})
+  useEffect(refreshSessions, [])
+
+  // THE HOST IS THE MASTER TEMPO. The processor emits `hostTransport` from its
+  // 40 Hz pump (it is the only way the UI can learn what the DAW's transport
+  // did — there is no transport slot in the HotFrame, so the web tier's mirror
+  // would otherwise show the last transport IT commanded and quietly lie).
+  useEffect(() => {
+    if (!link) return
+    return link.onEvent((evt) => {
+      const e = evt as { type?: string; bpm?: number; playing?: boolean }
+      if (e?.type !== 'hostTransport') return
+      if (typeof e.bpm === 'number') setPluginMasterBpm(e.bpm)
+      if (typeof e.playing === 'boolean') setHostPlaying(e.playing)
+    })
+  }, [link])
+
+  // DAW MIDI → THE SCENE PADS.
+  //
+  // The engine has no MIDI surface and no live-trigger door, so notes cannot
+  // reach it directly; what they CAN reach is the same store the pads call,
+  // which makes scene launching the honest first consumer — it is also what a
+  // deck in a DAW is most often asked to do from a controller.
+  //
+  // C3..G3 (MIDI 60-67) → scenes 1-8, the octave a pad controller sends by
+  // default. Velocity 0 is a note-off in disguise (running status) and must
+  // not launch. Held back from the deck's own transport keys deliberately:
+  // one mapping, stated, beats a guessable half-set.
+  useEffect(() => {
+    if (!link) return
+    return link.onEvent((evt) => {
+      const e = evt as { type?: string; events?: unknown[] }
+      if (e?.type !== 'hostMidi' || !Array.isArray(e.events)) return
+      for (const raw of e.events) {
+        const m = raw as { status?: number; data1?: number; data2?: number }
+        if (m.status !== 0x90 || !m.data2) continue // note-on with velocity only
+        const target = enabledSceneRow[(m.data1 ?? 0) - 60]
+        if (!target) continue // outside the mapped octave, or a scene not enabled
+        useCompanion.getState().selectScene(target, { immediate: false, deck: PLUGIN_DECK })
+      }
+    })
+  }, [link, enabledSceneRow])
+
+  // ⌘S flushes the autosave debounce, same meaning as everywhere else
+  // (D-SL-SAVE-01). Inside a DAW the host may well take ⌘S first; this is the
+  // fallback for when focus is in the editor.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 's' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
+      e.preventDefault()
+      void flushAutosave().then(() => setNote('saved'))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // The last edit must land. A DAW can close a plugin editor without any of
+  // the usual page lifecycle firing, so the flush is wired to both.
+  useEffect(() => {
+    const flush = () => void flushAutosave()
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', flush)
+    }
+  }, [])
+
+  // ⚠️ NOT useComposeBinding, and the reason is measurable rather than
+  // stylistic: compose density reads its playhead from `HotFrameLayout
+  // .trackStep0`, and NOTHING IN THE MERGED ENGINE WRITES THOSE LANES. The
+  // emitter fills `playheadStepDeck0..2` and the per-deck DJ telemetry and
+  // stops there, so a compose-density grid shows a playhead frozen at -1
+  // forever — the same shape as the `lcmPosDeck*` gap deckTile.tsx documents.
+  // The deck (dj) source reads `djTrackStepD0T*`, which IS written every
+  // block, so the playhead moves. DeckFace is that binding plus the rows.
+  const quiet = silenceNote(session?.name ?? '', { engine, decodeFailures, missingSamples })
+
+  if (boot !== 'ready') {
+    return (
+      <main className="panel compose-window mono dim" aria-label="scoopy deck starting">
+        <div style={{ padding: '12px' }}>{`scoopy deck · ${boot}…`}</div>
+      </main>
+    )
+  }
+
+  return (
+    <main className="panel compose-window" aria-label={`scoopy deck ${session?.name ?? ''}`}>
+      <header className="compose-window-bar mono">
+        <ComposeSessions deck={DECK} onNote={setNote} />
+        <span>{`scoopy deck · ${session?.name ?? 'no session'}`}</span>
+        {/* TWO TEMPI, deliberately both on screen — the desktop shows the same
+            pair. `element.bpm` is the session's own tempo (the denominator of
+            the sync ratio); masterBpm is what the DAW is running at. Showing
+            only one is how "synced" becomes unfalsifiable from the UI. */}
+        <span className="dim">
+          {gridElement
+            ? ` session ${gridElement.bpm.toFixed(1)} · host ${masterBpm.toFixed(1)}${
+                hostPlaying ? ' ▸' : ' ◼'
+              }`
+            : ' no deck'}
+        </span>
+        {/* CLK — host transport vs internal clock. The tempo axis is SYNC/FREE
+            on the deck row; this is the TRANSPORT axis, and they are
+            independent on purpose (see followTransport). */}
+        <button
+          type="button"
+          className={`dr mono${followTransport ? ' latched' : ''}`}
+          onClick={() => setFollowTransport((v) => !v)}
+          title={
+            followTransport
+              ? 'CLK HOST — the DAW’s transport starts and stops this deck, on its bar grid'
+              : 'CLK INT — internal clock: the deck answers only its own transport, ignoring the DAW'
+          }
+        >
+          {followTransport ? 'CLK HOST' : 'CLK INT'}
+        </button>
+        {note && <span className="dim">{` · ${note}`}</span>}
+        {error && <span className="warn">{` ${error}`}</span>}
+        {!error && quiet && <span className="warn">{` ${quiet}`}</span>}
+        {!error && notice && <span className="dim">{` · ${notice}`}</span>}
+      </header>
+      {/* THE DECK, whole — the SAME component the desktop expands a strip into
+          (deckTile's DeckFace). Toolbar · sync · scenes · view rows, the grid
+          at deck density, and the LCM cycle bar.
+
+          Assembling these by hand here was the first cut and it was worse in
+          exactly the way that matters: PERF has to reach the grid BACKEND
+          (`setMetaFacts({performActive})`), not a React prop, so a hand-wired
+          copy latched on screen and did nothing. Mounting the real component
+          means every one of those wires is right by construction rather than
+          by my remembering it. */}
+      {/* THE SCENE PADS (1…8).
+          NOT in DeckSceneRow despite that row's name — it carries the scene
+          MODE controls (switch mode · CU · SCN · MUTE) and the pads live on the
+          plane's collapsed strip face, which a plugin never mounts. So the deck
+          rows alone gave scene controls with no scenes to point at.
+          Letters A…H are the storage identity; the FACE is 1-based, which is
+          the app's own rule (sceneDisplayLabel). */}
+      {/* ⚠️ THE PADS NEED A BOX. `.strip-scenes` is `height: 100%` because in
+          the plane it sits in the wave field's 48 px rect. As a direct child
+          of this flex column that resolves against the WHOLE WINDOW, and the
+          pads eat the entire plugin — deck rows, grid and files all pushed
+          off screen. The wrapper is the rect the plane would have given it. */}
+      {strip && gridElement && (
+        <div className="plugin-deck-scenes">
+        <GridScenes
+          strip={strip}
+          scene={scene}
+          queued={queued}
+          enabledScenes={enabledSceneRow}
+          onAddScene={() =>
+            useCompanion.getState().setEnabledSceneCount(enabledSceneRow.length + 1, PLUGIN_DECK)
+          }
+          onSelectScene={(sc, immediate) =>
+            useCompanion.getState().selectScene(sc, { immediate, deck: PLUGIN_DECK })
+          }
+        />
+        </div>
+      )}
+      {/* ⚠️ TWO LAYOUT CONTRACTS, both of which I broke on the first pass and
+          both of which are invisible in a unit test:
+
+          `.compose-window-body` is `display:flex; flex-direction:row` — it is
+          the ONLY reason the FILES drawer sits BESIDE the grid instead of
+          stacking underneath it.
+
+          `.plugin-deck-pane` is a flex COLUMN with a bounded height, because
+          DeckFace's own `.strip-deckface` is `flex: 1 1 auto; min-height: 0`
+          and `.strip-deckface .grid-panel { height: 100% }`. Without a bounded
+          column parent that resolves to nothing, and GridPanel falls back to
+          sizing itself as a WINDOW ROOT at 100vh — which is the grid slowly
+          stretching down the screen on load. */}
+      <div className="compose-window-body">
+        <div className="plugin-deck-pane">
+          {strip && gridElement && (
+            <DeckFace
+              link={link}
+              strip={strip}
+              element={gridElement}
+              masterBpm={masterBpm}
+              sessions={sessions}
+              // ⚠️ THE STRIP MUST FOLLOW THE SESSION. Opening alone leaves
+              // `element.sessionId`/`bpm` pointing at the PREVIOUS session, so
+              // djSyncLaw divides by a stale denominator, the header shows the
+              // wrong tempo, and the recipe pushed to native disagrees with
+              // the one the world-publish path just derived — the native sync
+              // denominator then flip-flops between two values. The plane does
+              // the same rewrite after its own load (PlanePanel.loadSession).
+              onLoadSession={(name) => {
+                void useCompanion
+                  .getState()
+                  .open(name, PLUGIN_DECK)
+                  .then(() => {
+                    const s = useCompanion.getState().decks[PLUGIN_DECK]?.session
+                    if (s)
+                      setPluginSession(s.name, (s.pattern as { bpm?: number }).bpm ?? masterBpm)
+                  })
+                  .finally(refreshSessions)
+              }}
+            />
+          )}
+        </div>
+        <ComposeFiles link={link} />
+      </div>
+    </main>
+  )
+}

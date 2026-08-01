@@ -18,6 +18,18 @@ struct Payload {
 
 juce::String mimeForExtension(const juce::String& extensionWithoutDot);
 
+/** Normalise a WebView request path to a bundle-relative path: strip the query
+    and fragment, strip leading slashes, and map "" to index.html (SPA entry).
+
+    Returns nullopt when the path attempts to ESCAPE the bundle — any `..`
+    segment is refused outright rather than resolved.
+
+    Extracted at the plugin work (D-SL-DECKPLUGIN-01) so there is exactly ONE
+    implementation of the security-relevant half. `load()` serves a directory
+    and the plugin serves an embedded archive; a second host quietly growing
+    its own path parser is how a containment check gets bypassed. */
+std::optional<juce::String> normaliseRequestPath(const juce::String& path);
+
 /** Resolves a WebView request path against the bundle root.
     Returns nullopt when the path escapes the root or names no file.
     "/" and "" both resolve to index.html (SPA entry point). */

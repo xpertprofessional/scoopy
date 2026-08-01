@@ -286,6 +286,10 @@ if(WIZARD_TEST_REALHOST)
         TIMEOUT 90)
 endif()
 
+# ScoopyDeck — the plugin entry point (D-SL-DECKPLUGIN-01). LAST, because it
+# links the libraries defined above and its own CMakeLists names them.
+add_subdirectory(plugin)
+
 # Same JUCE 8 gap for every WebView target: juce_gui_extra declares no
 # linuxPackages, so nothing supplies the GTK/WebKit headers its Linux
 # WebBrowserComponent includes. On the LIBRARY so both entry points inherit it.

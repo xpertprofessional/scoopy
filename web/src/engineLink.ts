@@ -314,6 +314,15 @@ class MergedLink extends BrowserLink {
     "slMaster",
     "slMap",
     "slDevices",
+    //   hostSyncConfig  ScoopyDeck only (D-SL-DECKPLUGIN-01). NOT answered by
+    //              SlDispatch — the PLUGIN PROCESSOR answers it, which is why
+    //              `nativemethods:check` (which scans SlDispatch.cpp) neither
+    //              requires nor forbids it. It hands native the tempo recipe
+    //              the web just resolved, so a project whose editor is CLOSED
+    //              still follows the DAW's tempo: with an editor open the web
+    //              owns the ratio, and the processor's pump defers. On the app
+    //              host it is refused honestly like any unimplemented method.
+    "hostSyncConfig",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

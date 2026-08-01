@@ -797,6 +797,48 @@ void sl_deck_set_tempo_sync(sl_engine* e, uint32_t deck, double ratio);
     sl_param_get(e, deck, id_of("syncRatio")). */
 double sl_deck_tempo_sync(const sl_engine* e, uint32_t deck);
 
+/** Group delay (frames) of `deck`'s bus stretcher at its CURRENT texture — the
+    number a PLUGIN HOST reports for delay compensation (D-SL-DECKPLUGIN-01).
+
+    The stretch bus carries this delay whenever it is engaged, INCLUDING at a
+    unity ratio, which is why the core bypasses it outright when every deck is
+    neutral. A host inside a DAW cannot follow that engagement with PDC,
+    though: latency that toggles as the user nudges the host tempo would have
+    the DAW re-compensating mid-performance. So the intended use is
+    MODE-SCOPED — sample this when `tempoMode` changes and hold it, reporting
+    it for the whole time the deck is in timeStretch, rather than tracking
+    moment-to-moment engagement.
+
+    It also varies with `texture` (the node bank's windows differ in length);
+    the same rule applies, and for the same reason.
+
+    0 for an out-of-range deck, a null engine, or before the engine has been
+    configured at a sample rate. */
+uint32_t sl_deck_stretch_latency_frames(const sl_engine* e, uint32_t deck);
+
+/** 1 once `deck`'s bus stretcher is warmed up and can actually stretch.
+
+    While this is 0 the core keeps the bus on its DRY path, so a deck asked to
+    follow a tempo during warm-up plays at ITS OWN tempo — wrong, not merely
+    late, and it corrects itself a moment later, which is worse to diagnose
+    than a steady fault. The deck twin of sl_tape_stretch_ready.
+
+    0 for an out-of-range deck, a null engine, or before configure(). */
+uint32_t sl_deck_stretch_ready(const sl_engine* e, uint32_t deck);
+
+/** Warm the deck bus stretchers ON THE CALLING THREAD during configure()
+    rather than on background threads. Set it BEFORE the configure you want it
+    to affect — i.e. before sl_engine_set_sample_rate — or it does nothing for
+    the current one.
+
+    Default OFF, which is the app's behaviour and stays the app's behaviour:
+    background warm-up exists because a blocking configure() cost a ~660 ms
+    launch hang. A PLUGIN wants the opposite trade — hosts expect
+    prepareToPlay to block and may render immediately after it returns — so it
+    pays ~200 ms per deck once, at load, and is correct from the first block.
+    (D-SL-DECKPLUGIN-01.) */
+void sl_engine_set_sync_stretch_warmup(sl_engine* e, uint32_t enabled);
+
 /* ── Quantized launch (P11-3b) ───────────────────────────────────────────────
  *
  * Arm a deck to come in ON the beat, resolved inside the audio callback rather

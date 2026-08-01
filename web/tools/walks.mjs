@@ -33,6 +33,12 @@ const WALKS = [
   "browser_session_walk_test",
   "browser_worklet_test",
   "browser_companion_audio_test",
+  // ScoopyDeck's layout (D-SL-DECKPLUGIN-01). The plugin face borrows plane
+  // components that assume a strip's geometry; mounted without it they resolve
+  // their `height: 100%` against whatever ancestor is there and silently
+  // swallow the UI. Three regressions shipped that way, each caught only by a
+  // person opening the plugin in a DAW.
+  "browser_plugindeck_test",
 ];
 
 const ENGINE_ORDER = ["webkit", "chromium"];

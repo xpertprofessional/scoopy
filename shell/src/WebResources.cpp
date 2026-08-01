@@ -15,11 +15,36 @@ juce::String mimeForExtension(const juce::String& ext) {
     return "application/octet-stream";
 }
 
+std::optional<juce::String> normaliseRequestPath(const juce::String& path) {
+    const auto trimmed = path.upToFirstOccurrenceOf("?", false, false)
+                             .upToFirstOccurrenceOf("#", false, false)
+                             .trimCharactersAtStart("/");
+
+    // Rebuild from segments rather than patching the string. `.` and empty
+    // segments (`a//b`) are dropped; `..` is REFUSED rather than resolved.
+    //
+    // `load()` additionally proves containment against the real root
+    // (getChildFile collapses ".."), but an archive has no filesystem to ask —
+    // there the string check is the only guard, which is why it lives here and
+    // not in either caller. Dropping `.` is not cosmetic either: index.html
+    // references its assets as `./assets/x.js`, and while a browser resolves
+    // that before asking us, anything else reading the page's hrefs directly
+    // would otherwise miss every asset.
+    juce::StringArray out;
+    for (const auto& segment : juce::StringArray::fromTokens(trimmed, "/\\", {})) {
+        if (segment == "..") return std::nullopt;
+        if (segment.isEmpty() || segment == ".") continue;
+        out.add(segment);
+    }
+
+    if (out.isEmpty()) return juce::String("index.html"); // "" and "/" → SPA entry
+    return out.joinIntoString("/");
+}
+
 std::optional<Payload> load(const juce::File& root, const juce::String& path) {
-    auto relative = path.upToFirstOccurrenceOf("?", false, false)
-                        .upToFirstOccurrenceOf("#", false, false)
-                        .trimCharactersAtStart("/");
-    if (relative.isEmpty()) relative = "index.html";
+    const auto normalised = normaliseRequestPath(path);
+    if (!normalised.has_value()) return std::nullopt;
+    const auto& relative = *normalised;
 
     const auto file = root.getChildFile(relative);
 

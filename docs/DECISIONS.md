@@ -1113,3 +1113,33 @@ remembers keeps both. Always-asking-neutrally adds a decision to a moment alread
 **Consequences:** one persisted setting for the last choice. A "don't ask again" path was
 considered and NOT taken — it would reintroduce the donor's invisible-restore behaviour behind
 a checkbox, and the chooser is the thing the user asked for.
+
+## D-SL-DECKPLUGIN-01 · 2026-07-31 · ScoopyDeck: a plugin entry point, amending ONEHOST
+**Decision:** a VST3/AU/Standalone plugin target **ScoopyDeck** (`shell/plugin/`) joins the
+tree — a stripped compose face with a single-deck DJ performance flip, tempo-synced to the
+DAW host. This AMENDS D-SL-ONEHOST-01 rather than violating it: the plugin is a third entry
+point onto the SAME shell libraries (one dispatcher, one webdist, one engine tier), exactly
+as `MergedWalk` is the second. What ONEHOST forbids — a second shell implementation — stays
+forbidden. User-approved plan: 2026-07-31. Three sub-rulings, all user-confirmed:
+  · **No plugin-in-plugin, ever.** ScoopyDeck never compiles `NativePluginHost.mm`; the
+    no-op stub answers, `pluginHosting` reads false, and the FX/instrument doors refuse
+    honestly. The deck is a MIDI device + sampler; sends route to DAW effects via multi-out.
+  · **Watchdog off in-DAW.** `sl_watchdog_set_enabled(e, 0)` at engine create. The seam is
+    marked "test seam only"; this entry widens its charter to hosts whose output feeds a
+    mixer rather than speakers — a hidden limiter on a plugin output is a mixdown surprise,
+    and the DAW's own chain is the protection layer there. The APP keeps it always-on.
+  · **Host tempo is a second master source, not a second tempo authority.** The tempo law
+    stays in TS (`djSyncLaw`); the plugin's native pump only carries the host's BPM into the
+    same per-deck ratio the plane already publishes. `masterTempo`/`sessionBpm` stay refused
+    on the param lane.
+**Rationale:** the user wants the composing+deck surface inside a DAW with host sync and
+multi-out routing. Every load-bearing piece already exists host-agnostic: `sl_render_io` is
+processBlock-shaped behind `RenderSink`, the engine emits 26 lanes, the sync axis is deck
+scope, and the vendored JUCE is a full checkout with `juce_audio_plugin_client`. A separate
+repo would vendor-copy the web/bridge plumbing and drift — the ONEHOST failure one layer up.
+**Consequences:** formats VST3+AU+Standalone (code `ScDk`/`Scpy`); 4 mono send buses + main/
+deck/cue/4 return-wet pairs; state chunk embeds sample PCM (self-contained projects);
+host-transport follow is user-switchable, default ON. Settings/Takes live under
+`ScoopyDeck/`, never `WizardMerged/`. `NativePluginHost.mm`'s per-executable rule now has a
+third case: this executable deliberately OMITS it.
+

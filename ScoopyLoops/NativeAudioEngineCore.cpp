@@ -804,9 +804,13 @@ bool NativeAudioEngineCore::configure(double sampleRate,
         // in the Time Profiler. Until a deck's warm-up finishes, isWarm() is false and
         // processDeckBusStretch keeps that bus on its dry path (busBypassPrev_ stays true),
         // so the first post-warm engage still runs the normal primed declick.
+        // A PLUGIN HOST opts out of the async path (setStretchWarmupSynchronous):
+        // it has no launch to keep snappy, and a DAW can start the transport the
+        // moment prepareToPlay returns — at which point a bus still on its dry
+        // path plays at the wrong tempo.
         busStretcher_[di].configure(sampleRate, static_cast<int>(kDeckBusChannels),
                                     static_cast<int>(bufferSizeFrames),
-                                    /*asyncWarmup=*/true);
+                                    /*asyncWarmup=*/!syncStretchWarmup_);
         deckSend1Scratch_[di].assign(busInputScratchFrames, 0.0f);
         deckSend2Scratch_[di].assign(busInputScratchFrames, 0.0f);
         deckSend3Scratch_[di].assign(busInputScratchFrames, 0.0f);

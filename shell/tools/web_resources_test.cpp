@@ -52,6 +52,25 @@ int main() {
     CHECK(!load(root, "/assets/../../wizard_outside_secret.txt").has_value());
     outside.deleteFile();
 
+    // ── normaliseRequestPath, the half now SHARED with the plugin ────────────
+    //
+    // Extracted at D-SL-DECKPLUGIN-01 because the plugin serves an embedded
+    // archive and has no filesystem to backstop the containment check — there
+    // this string result IS the guard, so it is pinned directly rather than
+    // only through load()'s isAChildOf.
+    CHECK(normaliseRequestPath("") == juce::String("index.html"));
+    CHECK(normaliseRequestPath("/") == juce::String("index.html"));
+    CHECK(normaliseRequestPath("/index.html?v=1#x") == juce::String("index.html"));
+    CHECK(normaliseRequestPath("/assets/app.js") == juce::String("assets/app.js"));
+    // `.` segments dropped and doubled slashes collapsed: index.html writes its
+    // own asset hrefs as `./assets/x.js`.
+    CHECK(normaliseRequestPath("./assets/app.js") == juce::String("assets/app.js"));
+    CHECK(normaliseRequestPath("/assets//app.js") == juce::String("assets/app.js"));
+    // `..` is REFUSED, never resolved — including via backslashes.
+    CHECK(!normaliseRequestPath("../secret").has_value());
+    CHECK(!normaliseRequestPath("/assets/../../secret").has_value());
+    CHECK(!normaliseRequestPath("..\\..\\secret").has_value());
+
     // MIME table basics.
     CHECK(mimeForExtension("css") == "text/css");
     CHECK(mimeForExtension("wasm") == "application/wasm");

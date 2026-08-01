@@ -1282,6 +1282,52 @@ public:
         return b.size() >= frameCount ? b.data() : nullptr;
     }
 
+    // Is `deck`'s bus stretcher warmed up and able to stretch? While false the
+    // core keeps that bus on its DRY path, so a deck asked to stretch during
+    // warm-up plays at the WRONG TEMPO rather than merely late.
+    //
+    // Exposed for the plugin host (D-SL-DECKPLUGIN-01), which unlike the app
+    // cannot shrug this off: a DAW may start the transport the instant the
+    // plugin loads. Mirrors the tape side's sl_tape_stretch_ready.
+    bool deckStretchReady(int deck) const noexcept {
+        if (deck < 0 || deck >= static_cast<int>(kMaxDecks)) return false;
+        return busStretcher_[static_cast<std::size_t>(deck)].isWarm();
+    }
+
+    // Warm the bus stretchers ON THE CALLING THREAD during configure() instead
+    // of on background threads. MUST be set before configure() to have effect.
+    //
+    // Default false — the APP's behaviour is unchanged, and deliberately so:
+    // async warm-up exists because a blocking configure() cost the app a
+    // ~660 ms launch hang (see the note at the configure() call site).
+    //
+    // A PLUGIN wants the opposite trade, and NativeBusStretcher says as much:
+    // hosts expect prepareToPlay to block, and auval renders immediately after
+    // it returns. Paying ~200 ms/deck once at load beats a first bar that
+    // silently plays un-stretched.
+    void setStretchWarmupSynchronous(bool sync) noexcept { syncStretchWarmup_ = sync; }
+
+    // Group delay (frames) of a deck's bus stretcher at its CURRENT texture —
+    // what a plugin host must report for delay compensation.
+    //
+    // Added for the ScoopyDeck plugin (D-SL-DECKPLUGIN-01): a DAW needs a
+    // number for setLatencySamples, and the stretcher's own
+    // startupLatencyFrames() was unreachable from outside the core. Read-only,
+    // adds no state and changes no behaviour.
+    //
+    // ⚠️ IT VARIES WITH TEXTURE (the node bank's window sizes differ), so a
+    // host must NOT re-report it every time the texture control moves — PDC
+    // churn mid-performance is worse than a slightly wrong constant. Sample it
+    // when the tempo MODE changes and hold it.
+    //
+    // 0 before configure(), and 0 is also the honest answer for a deck whose
+    // bus is on its dry path — but a host wanting a stable figure should ask
+    // once while configured rather than track engagement.
+    int deckStretchLatencyFrames(int deck) const noexcept {
+        if (deck < 0 || deck >= static_cast<int>(kMaxDecks)) return 0;
+        return busStretcher_[static_cast<std::size_t>(deck)].startupLatencyFrames();
+    }
+
     // Per-return WET output level for the extended host returns (sends 3 & 4). Returns 1 & 2 take
     // their volume from the ReturnTrack snapshot (full gate/pan/LFO path); sends 3 & 4 use this
     // lightweight imperative level (the "Return level" fader) applied to the host-plugin wet. Set
@@ -2236,6 +2282,9 @@ private:
     // The backend (RubberBand / Signalsmith) is selected at compile time inside
     // NativeBusStretcher; ratio cache + reset-on-reactivate state live in the wrapper.
     std::array<NativeBusStretcher, kMaxDecks> busStretcher_;
+    // See setStretchWarmupSynchronous(). Read by configure(); false = the
+    // app's original background warm-up.
+    bool syncStretchWarmup_ = false;
     std::array<std::vector<float>,  kMaxDecks> deckSend1Scratch_;        // pre-stretch send1
     std::array<std::vector<float>,  kMaxDecks> deckSend2Scratch_;        // pre-stretch send2
     std::array<std::vector<float>,  kMaxDecks> deckSend3Scratch_;        // pre-stretch send3
