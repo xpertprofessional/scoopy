@@ -57,9 +57,16 @@ bool HostSync::pump(sl_engine* engine, bool writeRatio) {
     if (idSyncRatio == -2) idSyncRatio = sl_param_id_for_name("syncRatio");
     if (idTempoMode == -2) idTempoMode = sl_param_id_for_name("tempoMode");
 
-    if (writeRatio && recipe.syncEnabled && recipe.sessionBpm > 0.0 && s.bpm > 0.0 &&
+    // THE MASTER TEMPO. The host's playhead by default; a positive
+    // `recipe.masterBpm` is the user's INTERNAL master and wins (D2). Note the
+    // valid-playhead guard above still applies — with no playhead we write
+    // nothing even on an internal master, because `capture` is also how we know
+    // the host is there at all, and an offline render should not be re-pitched.
+    const double master = recipe.masterBpm > 0.0 ? recipe.masterBpm : s.bpm;
+
+    if (writeRatio && recipe.syncEnabled && recipe.sessionBpm > 0.0 && master > 0.0 &&
         idSyncRatio != SL_PARAM_UNKNOWN && idTempoMode != SL_PARAM_UNKNOWN) {
-        const double raw = s.bpm * recipe.pulseMultiplier / recipe.sessionBpm;
+        const double raw = master * recipe.pulseMultiplier / recipe.sessionBpm;
         const double ratio = std::clamp(raw, kMinRatio, kMaxRatio);
         const bool modeChanged = recipe.tempoMode != lastMode;
         if (modeChanged || std::abs(ratio - lastRatio) > kRatioEpsilon) {

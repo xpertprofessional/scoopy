@@ -179,6 +179,20 @@ export function DragBox(props: {
   scenePin?: ScenePinTarget;
   /** "Map to Modifier" items (CM-4); the panel builds them from its mod slots. */
   modMenu?: MenuItem[];
+  /**
+   * Inert, because the value is not this surface's to change right now.
+   *
+   * The box stays MOUNTED and keeps showing the value (L2 — state changes fill,
+   * never presence; a control that vanishes moves everything beside it). What
+   * goes away is every write: drag, double-click reset, the right-click menu and
+   * the ö/ä focus claim.
+   *
+   * ⚠️ `title` becomes REQUIRED in spirit when this is set — DESIGN.md §6: a
+   * disabled control with no explanation is a dead end. Say the precondition.
+   */
+  disabled?: boolean;
+  /** Overrides the default "drag to adjust…" hint. The place to say WHY when disabled. */
+  title?: string;
 }) {
   const { focused, setFocus, clearFocus } = useFocusModel();
   // NAV-11: the focus id is SCOPED (per-deck prefix in the DJ page, "" in
@@ -234,10 +248,13 @@ export function DragBox(props: {
   // track's first registered DragBox.
   const acquireRef = useRef(acquireFocus);
   acquireRef.current = acquireFocus;
-  useEffect(
-    () => registerFocusTarget(focusId, () => acquireRef.current()),
-    [focusId],
-  );
+  // A DISABLED box is not a Tab target either: landing the ring on a control
+  // that then refuses ö/ä is the dead end §6 is about, one lane over.
+  const focusable = props.disabled !== true;
+  useEffect(() => {
+    if (!focusable) return;
+    return registerFocusTarget(focusId, () => acquireRef.current());
+  }, [focusId, focusable]);
 
   // Touch double-tap detection (dblclick does not fire from taps on iOS).
   const lastTapRef = useRef<TapStamp | null>(null);
@@ -298,16 +315,24 @@ export function DragBox(props: {
     }
   };
 
+  // Disabled: still mounted, still readable, but every write is unwired — the
+  // menu included, or "Enter value…" would be a live door on an inert control.
+  const off = props.disabled === true;
+
   return (
     <div
-      className={`ds-dragbox${isFocused ? " focused" : ""}${learnStatus}${
-        pinned ? " scene-pinned" : ""
-      }`}
+      className={`ds-dragbox${isFocused && !off ? " focused" : ""}${off ? "" : learnStatus}${
+        pinned && !off ? " scene-pinned" : ""
+      }${off ? " disabled" : ""}`}
       data-focus-id={focusId}
-      onPointerDown={onPointerDown}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
-      title="drag to adjust · click to focus (ö/ä browse, ⌥ fine) · right-click for menu"
+      aria-disabled={off || undefined}
+      onPointerDown={off ? undefined : onPointerDown}
+      onDoubleClick={off ? undefined : onDoubleClick}
+      onContextMenu={off ? undefined : onContextMenu}
+      title={
+        props.title ??
+        "drag to adjust · click to focus (ö/ä browse, ⌥ fine) · right-click for menu"
+      }
     >
       {props.display}
     </div>

@@ -182,6 +182,58 @@ int main() {
         CHECK(std::abs(sl_param_get(p.engineForTest(), 0, idSync) - held) < 1e-9);
     }
 
+    // ── §2a-3 THE INTERNAL MASTER TEMPO (D-SL-DECKPLUGIN-02 · D2) ───────────
+    //
+    // CLK governs TRANSPORT; the master tempo SOURCE is its own switch. With an
+    // internal master the deck stretches against a number the user typed and
+    // the DAW's tempo is irrelevant — including with the editor CLOSED, which is
+    // the case that needs the recipe rather than web state alone. Before this,
+    // TP/TS/T were indistinguishable in practice: the ratio sat at ~1 because
+    // the only master available was the host's, and the session was written at
+    // the host's tempo.
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(p, 120.0, true)); // session bpm 120 — the denominator
+
+        FakePlayHead head;
+        head.bpm = 120.0; // the DAW agrees with the session: ratio would be 1.0
+        head.playing = true;
+        p.setPlayHead(&head);
+        renderPeak(p, 512, 1);
+
+        const int32_t idSync = sl_param_id_for_name("syncRatio");
+        CHECK(idSync != SL_PARAM_UNKNOWN);
+        for (int i = 0; i < 3; ++i) p.pumpHostSync();
+        CHECK(std::abs(sl_param_get(p.engineForTest(), 0, idSync) - 1.0) < 1e-3);
+
+        // Type 140 as the master. The host has NOT moved.
+        {
+            auto r = p.hostSync().currentRecipe();
+            r.masterBpm = 140.0;
+            p.hostSync().setRecipe(r);
+        }
+        renderPeak(p, 512, 1);
+        for (int i = 0; i < 3; ++i) p.pumpHostSync();
+        CHECK(std::abs(sl_param_get(p.engineForTest(), 0, idSync) - 140.0 / 120.0) < 1e-3);
+
+        // …and the host moving now changes NOTHING, which is the whole claim.
+        head.bpm = 90.0;
+        renderPeak(p, 512, 1);
+        for (int i = 0; i < 3; ++i) p.pumpHostSync();
+        CHECK(std::abs(sl_param_get(p.engineForTest(), 0, idSync) - 140.0 / 120.0) < 1e-3);
+
+        // Back to 0 = follow the host again, and it picks the host straight up.
+        {
+            auto r = p.hostSync().currentRecipe();
+            r.masterBpm = 0.0;
+            p.hostSync().setRecipe(r);
+        }
+        renderPeak(p, 512, 1);
+        for (int i = 0; i < 3; ++i) p.pumpHostSync();
+        CHECK(std::abs(sl_param_get(p.engineForTest(), 0, idSync) - 90.0 / 120.0) < 1e-3);
+    }
+
     // ── §2a-2 ONE TEMPO AUTHORITY: the pump DEFERS to the web ───────────────
     //
     // With an editor open, djSyncLaw computes the ratio and writes it through
@@ -376,6 +428,14 @@ int main() {
             CHECK(publishTone(a, 132.0, true));
             savedPeak = renderPeak(a, 512, 24);
             CHECK(savedPeak > 1e-4);
+            // Save with an INTERNAL master too — the whole point of putting it
+            // in the recipe is that it survives a project the editor never
+            // reopens (D-SL-DECKPLUGIN-02 · D2).
+            {
+                auto r = a.hostSync().currentRecipe();
+                r.masterBpm = 99.0;
+                a.hostSync().setRecipe(r);
+            }
             a.getStateInformation(saved);
         }
         CHECK(saved.getSize() > 0);
@@ -400,7 +460,11 @@ int main() {
         b.setPlayHead(&head);
         renderPeak(b, 512, 1);
         for (int i = 0; i < 3; ++i) b.pumpHostSync();
-        CHECK(std::abs(sl_param_get(b.engineForTest(), 0, idSync) - 1.5) < 1e-3);
+        // …and the INTERNAL MASTER rode along with it, so the reloaded deck
+        // stretches against the typed 99 rather than this host's 198. Without
+        // this the project would silently revert to host-follow on reload.
+        CHECK(std::abs(b.hostSync().currentRecipe().masterBpm - 99.0) < 1e-9);
+        CHECK(std::abs(sl_param_get(b.engineForTest(), 0, idSync) - 99.0 / 132.0) < 1e-3);
 
         // Garbage in must not be half-loaded: a chunk from another plugin, or
         // a truncated one, leaves the instance as it was rather than in a

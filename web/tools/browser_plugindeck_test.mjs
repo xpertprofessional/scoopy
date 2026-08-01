@@ -252,6 +252,97 @@ check(
   `repeat=${committed?.repeat}`,
 )
 
+// ── THE MASTER TEMPO IS TYPEABLE (DECKPLUGIN v2 §2 · D2) ───────────────────
+//
+// `masterBpm` was written ONLY from the host's `hostTransport` event and there
+// was no control anywhere in the app to set one. So syncRatio sat at ~1 forever
+// and TP / TS / T were indistinguishable — not because the modes were broken,
+// but because there was nothing to stretch AGAINST. This asserts the two doors
+// D2 signed: a TEMPO source switch separate from CLK, and a master-BPM box that
+// is inert while the DAW owns the tempo and editable once you take it.
+const bar = await page.evaluate(() => {
+  const btn = (t) =>
+    [...document.querySelectorAll('.compose-window-bar .dr')].find((b) =>
+      b.textContent.trim().startsWith(t),
+    )
+  const box = document.querySelector('[data-focus-id$="plugin/masterBpm"]')
+  return {
+    clk: btn('CLK')?.textContent.trim() ?? null,
+    tempo: btn('TEMPO')?.textContent.trim() ?? null,
+    box: box ? { text: box.textContent.trim(), disabled: box.classList.contains('disabled') } : null,
+  }
+})
+
+check('the CLK (transport) switch is present', bar.clk !== null, JSON.stringify(bar))
+check('the TEMPO (master source) switch is present — D2 signed TWO switches', bar.tempo !== null)
+check(
+  'CLK and TEMPO are DIFFERENT controls, not one switch relabelled',
+  bar.clk !== null && bar.tempo !== null && bar.clk !== bar.tempo,
+  `clk=${bar.clk} tempo=${bar.tempo}`,
+)
+check('the master tempo box is present', bar.box !== null)
+check(
+  'the box starts on TEMPO HOST and is INERT — the DAW owns that number',
+  bar.tempo === 'TEMPO HOST' && bar.box?.disabled === true,
+  `tempo=${bar.tempo} disabled=${bar.box?.disabled}`,
+)
+// A disabled control must SAY WHY (DESIGN.md §6) — a dead end with no title is
+// the defect, not the disabling.
+const boxTitle = await page.evaluate(
+  () => document.querySelector('[data-focus-id$="plugin/masterBpm"]')?.getAttribute('title') ?? '',
+)
+check(
+  'the inert box explains its precondition',
+  /TEMPO INT/.test(boxTitle),
+  `title=${JSON.stringify(boxTitle)}`,
+)
+
+const tempoBtn = await page.$('.compose-window-bar .dr:has-text("TEMPO")')
+if (tempoBtn) {
+  await tempoBtn.click()
+  await page.waitForTimeout(200)
+}
+const armed = await page.evaluate(() => {
+  const box = document.querySelector('[data-focus-id$="plugin/masterBpm"]')
+  const btn = [...document.querySelectorAll('.compose-window-bar .dr')].find((b) =>
+    b.textContent.trim().startsWith('TEMPO'),
+  )
+  return {
+    tempo: btn?.textContent.trim() ?? null,
+    latched: btn?.classList.contains('latched') ?? false,
+    disabled: box?.classList.contains('disabled') ?? null,
+    text: box?.textContent.trim() ?? null,
+  }
+})
+check(
+  'TEMPO INT latches and hands the box over',
+  armed.tempo === 'TEMPO INT' && armed.latched && armed.disabled === false,
+  JSON.stringify(armed),
+)
+
+// …and the box actually WRITES. Drag it upward: a DragBox adjusts on vertical
+// drag, so this is the same gesture a user makes, not a synthetic setState.
+let moved = null
+if (armed.disabled === false) {
+  const r = await page.evaluate(() => {
+    const b = document.querySelector('[data-focus-id$="plugin/masterBpm"]').getBoundingClientRect()
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  })
+  await page.mouse.move(r.x, r.y)
+  await page.mouse.down()
+  await page.mouse.move(r.x, r.y - 40, { steps: 10 })
+  await page.mouse.up()
+  await page.waitForTimeout(200)
+  moved = await page.evaluate(
+    () => document.querySelector('[data-focus-id$="plugin/masterBpm"]')?.textContent.trim() ?? null,
+  )
+}
+check(
+  'dragging the master tempo box CHANGES it',
+  moved !== null && moved !== armed.text,
+  `before=${armed.text} after=${moved}`,
+)
+
 await cleanup()
 server.close()
 
@@ -264,7 +355,8 @@ console.log(
     `grid h=${m.grid?.h} · rows ${Object.entries(m.rows)
       .map(([k, v]) => `${k}=${v?.h}`)
       .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
-    `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy})`,
+    `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
+    `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved}`,
 )
 
 if (failures.length) {

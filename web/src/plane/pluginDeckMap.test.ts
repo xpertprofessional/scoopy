@@ -22,8 +22,11 @@ import {
   PLUGIN_STRIP_KEY,
   installPluginDeckMap,
   pluginStrip,
+  pluginTempoInternal,
   setPluginMasterBpm,
   setPluginSession,
+  setPluginTempoInternal,
+  setPluginTypedMasterBpm,
 } from './pluginDeckMap.ts'
 
 const seed = {
@@ -122,6 +125,86 @@ describe('the plugin deck map', () => {
     setPluginMasterBpm(0) // a DAW between states
     setPluginMasterBpm(-1)
     expect(getMap().transport.masterBpm).toBe(140)
+  })
+})
+
+/**
+ * THE MASTER TEMPO SOURCE (D-SL-DECKPLUGIN-02 · D2).
+ *
+ * Two switches, not one: `CLK HOST/INT` is the TRANSPORT axis and stays where it
+ * was; this is the TEMPO axis. The gap it closes is that `masterBpm` was written
+ * ONLY from the host, with no UI anywhere to type one — so `syncRatio` was
+ * always ~1 and TP / TS / T were indistinguishable because there was nothing to
+ * stretch against.
+ */
+describe('the master tempo source', () => {
+  it('follows the host by default', () => {
+    installPluginDeckMap(seed)
+    expect(pluginTempoInternal()).toBe(false)
+    setPluginMasterBpm(140)
+    expect(getMap().transport.masterBpm).toBe(140)
+  })
+
+  it('REFUSES the host once the master is internal', () => {
+    installPluginDeckMap(seed)
+    setPluginMasterBpm(140)
+    setPluginTempoInternal(true)
+    setPluginTypedMasterBpm(96, null)
+    expect(getMap().transport.masterBpm).toBe(96)
+
+    // ⚠️ THE WHOLE POINT. `hostTransport` arrives at 40 Hz; without the gate it
+    // would overwrite the typed value within one frame and the box would look
+    // like it rejected everything the user entered.
+    setPluginMasterBpm(140)
+    setPluginMasterBpm(155)
+    expect(getMap().transport.masterBpm).toBe(96)
+  })
+
+  it('hands the tempo back to the host when switched off', () => {
+    installPluginDeckMap(seed)
+    setPluginTempoInternal(true)
+    setPluginTypedMasterBpm(96, null)
+    setPluginTempoInternal(false)
+    setPluginMasterBpm(140)
+    expect(getMap().transport.masterBpm).toBe(140)
+  })
+
+  it('makes TP and TS distinguishable — the ratio finally leaves 1', () => {
+    // A 120 BPM session under a 120 BPM host: ratio 1, and nothing to hear.
+    installPluginDeckMap(seed)
+    setPluginMasterBpm(120)
+    const flat = pluginStrip()?.element
+    if (flat?.kind !== 'grid') throw new Error('expected a grid element')
+    expect(deckTempoIntent(flat, getMap().transport.masterBpm, 0).syncRatio).toBeCloseTo(1, 5)
+
+    // Type 140 and the same session runs at 7/6 — now TP re-pitches and TS does not.
+    setPluginTempoInternal(true)
+    setPluginTypedMasterBpm(140, null)
+    const el = pluginStrip()?.element
+    if (el?.kind !== 'grid') throw new Error('expected a grid element')
+    const intent = deckTempoIntent(el, getMap().transport.masterBpm, 0)
+    expect(intent.syncRatio).toBeCloseTo(140 / 120, 5)
+    expect(intent.syncedBpm).toBeCloseTo(140, 3)
+  })
+
+  it('clamps a typed tempo to a musical range instead of parking the deck', () => {
+    installPluginDeckMap(seed)
+    setPluginTempoInternal(true)
+    setPluginTypedMasterBpm(0, null) // dividing by this is how a deck stops
+    expect(getMap().transport.masterBpm).toBe(20)
+    setPluginTypedMasterBpm(100000, null)
+    expect(getMap().transport.masterBpm).toBe(400)
+    setPluginTypedMasterBpm(Number.NaN, null) // an empty box mid-type
+    expect(getMap().transport.masterBpm).toBe(400)
+  })
+
+  it('a fresh install follows the host again', () => {
+    installPluginDeckMap(seed)
+    setPluginTempoInternal(true)
+    installPluginDeckMap(seed)
+    // Otherwise a second editor would open with a stale internal master armed
+    // and silently ignore the DAW.
+    expect(pluginTempoInternal()).toBe(false)
   })
 })
 

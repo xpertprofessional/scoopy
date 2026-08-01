@@ -254,6 +254,15 @@
   box-shadow: inset 0 0 0 1px var(--signal);
 }
 
+/* Inert: the value is not this surface's to change right now (DESIGN.md §6).
+   Still MOUNTED and still readable — it is showing a real number, just one
+   somebody else owns — so it dims rather than hides, and the cursor stops
+   promising a drag. The `title` is where the precondition gets said. */
+.ds-dragbox.disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
 .ds-select {
   background: var(--bg-raised);
   color: var(--text);

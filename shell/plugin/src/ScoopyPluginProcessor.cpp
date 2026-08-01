@@ -375,6 +375,8 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         if (params.hasProperty("pulseMultiplier")) r.pulseMultiplier = (double) params["pulseMultiplier"];
         if (params.hasProperty("syncEnabled")) r.syncEnabled = (bool) params["syncEnabled"];
         if (params.hasProperty("followTransport")) r.followTransport = (bool) params["followTransport"];
+        // 0 = follow the host's tempo; positive = the user's internal master (D2).
+        if (params.hasProperty("masterBpm")) r.masterBpm = (double) params["masterBpm"];
         sync.setRecipe(r);
 
         // REPLY WITH THE EFFECTIVE RECIPE, so the call doubles as a read.
@@ -389,6 +391,7 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         out->setProperty("pulseMultiplier", r.pulseMultiplier);
         out->setProperty("syncEnabled", r.syncEnabled);
         out->setProperty("followTransport", r.followTransport);
+        out->setProperty("masterBpm", r.masterBpm);
         return okEnvelope(juce::var(out));
     }
 
@@ -495,6 +498,7 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     recipe->setProperty("pulseMultiplier", r.pulseMultiplier);
     recipe->setProperty("syncEnabled", r.syncEnabled);
     recipe->setProperty("followTransport", r.followTransport);
+    recipe->setProperty("masterBpm", r.masterBpm);
     index->setProperty("recipe", juce::var(recipe));
     index->setProperty("masterLevel", sl_master_level(engine));
 
@@ -610,6 +614,9 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         r.pulseMultiplier = (double) recipe.getProperty("pulseMultiplier", 1.0);
         r.syncEnabled = (bool) recipe.getProperty("syncEnabled", true);
         r.followTransport = (bool) recipe.getProperty("followTransport", true);
+        // Absent in a v1/v2 chunk written before D2 → 0 → follow the host, which
+        // is what those projects were actually doing.
+        r.masterBpm = (double) recipe.getProperty("masterBpm", 0.0);
         sync.setRecipe(r);
     }
 

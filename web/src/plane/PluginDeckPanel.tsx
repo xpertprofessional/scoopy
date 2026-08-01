@@ -51,12 +51,15 @@ import { autoStartEngine } from './bootEngine.ts'
 import { ComposeFiles } from './ComposeFiles.tsx'
 import { ComposeSessions } from './ComposeSessions.tsx'
 import { DeckFace, claimKeyboard } from './deckTile.tsx'
+import { DragBox } from '../design/DragBox.tsx'
 import {
   PLUGIN_DECK,
   PLUGIN_STRIP_KEY,
   installPluginDeckMap,
   setPluginMasterBpm,
   setPluginSession,
+  setPluginTempoInternal,
+  setPluginTypedMasterBpm,
 } from './pluginDeckMap.ts'
 
 /** The plugin always fronts deck 0 — it is a ONE deck product by decision. */
@@ -103,6 +106,16 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
    *  start with the DAW (FREE + HOST). Collapsing them into one switch would
    *  remove two of those. */
   const [followTransport, setFollowTransport] = useState(true)
+  /** TEMPO — where the MASTER TEMPO comes from (D-SL-DECKPLUGIN-02 · D2).
+   *
+   *  A SECOND switch, not a mode of CLK. CLK is the TRANSPORT axis (who presses
+   *  play); this is the TEMPO axis (what the deck stretches against). Signed as
+   *  two controls because all four combinations are real, and the one that was
+   *  unreachable is the useful one: follow the DAW's play/stop while running
+   *  against a tempo of your own.
+   *
+   *  OFF (default): the DAW's playhead. ON: the number in the box beside it. */
+  const [tempoInternal, setTempoInternal] = useState(false)
 
   // The strip the deck rows read and write. Subscribed through the store so a
   // control's own write re-renders the row that made it.
@@ -210,8 +223,17 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
       .command('hostSyncConfig' as never, {})
       .then((r: unknown) => {
         if (cancelled) return
-        const ft = (r as { followTransport?: boolean } | null)?.followTransport
-        if (typeof ft === 'boolean') setFollowTransport(ft)
+        const rec = r as { followTransport?: boolean; masterBpm?: number } | null
+        if (typeof rec?.followTransport === 'boolean') setFollowTransport(rec.followTransport)
+        // A POSITIVE restored master means the saved project was on an internal
+        // tempo. Re-arm the flag BEFORE adopting the value, or the very next
+        // `hostTransport` tick would overwrite it — the same ordering hazard
+        // `followTransport` documents above, one axis over.
+        if (typeof rec?.masterBpm === 'number' && rec.masterBpm > 0) {
+          setTempoInternal(true)
+          setPluginTempoInternal(true)
+          setPluginTypedMasterBpm(rec.masterBpm, link)
+        }
       })
       .catch(() => {}) // the app host refuses it — nothing to seed from
       .finally(() => {
@@ -231,6 +253,11 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
         pulseMultiplier: pulseMultiplierOf(gridElement, masterBpm),
         syncEnabled: gridElement.syncToMaster,
         followTransport,
+        // 0 = "follow the host", which is what the pump did before this existed.
+        // Sending the typed value (rather than only a flag) is what lets a
+        // CLOSED editor keep stretching against it — the web tier is not
+        // running then, so a flag alone would have nothing to resolve.
+        masterBpm: tempoInternal ? masterBpm : 0,
       })
       // The app host refuses this method; that is correct and not worth a
       // console line on every tempo change.
@@ -243,6 +270,7 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     gridElement?.pulseRelation,
     masterBpm,
     followTransport,
+    tempoInternal,
     seeded,
   ])
 
@@ -345,11 +373,64 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
             only one is how "synced" becomes unfalsifiable from the UI. */}
         <span className="dim">
           {gridElement
-            ? ` session ${gridElement.bpm.toFixed(1)} · host ${masterBpm.toFixed(1)}${
-                hostPlaying ? ' ▸' : ' ◼'
-              }`
+            ? ` session ${gridElement.bpm.toFixed(1)} · ${tempoInternal ? 'master' : 'host'} `
             : ' no deck'}
         </span>
+        {/* THE MASTER TEMPO, EDITABLE (D2 · kickoff §2).
+            It was a read-only readout with no way anywhere in the app to type
+            one, so `syncRatio` was always ~1 and TP / TS / T sounded identical —
+            there was nothing to stretch AGAINST. A DragBox rather than a number
+            input per DESIGN.md §1; its base right-click menu carries "Enter
+            value…", so the tempo is typeable as well as draggable.
+            Disabled on TEMPO HOST and SAYS SO (§6) rather than vanishing (L2):
+            what the DAW reports is not ours to edit. */}
+        {gridElement && (
+          <DragBox
+            id="plugin/masterBpm"
+            value={masterBpm}
+            display={masterBpm.toFixed(1)}
+            min={20}
+            max={400}
+            step={1}
+            defaultValue={gridElement.bpm}
+            disabled={!tempoInternal}
+            title={
+              tempoInternal
+                ? 'master tempo — drag, or right-click to type. The deck stretches against this.'
+                : 'the DAW is the master tempo — switch TEMPO HOST to TEMPO INT to set your own'
+            }
+            onChange={(v) => setPluginTypedMasterBpm(v, link)}
+            menu={[
+              {
+                kind: 'item',
+                label: `Match the session (${gridElement.bpm.toFixed(1)})`,
+                onSelect: () => setPluginTypedMasterBpm(gridElement.bpm, link),
+              },
+            ]}
+          />
+        )}
+        <span className="dim">{hostPlaying ? ' ▸' : ' ◼'}</span>
+        {/* TEMPO — the master tempo SOURCE. The second of D2's two switches;
+            CLK below is the other one and governs transport alone. */}
+        <button
+          type="button"
+          className={`dr mono${tempoInternal ? ' latched' : ''}`}
+          onClick={() => {
+            const next = !tempoInternal
+            setTempoInternal(next)
+            // Order matters: arm the gate BEFORE React re-renders, or a
+            // `hostTransport` tick landing in between overwrites the value the
+            // user is about to take over.
+            setPluginTempoInternal(next)
+          }}
+          title={
+            tempoInternal
+              ? 'TEMPO INT — the deck stretches against the master tempo box, ignoring the DAW’s tempo'
+              : 'TEMPO HOST — the DAW’s tempo is the master; the box follows it and cannot be edited'
+          }
+        >
+          {tempoInternal ? 'TEMPO INT' : 'TEMPO HOST'}
+        </button>
         {/* CLK — host transport vs internal clock. The tempo axis is SYNC/FREE
             on the deck row; this is the TRANSPORT axis, and they are
             independent on purpose (see followTransport). */}

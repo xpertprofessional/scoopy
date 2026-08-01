@@ -41,6 +41,21 @@ struct HostSyncRecipe {
     double pulseMultiplier = 1.0;
     bool syncEnabled = true;
     bool followTransport = true; // host play launches the deck, host stop stops it
+    /** THE MASTER TEMPO SOURCE (D-SL-DECKPLUGIN-02 · D2). 0 = follow the host's
+        playhead, which is the default and what shipped first. A POSITIVE value
+        is an INTERNAL master the user typed: the pump then stretches against
+        that number and ignores the DAW's tempo entirely.
+
+        It lives in the recipe rather than in the web tier alone because a DAW
+        plays projects with the editor CLOSED. Without it, a deck set to an
+        internal 140 would silently revert to following the host the moment the
+        window shut — the same class of defect as the transport recipe, and the
+        reason `hostSyncConfig` doubles as a read.
+
+        Still not a second tempo AUTHORITY (D-SL-DECKPLUGIN-01): djSyncLaw
+        resolves the law and this is its output, exactly as `pulseMultiplier`
+        is. All that changes is WHICH number gets multiplied. */
+    double masterBpm = 0.0;
 };
 
 class HostSync {

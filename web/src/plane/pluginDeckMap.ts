@@ -20,8 +20,9 @@
  * `syncedBpm` (the effective tempo the deck actually runs at, which is the
  * second BPM value the desktop shows beside the session's own).
  */
+import type { EngineLink } from '../engineLink.ts'
 import { emptyMap, type PlaneMap, type Strip } from '../persist/mapDocument.ts'
-import { getMap, setMap, updateStrip, useMapStore } from '../state/mapStore.ts'
+import { getMap, setMap, setMasterBpm, updateStrip, useMapStore } from '../state/mapStore.ts'
 
 /** The plugin's single strip has a FIXED key: it is created once per editor
     and every write addresses it by name, so a generated id would only be a way
@@ -45,6 +46,10 @@ export interface PluginDeckSeed {
 /** Build (or rebuild) the one-strip map. Idempotent: called again with a new
     session it replaces the element without disturbing the rest. */
 export function installPluginDeckMap(seed: PluginDeckSeed): void {
+  // A fresh install follows the HOST until something says otherwise — the panel
+  // reads `hostSyncConfig` right after this and re-arms the internal master if
+  // the restored project had one.
+  masterIsInternal = false
   const base: PlaneMap = emptyMap()
   const existing = getMap().strips.find((s) => s.key === PLUGIN_STRIP_KEY)
 
@@ -93,15 +98,69 @@ export function installPluginDeckMap(seed: PluginDeckSeed): void {
   })
 }
 
+/**
+ * WHICH TEMPO IS THE MASTER (D-SL-DECKPLUGIN-02 · D2).
+ *
+ * `false` (the default): the DAW's playhead is the master — the shipped
+ * behaviour, and what `setPluginMasterBpm` below writes on every `hostTransport`.
+ * `true`: the user typed a master tempo, and the host's is IGNORED.
+ *
+ * This is a SEPARATE axis from `CLK HOST/INT`, which governs transport only.
+ * All four combinations are musically real, and the one that matters most is
+ * "follow the DAW's play/stop, stretch against my own 140" — before this there
+ * was no master to type at all, `syncRatio` sat at ~1, and TP / TS / T were
+ * therefore indistinguishable no matter which you picked.
+ *
+ * Module state rather than store state because it is a MODE, not a document:
+ * it never rides the map (a plugin never saves one). It rides the plugin's
+ * state chunk instead, as `HostSyncRecipe.masterBpm`, so a closed editor keeps
+ * stretching against the typed number.
+ */
+let masterIsInternal = false
+
+/** Is the master tempo the typed one (true) or the host's (false)? */
+export function pluginTempoInternal(): boolean {
+  return masterIsInternal
+}
+
+/**
+ * Switch the master tempo source. Switching TO internal keeps whatever tempo is
+ * showing, so the flip alone never changes the sound — you take over the number
+ * where the host left it and then move it. Switching back to host leaves the
+ * value alone; the next `hostTransport` tick (40 Hz) corrects it.
+ */
+export function setPluginTempoInternal(internal: boolean): void {
+  masterIsInternal = internal
+}
+
 /** THE HOST IS THE MASTER. Called whenever the DAW's tempo changes, so a
-    synced deck's ratio is recomputed against it by the ordinary path. */
+    synced deck's ratio is recomputed against it by the ordinary path.
+    ⚠️ REFUSED while the master is internal — otherwise the 40 Hz `hostTransport`
+    pump would overwrite a typed value between one frame and the next, and the
+    box would appear to reject everything the user entered. */
 export function setPluginMasterBpm(hostBpm: number): void {
+  if (masterIsInternal) return
   if (!(hostBpm > 0)) return
   const map = getMap()
   if (Math.abs(map.transport.masterBpm - hostBpm) < 1e-6) return
   useMapStore.setState({
     map: { ...map, transport: { ...map.transport, masterBpm: hostBpm } },
   })
+}
+
+/**
+ * THE TYPED MASTER. Goes through `setMasterBpm` rather than a store poke because
+ * that one also runs `applyTempo` — the plane's master knob did nothing for a
+ * long time for exactly the missing-engine-write reason its signature now
+ * documents, and a master BPM that moves on screen and reaches no deck is the
+ * same defect wearing this feature's name.
+ *
+ * Clamped to a musical range: the sync law divides by it, and a 0 typed into a
+ * box would park the deck rather than read as "no master".
+ */
+export function setPluginTypedMasterBpm(bpm: number, link: EngineLink | null): void {
+  if (!Number.isFinite(bpm)) return
+  setMasterBpm(Math.max(20, Math.min(400, bpm)), link)
 }
 
 /** The strip the rows render, or null before the map is installed. */
