@@ -119,6 +119,7 @@ target_sources(ScoopyDeck PRIVATE
     src/EmbeddedWeb.cpp
     src/PeerRegistry.cpp
     src/HostSync.cpp
+    src/HostParams.cpp
     src/LaneMap.cpp)
 
 target_include_directories(ScoopyDeck PRIVATE
@@ -225,7 +226,8 @@ target_sources(ScoopyTape PRIVATE
     src/PluginBackend.cpp
     src/EmbeddedWeb.cpp
     src/PeerRegistry.cpp
-    src/HostSync.cpp)
+    src/HostSync.cpp
+    src/HostParams.cpp)
 
 target_include_directories(ScoopyTape PRIVATE
     src
@@ -280,6 +282,7 @@ add_executable(plugin_processor_test
     src/EmbeddedWeb.cpp
     src/PeerRegistry.cpp
     src/HostSync.cpp
+    src/HostParams.cpp
     src/LaneMap.cpp)
 
 target_include_directories(plugin_processor_test PRIVATE
@@ -333,7 +336,8 @@ add_executable(tape_plugin_processor_test
     src/PluginBackend.cpp
     src/EmbeddedWeb.cpp
     src/PeerRegistry.cpp
-    src/HostSync.cpp)
+    src/HostSync.cpp
+    src/HostParams.cpp)
 
 target_include_directories(tape_plugin_processor_test PRIVATE
     src

@@ -69,6 +69,12 @@ ScoopyPluginProcessor::ScoopyPluginProcessor()
 
     backend = std::make_unique<PluginBackend>(engine, "ScoopyDeck");
 
+    // THE HOST'S MODULATION SURFACE (D-SL-DECKPLUGIN-04). Declared before a DAW
+    // can ask — a host enumerates parameters right after construction and the
+    // list may never change shape afterwards, because automation is addressed
+    // by index and id.
+    automation = std::make_unique<HostParams>(*this);
+
     // A row in the process-wide peer table, for as long as this instance lives
     // (D-SL-DECKPLUGIN-03 step 4). -1 means the table was full, which is not an
     // error — this deck simply cannot be somebody else's launch reference.
@@ -216,6 +222,13 @@ void ScoopyPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         buffer.clear();
         return;
     }
+
+    // The DAW's automation, into the engine, for THIS block — the point of
+    // pushing here rather than on the 40 Hz pump. A 6 Hz LFO resampled at 40 Hz
+    // arrives as a staircase; at block rate it arrives as an LFO. Legal on this
+    // thread because these land on the offset door, which is plain atomic
+    // stores and never a world republish (D-SL-DECKPLUGIN-04).
+    automation->pushToEngine(engine);
 
     const int engineBlock = (int) sl_engine_max_block_frames(engine);
 
@@ -703,7 +716,16 @@ void ScoopyPluginProcessor::replayJournal() {
 
 namespace {
 constexpr const char* kChunkMagic = "SCDK";
-constexpr int kChunkVersion = 2; // 1 was v0's plain-JSON, world+recipe only
+// 1 was v0's plain-JSON, world+recipe only. 3 added the host automation offsets
+// (D-SL-DECKPLUGIN-04).
+//
+// ⚠️ The bump is deliberate even though the reader below would tolerate the new
+// key without one. An older build handed a v3 chunk REFUSES it, and that is the
+// wanted outcome: the alternative is loading the session with every automation
+// offset silently dropped and then writing that back over the user's project on
+// the next save — the same "a partial restore that then overwrites the original"
+// hazard setStateInformation already refuses by name.
+constexpr int kChunkVersion = 3;
 } // namespace
 
 void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
@@ -745,6 +767,10 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     index->setProperty("sessionName", sessionName);
     index->setProperty("launchQuantum", launchQuantum);
     index->setProperty("masterLevel", sl_master_level(engine));
+    // Host automation offsets, sparse — only the lanes the user actually moved
+    // (D-SL-DECKPLUGIN-04). A missing key restores as neutral, which is exactly
+    // what a chunk written before this feature restores as.
+    index->setProperty("hostParams", automation->writeState());
 
     const auto header = juce::JSON::toString(juce::var(index), true);
     const auto headerUtf8 = header.toRawUTF8();
@@ -871,6 +897,11 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         editorW = (int) win.getProperty("w", 0);
         editorH = (int) win.getProperty("h", 0);
     }
+    // Absent in a v1/v2 chunk → every lane restores neutral. `readState` writes
+    // ALL of them rather than only the keys present, so a processor reused for a
+    // second project cannot keep the first one's automation.
+    automation->readState(header.getProperty("hostParams", juce::var()));
+
     sessionName = header.getProperty("sessionName", juce::var()).toString();
     // Absent in a chunk written before step 3 → the donor's default, which is
     // also what a fresh instance starts at.

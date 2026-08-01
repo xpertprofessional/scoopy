@@ -984,6 +984,184 @@ int main() {
         CHECK(std::abs(sl_param_get(b.engineForTest(), 0, idSync) - 1.0) < 1e-9);
     }
 
+    // ── §4 HOST AUTOMATION: the DAW as the modulation source ────────────────
+    //
+    // D-SL-DECKPLUGIN-04. The donor's M1–M4 mod bank never came across; instead
+    // the TARGETS are host parameters and the DAW's LFOs and automation lanes
+    // are the sources. What has to hold: the layout is exactly what a released
+    // plugin promised (a DAW addresses automation by index and id, so a
+    // reordering silently re-points a user's curves), a moved lane actually
+    // moves the sound, and the values survive a project round-trip.
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+
+        // The layout, frozen: 16 tracks × 8 targets + 2 deck + 1 master.
+        CHECK(p.hostParams().size() == 131);
+        CHECK(p.getParameters().size() == 131);
+
+        // Spot-check the id space at both ends and in the middle. These strings
+        // are a released contract, not an implementation detail.
+        CHECK(p.hostParams().find("d0.t00.pitch") != nullptr);
+        CHECK(p.hostParams().find("d0.t15.send4") != nullptr);
+        CHECK(p.hostParams().find("d0.t07.tone") != nullptr);
+        CHECK(p.hostParams().find("d0.transpose") != nullptr);
+        CHECK(p.hostParams().find("d0.texture") != nullptr);
+        CHECK(p.hostParams().find("master.level") != nullptr);
+        CHECK(p.hostParams().find("d0.t16.pitch") == nullptr); // 16 tracks, 0-based
+        CHECK(p.hostParams().find("nope") == nullptr);
+
+        // Every lane is neutral at load and automatable — a parameter the host
+        // cannot automate would be a control that looks present and cannot be
+        // driven, which is this whole feature failing quietly.
+        for (auto* param : p.getParameters()) {
+            CHECK(param->getValue() == param->getDefaultValue());
+            CHECK(param->isAutomatable());
+        }
+        auto* pitch = p.hostParams().find("d0.t00.pitch");
+        auto* volume = p.hostParams().find("d0.t00.volume");
+        CHECK(pitch != nullptr && volume != nullptr);
+        CHECK(std::abs(pitch->convertFrom0to1(pitch->getValue())) < 1e-6);   // 0 st
+        CHECK(std::abs(volume->convertFrom0to1(volume->getValue())) < 1e-6);
+
+        // A moved lane reaches the ENGINE, in the units the ABI speaks, and it
+        // gets there on a rendered block rather than on the 40 Hz pump — the
+        // pump is never ticked in this scope.
+        CHECK(publishTone(p, 120.0, true));
+        const double loud = renderPeak(p, 512, 24);
+        CHECK(loud > 1e-4);
+
+        pitch->setValueNotifyingHost(pitch->convertTo0to1(12.0f));
+        renderPeak(p, 512, 1);
+        const int32_t pitchMod = sl_track_mod_id_for_name("pitch");
+        CHECK(pitchMod != SL_PARAM_UNKNOWN);
+        CHECK(std::abs(sl_track_mod_get(p.engineForTest(), 0, 0, pitchMod) - 12.0) < 1e-4);
+
+        // …and the sound follows: volume offset −1 against a base of 1.0 takes
+        // the track to silence.
+        pitch->setValueNotifyingHost(pitch->convertTo0to1(0.0f));
+        volume->setValueNotifyingHost(volume->convertTo0to1(-1.0f));
+        // Two blocks discarded first: the offset joins the core's 4 ms declick
+        // ramp, so the block it arrives on still carries the tail of the old
+        // value. Measuring across the transient would be measuring the ramp.
+        renderPeak(p, 512, 2);
+        const double quiet = renderPeak(p, 512, 24);
+        CHECK(quiet < loud * 0.05);
+
+        // Master is dB on the lane, a multiplier in the engine.
+        auto* master = p.hostParams().find("master.level");
+        master->setValueNotifyingHost(master->convertTo0to1(-6.0f));
+        renderPeak(p, 512, 1);
+        CHECK(std::abs(sl_master_mod(p.engineForTest()) -
+                       juce::Decibels::decibelsToGain(-6.0)) < 1e-6);
+    }
+
+    // §4b THE PROJECT ROUND-TRIP — offsets are part of the document.
+    {
+        ScoopyPluginProcessor a;
+        a.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(a, 120.0, true));
+        a.hostParams().find("d0.t00.pitch")->setValueNotifyingHost(
+            a.hostParams().find("d0.t00.pitch")->convertTo0to1(-7.0f));
+        a.hostParams().find("d0.t03.send2")->setValueNotifyingHost(
+            a.hostParams().find("d0.t03.send2")->convertTo0to1(0.5f));
+        a.hostParams().find("master.level")->setValueNotifyingHost(
+            a.hostParams().find("master.level")->convertTo0to1(3.0f));
+
+        juce::MemoryBlock chunk;
+        a.getStateInformation(chunk);
+        CHECK(chunk.getSize() > 0);
+
+        ScoopyPluginProcessor b;
+        b.prepareToPlay(48000.0, 512);
+        b.setStateInformation(chunk.getData(), (int) chunk.getSize());
+
+        auto* bp = b.hostParams().find("d0.t00.pitch");
+        auto* bs = b.hostParams().find("d0.t03.send2");
+        auto* bm = b.hostParams().find("master.level");
+        CHECK(std::abs(bp->convertFrom0to1(bp->getValue()) + 7.0f) < 1e-3);
+        CHECK(std::abs(bs->convertFrom0to1(bs->getValue()) - 0.5f) < 1e-3);
+        CHECK(std::abs(bm->convertFrom0to1(bm->getValue()) - 3.0f) < 1e-3);
+        // Untouched lanes come back neutral, not carrying a's other values.
+        auto* bv = b.hostParams().find("d0.t00.volume");
+        CHECK(std::abs(bv->convertFrom0to1(bv->getValue())) < 1e-6);
+
+        // And the restore REACHES THE ENGINE with no separate apply path: the
+        // first rendered block pushes everything, which is what the NaN-seeded
+        // change gate buys.
+        renderPeak(b, 512, 2);
+        const int32_t pitchMod = sl_track_mod_id_for_name("pitch");
+        CHECK(std::abs(sl_track_mod_get(b.engineForTest(), 0, 0, pitchMod) + 7.0) < 1e-4);
+        CHECK(std::abs(sl_master_mod(b.engineForTest()) -
+                       juce::Decibels::decibelsToGain(3.0)) < 1e-6);
+
+        // A PRE-AUTOMATION PROJECT still opens, fully neutral. Built by taking
+        // this chunk back to v2 and dropping the key — which is exactly the
+        // shape every project saved before this feature has on disk.
+        juce::MemoryBlock raw;
+        {
+            juce::MemoryInputStream in(chunk, false);
+            juce::GZIPDecompressorInputStream gz(in);
+            juce::MemoryOutputStream out(raw, false);
+            out.writeFromInputStream(gz, -1);
+        }
+        juce::MemoryInputStream in(raw, false);
+        char magic[4] = {};
+        in.read(magic, 4);
+        CHECK(in.readInt() == 3); // the chunk we just wrote IS v3
+        const int headerBytes = in.readInt();
+        juce::MemoryBlock hb;
+        hb.setSize((size_t) headerBytes, true);
+        in.read(hb.getData(), headerBytes);
+        auto header = juce::JSON::parse(
+            juce::String::fromUTF8((const char*) hb.getData(), headerBytes));
+        CHECK(header.getDynamicObject() != nullptr);
+        CHECK(header.getDynamicObject()->hasProperty("hostParams"));
+        header.getDynamicObject()->removeProperty("hostParams");
+        const auto newHeader = juce::JSON::toString(header, true);
+        const int newBytes = (int) newHeader.getNumBytesAsUTF8();
+        std::vector<char> tail((size_t) in.getNumBytesRemaining());
+        if (!tail.empty()) in.read(tail.data(), (int) tail.size());
+
+        juce::MemoryBlock legacy;
+        {
+            juce::MemoryBlock plain;
+            {
+                juce::MemoryOutputStream o(plain, false);
+                o.write("SCDK", 4);
+                o.writeInt(2); // the version that knew nothing about automation
+                o.writeInt(newBytes);
+                o.write(newHeader.toRawUTF8(), (size_t) newBytes);
+                if (!tail.empty()) o.write(tail.data(), tail.size());
+            }
+            juce::MemoryOutputStream c(legacy, false);
+            juce::GZIPCompressorOutputStream gz(c);
+            gz.write(plain.getData(), plain.getSize());
+        }
+
+        ScoopyPluginProcessor old;
+        old.prepareToPlay(48000.0, 512);
+        old.setStateInformation(legacy.getData(), (int) legacy.getSize());
+        auto* op = old.hostParams().find("d0.t00.pitch");
+        CHECK(std::abs(op->convertFrom0to1(op->getValue())) < 1e-6); // neutral
+        CHECK(renderPeak(old, 512, 24) > 1e-4);                      // and it plays
+    }
+
+    // §4c Automation is PER INSTANCE — two decks in one project, one automated.
+    {
+        ScoopyPluginProcessor a, b;
+        a.prepareToPlay(48000.0, 512);
+        b.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(a, 120.0, true));
+        CHECK(publishTone(b, 120.0, true));
+        a.hostParams().find("d0.t00.volume")->setValueNotifyingHost(
+            a.hostParams().find("d0.t00.volume")->convertTo0to1(-1.0f));
+        const double peakA = renderPeak(a, 512, 24);
+        const double peakB = renderPeak(b, 512, 24);
+        CHECK(peakA < 1e-5);   // silenced by its own lane
+        CHECK(peakB > 1e-4);   // and its neighbour is untouched
+    }
+
     std::printf("plugin_processor_test OK\n");
     return 0;
 }

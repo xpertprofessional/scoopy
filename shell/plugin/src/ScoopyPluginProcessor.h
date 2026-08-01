@@ -3,13 +3,17 @@
 // app's AudioIO drives, through the same dispatcher the app's windows speak.
 //
 // Thread law, restated because a plugin makes it easy to break:
-//   processBlock        render + playhead capture ONLY. Never sl_param_set,
-//                       never a snapshot, never sl_tape_load (they allocate /
+//   processBlock        render + playhead capture + MIDI-to-ring + the host
+//                       automation push (HostParams::pushToEngine — plain
+//                       atomic stores, the ONE param family an audio thread may
+//                       write; D-SL-DECKPLUGIN-04). Never sl_param_set, never a
+//                       snapshot, never sl_tape_load (they allocate /
 //                       republish — sl_engine.h §3, §5).
 //   message thread      everything else: dispatchFromUi (the editor's
 //                       slCommand), the 40 Hz HostSync pump, state save/load.
 #pragma once
 
+#include "HostParams.h"
 #include "HostSync.h"
 #include "LaneMap.h"
 #include "PeerRegistry.h"
@@ -63,6 +67,11 @@ public:
     PluginBackend& pluginBackend() { return *backend; }
     sl_engine* engineForTest() const { return engine; }
     HostSync& hostSync() { return sync; }
+
+    /** The host automation surface (D-SL-DECKPLUGIN-04) — the DAW's LFOs and
+        automation lanes standing in for the modulation bank this app never
+        ported. Built in the constructor and never reshaped. */
+    HostParams& hostParams() { return *automation; }
 
     /** The pump body, public so the headless ctest can tick it without a
         running message loop. The 40 Hz timer calls exactly this. */
@@ -209,6 +218,10 @@ private:
 
     sl_engine* engine = nullptr;
     std::unique_ptr<PluginBackend> backend;
+    // The host automation lanes. Held by pointer so the parameters are built in
+    // the constructor body, after the engine exists — the layout resolves each
+    // target's id against the ABI rather than hardcoding one.
+    std::unique_ptr<HostParams> automation;
     HostSync sync;
     LaneMap laneMap;
 
