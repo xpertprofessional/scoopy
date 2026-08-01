@@ -26,6 +26,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §5 window persistence | **DONE**; its PERF-density half was **REVERSED** by user ruling — see §5 | `31007c0` |
 | §7 tempo morph plumbing | **open** |
 | §9 launch quantize across instances | **DONE** — all four steps; signed as D-SL-DECKPLUGIN-03 | `0230141`·`92bbf3b`·`93c3ee8` |
+| §10 host automation (replaces the mod system) | **DONE** — 131 params; signed as D-SL-DECKPLUGIN-04 | `8b65b4d`·`5457b8a` |
 
 ### What is left, and where to start
 
@@ -517,6 +518,63 @@ the item it governs. Summary:
 - **D4 — One instance, N decks.** No cross-instance registry. §9 is rescoped to a
   multi-deck UI/routing job on top of `sl_deck_request_quantized_launch`. **Bitwig
   no longer matters** — its sandbox only broke the registry.
+
+## 10. Host automation  ·  **DONE 2026-08-01** — the DAW is the modulation system
+
+Signed as **D-SL-DECKPLUGIN-04**; read that entry before touching any of it.
+
+**The question this answered:** the donor's M1–M4 modulation bank never came
+across (`modChannel` is one of the 48 unanswered commands; parked as
+NAV-SHORTCUTS PARK-A). Rather than port four channel types, a 28-op protocol
+command and an arm-to-map routing UX, ScoopyDeck exposes the mod TARGETS as host
+parameters and lets the DAW's LFOs and automation lanes be the sources.
+
+**What shipped:** 131 parameters — 16 tracks × 8 targets (pitch, volume, pan,
+tone, sends 1–4) + deck transpose/texture + master level. `auval` reports "131
+Global Scope Parameters". All are ADDITIVE OFFSETS, neutral at 0: the web UI
+keeps owning base values, the host owns only its contribution, so there is no
+two-writer problem and an idle lane is bit-identical to no lane.
+
+**The seam, and why it is not where you would look.** Do NOT inject at the
+donor's five old LFO application sites. The core's per-track **base-ramp
+composition** (`renderSequencerFrames`, `NativeAudioEngineCore.cpp` ~4870) was
+already doing the hard parts — composes once per block, glides over 4 ms so
+nothing zippers, and every downstream consumer (varispeed voices, RubberBand
+voices, the send taps) already tracks a moved lane, so an offset reaches RINGING
+voices. A host offset is **one added term** in that target. Deck transpose was
+likewise already an additive sum in `pushSpectralParams`.
+
+**The new ABI family** — `sl_track_mod_*`, `sl_deck_mod_*`, `sl_master_set_mod`
+— is **the one parameter family an audio thread may write** (plain relaxed
+atomics, no republish). `processBlock`'s thread law in
+`ScoopyPluginProcessor.h` is amended to permit exactly it, and the push is per
+BLOCK on purpose: a 6 Hz LFO resampled at the 40 Hz pump arrives as a staircase.
+
+⚠️ **Idle must stay bit-identical**, and this is not a performance nicety — the
+DSP characterization gates assert exact sample values through that same
+composition loop. A per-deck nonzero-lane counter skips the mechanism whole;
+`sl_track_mod_test` renders two engines and compares every sample to prove it,
+including after an offset has been set and returned to zero.
+
+⚠️ **The core is editable** and older comments say otherwise. `engine.lock.json`
+pins only `vendor/scoopy/engine/*` + ThirdParty; its `_doc` says ScoopyLoops/
+moved in-tree at the P3-0 flip and "this tree is their writable home". Keep core
+edits ADDITIVE so the pinned v2 wrapper still compiles. The stale "forbidden to
+edit" banner atop `slengine/src/sl_engine.cpp` is corrected.
+
+**State chunk is v3** (sparse map of non-default offsets). The bump is
+deliberate: an older build handed a v3 chunk refuses it, rather than loading the
+project with every offset silently dropped and overwriting the user's file on the
+next save.
+
+**What host automation cannot replace** (in the decision entry, and not
+regressions to chase): grid/LCM-locked LFO phase, step-triggered MSEG envelopes,
+audio-rate `freeRate` FM, and four sources summing into one target. Those need an
+in-plugin modulator, which is a different feature.
+
+**Still owed — the real-host pass nobody can run headless:** draw an LFO on
+`T01 Pitch` in Live or Logic and confirm it sweeps, and that an idle lane changes
+nothing.
 
 ## Suggested order
 

@@ -1237,3 +1237,59 @@ a `sl_deck_request_launch_at_frame`-shaped ABI seam + its core half, the ppq→f
 the processor's audio thread, the cross-instance record, and a launch-quantum control on the
 deck face (D-SL-QUANTUM-01 already settled that the REFERENCE is per strip with an `auto`
 default — this supplies the plugin's answer for what `auto` resolves to: the host grid).
+
+## D-SL-DECKPLUGIN-04 · 2026-08-01 · Host automation replaces the modulation system
+**Decision:** ScoopyDeck exposes **131 host-automatable parameters** and the donor's M1–M4
+modulation bank is **not ported**. The DAW's LFOs and automation lanes become the modulation
+sources; the plugin exposes the TARGETS. User-approved 2026-08-01, four forks answered:
+  · **Scope — per-track AND deck.** 16 tracks × 8 targets (pitch, volume, pan, tone, sends
+    1–4) + deck transpose/texture + master level. 16 is the web tier's `MAX_TRACKS`; a fresh
+    session ships 8, and the upper lanes sit inert until a session that deep arrives, because
+    a plugin's parameter list is built at load and cannot wait to see a document.
+  · **Semantics — ADDITIVE OFFSETS, neutral at 0** (master: 0 dB). This is the ruling that
+    makes the rest work. The web UI keeps owning every base value and the host owns only its
+    contribution, so there is no two-writer arbitration to get wrong and no feedback loop to
+    guard — and it is the same shape the donor's bank used (additive semitones on pitch,
+    additive tone units on the filter), so this is a change of SOURCE, not of meaning. An
+    absolute binding was rejected: it would have made every UI edit a host notification and
+    every bound control a second writer.
+  · **Deck `rate` and all tempo params stay OUT.** `masterTempo`/`sessionBpm` were already
+    refused on the param lane (DECKPLUGIN-01) and `syncRatio`/`tempoMode`/`rate` are
+    republish-class and would fight `HostSync::pump`'s one-tempo-authority rule. Also
+    excluded: every boolean/enum/structural param (mute, reverse, loop region, chop, locators
+    — commands, not modulation), the per-step array lanes (document data), FX slots (they
+    expose no continuous params at all), route gains (dynamic id space, cannot be a fixed
+    layout) and the crossfader (does not exist in this engine build).
+  · **The layout is FROZEN once released, and append-only.** A DAW addresses automation by
+    index (AU) and id (VST3), so a reorder silently re-points a user's existing curves at the
+    wrong control. Ids are deck-qualified (`d0.t03.pitch`) though only deck 0 is automatable,
+    so D-SL-DECKPLUGIN-02 · D4's N-decks-in-one-instance appends rather than breaks. The
+    target table is spelled out in `HostParams.cpp` rather than enumerated from the ABI,
+    precisely so a target appended to the engine cannot re-shape a shipped plugin's list.
+**Rationale:** 48 of 86 protocol commands are answered by nobody and `modChannel` is one of
+them; the bank was parked (NAV-SHORTCUTS PARK-A). Porting it meant rebuilding four channel
+types, a 28-op protocol command, an arm-to-map routing UX and its persistence. Host automation
+delivers the same destinations through a source every DAW user already owns, and the engine
+turned out to have the seam for it: the core's per-track base-ramp composition already glides
+over 4 ms and already reaches ringing voices, so an offset is one added term rather than five
+new injection sites.
+**Stated costs, accepted — what host automation CANNOT replace:** the donor's LFO was
+grid-locked and re-anchored to musical step 0, with an `lcmMode` that tied its period to the
+pattern LCM (DAW automation is timeline-locked, so phrase alignment is lost); `.envelope`
+channels were triggered by another track's step pattern (no host analogue at all); `freeRate`
+modulation ran at AUDIO rate for FM/vibrato (host automation is block-rate); and four sources
+summed into one target (a DAW gives one lane per parameter). Anyone who wants those back is
+asking for an in-plugin modulator, not for this.
+**Consequences:** a new RT-safe ABI family — `sl_track_mod_*`, `sl_deck_mod_*`,
+`sl_master_set_mod` — which is **the one parameter family an audio thread may write** (plain
+relaxed atomics, no republish); `processBlock`'s thread law is amended to permit exactly it,
+and the push is per block because a 6 Hz LFO resampled at the 40 Hz pump is a staircase. Core
+edits landed in `ScoopyLoops/NativeAudioEngineCore.{hpp,cpp}` — permitted: `engine.lock.json`
+pins only `vendor/scoopy/engine/*` and ThirdParty, and its `_doc` says the core's writable home
+is this tree (the "forbidden to edit" comment atop `sl_engine.cpp` was stale and is corrected).
+A per-deck nonzero-lane counter skips the mechanism whole so an un-automated render stays
+bit-identical, which the DSP characterization gates depend on. State chunk goes **v2 → v3**
+(sparse map of non-default offsets); the bump is deliberate so an older build REFUSES a v3
+chunk rather than loading it with the offsets silently dropped and then overwriting the user's
+project on the next save. No web-tier change and no new protocol command: the surface is the
+host's, not the page's.

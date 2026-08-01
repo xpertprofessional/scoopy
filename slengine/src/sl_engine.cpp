@@ -1,6 +1,12 @@
-// SL ABI v3 — implementation. Thin by design: all behaviour lives in the
-// vendored scoopy core, which this tier is forbidden to edit (engine.lock.json;
-// apps/scoopy is the only writable home until the P3 flip).
+// SL ABI v3 — implementation. Thin by design: all behaviour lives in the scoopy
+// core, and this tier is the door onto it.
+//
+// ⚠️ That core is NO LONGER VENDORED-AND-FROZEN, whatever the older wording
+// here said. `engine.lock.json` still pins `vendor/scoopy/engine/*` and
+// ThirdParty, but its own `_doc` records that ScoopyLoops/ moved in-tree at the
+// P3-0 flip and "this tree is their writable home". Core edits are allowed and
+// have happened (D-SL-DECKPLUGIN-04's host-mod offsets); keep them ADDITIVE, so
+// the pinned v2 wrapper — which includes the same header — still compiles.
 #include "sl_engine.h"
 
 #include "sl_channel.h"
