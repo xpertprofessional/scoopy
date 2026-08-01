@@ -1143,3 +1143,44 @@ host-transport follow is user-switchable, default ON. Settings/Takes live under
 `ScoopyDeck/`, never `WizardMerged/`. `NativePluginHost.mm`'s per-executable rule now has a
 third case: this executable deliberately OMITS it.
 
+## D-SL-DECKPLUGIN-02 · 2026-08-01 · ScoopyDeck v2: the four kickoff forks, signed
+**Decision:** the four blocking decisions in `docs/merge/DECKPLUGIN-V2-KICKOFF.md`
+("Decisions needed", D1–D4) are answered as follows. Signed live 2026-08-01.
+  · **D1 — Five output buses: Main + Return 1–4.** Cue and Deck are CUT. Cue duplicated
+    Main and carried nothing of its own; the Deck bus read silent by design (per-deck lanes
+    fill only when `djMode && dedicatedOutput`) and enabling it **removed the deck from
+    Main**, which is a routing surprise, not a tap. This **amends DECKPLUGIN-01's**
+    "main/deck/cue/4 return-wet pairs" consequence line. The 4 mono **send** buses are
+    unaffected — sends are how the deck reaches DAW effects, and returns come back wet.
+    The smaller layout is also the leading suspect-fix for the Live instantiation failure
+    (kickoff §4), which stays to be diagnosed on its own terms.
+  · **D2 — Tempo source and transport source are TWO switches.** `CLK HOST/INT` keeps its
+    current meaning and governs `followTransport` **only**. A second control picks the
+    master-BPM source: host, or the typed master-BPM box. All four combinations are
+    reachable and musically real — notably "follow the DAW's play/stop, stretch against my
+    own 140", which is the only way to tell TP from TS at all today (§2). Consistent with
+    DECKPLUGIN-01's "host tempo is a second master SOURCE, not a second authority": the
+    tempo law stays in TS, this switch only chooses which number feeds it.
+  · **D3 — ScoopyDeck claims `Space` when the WebView holds OS focus.** Deck transport wins
+    over DAW transport once the user has clicked into the plugin; click-out releases. This
+    matches the standalone app's muscle memory, which the user ranked above host uniformity.
+    **Stated cost, accepted:** hosts that take `Space` before the plugin sees it (Live and
+    Logic both do, in some focus states) will silently not deliver it — the claim is
+    best-effort, not guaranteed, and must never be load-bearing for stopping audio. A
+    visible deck-transport control remains the reliable path. Requires the OS-focus work in
+    §8 (`setWantsKeyboardFocus`/`grabKeyboardFocus`) to be real at all.
+  · **D4 — One instance driving N decks.** NOT a cross-instance registry. The engine already
+    resolves `sl_deck_request_quantized_launch(deck, refDeck, steps)` **inside the audio
+    callback**, sample-accurately, and multi-out already gives each deck a bus — so joint
+    launching on a cycle boundary works today in one instance and never quite will across
+    instances. §9 is therefore a multi-deck UI/routing job, not IPC. **Bitwig's per-plugin
+    process sandbox becomes irrelevant** (it would have broken a registry outright), as does
+    the VST3-instance-cannot-see-an-AU-instance limit.
+**Rationale:** each fork was presented with its cost; these are the user's answers. D1 and
+D4 both shrink surface — fewer buses, no registry — and both remove a mechanism that looked
+like a feature but was silent or impossible in practice. D2 and D3 both spend a little
+complexity (one extra control, one focus dependency) to buy back behaviour the user actually
+performs with.
+**Consequences:** kickoff §4 loses its bus-count question and keeps only the Live diagnosis;
+§2 gains a second switch beside the master-BPM box; §8's OS-focus item is promoted from
+"nice" to **prerequisite** for D3; §9 is rescoped from registry to multi-deck.

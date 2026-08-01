@@ -164,6 +164,94 @@ check(
 for (const [name, b] of Object.entries(m.rows))
   check(`deck row "${name}" is present and has height`, b !== null && b.h > 0, JSON.stringify(b))
 
+// ── PERF COMMITS (DECKPLUGIN v2 §1) ────────────────────────────────────────
+//
+// The layout checks above are geometry; this one is the DOOR. PERF toggled, the
+// locator dragged, and NOTHING WAS WRITTEN — `setLocatorRange`/`setLocatorRepeat`
+// were absent from `VERIFIABLE_TRACK_OPS`, so owner mode declined them and they
+// fell through to `BrowserLink.trackEdit`'s bare `return { ok: true }`: accepted,
+// discarded, no error anywhere. Every unit test stayed green the whole time,
+// which is exactly why this assertion lives in a browser and reads the ROW.
+//
+// The readback is the row's own ⌊ start · length ⌉ boxes and its ↻ toggle — the
+// controls a user looks at — not internal state. So this fails if the write path
+// breaks OR if the write stops reaching the display.
+const perfState = () =>
+  page.evaluate(() => {
+    const box = (i, slug) =>
+      document.querySelector(`[data-focus-id$="track/${i}/${slug}"]`)?.textContent?.trim() ?? null
+    const rows = []
+    for (let i = 0; i < 8; i++) {
+      const start = box(i, 'locstart')
+      if (start === null) continue
+      const tog = document.querySelectorAll('.trk-loc-group .trk-tog')[rows.length]
+      rows.push({ i, start, len: box(i, 'loclen'), repeat: !!tog?.classList.contains('on') })
+    }
+    return rows
+  })
+
+const before = await perfState()
+check('the deck has track rows with locator readouts', before.length > 0, `${before.length} rows`)
+
+const perfBtn = await page.$('.deckrow-view .dr:has-text("PERF")')
+check('the PERF control exists', perfBtn !== null)
+if (perfBtn) {
+  await perfBtn.click()
+  await page.waitForTimeout(200)
+  const latched = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('.deckrow-view .dr')]
+        .find((b) => b.textContent.trim() === 'PERF')
+        ?.classList.contains('latched') ?? false,
+  )
+  check('PERF latches when clicked', latched)
+}
+
+// The cells are drawn to a canvas, so a gate cannot address "step N" (the same
+// limit browser_grid_test documents). It does not need to: the claim under test
+// is "a PERF drag on a track row commits a window", not "it commits step 4". So
+// sweep a few offsets down from the canvas top and take the first row that
+// moves — then assert what that row now says.
+let committed = null
+if (m.grid) {
+  const c = await page.evaluate(() => {
+    const r = document.querySelector('.grid-static')?.getBoundingClientRect()
+    return r ? { x: r.x, y: r.y, w: r.width } : null
+  })
+  check('the cell canvas is present to drag on', c !== null)
+  for (const dy of [22, 40, 60, 84, 110]) {
+    if (committed || !c) break
+    const y = c.y + dy
+    await page.mouse.move(c.x + c.w * 0.2, y)
+    await page.mouse.down()
+    await page.mouse.move(c.x + c.w * 0.3, y, { steps: 6 })
+    await page.mouse.move(c.x + c.w * 0.45, y, { steps: 6 })
+    await page.mouse.up()
+    await page.waitForTimeout(200)
+    const now = await perfState()
+    const moved = now.find((r, k) => before[k] && (r.start !== before[k].start || r.len !== before[k].len))
+    if (moved) committed = { ...moved, dy }
+  }
+}
+
+check(
+  'a PERF locator drag COMMITS — the row shows the new window',
+  committed !== null,
+  'no track row changed after dragging across the cell canvas in PERF',
+)
+check(
+  'the committed window is a RANGE, not a single step',
+  committed !== null && Number(committed.len) > 1,
+  `len=${committed?.len}`,
+)
+// `engage: true` rides the same gesture — a dragged window arms the repeat, which
+// is what makes the loop audible instead of merely drawn.
+check(
+  'the drag ENGAGES the locator repeat (↻ on)',
+  committed !== null && committed.repeat === true,
+  `repeat=${committed?.repeat}`,
+)
+
 await cleanup()
 server.close()
 
@@ -175,7 +263,8 @@ console.log(
     `deck pane ${m.pane?.w}×${m.pane?.h} · files w=${m.files?.w} at x=${m.files?.left} · ` +
     `grid h=${m.grid?.h} · rows ${Object.entries(m.rows)
       .map(([k, v]) => `${k}=${v?.h}`)
-      .join(' ')}`,
+      .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
+    `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy})`,
 )
 
 if (failures.length) {

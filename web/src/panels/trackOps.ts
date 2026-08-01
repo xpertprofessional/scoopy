@@ -33,6 +33,8 @@ export interface TrackOp {
   value?: number;
   index?: number;
   mode?: string;
+  startStep?: number; // setLocatorRange window start
+  engage?: boolean; // setLocatorRange: also engage locator repeat
 }
 
 /** Ops whose effect these reducers fully model — the rest poison the shadow chain. */
@@ -47,6 +49,8 @@ export const VERIFIABLE_TRACK_OPS = new Set([
   "setOwnerAttack", "setOwnerGate", "setMelodicPitchMode", "setSampleOut",
   "setMidiOutEnabled", "setMidiRootNote", "setMidiGate",
   "adjustLocatorStart", "adjustLocatorLength", "clearCellParameter",
+  // DJ perform gestures. Modeled here since DECKPLUGIN v2 §1 — see the reducers.
+  "setLocatorRange", "setLocatorRepeat",
   // C3b — modeled WITH their own restore buffers (see TrackBuffers).
   "setStepCount", "cyclePlaybackMode",
 ]);
@@ -59,6 +63,20 @@ export const VERIFIABLE_TRACK_OPS = new Set([
  * paths are correct. Keep these in VERIFIABLE_TRACK_OPS too (the reducer still models them).
  */
 export const SETTINGS_OWNED_TRACK_OPS = new Set(["setChokeGroup"]);
+
+/**
+ * Ops the owner path applies and publishes WITHOUT recording an undo entry.
+ *
+ * The locator mutators are undo-free live-perf ops throughout — the donor's `setLocatorRange`
+ * and `setLocatorRepeatActive` register none, and GridPanel's PERF release already sends them
+ * outside any undo bracket. Now that they are modeled (DECKPLUGIN v2 §1) they reach
+ * `publishOwned`, which records by default — so one PERF drag would push an entry and ⌘Z would
+ * walk the performance instead of the edits.
+ *
+ * ⚠️ The DELTA steppers (`adjustLocatorStart`/`adjustLocatorLength`, the row's ⌊ ⌉ boxes) are
+ * deliberately NOT here: they are discrete row edits and have recorded undo since P5-06.
+ */
+export const UNDO_FREE_TRACK_OPS = new Set(["setLocatorRange", "setLocatorRepeat"]);
 
 /**
  * Ops that fan out across a multi-track selection (NAV-12).
@@ -879,6 +897,37 @@ export function applyTrackOp(t: GridTrackState, op: TrackOp): GridTrackState {
       const len = clamp(t.locatorLengthSteps + Math.round(v), 1, n);
       return deriveTrackState({ ...t, locatorStartStep: start, locatorEndStep: start + len - 1 });
     }
+
+    // --- the DJ PERFORM gestures (absolute one-shots from the PERF locator drag), modeled since
+    // DECKPLUGIN v2 §1. They used to be deliberately unmodeled on the reasoning "Swift owns the
+    // engine's engagement latch, the web adopts the echo" — but there is no Swift in this tree.
+    // `trackEdit` is not in `MergedLink.NATIVE_METHODS`, so both ops fell through to BrowserLink's
+    // bare `return { ok: true }` and were SILENTLY DISCARDED: PERF previewed and committed nothing.
+    //
+    // The latch is safe to drive from a single publish. It lives entirely in the audio callback and
+    // is a frame-to-frame RISING EDGE on `locatorRepeatActive` (`NativeAudioEngineCore.cpp:5409` —
+    // `locatorWasActive` re-arms `locatorEngaged`), not a reaction to how many pushes arrived. One
+    // world carrying the new window AND active=true is exactly the donor's range-then-engage order
+    // with no window in between. Engaging when ALREADY engaged is a no-op in both (Swift's mutator
+    // guards `!=`; no rising edge here either), so a re-drag moves the window without re-arming.
+    case "setLocatorRange": {
+      // Mirrors BeatSequencer.setLocatorRange: end is clamped INTO the pattern, so a drag can
+      // never write the wrapping window that `locatorEndStep > stepCount-1` would encode.
+      const len = Math.max(1, Math.round(v));
+      const start = clamp(Math.round(op.startStep ?? t.locatorStartStep), 0, n - 1);
+      const end = Math.max(start, Math.min(n - 1, start + len - 1));
+      const repeat = op.engage ? true : t.locatorRepeatActive;
+      return deriveTrackState({
+        ...t,
+        locatorStartStep: start,
+        locatorEndStep: end,
+        locatorRepeatActive: repeat,
+      });
+    }
+    case "setLocatorRepeat":
+      // ABSOLUTE per-track (unlike the selection-scoped `toggleLocatorRepeat`, which stays unmodeled).
+      // Re-derives because `locatorStart`/`locatorLength` — the row's ⌊ ⌉ readouts — are null while off.
+      return deriveTrackState({ ...t, locatorRepeatActive: v !== 0 });
 
     // --- THE TWO WITH HIDDEN BUFFERS (C3b). See `TrackBuffers` — TS keeps its OWN stash; it is
     // not trying to reproduce Swift's, which is why these are reducers and not a wire problem.

@@ -328,19 +328,25 @@ instance with N decks delivers that today; N instances never quite will.
 
 ---
 
-## Decisions needed (blocking their items)
+## Decisions — ANSWERED 2026-08-01 · signed as **D-SL-DECKPLUGIN-02**
 
-- **D1 — Output buses.** Keep 11, or cut to Main + Return 1–4 (+Deck)? And what
-  should the **Deck** bus carry, given enabling `dedicatedOutput` **removes the
-  deck from Main**? (§4)
-- **D2 — Tempo source vs transport source.** Is `CLK HOST/INT` one switch
-  governing both, or two (tempo master ≠ transport master)? All four
-  combinations are musically real. (§2)
-- **D3 — Key claiming.** Which chords does ScoopyDeck claim, and which fall
-  through to the DAW? `Space` is the sharp case. (§8)
-- **D4 — Multi-deck shape.** Registry across instances, or one instance driving
-  N decks? Decides whether §9 is a registry or a multi-deck refactor. Does
-  **Bitwig** matter? (§9)
+All four are law now; read the full entry in `docs/DECISIONS.md` before acting on
+the item it governs. Summary:
+
+- **D1 — Five buses: Main + Return 1–4.** Deck and Cue are **cut** (Cue duplicated
+  Main; Deck read silent and enabling it *removed* the deck from Main). The 4 mono
+  **send** buses stay. Amends DECKPLUGIN-01's bus line. §4 keeps only the Live
+  diagnosis.
+- **D2 — Two switches.** `CLK HOST/INT` governs **transport only**, unchanged. A
+  **second** control picks the master-BPM source (host vs the typed box). §2 builds
+  both.
+- **D3 — ScoopyDeck claims `Space`** while the WebView holds OS focus; click-out
+  releases. Accepted cost: best-effort only — hosts that eat `Space` first win, so
+  it must never be the only way to stop audio. Makes §8's `grabKeyboardFocus` work
+  a **prerequisite**, not a nicety.
+- **D4 — One instance, N decks.** No cross-instance registry. §9 is rescoped to a
+  multi-deck UI/routing job on top of `sl_deck_request_quantized_launch`. **Bitwig
+  no longer matters** — its sandbox only broke the registry.
 
 ## Suggested order
 

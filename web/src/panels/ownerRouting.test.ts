@@ -58,13 +58,63 @@ describe("owner-mode routing", () => {
     }
   });
 
-  it("the DJ perform ops are still SENT — Swift owns the locator engagement latch", () => {
-    // setLocatorRange/setLocatorRepeat drive the engine's catch-the-playhead
-    // latch (off→on re-arms against the new window). TS applying them would
-    // fake a window the engine hasn't latched; the web adopts Swift's echo.
+  it("the DJ perform ops are APPLIED — there is no Swift to own the latch here", () => {
+    // These were unmodeled on the reasoning "Swift owns the engine's engagement latch, the web
+    // adopts the echo". That host is the donor. In THIS tree `trackEdit` has no native
+    // implementation and is not in `MergedLink.NATIVE_METHODS`, so both ops fell through to
+    // BrowserLink's bare `return { ok: true }` and PERF committed nothing (DECKPLUGIN v2 §1).
+    // The latch is a frame-to-frame rising edge inside the audio callback, so one publish
+    // carrying window+engage re-arms it exactly as the donor's two mutators did.
     for (const op of ["setLocatorRange", "setLocatorRepeat"]) {
-      expect(tsApplies(op), `${op} is a perform gesture — Swift owns the latch`).toBe(false);
+      expect(tsApplies(op), `${op} is a perform gesture with no native handler`).toBe(true);
     }
+  });
+
+  it("the SELECTION-scoped locator toggle stays unmodeled — only the per-track ops moved", () => {
+    // `toggleLocatorRepeat` fans out across the native multi-selection; `setLocatorRepeat` is the
+    // absolute per-track one. Modeling the wrong one of the pair is the failure this pins.
+    expect(tsApplies("toggleLocatorRepeat")).toBe(false);
+    expect(tsApplies("setLocatorRepeat")).toBe(true);
+  });
+
+  it("the perform reducers match the donor's mutators", () => {
+    const base = {
+      stepCount: 16,
+      locatorStartStep: 0,
+      locatorEndStep: 3,
+      locatorLengthSteps: 4,
+      locatorRepeatActive: false,
+      chopPoints: [],
+      chopCount: 0,
+      sampleDurationMs: 0,
+      gain: 1,
+      samplePeakGain: 1,
+    } as unknown as GridTrackState;
+
+    // setLocatorRange: startStep + value=lengthSteps (inclusive, ≥1), + engage.
+    const r = applyTrackOp(base, { op: "setLocatorRange", startStep: 4, value: 4, engage: true });
+    expect([r.locatorStartStep, r.locatorEndStep]).toEqual([4, 7]);
+    expect(r.locatorRepeatActive).toBe(true);
+    // …and the ⌊ ⌉ readouts come alive with it (null while the repeat is off).
+    expect([r.locatorStart, r.locatorLength]).toEqual([4, 4]);
+
+    // The end is clamped INTO the pattern — a drag never writes the wrapping window that
+    // `locatorEndStep > stepCount-1` encodes (BeatSequencer.setLocatorRange does the same).
+    const wrapped = applyTrackOp(base, { op: "setLocatorRange", startStep: 14, value: 8 });
+    expect([wrapped.locatorStartStep, wrapped.locatorEndStep]).toEqual([14, 15]);
+    // …and a plain range drag does NOT engage on its own.
+    expect(wrapped.locatorRepeatActive).toBe(false);
+
+    // Length is floored at 1: a zero-width drag loops the single step it landed on.
+    expect(applyTrackOp(base, { op: "setLocatorRange", startStep: 9, value: 0 }).locatorEndStep).toBe(9);
+
+    // setLocatorRepeat is ABSOLUTE, not a toggle — and disengaging blanks the readouts.
+    const off = applyTrackOp(r, { op: "setLocatorRepeat", value: 0 });
+    expect(off.locatorRepeatActive).toBe(false);
+    expect([off.locatorStart, off.locatorLength]).toEqual([null, null]);
+    expect(applyTrackOp(off, { op: "setLocatorRepeat", value: 1 }).locatorRepeatActive).toBe(true);
+    // Idempotent — re-sending 1 while engaged must not look like a fresh gesture.
+    expect(applyTrackOp(r, { op: "setLocatorRepeat", value: 1 }).locatorRepeatActive).toBe(true);
   });
 
   it("UNDO is still SENT — it never moved to TS", () => {

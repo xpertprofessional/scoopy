@@ -127,6 +127,7 @@ import { mulberry32, randomSeed } from "./rng.ts";
 import {
   VERIFIABLE_TRACK_OPS,
   SETTINGS_OWNED_TRACK_OPS,
+  UNDO_FREE_TRACK_OPS,
   fansOutToSelection,
   applyTrackOp,
   applyAdjustCellParameter,
@@ -1165,12 +1166,21 @@ export function GridPanel({
    * track goes quiet, echoes are adopted again — which is how a change Swift made on its own (a
    * sample load, an undo, a native edit) still reaches us.
    */
-  const publishOwned = (trackIndex: number, next: GridTrackState, label = "edit") => {
+  const publishOwned = (
+    trackIndex: number,
+    next: GridTrackState,
+    label = "edit",
+    // PERF locator gestures pass false: locator mutators are undo-free live-perf ops
+    // throughout (the donor's `setLocatorRange`/`setLocatorRepeatActive` register none, and
+    // the release site below already documents the intent). Without this, one PERF set would
+    // push an undo entry per drag and ⌘Z would walk the performance instead of the edits.
+    recordUndo = true,
+  ) => {
     // P5-06 UNDO — record BEFORE overwriting. Inside a gesture bracket this is a no-op (the
     // gesture records ONE entry when it closes); outside one it records the discrete edit.
     const prev = patternRef.current[trackIndex];
     const nextPattern = projectPattern(next);
-    if (prev) recordEdit(trackIndex, prev, nextPattern, label, samePattern);
+    if (prev && recordUndo) recordEdit(trackIndex, prev, nextPattern, label, samePattern);
 
     tracksRef.current[trackIndex] = next;
     patternRef.current[trackIndex] = nextPattern;
@@ -2935,7 +2945,12 @@ export function GridPanel({
     if (!fanOut && ownerRef.current && typeof ti === "number" && VERIFIABLE_TRACK_OPS.has(opName)) {
       const cur = tracksRef.current[ti];
       if (cur) {
-        publishOwned(ti, applyTrackOp(cur, params as unknown as TrackOp));
+        publishOwned(
+          ti,
+          applyTrackOp(cur, params as unknown as TrackOp),
+          "edit",
+          !UNDO_FREE_TRACK_OPS.has(opName),
+        );
         // Settings-scene-owned ops (chokeGroup) are NOT carried in the pattern payload Swift
         // adopts, so the desktop only learns them via a dedicated trackEdit. The publish above
         // covers the browser companion / optimistic UI; also send the command and adopt Swift's
