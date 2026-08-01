@@ -5,6 +5,8 @@
 #include "SlWorldApply.h"
 #include "sl_engine.h"
 
+#include <cmath>
+
 namespace wizard::plugin {
 
 namespace {
@@ -333,6 +335,43 @@ void ScoopyPluginProcessor::withRenderDetached(const std::function<void()>& fn) 
  * inside the audio callback (an `sl_deck_request_launch_at`-shaped ABI add);
  * measured and written up rather than assumed — see plugin_processor_test §2e.
  */
+uint64_t ScoopyPluginProcessor::armHostQuantizedLaunch(double quantumBeats) {
+    if (engine == nullptr) return 0;
+    // A non-positive or non-finite quantum is a division by nothing, not
+    // "launch now" — refused, the discipline the rest of this surface uses.
+    if (!(quantumBeats > 0.0) || !std::isfinite(quantumBeats)) return 0;
+
+    const auto s = sync.snapshot();
+    // The ENGINE's rate, not `getSampleRate()`. The latter is set by JUCE's
+    // format wrapper, not by our own prepareToPlay — so it reads 0 in any
+    // context that drives the processor directly (every headless gate, and
+    // pluginval's harness), and the arm would refuse for a reason that has
+    // nothing to do with the host's grid. The engine's rate is the one we
+    // configured and is authoritative wherever the deck can make a sound.
+    const double sr = sl_engine_sample_rate(engine);
+    // No playhead, a stopped host, or a tempo we cannot trust: there is no grid
+    // to land on. Refuse rather than invent one — the caller launches now, which
+    // is the honest behaviour when there is nothing to wait for.
+    if (!s.valid || !s.playing || !(s.bpm > 0.0) || !(sr > 0.0)) return 0;
+
+    // The next boundary STRICTLY ahead, so arming while sitting exactly on one
+    // does not fire in the past — a fraction of a beat of latency beats a
+    // launch that resolves behind the playhead.
+    const double grid = std::floor(s.ppq / quantumBeats) + 1.0;
+    const double targetPpq = grid * quantumBeats;
+
+    // ppq → seconds → frames, through the SAME anchor `capture()` recorded, so
+    // the age of the snapshot cannot skew the result.
+    const double beatsAway = targetPpq - s.ppq;
+    const double framesAway = beatsAway * (60.0 / s.bpm) * sr;
+    if (!std::isfinite(framesAway) || framesAway < 0.0) return 0;
+
+    const auto target = s.engineTime + static_cast<uint64_t>(std::llround(framesAway));
+    if (target == 0) return 0; // the ABI's "nothing armed" sentinel
+    sl_deck_request_launch_at_frame(engine, 0, target);
+    return target;
+}
+
 int ScoopyPluginProcessor::hostAlignedStartStep() const {
     const auto s = sync.snapshot();
     if (!s.valid || !sync.currentRecipe().syncEnabled) return 0;

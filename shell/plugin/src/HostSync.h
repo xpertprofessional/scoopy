@@ -92,14 +92,27 @@ public:
     Snapshot snapshot() const noexcept;
 
 private:
-    // RT → message handoff. Relaxed is enough: each field is independently
-    // meaningful at control rate, and the consumer tolerates a torn *pairing*
-    // (one pump tick later they agree again).
+    // RT → message handoff. The stores stay relaxed and the SEQLOCK below is
+    // what makes them coherent — see it for which pairing stopped being
+    // tolerable and why.
     std::atomic<double> hostBpm{0.0};
     std::atomic<double> hostPpq{0.0};
     std::atomic<bool> hostPlaying{false};
     std::atomic<bool> hasPlayhead{false};
     std::atomic<uint64_t> engineTimeAtCapture{0};
+    /** SEQLOCK over the capture, and it exists for exactly one reader.
+     *
+     *  The fields above are individually meaningful at control rate, so relaxed
+     *  stores were fine while the only consumers were a tempo readout and a
+     *  transport lamp — a torn pairing costs one pump tick and heals.
+     *
+     *  `ppq` and `engineTime` are NOT independent, though: together they are the
+     *  ANCHOR that converts a musical boundary into an engine frame
+     *  (D-SL-DECKPLUGIN-03). Read them from different blocks and the anchor is
+     *  off by a block, which puts the launch off by a block — the precise error
+     *  the whole feature exists to avoid, and one that would look like jitter
+     *  rather than like a bug. Odd = a write in progress. */
+    std::atomic<uint32_t> captureSeq{0};
 
     // Message-thread state.
     HostSyncRecipe recipe;

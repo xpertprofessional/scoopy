@@ -67,6 +67,28 @@ public:
         running message loop. The 40 Hz timer calls exactly this. */
     void pumpHostSync();
 
+    /** ARM A LAUNCH ON THE HOST'S GRID (D-SL-DECKPLUGIN-03, step 2).
+     *
+     *  `quantumBeats` is the musical grid to land on — 4 for a bar of 4/4, 16
+     *  for four bars, 1 for a beat. The deck is held and released on the next
+     *  multiple of that on the DAW's timeline.
+     *
+     *  THIS IS WHAT LINES UP ACROSS INSTANCES, and it needs nothing shared:
+     *  every instance resolves the same host `ppqPosition` to the same musical
+     *  boundary, converts it through its OWN clock, and releases there.
+     *
+     *  MESSAGE THREAD, and it can be — which is the part worth not
+     *  rediscovering. `capture()` stores ppq and the engine frame as one
+     *  anchored pair, so a boundary computed from a snapshot taken up to a pump
+     *  tick ago is still EXACT: the staleness is in the anchor, not in the
+     *  arithmetic. That is why nothing here has to run on the audio thread,
+     *  and why the arm may safely republish the world (which allocates).
+     *
+     *  Returns the absolute engine frame armed, or 0 if it could not arm — no
+     *  playhead, a stopped host, or a nonsense quantum. A caller that gets 0
+     *  should launch immediately rather than leave the deck held. */
+    uint64_t armHostQuantizedLaunch(double quantumBeats);
+
     /** How the processor reaches the page. The EDITOR owns the WebView and may
         not exist, so it registers this on construction and clears it on
         destruction — the processor never holds a raw editor pointer, which is

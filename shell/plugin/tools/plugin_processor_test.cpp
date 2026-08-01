@@ -164,6 +164,62 @@ int main() {
         CHECK(hf[SL_HF_djTrackStepD0T0] >= 0.0);
     }
 
+    // ── §1c HOST-GRID LAUNCH: the boundary is MUSICAL, the landing is EXACT ──
+    //
+    // D-SL-DECKPLUGIN-03 step 2. `armHostQuantizedLaunch(beats)` turns "the next
+    // bar on the DAW's timeline" into an absolute engine frame, which is what
+    // lets two instances land together without sharing anything: each resolves
+    // the same host ppq through its own clock.
+    //
+    // Checked as ARITHMETIC rather than by listening, because the arithmetic is
+    // the claim. At 120 BPM a beat is 0.5 s = 24000 frames @48k; sitting at
+    // ppq 2.5 with a 4-beat quantum, the next bar line is ppq 4.0, i.e. 1.5
+    // beats = 36000 frames away.
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(p, 120.0, true));
+
+        FakePlayHead head;
+        head.bpm = 120.0;
+        head.ppq = 2.5;
+        head.playing = true;
+        p.setPlayHead(&head);
+        renderPeak(p, 512, 1); // capture() anchors ppq to the engine clock
+
+        const uint64_t anchor = p.hostSync().snapshot().engineTime;
+        const uint64_t armed = p.armHostQuantizedLaunch(4.0);
+        std::printf("  host launch: ppq %.2f q4 -> frame %llu (anchor %llu, +%lld)\n",
+                    head.ppq, (unsigned long long) armed, (unsigned long long) anchor,
+                    (long long) (armed - anchor));
+        CHECK(armed > 0);
+        CHECK(armed - anchor == 36000);
+
+        // The quantum is honoured, not assumed: a 1-beat grid from ppq 2.5 is
+        // ppq 3.0, half a beat = 12000 frames.
+        CHECK(p.armHostQuantizedLaunch(1.0) - anchor == 12000);
+        // …and 16 beats (four bars) lands on ppq 16, not on the next bar.
+        CHECK(p.armHostQuantizedLaunch(16.0) - anchor == 324000);
+
+        // STRICTLY AHEAD: sitting exactly on a boundary must arm the NEXT one,
+        // never resolve behind the playhead where it would fire immediately.
+        head.ppq = 4.0;
+        renderPeak(p, 512, 1);
+        const uint64_t onGrid = p.hostSync().snapshot().engineTime;
+        CHECK(p.armHostQuantizedLaunch(4.0) - onGrid == 96000); // ppq 8, a full bar on
+
+        // REFUSALS — each returns 0 so the caller launches now rather than
+        // leaving the deck held forever on a grid that does not exist.
+        CHECK(p.armHostQuantizedLaunch(0.0) == 0);
+        CHECK(p.armHostQuantizedLaunch(-4.0) == 0);
+        head.playing = false; // a stopped host has no grid to land on
+        renderPeak(p, 512, 1);
+        CHECK(p.armHostQuantizedLaunch(4.0) == 0);
+        p.setPlayHead(nullptr); // and neither has a host with no playhead
+        renderPeak(p, 512, 1);
+        CHECK(p.armHostQuantizedLaunch(4.0) == 0);
+    }
+
     // ── §2 TEMPO FOLLOW ─────────────────────────────────────────────────────
     {
         ScoopyPluginProcessor p;

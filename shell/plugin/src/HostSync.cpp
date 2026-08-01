@@ -2,6 +2,7 @@
 
 #include "sl_engine.h"
 
+#include <atomic>
 #include <cmath>
 
 namespace wizard::plugin {
@@ -28,6 +29,10 @@ void HostSync::capture(juce::AudioPlayHead* playhead, const sl_engine* engine) n
         hasPlayhead.store(false, std::memory_order_relaxed);
         return;
     }
+    // Seqlock: ppq and engineTime are one ANCHOR, not two readings (see the
+    // header). Odd while writing, even when settled.
+    captureSeq.fetch_add(1, std::memory_order_release);
+    std::atomic_thread_fence(std::memory_order_release);
     if (const auto bpm = pos->getBpm(); bpm.hasValue() && *bpm > 0.0)
         hostBpm.store(*bpm, std::memory_order_relaxed);
     if (const auto ppq = pos->getPpqPosition(); ppq.hasValue())
@@ -36,15 +41,29 @@ void HostSync::capture(juce::AudioPlayHead* playhead, const sl_engine* engine) n
     if (engine != nullptr)
         engineTimeAtCapture.store(sl_engine_time_samples(engine), std::memory_order_relaxed);
     hasPlayhead.store(true, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+    captureSeq.fetch_add(1, std::memory_order_release);
 }
 
 HostSync::Snapshot HostSync::snapshot() const noexcept {
     Snapshot s;
-    s.bpm = hostBpm.load(std::memory_order_relaxed);
-    s.ppq = hostPpq.load(std::memory_order_relaxed);
-    s.playing = hostPlaying.load(std::memory_order_relaxed);
-    s.valid = hasPlayhead.load(std::memory_order_relaxed);
-    s.engineTime = engineTimeAtCapture.load(std::memory_order_relaxed);
+    // Retry until the sequence is even and unchanged across the read — then
+    // ppq and engineTime came from the same capture and the anchor is sound.
+    // BOUNDED: capture runs once per block, so a reader can lose at most a
+    // couple of races before it wins, and spinning forever on the message
+    // thread is not a failure mode worth risking for a tempo readout.
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto before = captureSeq.load(std::memory_order_acquire);
+        if (before % 2 != 0) continue; // a write is in flight
+        std::atomic_thread_fence(std::memory_order_acquire);
+        s.bpm = hostBpm.load(std::memory_order_relaxed);
+        s.ppq = hostPpq.load(std::memory_order_relaxed);
+        s.playing = hostPlaying.load(std::memory_order_relaxed);
+        s.valid = hasPlayhead.load(std::memory_order_relaxed);
+        s.engineTime = engineTimeAtCapture.load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (captureSeq.load(std::memory_order_acquire) == before) break;
+    }
     return s;
 }
 
