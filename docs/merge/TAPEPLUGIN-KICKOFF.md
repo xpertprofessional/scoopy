@@ -4,15 +4,30 @@
 the ScoopyDeck plugin spine and the donor. Line numbers were verified on that
 date — confirm they still point at the same thing, but **trust the finding**.
 
-This is a **planning document, not a claim of work done.** Nothing in §1–§8 is
-built. The eight decisions in "The ground" are answered by the user and are the
-design law this brief rests on; the still-open ones are in
-`PARALLEL-PROTOCOL.md` §10d.
+The eight decisions in "The ground" are answered by the user and are the design
+law this brief rests on; the still-open ones are in `PARALLEL-PROTOCOL.md` §10d.
 
 Companion documents: `docs/merge/LOOPER-DESIGN.md` (the 2026-07-25 ruling that
 the looper IS the tape tier — its settled facts are assumed here, not repeated),
 `docs/merge/DECKPLUGIN-V2-KICKOFF.md` (the spine this reuses), `docs/DESIGN.md`
-(binding on every control below).
+(binding on every control below), and — **read this one, it was missed on the
+first pass** — `../scoopyloops/docs/plugins/PLUGIN-DESIGN-SYSTEM.md`, the design
+law for the whole Scoopy PLUGIN LINE. See "The plugin line" below.
+
+## STATUS — 2026-08-01
+
+| § | State | Commit |
+|---|---|---|
+| §1a spine made product-neutral | **DONE** | `6806f6e` |
+| §1b the plugin target + gate | **DONE** | `a49a4a6` |
+| §1c the `plugintape` web face + walk | **open** — the remaining half of the door |
+| §2–§8 | **open** |
+
+`Scoopy Tape` builds AU + VST3 + Standalone, `auval -v aumf Tape Scpy` passes
+clean, ctest is 47/47. What does NOT exist yet is the face: the editor points at
+`window.__slPanel = "plugintape"` and nothing answers that route, so the window
+opens on App.tsx's fallback. **§1 is not closed until the walk asserts a real
+layout.**
 
 ---
 
@@ -156,6 +171,13 @@ map and a `"Record In"` input bus that Live is already suspected of disliking
 (DECKPLUGIN §4 hypothesis 1); changing a shipped plugin's buses changes its ID
 and breaks saved projects. A looper is an insert effect and should say so.
 
+> **CONFIRMED AND SETTLED 2026-08-01**, re-asked once `~/xpert/plugins/` came to
+> light, because that raised a third option this question never offered: its own
+> repo on the Pulsar template. Ruling: **it stays in `apps/scoopy`** — see "The
+> plugin line" for the reasoning and the two other deliberate divergences.
+> Name and code are settled: **"Scoopy Tape", `PLUGIN_CODE Tape`**, claimed from
+> the line registry (entry owed there), `BUNDLE_ID com.scoopyloops.scoopytape`.
+
 **A2 — "Pulsar" meant the design system, not the grain engine.**
 The binding rule is `docs/DESIGN.md` + `plane.css` tokens. The DSP core's
 pulsar/grain mode (`NativeAudioEngineCore`) is **not** thereby in scope; it
@@ -176,6 +198,30 @@ One display; flip between 8 snapshot slots to record into a fresh one or reload
 a previous one. This maps 1:1 onto `TapeBank`'s existing 8 tapes. **A preset
 system is therefore in scope** — a preset stores all 8 snapshots, not just DAW
 project state.
+
+> **AMENDED 2026-08-01, once the plugin line was found.** This is not a new
+> idea: 8 slots is **the Scoopy plugin signature** (PLUGIN-DESIGN-SYSTEM §5),
+> already shipping in Spectral FX, Trombone and Pulsar. §3 therefore CLONES the
+> established shape — `ValueTree "SNAPSHOTS"` with `SLOT_0..7`, a `filled` flag,
+> a shared bank per plugin at
+> `~/Library/Application Support/ScoopyLoops/Scoopy Tape/snapshots.xml` loaded
+> at construction and **merged bank-wins** on restore — rather than inventing
+> one.
+>
+> **What it extends** (user ruling): in the line's plugins a slot holds
+> normalised PARAMETER values. Here **a slot holds the recorded AUDIO plus its
+> params** — rate, loop points, pulse relation, texture. That is what flipping
+> slots means in a looper, and it is the one place the signature does not reach.
+> Consequences to design in §3 rather than discover:
+> - **Morph** is the signature's other half and it can only interpolate params.
+>   Audio does not morph; a slot flip is a cut or a crossfade (open, §10d). Say
+>   that in the UI rather than offering a morph slider that half-works.
+> - The line stores snapshots as XML inside the state tree. Audio cannot go
+>   there — which is exactly what A6's embed-under-cap rule is for. `filled`
+>   generalises to "has audio / has params / has both".
+> - **Performance params are excluded from a snapshot** per the line ("snapshot
+>   what the sound *is*, not how it's played"). For a looper that excludes scrub
+>   position and transport state; it does not exclude rate or loop points.
 
 **A5 — An explicit scrub-style selector**, a `Stepper`/`Select` at the display
 edge. The style is a mode, not a modifier: the gesture is still decided once at
@@ -212,6 +258,60 @@ reveals. Drag-out of the plugin window is a later quality — it needs new
 WKWebView file-drag machinery and should not gate v1.
 
 ---
+
+## The plugin line — the layer this brief originally MISSED
+
+⚠️ **Read this before designing anything.** The first draft of this document was
+written without knowing that `~/xpert/plugins/` exists. It does, and it changes
+what "a Scoopy plugin" means. `~/xpert/plugins/scoopy-pulsar` is a shipping
+sibling (`aumu Puls Scpy`), and `../scoopyloops/docs/plugins/PLUGIN-DESIGN-SYSTEM.md`
+is the design law for the line. `Scoopy Spectral FX` and `Scoopy Trombone` are
+two more. Confirmed 2026-08-01 by `auval -a`.
+
+**The user's "use scoopy plugin token/appearance guides (like pulsar)" meant
+THIS**, not the pulsar grain mode in `NativeAudioEngineCore` — that reading was
+wrong and the question it produced was badly premised.
+
+What the line establishes, and how ScoopyTape relates to each:
+
+| Convention | Where | ScoopyTape |
+|---|---|---|
+| `Scoopy <Thing>` · `Scpy` · a 4-char code claimed in the §7 registry | PLUGIN-DESIGN-SYSTEM §7 | **`Tape`** — claimed, ⚠️ entry still OWED, see below |
+| `AU VST3 Standalone`, `COPY_PLUGIN_AFTER_BUILD` | pulsar `plugin/CMakeLists.txt:8-35` | done; `VST3_CATEGORIES Fx` added |
+| **8-slot snapshots + morph — "the Scoopy plugin signature"** | PLUGIN-DESIGN-SYSTEM §5 | **A4 extends it** — see the amendment below |
+| State root `"SCOOPY<NAME>"` ValueTree; shared bank at `~/Library/Application Support/ScoopyLoops/<Name>/snapshots.xml`, merged-bank-wins | §5 | §3 adopts |
+| Host params from ONE X-macro `.def` → generated APVTS layout + relay specs; "do not hand-add a parameter" | pulsar `engine/include/pg_params.def`, `plugin/Source/ParamLayout.h:18` | **§8 adopts** — see below |
+| Scalars ride **parameter relays with gesture bracketing**; fire-and-forget param writes are banned because they break host automation recording and undo | pulsar `docs/ARCHITECTURE.md` | §8 adopts |
+| `shared/design/tokens.core.ts` vendored + hash-pinned, **never restated, never reformatted** | `~/xpert/shared/design` | already vendored here (`shared.lock.json`) — `shared:check` is one of our ten gates |
+| One accent `#ef8b9a`, `#57c07a` for anything live, 18px bars in 26px rows on a 4px cell, mono-dominant 11px uppercase labels, radius 0 | tokens.core + PLUGIN-DESIGN-SYSTEM §4 | **agrees with our `--control-h: 18px` / `--cell: 4px` already** |
+| **Failure is visible, never blank**; a null backend is a real state rendered as such, never faked | pulsar `docs/ARCHITECTURE.md` | the same rule as our DESIGN.md rule 7, stated harder |
+| Canvas over SVG for dense redraw, one DPR recipe: size in CSS, backing store at `clientWidth × dpr`, `setTransform(dpr,…)`, draw in CSS px — "a blurry ruler reads as a broken one" | pulsar `TrainRuler.tsx:33-46` | **§4 should reuse this verbatim** |
+
+**Where ScoopyTape deliberately DIVERGES from the line, and why** (user, 2026-08-01):
+
+- **It lives in `apps/scoopy`, not in its own `~/xpert/plugins/scoopy-tape`.**
+  Pulsar's template assumes a self-contained JUCE-free `engine/`. This product's
+  entire value is `slengine`'s tape tier plus `SlDispatch` plus the takes
+  library — a separate repo would have to vendor all three to arrive back where
+  it already is. The conventions are adopted in place instead.
+- **`AU_MAIN_TYPE kAudioUnitType_MusicEffect` (aumf), not `kAudioUnitType_Effect`.**
+  The line's effect convention is aufx, but auval refuses that combination once
+  MIDI in is declared, and the MIDI port is declared on purpose (see §1).
+- **No `AU_SANDBOX_SAFE`.** Pulsar can assert it because it makes zero external
+  file reads. This plugin reads settings and writes the shared takes library, so
+  asserting it would be a false claim.
+
+### ⚠️ OWED: the registry entry
+
+`PLUGIN-DESIGN-SYSTEM.md` §7 says "claim the next here", and **this project may
+not write to `../scoopyloops`** (CLAUDE.md: never write to that repo). So the
+claim is recorded here and the registry line is owed:
+
+> `` `Tape` = Scoopy Tape ``
+
+Until someone adds it there, the code is claimed only by this document and by
+`shell/plugin/CMakeLists.txt`. Nothing has shipped, so a collision is still
+cheap to fix; after a ship it is not.
 
 ## The recurring traps (all three have already cost this project time)
 
@@ -402,6 +502,14 @@ arrays.
 1. **DPR-aware column counts** — ask for device pixels, not CSS pixels. Adopt
    `web/src/design/waveformStyle.ts`'s truth contract, which the grid renderer
    already honours: *1 drawn column = 1 device pixel, amplitude linear.*
+   The line has one canvas recipe used by all five of Pulsar's canvases
+   (`TrainRuler.tsx:33-46` and its four siblings) — size in CSS, backing store
+   at `round(clientWidth × dpr)`, `ctx.setTransform(dpr,0,0,dpr,0,0)`, then draw
+   in CSS px, with `Math.round(x) + 0.5` offsets for crisp hairlines. Its
+   comment is the whole argument for this section: *"Backing store at device
+   resolution; a blurry ruler reads as a broken one."* Reuse it verbatim rather
+   than deriving a second one. Canvas over SVG is also settled there: *"2048
+   points redrawn at 30 Hz is exactly the case SVG handles badly."*
 2. **An engine-side peak cache / mip pyramid.** The donor's
    `../scoopyloops/ScoopyLoops/WaveformCache.swift` is the model — LRU by id,
    resolutions clamped `[8, 8192]`, per-channel min/max, lazy RMS, lazy FFT
@@ -527,16 +635,36 @@ a renamed or reordered ID silently breaks every saved automation lane in every
 user project. ScoopyDeck avoided this entirely by shipping zero parameters —
 this plugin is taking the opposite bet and must pay for it up front.
 
+**The line already solved the mechanics — clone them, do not invent** (see "The
+plugin line"). Pulsar generates everything from ONE X-macro file
+(`engine/include/pg_params.def`): the APVTS layout, the host-facing labels, the
+id list and the relay specs all expand from it, and `ParamLayout.h:18` says
+flatly *"Do not hand-add a parameter here. Add it to the .def."* A `--check`
+gate fails the build when a generated file is stale. That is the same
+generated-contract discipline this repo already runs for `params:check` /
+`worldmap:check` / `hotframe:check`, so it costs a pattern we know rather than a
+new one.
+
+Two rules from the line that are load-bearing here:
+- **IDs are dotted lowercase-camel** (`global.amp`, `group1.formantRatio`), and
+  the same string is the host param ID, the engine key and the relay name.
+- **Scalars ride parameter relays with gesture bracketing.** Pulsar's
+  ARCHITECTURE is explicit that a fire-and-forget param write is a defect:
+  *"without `beginChangeGesture`/`endChangeGesture` the host records no
+  automation and undo is broken, and without feedback the on-screen control does
+  not move when the host automates."* ⚠️ ScoopyDeck's `slParam` lane is exactly
+  that fire-and-forget shape — do not copy it here.
+
 Proposed surface, **to be signed as a decision before any build leaves this
-machine**: `rate` (signed, bipolar) · `texture` · `level` · `pulseRatio`
-(detented) · `snapshot` (1–8) · `scrubPosition` · `loopStart` · `loopEnd` ·
-plus the creative layer (`warp`, `warpFocus`, `phaseChaos`, `spectralBlur`,
+machine**: `tape.rate` (signed, bipolar) · `tape.texture` · `tape.level` ·
+`tape.pulseRatio` (detented) · `tape.snapshot` (1–8) · `scrub.position` ·
+`loop.start` · `loop.end` · plus the creative layer (`warp.*`, `flux.*`,
 `air`, `formant`, `tilt`, `transpose`).
 
 Design notes:
 - Every parameter needs a **defined relationship to the web control that also
-  writes it** — the deck's `slParam` lane maps exactly two names and warns-once
-  on the rest; that pattern does not scale to this surface.
+  writes it** — the relay pattern above is that relationship, and it is why the
+  deck's two-name `slParam` map does not scale to this surface.
 - `scrubPosition` carries §5's ownership rule.
 - `pulseRatio` should quantize to `RATIO_TABLE` indices, not expose a raw float.
 - `setModExternal` on the stretcher is **plugin-only** and unused by the app —
@@ -600,9 +728,13 @@ step per commit.
   actually trip. There is **no `protocol:check`** — `web/package.json` is the
   authority.
 - `node tools/browser_plugintape_test.mjs` (new, §1) and the existing walks.
-- `auval -v aufx <CODE> Scpy` — note **`aufx`**, not the deck's `aumu`, because
-  this is an effect. ⚠️ `pluginval` is **not installed**; install it or state
-  that it is unrun.
+- **`auval -v aumf Tape Scpy`** — `aumf` (MusicEffect), not the deck's `aumu`
+  and not `aufx`: auval itself refuses aufx once a MIDI in port is declared
+  ("AU implements MusicDeviceMIDIEvent but is of type 'aufx'"). ⚠️ After a
+  `PLUGIN_CODE` or type change the AU registry caches the old entry — run
+  `killall -9 AudioComponentRegistrar` or auval reports "didn't find the
+  component" on a plugin that is installed and fine. ⚠️ `pluginval` is **not
+  installed**; install it or state that it is unrun.
 - `npm run bundle` **LAST** before `git add`, or `.buildhash` records a tree
   that no longer exists (the P3-X4 lesson).
 - ⚠️ `engine:check` drift is pre-existing (recorded in P6-3) — not yours.
