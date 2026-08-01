@@ -252,10 +252,24 @@ check('grid content fits the box', g.contentBottom !== null && g.contentBottom <
   await page.waitForTimeout(150)
 
   // And the PRIMARY button must still drag, or the guard traded one bug for another.
+  //
+  // ⚠️ GRAB THE NAME, not the head's geometric centre. This dragged from
+  // `head.width / 2` and failed for two months without being a product bug: the
+  // head is a dense row — ⋯ · name · ⇄ · master · out · fb · state · elapsed —
+  // and the ⇄ EXPAND button (grid strips only, added by P3-D4-1) landed within
+  // a couple of pixels of the midpoint. The plane then correctly refused to
+  // drag, because `onPointerDown` suppresses dragging that STARTS on a control
+  // (`closest('input, button, select, textarea, [data-no-drag]')`) — a fader
+  // drag must never also move the strip.
+  //
+  // So the gate was asserting a gesture at a point whose ownership changes
+  // whenever the head gains a control. `.strip-name` is what a person actually
+  // grabs, it is the widest thing in the row, and it is not a control.
+  const grip = await page.locator('.strip-name').first().boundingBox()
   const before = await page.evaluate(() => document.querySelector('.plane-strip').getBoundingClientRect().left)
-  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2)
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
   await page.mouse.down()
-  await page.mouse.move(head.x + 200, head.y + 40, { steps: 6 })
+  await page.mouse.move(grip.x + 200, grip.y + 40, { steps: 6 })
   await page.mouse.up()
   await page.waitForTimeout(250)
   const after = await page.evaluate(() => document.querySelector('.plane-strip').getBoundingClientRect().left)
