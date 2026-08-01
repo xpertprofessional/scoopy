@@ -253,6 +253,77 @@ int main() {
         CHECK(p.armHostQuantizedLaunch(4.0) == 0);
     }
 
+    // ── §1d PEERS: deck B waits on deck A's CYCLE (step 4) ──────────────────
+    //
+    // The one question the host clock cannot answer. Steps 1-3 let both decks
+    // land on the same BAR with nothing shared; landing on A's CYCLE needs A's
+    // length and phase, which is what the process-wide row carries.
+    //
+    // ⚠️ Two processors in ONE process, which is the only place this works —
+    // Bitwig sandboxes each plugin and a VST3 cannot see an AU. The fallback is
+    // asserted below precisely because those cases are permanent.
+    {
+        ScoopyPluginProcessor a;
+        ScoopyPluginProcessor b;
+        a.prepareToPlay(48000.0, 512);
+        b.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(a, 120.0, true));
+        CHECK(publishTone(b, 120.0, true));
+        CHECK(a.peerSlotForTest() >= 0);
+        CHECK(b.peerSlotForTest() >= 0);
+        CHECK(a.peerSlotForTest() != b.peerSlotForTest()); // no shared row
+
+        FakePlayHead head;
+        head.bpm = 120.0;
+        head.playing = true;
+        head.ppq = 0.0;
+        a.setPlayHead(&head);
+        b.setPlayHead(&head); // one DAW timeline, as a host gives every instance
+        renderPeak(a, 512, 1);
+        renderPeak(b, 512, 1);
+
+        // A launches on a bar and publishes an 8-beat cycle (a 32-step pattern).
+        const uint64_t aFrame = a.armHostQuantizedLaunch(4.0);
+        CHECK(aFrame > 0);
+        a.publishPeerCycle(8.0, true);
+
+        // B, on `cycle`, must now wait for A's boundary rather than its own.
+        // A came in at ppq 4 with an 8-beat cycle, so its boundaries are
+        // 4, 12, 20… From ppq 0 the first ahead is 4 — 2 s = 96000 frames.
+        head.ppq = 0.0;
+        renderPeak(b, 512, 1);
+        const uint64_t anchorB = b.hostSync().snapshot().engineTime;
+        juce::String ref;
+        const uint64_t bFrame = b.armPeerQuantizedLaunch(ref);
+        std::printf("  peer launch: B waits on \"%s\" -> +%lld frames\n",
+                    ref.toRawUTF8(), (long long) (bFrame - anchorB));
+        CHECK(bFrame > 0);
+        CHECK(bFrame - anchorB == 96000);
+        CHECK(ref.isNotEmpty()); // it says WHAT it is waiting on
+
+        // A STOPPED peer is not a reference — waiting on a boundary that will
+        // never come round is the hang this whole design refuses.
+        a.publishPeerCycle(8.0, /*playing*/ false);
+        juce::String none;
+        CHECK(b.armPeerQuantizedLaunch(none) == 0);
+        CHECK(none.isEmpty());
+
+        // …and neither is a peer with no resolvable cycle (an empty session).
+        a.publishPeerCycle(0.0, true);
+        CHECK(b.armPeerQuantizedLaunch(none) == 0);
+
+        // THE FALLBACK, through the dispatch seam the web calls: with no usable
+        // peer, `cycle` resolves against our own host grid and SAYS so. This is
+        // the Bitwig / cross-format case, which is permanent rather than
+        // transient — it must degrade honestly, not wait forever.
+        const auto reply = b.dispatchFromUi(
+            "deckLaunch", juce::JSON::parse(R"({"quantum":"cycle","quantumBeats":4})"));
+        CHECK((bool) reply.getProperty("ok", false));
+        const auto res = reply.getProperty("result", juce::var());
+        CHECK((double) res.getProperty("frame", 0.0) > 0.0);
+        CHECK(res.getProperty("ref", "").toString() == "host grid");
+    }
+
     // ── §2 TEMPO FOLLOW ─────────────────────────────────────────────────────
     {
         ScoopyPluginProcessor p;

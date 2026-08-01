@@ -25,7 +25,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §4 multi-out | **PART** — five buses, and the sends actually emit; the **Live diagnosis is still owed** | `1804250` |
 | §5 window persistence | **DONE**; its PERF-density half was **REVERSED** by user ruling — see §5 | `31007c0` |
 | §7 tempo morph plumbing | **open** |
-| §9 launch quantize across instances | **open, designed** — rewritten + signed as D-SL-DECKPLUGIN-03; build order in §9 |
+| §9 launch quantize across instances | **DONE** — all four steps; signed as D-SL-DECKPLUGIN-03 | `0230141`·`92bbf3b`·`93c3ee8` |
 
 ### What is left, and where to start
 
@@ -458,24 +458,45 @@ A host-grid launch is that same door with a boundary the processor computes from
 ppq, so it needs a seam that takes an absolute engine **frame** rather than a
 reference deck.
 
-### Build order
+### Build order — ALL FOUR DONE (2026-08-01)
 
-1. **`sl_deck_request_launch_at_frame(e, deck, uint64 frame)`** + its core half,
-   mirroring `requestQuantizedLaunch`'s arm/release exactly. This is the
-   foundation and is testable headlessly on its own.
-2. **The ppq→frame resolver**, on the processor's audio thread: given the block's
-   `ppq`, `bpm`, sample rate and `sl_engine_time_samples()`, the boundary frame is
-   `now + (targetPpq − ppq) · (60/bpm) · sr`. Arm when it falls in range.
-3. **The quantum control** on the deck face. D-SL-QUANTUM-01 already settled that
-   the reference is per strip with an `auto` default; this supplies what `auto`
-   resolves to in a plugin — the host grid.
-4. **The cross-instance record**, last, because everything above is useful
-   without it and it carries the only limits anyone has to explain.
+1. ✅ **`sl_deck_request_launch_at_frame`** + `requestLaunchWithLeadIn` in the
+   core (`0230141`). ⚠️ The resolver's PLACEMENT is the whole feature: it first
+   landed after the master-gain stage, i.e. after `core.render`, and every launch
+   fired exactly 512 frames late — the block-accurate behaviour that was
+   rejected at design time. It must run immediately before `core.render`.
+2. ✅ **`armHostQuantizedLaunch(quantumBeats)`** (`92bbf3b`). It runs on the
+   MESSAGE thread, which is only sound because `capture()` stores ppq and the
+   engine frame as one anchored PAIR — so a boundary computed from a stale
+   snapshot is still exact. That pair is now under a **seqlock**; as two relaxed
+   atomics a torn read put the launch a block off.
+   ⚠️ It reads `sl_engine_sample_rate`, not `getSampleRate()` — the latter is set
+   by JUCE's format wrapper, so it is 0 in every headless context.
+3. ✅ **`Q` in the header beside CLK and TEMPO** (`93c3ee8`), default `cycle`
+   (the donor's own), persisted per instance in the chunk. ⟳ takes an OVERRIDE
+   rather than a behaviour change, because the deck rows are shared with the
+   plane. The scale is reused whole from `audio/launchQuantum.ts` — its numbers
+   are STEPS (16ths), so "16" is a bar of 4/4.
+4. ✅ **`PeerRegistry`** — four fields, one question. `auto` on the `cycle`
+   quantum resolves to the lowest-slot PLAYING peer (D-SL-QUANTUM-01's order,
+   applied across instances), and falls back to this deck's own host grid when
+   there is none.
 
-**Verify:** two instances armed to the same quantum start within a sample of each
-other — measurable headlessly by rendering both processors against one fake
-playhead and comparing the first non-zero frame, which is a real gate rather than
-a listening test.
+**Verified headlessly, both claims:** `sl_host_launch_test` arms at frame 5000
+(deliberately not a block multiple) and the first audible frame is 5000 — two
+engines sharing no state, armed at 7777, fire at 7777 with a spread of 0 frames.
+`plugin_processor_test` §1d runs two processors against one fake playhead and
+checks B waits on A's cycle to the frame.
+
+### What is left
+
+- **The per-process limit is real and permanent**, not a rough edge: Bitwig
+  sandboxes each plugin, and a VST3 cannot see an AU. Both degrade to the host
+  grid and the header says which — that is the design, not a gap.
+- **In a DAW, none of it bites without a running playhead.** Everything resolves
+  against host ppq, so a stopped transport means "no grid to wait on" and the
+  deck plays now. Correct, and worth knowing before testing.
+- **Untested in a real host.** Every claim above is headless.
 
 ## Decisions — ANSWERED 2026-08-01 · signed as **D-SL-DECKPLUGIN-02**
 

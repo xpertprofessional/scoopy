@@ -69,6 +69,11 @@ ScoopyPluginProcessor::ScoopyPluginProcessor()
 
     backend = std::make_unique<PluginBackend>(engine, "ScoopyDeck");
 
+    // A row in the process-wide peer table, for as long as this instance lives
+    // (D-SL-DECKPLUGIN-03 step 4). -1 means the table was full, which is not an
+    // error — this deck simply cannot be somebody else's launch reference.
+    peerSlot = PeerRegistry::claim();
+
     // The pump that must survive a closed editor (tempo follow, transport
     // edges). 40 Hz ≈ the shipping app's 25 ms sync debounce.
     startTimerHz(40);
@@ -76,6 +81,10 @@ ScoopyPluginProcessor::ScoopyPluginProcessor()
 
 ScoopyPluginProcessor::~ScoopyPluginProcessor() {
     stopTimer();
+    // BEFORE the engine goes: a peer enumerating right now must not find a row
+    // belonging to an instance that is halfway through being destroyed.
+    PeerRegistry::release(peerSlot);
+    peerSlot = -1;
     // Same teardown law as the app's shutdown(): hosted-plugin slots die
     // synchronously on the message thread BEFORE the engine that owns them.
     // With no plugin-in-plugin this is the stub's no-op — kept anyway so the
@@ -369,6 +378,58 @@ uint64_t ScoopyPluginProcessor::armHostQuantizedLaunch(double quantumBeats) {
     const auto target = s.engineTime + static_cast<uint64_t>(std::llround(framesAway));
     if (target == 0) return 0; // the ABI's "nothing armed" sentinel
     sl_deck_request_launch_at_frame(engine, 0, target);
+    // The boundary we came in on IS this deck's cycle anchor — publish it, or a
+    // peer waiting on us would compute boundaries from a phase we never had.
+    peerAnchorPpq = targetPpq;
+    return target;
+}
+
+void ScoopyPluginProcessor::publishPeerCycle(double cycleBeats, bool playing) {
+    if (peerSlot < 0) return;
+    peerCyclePpq = cycleBeats > 0.0 ? cycleBeats : 0.0;
+    PeerRegistry::Row row;
+    row.cyclePpq = peerCyclePpq;
+    row.anchorPpq = peerAnchorPpq;
+    row.playing = playing;
+    // Truncated rather than refused: a long session name is a display problem,
+    // not a reason to be invisible as a launch reference.
+    sessionName.copyToUTF8(row.name, (int) sizeof(row.name));
+    PeerRegistry::publish(peerSlot, row);
+}
+
+uint64_t ScoopyPluginProcessor::armPeerQuantizedLaunch(juce::String& outRef) {
+    outRef = {};
+    if (engine == nullptr) return 0;
+
+    PeerRegistry::Row rows[PeerRegistry::kSlots];
+    const int n = PeerRegistry::peers(rows, PeerRegistry::kSlots, peerSlot);
+    if (n == 0) return 0; // nothing to wait on IN THIS PROCESS — see the header
+
+    // The lowest slot that is playing: D-SL-QUANTUM-01's `auto` order, applied
+    // across instances. `peers()` already returns them in slot order and has
+    // already dropped the stopped and the cycle-less.
+    const PeerRegistry::Row& ref = rows[0];
+
+    const auto s = sync.snapshot();
+    const double sr = sl_engine_sample_rate(engine);
+    if (!s.valid || !s.playing || !(s.bpm > 0.0) || !(sr > 0.0)) return 0;
+
+    // The reference's boundaries are every `anchor + k · cycle`. Take the first
+    // STRICTLY ahead, so arming while sitting exactly on one waits a full cycle
+    // rather than resolving behind the playhead.
+    const double k = std::floor((s.ppq - ref.anchorPpq) / ref.cyclePpq) + 1.0;
+    const double targetPpq = ref.anchorPpq + k * ref.cyclePpq;
+    const double framesAway = (targetPpq - s.ppq) * (60.0 / s.bpm) * sr;
+    if (!std::isfinite(framesAway) || framesAway < 0.0) return 0;
+
+    const auto target = s.engineTime + static_cast<uint64_t>(std::llround(framesAway));
+    if (target == 0) return 0;
+    sl_deck_request_launch_at_frame(engine, 0, target);
+    // Our own boundaries now line up with the reference's, which is the whole
+    // point — so that is the anchor we publish for anyone waiting on US.
+    peerAnchorPpq = targetPpq;
+    outRef = juce::String::fromUTF8(ref.name);
+    if (outRef.isEmpty()) outRef = "peer deck";
     return target;
 }
 
@@ -476,15 +537,42 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         // a pure read, which is how the editor learns what this instance was
         // restored with.
         if (params.hasProperty("quantum")) launchQuantum = params["quantum"].toString();
+        // The deck's own cycle, so PEERS can wait on us. The LCM is a web-tier
+        // concept (`lcmForScene`) and native cannot derive it.
+        if (params.hasProperty("cycleBeats"))
+            publishPeerCycle((double) params["cycleBeats"],
+                             (bool) params.getProperty("playing", juce::var(true)));
         const double beats = params.hasProperty("quantumBeats")
                                  ? (double) params["quantumBeats"]
                                  : 0.0;
+
+        // RESOLVE `auto` ACROSS INSTANCES FIRST (D-SL-DECKPLUGIN-03 step 4).
+        //
+        // On the `cycle` quantum, waiting on OUR OWN cycle lands two decks
+        // together only when their patterns happen to coincide. Waiting on a
+        // playing PEER's cycle is what actually drops them together, and it is
+        // the only question the host clock cannot answer alone.
+        //
+        // Falls through to our own grid when there is no peer — including the
+        // cases that are permanent rather than temporary: Bitwig sandboxes each
+        // plugin, and a VST3 cannot see an AU. `ref` says which happened so the
+        // UI can too, because "it did not sync and I do not know why" is the
+        // outcome this design exists to avoid.
+        uint64_t frame = 0;
+        juce::String ref;
+        if (beats > 0.0 && launchQuantum == "cycle") frame = armPeerQuantizedLaunch(ref);
+        if (frame == 0) {
+            frame = armHostQuantizedLaunch(beats);
+            ref = frame != 0 ? "host grid" : juce::String();
+        }
+
         auto* out = new juce::DynamicObject();
         out->setProperty("quantum", launchQuantum);
+        out->setProperty("ref", ref);
         // A double, not an int64: JSON has no 64-bit integer and juce::var's
         // int is 32-bit — a frame counter overflows that in ~12 hours at 48k.
         // Doubles carry frame counts exactly to 2^53, which is 5700 years.
-        out->setProperty("frame", (double) armHostQuantizedLaunch(beats));
+        out->setProperty("frame", (double) frame);
         return okEnvelope(juce::var(out));
     }
 

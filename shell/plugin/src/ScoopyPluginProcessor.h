@@ -12,6 +12,7 @@
 
 #include "HostSync.h"
 #include "LaneMap.h"
+#include "PeerRegistry.h"
 #include "PluginBackend.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -89,6 +90,25 @@ public:
      *  should launch immediately rather than leave the deck held. */
     uint64_t armHostQuantizedLaunch(double quantumBeats);
 
+    /** Arm against a PEER INSTANCE's cycle rather than our own quantum — the
+        one case the host clock cannot answer (D-SL-DECKPLUGIN-03 step 4).
+        Picks the lowest-slot playing peer, which is D-SL-QUANTUM-01's `auto`
+        rule applied across instances instead of across strips.
+
+        Returns 0 when there is no usable peer IN THIS PROCESS, and the caller
+        falls back to `armHostQuantizedLaunch`. `outRef` receives what it
+        resolved to, so the UI can say which deck it is waiting on rather than
+        leaving that a mystery. */
+    uint64_t armPeerQuantizedLaunch(juce::String& outRef);
+
+    /** Tell the registry what this deck's cycle is, so OTHER instances can wait
+        on it. `cycleBeats` comes from the web (`lcmForScene`) — the LCM is a
+        web-tier concept and native has no way to derive it. */
+    void publishPeerCycle(double cycleBeats, bool playing);
+
+    /** This instance's registry slot, or -1 if the table was full. */
+    int peerSlotForTest() const { return peerSlot; }
+
     /** How the processor reaches the page. The EDITOR owns the WebView and may
         not exist, so it registers this on construction and clears it on
         destruction — the processor never holds a raw editor pointer, which is
@@ -146,6 +166,17 @@ public:
      *  Defaults to "cycle", which is the donor's own default
      *  (`DJModeManager.globalLaunchQuantize`). */
     juce::String launchQuantum { "cycle" };
+
+private:
+    /** Our row in the process-wide peer table (see PeerRegistry). -1 = none,
+        which is not an error: the deck simply cannot be a reference. */
+    int peerSlot = -1;
+    /** The ppq boundary the last successful arm resolved to — this deck's cycle
+        ANCHOR, published so peers can compute where its boundaries fall. */
+    double peerAnchorPpq = 0.0;
+    double peerCyclePpq = 0.0;
+
+public:
 
 
     /** The startStep the last host-driven launch actually published. Exists

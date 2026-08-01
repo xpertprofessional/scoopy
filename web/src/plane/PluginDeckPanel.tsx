@@ -166,6 +166,13 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
    *  one set may run different quantums, which a shared preference could not
    *  express. This is the mirror; the processor is the record. */
   const [quantum, setQuantum] = useState<LaunchQuantum>(DEFAULT_QUANTUM)
+  /** What the last launch actually resolved to — a peer instance's name, or
+   *  "host grid". D-SL-QUANTUM-01's rule that `auto` must never be a mystery,
+   *  and here it carries a second job: a peer is only visible WITHIN one
+   *  process, so "host grid" is what Bitwig's sandbox and a VST3/AU mix look
+   *  like from the inside. Saying it is the difference between a limit and a
+   *  bug nobody can explain. */
+  const [launchRef, setLaunchRef] = useState<string | null>(null)
 
   // The strip the deck rows read and write. Subscribed through the store so a
   // control's own write re-renders the row that made it.
@@ -352,10 +359,36 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     if (!useCompanion.getState().decks[DECK]?.playing) return
     const cycle = session ? lcmForScene(session.pattern, scene) : 0
     const steps = quantumSteps(quantum, cycle)
-    if (steps <= 0) return // `off`, or no cycle to resolve — already playing
+    if (steps <= 0) {
+      setLaunchRef(null) // nothing was waited on, and the readout must not lie
+      return // `off`, or no cycle to resolve — already playing
+    }
     // Steps are 16ths; the native arm speaks BEATS. One conversion, here.
-    void link.command('deckLaunch' as never, { quantumBeats: steps / 4 }).catch(() => {})
+    void link
+      .command('deckLaunch' as never, { quantumBeats: steps / 4, cycleBeats: cycle / 4 })
+      .then((r: unknown) => {
+        const ref = (r as { ref?: string } | null)?.ref
+        // Empty ref = it did not arm (no playhead, stopped host) and the deck is
+        // simply playing, which is the honest outcome — not something to label.
+        setLaunchRef(ref ? ref : null)
+      })
+      .catch(() => setLaunchRef(null))
   }
+
+  // BE VISIBLE AS A REFERENCE. Peers can only wait on this deck's cycle if it
+  // publishes one, and the LCM is a web-tier concept native cannot derive.
+  // Driven off the transport rather than off the launch, so every way of
+  // stopping — ◼, the keyboard, the DAW's own transport — takes us out of the
+  // running as a reference. A stopped deck offered as a boundary is a peer
+  // waiting forever.
+  const deckPlaying = useCompanion((c) => c.decks[DECK]?.playing ?? false)
+  useEffect(() => {
+    if (!link) return
+    const cycle = session ? lcmForScene(session.pattern, scene) : 0
+    void link
+      .command('deckLaunch' as never, { cycleBeats: cycle / 4, playing: deckPlaying })
+      .catch(() => {})
+  }, [link, deckPlaying, session?.name, session?.pattern, scene])
 
   // THE ARROW KEYS, without having to click first.
   //
@@ -733,6 +766,15 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
         {/* Only when it is true. A telemetry feed that has stopped must SAY so —
             every meter, LED and playhead on this face is fed by it, and stale
             numbers that look live are worse than blank ones. */}
+        {/* WHAT THE LAUNCH IS WAITING ON. D-SL-QUANTUM-01: `auto` must never be
+            a mystery. Here it also names the process boundary — a peer deck is
+            only visible inside one process, so "host grid" is what Bitwig's
+            sandbox and a VST3/AU mix look like from in here. */}
+        {launchRef && deckPlaying && (
+          <span className="dim" title="the boundary this deck's last launch waited for">
+            {` ⟳ ${launchRef}`}
+          </span>
+        )}
         {framesStalled && (
           <span className="warn" title="the editor is not receiving HotFrames from the engine — meters, LEDs and the playhead are frozen">
             {' no engine frames'}
