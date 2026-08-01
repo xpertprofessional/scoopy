@@ -31,6 +31,7 @@ import { CompanionPanel } from "./panels/CompanionPanel.tsx";
 import { PlanePanel } from "./plane/PlanePanel.tsx";
 import { ComposeWindow } from "./plane/ComposeWindow.tsx";
 import { PluginDeckPanel } from "./plane/PluginDeckPanel.tsx";
+import { PluginTapePanel } from "./plane/PluginTapePanel.tsx";
 import { useCompanion } from "./store/companionEngine.ts";
 
 /**
@@ -178,6 +179,8 @@ function PanelRoute({
   // instead of waiting to be addressed, which is right for an instrument
   // somebody just dropped on a track and wrong for a window they opened.
   if (panel === "plugindeck") return <PluginDeckPanel link={link} />;
+  // ScoopyTape's face — injected by ScoopyTapeEditor, never reached in the app.
+  if (panel === "plugintape") return <PluginTapePanel link={link} />;
   if (panel === "filebrowser") return <FileBrowserPanel link={link} />;
   if (panel === "capture") return <CapturePanel link={link} />;
   if (panel === "companion") return <CompanionPanel link={link} />;

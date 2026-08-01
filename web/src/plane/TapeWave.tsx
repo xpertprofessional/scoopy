@@ -40,11 +40,18 @@ export function TapeWave({
   canScrub = false,
   hint,
   missing,
+  height = WAVE_H,
 }: {
   link: EngineLink | null
   /** null when the strip has no tape — the field still draws, at full size. */
   tape: number | null
   width: number
+  /** Field height. Defaults to the plane's WAVE_H, which is the strip's budget
+      and must stay that on the plane (a saved `cell.h` is arithmetic over it).
+      ScoopyTape passes a much larger number: there the display is not a lane in
+      a strip, it IS the product, and precise scrubbing wants ground to aim at.
+      Optional-with-a-default deliberately, so the plane needs no edit. */
+  height?: number
   revision: number
   loop?: { enabled: boolean; start: number; end: number }
   onLoopDrag?: (start: number, end: number) => void
@@ -145,15 +152,15 @@ export function TapeWave({
     const paint = () => {
       const dpr = window.devicePixelRatio || 1
       const w = Math.max(1, Math.round(width))
-      if (canvas.width !== w * dpr || canvas.height !== WAVE_H * dpr) {
+      if (canvas.width !== w * dpr || canvas.height !== height * dpr) {
         canvas.width = w * dpr
-        canvas.height = WAVE_H * dpr
+        canvas.height = height * dpr
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.fillStyle = css('--bg')
-      ctx.fillRect(0, 0, w, WAVE_H)
+      ctx.fillRect(0, 0, w, height)
 
-      const mid = WAVE_H / 2
+      const mid = height / 2
       const recording = live.current.state === SL_TAPE_STATE.recording
 
       if (missing) {
@@ -201,21 +208,21 @@ export function TapeWave({
         ctx.strokeStyle = css('--accent')
         ctx.beginPath()
         ctx.moveTo(x0 + 0.5, 0)
-        ctx.lineTo(x0 + 0.5, WAVE_H)
+        ctx.lineTo(x0 + 0.5, height)
         ctx.moveTo(x1 - 0.5, 0)
-        ctx.lineTo(x1 - 0.5, WAVE_H)
+        ctx.lineTo(x1 - 0.5, height)
         ctx.stroke()
       }
 
       if (recording) {
         // The write head at the right edge — where the material is arriving.
         ctx.fillStyle = css('--hot')
-        ctx.fillRect(w - 2, 0, 2, WAVE_H)
+        ctx.fillRect(w - 2, 0, 2, height)
       } else if (total > 0) {
         const x = Math.round((live.current.playhead / total) * w)
         if (x >= 0 && x <= w) {
           ctx.fillStyle = css('--accent')
-          ctx.fillRect(Math.min(w - 1, x), 0, 1, WAVE_H)
+          ctx.fillRect(Math.min(w - 1, x), 0, 1, height)
         }
       }
 
@@ -273,7 +280,7 @@ export function TapeWave({
   return (
     <div
       className={`strip-wavefield${missing ? ' missing' : ''}`}
-      style={{ width, height: WAVE_H }}
+      style={{ width, height: height }}
       onPointerDown={onPointerDown}
       title={
         canScrub
@@ -284,7 +291,7 @@ export function TapeWave({
       }
       data-no-drag
     >
-      <canvas ref={canvasRef} style={{ width, height: WAVE_H }} aria-hidden />
+      <canvas ref={canvasRef} style={{ width, height: height }} aria-hidden />
       {missing && <span className="strip-wave-note hot mono">audio missing</span>}
       {!missing && !env && hint && <span className="strip-wave-note dim mono">{hint}</span>}
     </div>

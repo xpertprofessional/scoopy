@@ -1593,3 +1593,64 @@
   padding: 0 2px;
   box-sizing: border-box;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SCOOPYTAPE'S FACE (docs/merge/TAPEPLUGIN-KICKOFF.md §1).
+   Same trap as the deck's block above, opposite shape. The deck mounts plane
+   components that assume a strip's geometry; this face mounts ONE of them
+   (`TapeWave`) and gives it a measured box instead — but the pane itself is a
+   window root here, so it is the thing that must own a height.
+
+   THE FIELD IS THE ONLY FLEXIBLE BOX. Every other child is `flex: none` at the
+   one control height, so "the UI is centred around the display" is a property
+   of the CSS rather than of how much happens to be in the rows. The walk
+   asserts exactly that, because it is the requirement most easily lost the
+   first time somebody adds a row.
+   ───────────────────────────────────────────────────────────────────────── */
+.plugin-tape-pane {
+  display: flex;
+  flex-direction: column;
+  /* A window root, not a lane: nothing above supplies a height. */
+  height: 100vh;
+  min-height: 0;
+  gap: var(--cell);
+  padding: var(--cell);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* `.strip-row` already establishes height and gap — per DESIGN.md §2 a block
+   inside one adds what is new and redeclares nothing. What is new is only that
+   these must not stretch when the field grows. */
+.plugin-tape-bar {
+  flex: none;
+}
+
+.plugin-tape-field {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.plugin-tape-slots {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--cell);
+  height: var(--control-h);
+}
+
+/* Readouts, not controls: sized in ch so they scale with the value font rather
+   than with an assumption about it (DESIGN.md §2). */
+.plugin-tape-state {
+  min-width: 5ch;
+  color: var(--text-dim);
+}
+
+.plugin-tape-host,
+.plugin-tape-note {
+  margin-left: auto;
+  color: var(--text-dim);
+}

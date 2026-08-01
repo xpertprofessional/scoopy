@@ -39,6 +39,12 @@ const WALKS = [
   // swallow the UI. Three regressions shipped that way, each caught only by a
   // person opening the plugin in a DAW.
   "browser_plugindeck_test",
+  // ScoopyTape's layout. The brief for that plugin is "the UI centered around
+  // the display", which is a LAYOUT claim — so it needs a layout gate or it is
+  // only an intention. Asserts the wave field is the one flexible box, that it
+  // is a majority of the window, and that its canvas backing store is at device
+  // resolution rather than CSS pixels.
+  "browser_plugintape_test",
 ];
 
 const ENGINE_ORDER = ["webkit", "chromium"];
