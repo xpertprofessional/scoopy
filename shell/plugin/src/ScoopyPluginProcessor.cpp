@@ -462,6 +462,26 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         return okEnvelope(juce::var(out));
     }
 
+    // deckLaunch: arm a launch on the HOST's grid (D-SL-DECKPLUGIN-03, step 3).
+    //
+    // `quantumBeats` is the musical boundary to land on — 4 = a bar of 4/4.
+    // Replies with the absolute engine frame armed, or 0 when there was no grid
+    // to land on (no playhead, a stopped host, a nonsense quantum). ZERO IS NOT
+    // AN ERROR: it means "nothing to wait for", and the caller should let the
+    // deck play now rather than leave it held forever — the distinction the
+    // web's own `armOrPlay` already draws four different ways.
+    if (method == "deckLaunch") {
+        const double beats = params.hasProperty("quantumBeats")
+                                 ? (double) params["quantumBeats"]
+                                 : 0.0;
+        auto* out = new juce::DynamicObject();
+        // A double, not an int64: JSON has no 64-bit integer and juce::var's
+        // int is 32-bit — a frame counter overflows that in ~12 hours at 48k.
+        // Doubles carry frame counts exactly to 2^53, which is 5700 years.
+        out->setProperty("frame", (double) armHostQuantizedLaunch(beats));
+        return okEnvelope(juce::var(out));
+    }
+
     // editorSize: the web tier telling us PERF was armed or released, so the
     // WINDOW can change shape with the view (§5). The sizes themselves live
     // here rather than in the page because they must survive a closed editor —

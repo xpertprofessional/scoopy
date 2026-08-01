@@ -338,6 +338,13 @@ class MergedLink extends BrowserLink {
     //              last would win, and every new insert would inherit whatever
     //              another deck happened to touch. Per-instance, it just works.
     "pluginSession",
+    //   deckLaunch      ScoopyDeck only, processor-answered. Arms a launch on
+    //              the HOST's bar grid (D-SL-DECKPLUGIN-03) and replies with the
+    //              engine frame it will fire at, or 0 for "no grid to wait on".
+    //              This is what lets SEPARATE INSTANCES land together: each
+    //              resolves the same host ppq through its own clock, so nothing
+    //              is shared and nothing races.
+    "deckLaunch",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

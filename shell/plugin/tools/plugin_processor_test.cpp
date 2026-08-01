@@ -208,6 +208,29 @@ int main() {
         const uint64_t onGrid = p.hostSync().snapshot().engineTime;
         CHECK(p.armHostQuantizedLaunch(4.0) - onGrid == 96000); // ppq 8, a full bar on
 
+        // …and the same thing through the DISPATCH seam the web will call, so
+        // the wire is pinned and not just the C++ behind it. `frame` rides as a
+        // double: juce::var's int is 32-bit and a frame counter overflows that
+        // in about twelve hours at 48k.
+        {
+            head.ppq = 2.5;
+            renderPeak(p, 512, 1);
+            const auto anchor2 = p.hostSync().snapshot().engineTime;
+            const auto reply =
+                p.dispatchFromUi("deckLaunch", juce::JSON::parse(R"({"quantumBeats":4})"));
+            CHECK((bool) reply.getProperty("ok", false));
+            const double frame =
+                (double) reply.getProperty("result", juce::var()).getProperty("frame", 0.0);
+            CHECK(frame - (double) anchor2 == 36000.0);
+            // A nonsense quantum answers 0 rather than failing the call: "there
+            // is no grid to wait on" is an outcome, not an error.
+            const auto none =
+                p.dispatchFromUi("deckLaunch", juce::JSON::parse(R"({"quantumBeats":0})"));
+            CHECK((bool) none.getProperty("ok", false));
+            CHECK((double) none.getProperty("result", juce::var()).getProperty("frame", -1.0)
+                  == 0.0);
+        }
+
         // REFUSALS — each returns 0 so the caller launches now rather than
         // leaving the deck held forever on a grid that does not exist.
         CHECK(p.armHostQuantizedLaunch(0.0) == 0);
