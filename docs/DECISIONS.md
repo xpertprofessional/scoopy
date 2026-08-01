@@ -1194,3 +1194,46 @@ performs with.
 **Consequences:** kickoff §4 loses its bus-count question and keeps only the Live diagnosis;
 §2 gains a second switch beside the master-BPM box; §8's OS-focus item is promoted from
 "nice" to **prerequisite** for D3; §9 is rescoped from registry to multi-deck.
+
+## D-SL-DECKPLUGIN-03 · 2026-08-01 · Launch quantize across instances, on the HOST's clock
+**Decision:** ScoopyDeck quantizes deck launches against the **DAW's timeline**, and that is
+what makes joint launching work across separate plugin instances. Signed live 2026-08-01,
+answering *"how can we make quantizing decks possible across vst instances? quantize deck
+launch in dj mode by cycle or fixed value."* Three parts, all user-chosen:
+  · **The reference is the host's `ppqPosition`.** Every instance of every format already
+    receives the SAME ppq, sampled by the same audio thread on the same block boundaries. Two
+    instances that independently resolve "launch at ppq X" therefore land together with **no
+    IPC, no shared memory and no registry** — the same way hardware locks to MIDI clock.
+    Half of this already exists: `hostAlignedStartStep()` derives the deck's entry step purely
+    from ppq. ⚠️ This does NOT contradict **D4** (D-SL-DECKPLUGIN-02), and the distinction is
+    the whole point: D4 rejected instances OBSERVING EACH OTHER's state. This is instances
+    independently agreeing on an EXTERNAL clock, which has none of the failure modes D4 named.
+  · **Two quantum shapes, one model.** A FIXED length (beats, 1/2/4/8 bars) and MY CYCLE (the
+    deck's own LCM length) resolve identically: the boundary is the next multiple of that
+    length on the host grid. Anchoring the cycle to the host rather than to when you pressed
+    play is what makes two decks of equal cycle length phase-lock for free, and what keeps
+    unequal ones landing on shared boundaries.
+  · **AMENDING D4: a deck may NAME another instance's cycle.** This is the one case the host
+    clock cannot answer alone — B must know A's cycle length and phase anchor. A small
+    process-wide lock-free record carries exactly that (`cycle length ppq · anchor ppq ·
+    playing · a name`), which is a fraction of the registry D4 rejected and exists for one
+    question rather than as a general mirror. **Stated limits, accepted:** it is PER PROCESS,
+    so Bitwig's per-plugin sandbox and a VST3/AU mix both see nothing — a named reference that
+    is not in this process must **fall back to the host grid and SAY so**, never wait forever.
+**Precision:** launches resolve in `processBlock`, sample-exact — not on the 40 Hz message
+pump, which lands up to 25 ms late and flams a downbeat. The core already proves the shape:
+`requestQuantizedLaunch` does the expensive world republish AHEAD on the message thread
+(`active + launchArmed + startStep`), arms with a single atomic, and resolves the boundary
+inside `render()`. A host-grid launch is that same door with a boundary the processor computes
+from ppq, so it needs an engine seam that takes an absolute engine FRAME rather than a
+reference deck.
+**Rationale:** the user asked for cross-instance quantize after D4 had ruled out the registry,
+and the honest answer is that joint launching never needed one — it needed a shared clock,
+which a DAW already is. Choosing sample-exact over block-accurate is the user's call and the
+right one for the stated use (dropping two decks together); ~10 ms of flam is audible on a
+tight downbeat.
+**Consequences:** kickoff §9 is rewritten from "multi-deck in one instance" to this. New work:
+a `sl_deck_request_launch_at_frame`-shaped ABI seam + its core half, the ppq→frame resolver on
+the processor's audio thread, the cross-instance record, and a launch-quantum control on the
+deck face (D-SL-QUANTUM-01 already settled that the REFERENCE is per strip with an `auto`
+default — this supplies the plugin's answer for what `auto` resolves to: the host grid).

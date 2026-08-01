@@ -25,7 +25,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §4 multi-out | **PART** — five buses, and the sends actually emit; the **Live diagnosis is still owed** | `1804250` |
 | §5 window persistence | **DONE**; its PERF-density half was **REVERSED** by user ruling — see §5 | `31007c0` |
 | §7 tempo morph plumbing | **open** |
-| §9 multi-deck | **open** — rescoped by D4 from registry to N decks in one instance |
+| §9 launch quantize across instances | **open, designed** — rewritten + signed as D-SL-DECKPLUGIN-03; build order in §9 |
 
 ### What is left, and where to start
 
@@ -38,10 +38,12 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
   `params:check` · `worldmap:check` · `trackparams:check` gates all speak to it —
   budget for that, it is most of the risk. Deck TEMPO ramping is the one piece
   that is genuinely new work, not plumbing, and should go last.
-- **§9 multi-deck.** D4 rescoped this from a cross-instance registry to N decks
-  in ONE instance, on top of `sl_deck_request_quantized_launch`. Bitwig no
-  longer matters. Note it now interacts with §5: `PLUGIN_DECK`/`djSlotIndex` are
-  both hard-coded to 0, and D1's five-bus layout has no per-deck stems.
+- **§9 launch quantize across instances.** Designed and signed
+  (D-SL-DECKPLUGIN-03), not built. It resolves against the HOST's ppq, so it
+  needs no registry for the common case; §9 carries the four-step build order.
+  Start at step 1 (the `launch_at_frame` ABI seam) — it is self-contained and
+  headlessly testable. Note it interacts with §5: `PLUGIN_DECK`/`djSlotIndex`
+  are both hard-coded to 0, and D1's five-bus layout has no per-deck stems.
 - **The two DAW checks nobody can run headless:** Live's multi-out
   instantiation (§4), and whether the `Space` claim D3 signed actually arrives
   (§8). Both need the host.
@@ -403,33 +405,77 @@ DAW. **See Decision D3.**
 
 ---
 
-## 9. Cross-instance communication
+## 9. Launch quantize ACROSS INSTANCES  ·  **on the host's clock**
 
-All instances of one binary live in **one process** (proved: two processors
-render independently in `plugin_processor_test`). So this is a **shared
-registry**, not IPC.
+**Rewritten 2026-08-01, signed as D-SL-DECKPLUGIN-03.** The original section
+proposed a shared registry; D4 rejected it and rescoped this to multi-deck in one
+instance. The user then asked for cross-instance quantize anyway — and the honest
+answer is that joint launching never needed a registry. It needed a shared
+CLOCK, and a DAW already is one.
 
-**Shape:** a process-wide lock-free table, one slot per instance, single
-producer per slot:
-`instanceId · engineTimeSamples · playheadStep · lcmSteps · bpm · syncRatio ·
-playing · currentScene · queuedScene`.
-`engineTimeSamples` is the monotonic anchor that makes "where is deck B in its
-cycle *now*" answerable. **LCM is a web-tier concept** (`lcmForScene`), so the
-web pushes `lcmSteps` on session/scene change and native fills the fast fields.
+### Why this works with no IPC
 
-**Limits to state up front:** per-binary (a VST3 and an AU instance will not see
-each other); **Bitwig sandboxes each plugin into its own process**, which breaks
-a shared registry entirely and would need real shared memory.
+Every instance, every format, receives the **same `ppqPosition`**, sampled by the
+same audio thread on the same block boundaries. Two instances that independently
+resolve *"launch at ppq X"* land on the same sample. Nothing is shared, nothing
+races, Bitwig's sandbox is irrelevant. `hostAlignedStartStep()`
+(`ScoopyPluginProcessor.cpp`) already does half of it — it derives the deck's
+entry step purely from ppq.
 
-**The fork — Decision D4.** A registry gets *information* across instances but
-**never sample-accurate joint launching**: instance B cannot schedule inside
-instance A's audio callback. The engine already supports **3 decks in one
-engine** with `sl_deck_request_quantized_launch(deck, refDeck, steps)` resolved
-*inside* the audio callback, sample-accurately, and multi-out already gives each
-deck its own bus. If the goal is "launch B exactly on A's cycle boundary", one
-instance with N decks delivers that today; N instances never quite will.
+⚠️ This does **not** contradict D4, and the distinction is load-bearing: D4
+rejected instances *observing each other's state*. This is instances
+*independently agreeing on an external clock*.
 
----
+### The quantum model
+
+FIXED (beats · 1/2/4/8 bars) and MY CYCLE (the deck's LCM length) resolve
+identically — the boundary is the next multiple of that length **on the host
+grid**. Anchoring the cycle to the host rather than to when you pressed play is
+what makes two decks of equal cycle length phase-lock for free.
+
+### The one case that needs shared state (amends D4)
+
+Naming *another instance's* cycle. B must know A's cycle length and phase anchor;
+the host clock cannot supply that. A process-wide lock-free record carries
+exactly `cycleLengthPpq · anchorPpq · playing · name` — four fields for one
+question, not a general mirror.
+⚠️ **PER PROCESS.** Bitwig sandboxes each plugin, and a VST3 will not see an AU.
+A named reference that is not in this process must **fall back to the host grid
+and say so on screen** — never wait forever for a deck that cannot appear.
+
+### Precision: it resolves in processBlock, not the pump
+
+The 40 Hz pump lands up to **25 ms** late, which flams a downbeat. The core
+already shows the correct shape and it is worth copying exactly:
+
+> `requestQuantizedLaunch` (`NativeAudioEngineCore.hpp:1589`) does the expensive
+> part AHEAD on the message thread — the deck is republished `active +
+> launchArmed` with `snapshot.startStep` set — then arms with a **single
+> atomic**, and the boundary is resolved **inside `render()`**. Nothing
+> allocates on the audio thread and there is no UI-thread polling jitter.
+
+A host-grid launch is that same door with a boundary the processor computes from
+ppq, so it needs a seam that takes an absolute engine **frame** rather than a
+reference deck.
+
+### Build order
+
+1. **`sl_deck_request_launch_at_frame(e, deck, uint64 frame)`** + its core half,
+   mirroring `requestQuantizedLaunch`'s arm/release exactly. This is the
+   foundation and is testable headlessly on its own.
+2. **The ppq→frame resolver**, on the processor's audio thread: given the block's
+   `ppq`, `bpm`, sample rate and `sl_engine_time_samples()`, the boundary frame is
+   `now + (targetPpq − ppq) · (60/bpm) · sr`. Arm when it falls in range.
+3. **The quantum control** on the deck face. D-SL-QUANTUM-01 already settled that
+   the reference is per strip with an `auto` default; this supplies what `auto`
+   resolves to in a plugin — the host grid.
+4. **The cross-instance record**, last, because everything above is useful
+   without it and it carries the only limits anyone has to explain.
+
+**Verify:** two instances armed to the same quantum start within a sample of each
+other — measurable headlessly by rendering both processors against one fake
+playhead and comparing the first non-zero frame, which is a real gate rather than
+a listening test.
 
 ## Decisions — ANSWERED 2026-08-01 · signed as **D-SL-DECKPLUGIN-02**
 
