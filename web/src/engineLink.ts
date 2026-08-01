@@ -409,6 +409,13 @@ class MergedLink extends BrowserLink {
       owner first and reach the engine through the world publish. */
   override paramWrite(p: ParamId, value: number, deck?: number, track?: number): void {
     if (this.routeSessionParam(p, value, deck)) return;
+    // Same reasoning one family over: a deck's master sends are its STRIP
+    // CHANNEL's sends, and the strip is a web-tier document here too. The
+    // engine hears them via `slChannel setSend` → `projectToCore` →
+    // `core.setDeckMasterSend`, never via the param lane — which is why this
+    // must be tried BEFORE handing the write to native, exactly like the
+    // session params above.
+    if (this.routeDeckMasterSend(p, value, deck, track)) return;
     this.native.paramWrite(p, value, deck, track);
   }
 

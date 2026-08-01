@@ -94,6 +94,27 @@ export class BrowserLink implements EngineLink {
     | null = null;
 
   /**
+   * THE DECK'S MASTER SENDS (`MasterRow`'s S1-S4 cluster) — deck full output →
+   * FX bus, pre-fader. Same species as the three above and broken the same way:
+   * `paramWrite("deckMasterSend", …)` had no arm anywhere, so it fell to the
+   * "no document" warn and the four faders moved nothing.
+   *
+   * ⚠️ It is NOT a param on the engine's param lane, and adding one would be
+   * the wrong seam. A grid deck's master sends are already modelled as its
+   * STRIP CHANNEL's four sends — `slChannel setSend` → `projectToCore` →
+   * `core.setDeckMasterSend` (sl_engine.cpp:468). That path works in both
+   * hosts today; the row simply never reached it. So this handler exists to
+   * carry the row's write to whoever owns the strip, which then uses the
+   * ordinary `liveSetSend`.
+   *
+   * `send` is 0-based here; MasterRow speaks the engine's 1-based index and the
+   * router below converts, so exactly one place knows about the off-by-one.
+   */
+  private deckMasterSendHandler:
+    | ((deck: number, send: number, level: number) => void)
+    | null = null;
+
+  /**
    * THE HANDLER MAPS (P3-D4-1). These were six SINGLE slots — mount two grid
    * surfaces and the last registration won, so deck 0's edits landed in deck
    * 1's document (the D4-M finding, proven wrong-by-design the moment the
@@ -222,6 +243,33 @@ export class BrowserLink implements EngineLink {
   protected routeSessionParam(p: string, value: number, deck?: number): boolean {
     if (!SESSION_PARAMS.has(p) || !this.sessionParamHandler) return false;
     this.sessionParamHandler(p as SessionParam, value, deck ?? 0);
+    return true;
+  }
+
+  /** The strip owner registers here so MasterRow's S1-S4 faders land. */
+  setDeckMasterSendHandler(fn: (deck: number, send: number, level: number) => void): void {
+    this.deckMasterSendHandler = fn;
+  }
+
+  /**
+   * Route MasterRow's deck-master-send write to the strip owner. Shared with
+   * `MergedLink.paramWrite` for the same reason `routeSessionParam` is: the
+   * strip is a web-tier document in both hosts, and the engine hears about it
+   * through `slChannel`, not through the param lane.
+   *
+   * `track` carries the 1-BASED send index (MasterRow sends `b + 1`); an index
+   * outside 1…4 is refused rather than clamped, so a caller that starts
+   * counting from zero fails loudly here instead of silently moving send 1.
+   */
+  protected routeDeckMasterSend(
+    p: string,
+    value: number,
+    deck?: number,
+    track?: number,
+  ): boolean {
+    if (p !== "deckMasterSend" || !this.deckMasterSendHandler) return false;
+    if (typeof track !== "number" || track < 1 || track > 4) return false;
+    this.deckMasterSendHandler(deck ?? 0, track - 1, value);
     return true;
   }
 
@@ -555,6 +603,9 @@ export class BrowserLink implements EngineLink {
     // Session-document params (MasterRow) go to the document owner — the one
     // param family the browser CAN land, because the document lives here.
     if (this.routeSessionParam(p, value, deck)) return;
+    // …and the deck's master sends go to the strip owner, which reaches the
+    // engine through `slChannel setSend` rather than the param lane.
+    if (this.routeDeckMasterSend(p, value, deck, _track)) return;
     // Every other live control write needs an engine to land in. Warn ONCE — a
     // per-rAF console storm would be worse than the silence it is meant to break.
     if (!this.warnedParamWrite) {

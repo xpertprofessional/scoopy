@@ -68,6 +68,23 @@ struct HostServices {
         which is also the headless-test state, where the link-time stub would
         answer empty anyway. */
     scoopyloops::NativePluginScanner* pluginScanner = nullptr;
+    /** THIS HOST'S RETURNS LEAVE THE BUILDING (D-SL-DECKPLUGIN-02 · D1).
+     *
+     *  `returnFx` used to be derived from `pluginScanner != nullptr`, on the
+     *  rule "a return is either external or a hosted plugin". ScoopyDeck is the
+     *  case that rule was written before: it deliberately hosts NO plugins
+     *  (D-SL-DECKPLUGIN-01 — no plugin-in-plugin, ever) and its returns are
+     *  external, routed out of Return 1-4 to DAW tracks and processed there.
+     *
+     *  Under the old derivation it answered `returnFx:false`, which hid the
+     *  per-track S1-S4 row AND made `worldFromSession` zero every send value —
+     *  so the deck's whole send section was invisible and silent in the one
+     *  host whose architecture is built around sends.
+     *
+     *  Set true when the engine's return buses reach somewhere real by any
+     *  means. It is deliberately independent of `pluginScanner`: the two
+     *  answer different questions, and collapsing them is the defect. */
+    bool externalReturns = false;
 };
 
 /** Persistence behind getSetting/setSetting/getSettings. Injected so the

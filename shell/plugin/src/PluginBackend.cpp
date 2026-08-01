@@ -35,6 +35,15 @@ PluginBackend::PluginBackend(sl_engine* e)
     // commands refuse rather than pretend to capture.
     if (recorder.start(drainSource, services.takesDir)) services.recorder = &recorder;
     // services.audio and services.pluginScanner stay null — see the header.
+    //
+    // …but the RETURNS ARE REAL, and that is a separate question (D1). This
+    // host's Return 1-4 are output buses: the deck's sends leave through them,
+    // a DAW track processes them, and the result comes back in the DAW's mixer.
+    // That IS a return section — it is simply not made of hosted plugins.
+    // Without this the dispatcher derived returnFx from the (deliberately null)
+    // scanner, hid the per-track S1-S4 row, and had worldFromSession zero every
+    // send value — the send architecture invisible in the host designed for it.
+    services.externalReturns = true;
 }
 
 PluginBackend::~PluginBackend() {

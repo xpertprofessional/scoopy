@@ -547,6 +547,31 @@ int main(int argc, char* argv[]) {
         scratch.deleteRecursively();
     }
 
+    // ── returnFx and pluginHosting are INDEPENDENT (D-SL-DECKPLUGIN-02 · D1) ─
+    //
+    // They were one derivation, on the rule "a return is either external or a
+    // hosted plugin". ScoopyDeck is the host that rule predates: it forbids
+    // plugin-in-plugin by decision AND routes Return 1-4 out to DAW tracks. The
+    // collapsed derivation answered returnFx:false, which hid the per-track
+    // S1-S4 row and made worldFromSession zero every send — the send section
+    // invisible in the host built around sends.
+    //
+    // All four corners, so neither flag can quietly start implying the other.
+    {
+        HostServices external;          // ScoopyDeck: returns yes, hosting no
+        external.externalReturns = true;
+        const auto caps = result(dispatch("getCapabilities", juce::var(), settings,
+                                          nullptr, &external));
+        CHECK((bool) caps.getProperty("returnFx", false) == true);
+        CHECK((bool) caps.getProperty("pluginHosting", true) == false);
+
+        HostServices neither;           // headless: no scanner, no buses
+        const auto none = result(dispatch("getCapabilities", juce::var(), settings,
+                                          nullptr, &neither));
+        CHECK((bool) none.getProperty("returnFx", true) == false);
+        CHECK((bool) none.getProperty("pluginHosting", true) == false);
+    }
+
     // ── Plugin scanner + FX-return slots (P6-2) ─────────────────────────────
     // Headless truth: without a scanner every plugin command refuses by name
     // and pluginHosting stays false; WITH one (here the link-time stub — this
@@ -565,8 +590,8 @@ int main(int argc, char* argv[]) {
         const auto caps = result(dispatch("getCapabilities", juce::var(), settings,
                                           nullptr, &services));
         CHECK((bool) caps.getProperty("pluginHosting", false) == true);
-        // returnFx rides the same truth (P6-3): a return is a hosted plugin now,
-        // so the send/return section is real exactly where hosting is.
+        // A hosted plugin still implies a real return — an unloaded slot
+        // consumes the send into silence, the honest meaning of an empty slot.
         CHECK((bool) caps.getProperty("returnFx", false) == true);
 
         const auto lp = dispatch("listPlugins", juce::var(), settings, nullptr, &services);

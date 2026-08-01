@@ -92,16 +92,23 @@ juce::var capabilities(const HostServices* services) {
     obj->setProperty("fileSystem", true);          // the shell owns native dialogs
     obj->setProperty("midiHardware", false);       // not built
     obj->setProperty("audioDeviceSelection", true);// wizard's AudioIO enumerates/selects
-    // returnFx follows pluginHosting (P6-3): with the internal return delay
-    // retired, "a return is either external or a hosted plugin" — so the
-    // send/return section is real exactly where a plugin can be hosted. The
-    // old false was for the wrong-sounding-echo era (returns at hard C++
-    // defaults); that processor no longer exists. On a host WITH the scanner,
-    // sends travel (worldFromSession stops zeroing them) and the per-track
-    // send controls appear; an unloaded return consumes them into silence,
-    // which is the honest meaning of an empty FX slot.
+    // returnFx: "the send/return section reaches something real".
+    //
+    // P6-3 derived this from the scanner alone, on the rule "a return is either
+    // external or a hosted plugin" — true of the two hosts that existed then.
+    // ScoopyDeck broke it (D-SL-DECKPLUGIN-02 · D1): it hosts no plugins BY
+    // DECISION and its returns are external, routed out of Return 1-4 into DAW
+    // tracks. The derivation answered false, which hid the S1-S4 row and made
+    // `worldFromSession` zero every send — the send section invisible and
+    // silent in the one host built around sends.
+    //
+    // So the two questions are separate now. A hosted plugin still implies a
+    // real return (an unloaded slot consumes the send into silence, which is
+    // the honest meaning of an empty slot); `externalReturns` is the other way
+    // to earn it, and neither implies the other.
     obj->setProperty("returnFx",
-                     services != nullptr && services->pluginScanner != nullptr);
+                     services != nullptr &&
+                         (services->pluginScanner != nullptr || services->externalReturns));
     return juce::var(obj);
 }
 

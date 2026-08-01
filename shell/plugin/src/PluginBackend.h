@@ -13,6 +13,11 @@
 //                       plugin-in-plugin outright, so `services.pluginScanner`
 //                       stays null and `pluginHosting` reads false honestly.
 //   services.audio      null: audioDeviceSelection is meaningless in a DAW.
+//
+// What is PRESENT and easy to miss: `services.externalReturns = true`. Returns
+// here are external by architecture (Return 1-4 → DAW tracks), which is a
+// different question from whether this host can load a plugin — and the
+// dispatcher used to answer both from `pluginScanner`. See SlDispatch.h.
 #pragma once
 
 #include "RecordService.h"

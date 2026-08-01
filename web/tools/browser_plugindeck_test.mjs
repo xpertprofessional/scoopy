@@ -343,6 +343,24 @@ check(
   `before=${armed.text} after=${moved}`,
 )
 
+// ── THE DECK'S MASTER SENDS EXIST (DECKPLUGIN v2 §3) ───────────────────────
+//
+// MasterRow has rendered this cluster since the mixer overhaul and it appeared
+// on NO host, because `gridBackend.meta()` hard-coded `masterSends: []` — there
+// was no plumbing for the values at all, which is a different bug from the
+// capability one above it. Four faders, labelled, or the deck cannot reach the
+// DAW's return tracks that D1 kept the buses for.
+const sends = await page.evaluate(() => ({
+  count: document.querySelectorAll('.mr-send').length,
+  labels: [...document.querySelectorAll('.mr-send > .mono')].map((s) => s.textContent.trim()),
+}))
+check('the deck master sends render', sends.count === 4, `${sends.count} sends`)
+check(
+  'they are labelled S1…S4',
+  JSON.stringify(sends.labels) === JSON.stringify(['S1', 'S2', 'S3', 'S4']),
+  JSON.stringify(sends.labels),
+)
+
 await cleanup()
 server.close()
 
@@ -356,7 +374,8 @@ console.log(
       .map(([k, v]) => `${k}=${v?.h}`)
       .join(' ')} · PERF drag → track ${committed?.i} ⌊${committed?.start}·${committed?.len}⌉ ` +
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
-    `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved}`,
+    `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
+    `master sends ${sends.count}`,
 )
 
 if (failures.length) {

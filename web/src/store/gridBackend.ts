@@ -77,6 +77,24 @@ export interface GridMetaFacts {
       written; nothing ever set it true, so the M button could only ever mute
       one track and the group was unbuildable. */
   muteGroupActive: boolean;
+  /** THE DECK'S FOUR MASTER SENDS (deck output → FX bus, pre-fader).
+   *
+   * `MasterRow` has rendered this cluster since the mixer overhaul, and this
+   * was hard-coded `[]` on every host — so it rendered nothing, everywhere.
+   * The values are the deck's STRIP CHANNEL sends (the plane's strip already
+   * owns them; a plugin has one strip and shows no plane), fed in by whoever
+   * mounts the backend.
+   *
+   * Empty = "this mount has no strip behind it", which is the compose grid and
+   * is still how the row hides the cluster honestly. */
+  masterSends: number[];
+}
+
+/** Fact equality: arrays by content, everything else by identity. */
+function sameFact(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  return a === b;
 }
 
 /** What the engine/store must tell the grid about each track's loaded sample. */
@@ -140,6 +158,7 @@ export class GridBackend {
     syncedBpm: null,
     performActive: false,
     muteGroupActive: false,
+    masterSends: [],
   };
 
   constructor(
@@ -155,8 +174,13 @@ export class GridBackend {
     // omitted from the comparison — a new fact would set `this.facts` and never
     // republish, so the control driving it would move and the grid would not.
     // `performActive` was the fourth and would have been the first to hit it.
+    // …and ⚠️ NOW ONE OF THEM IS AN ARRAY. `masterSends` is rebuilt on every
+    // render of the mount that feeds it, so `===` is false every single time —
+    // exhaustive-by-construction would have become republish-always, i.e. a
+    // meta push per animation frame. Compared by CONTENT instead; scalars keep
+    // the identity compare they had.
     const keys = Object.keys(next) as (keyof GridMetaFacts)[];
-    if (keys.every((k) => next[k] === this.facts[k])) return;
+    if (keys.every((k) => sameFact(next[k], this.facts[k]))) return;
     this.facts = next;
     this.publish(this.topics.meta, this.meta());
   }
@@ -317,12 +341,13 @@ export class GridBackend {
       masterDrive: this.masterDrive,
       // Mount-owned facts (P3-D4-1): the compose defaults are the historical
       // values (no deck, no keyboard claim, free-running); a deck tile's
-      // binding sets its own. masterSends stays [] on every host — the merged
-      // dispatch answers returnFx:false, and an empty array is how the row
-      // hides the cluster honestly.
+      // binding sets its own. `masterSends` used to be hard-coded [] HERE,
+      // which meant the row's S-cluster rendered nothing on every host — there
+      // was no plumbing for it at all, not merely a host that lacked the
+      // capability. A deck tile now feeds its strip's four channel sends.
       syncedBpm: this.facts.syncedBpm,
       deckIndex: this.facts.deckIndex,
-      masterSends: [],
+      masterSends: this.facts.masterSends,
     } as GridMetaState;
   }
 

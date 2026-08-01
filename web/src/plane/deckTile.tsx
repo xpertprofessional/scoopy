@@ -40,6 +40,7 @@ import { GridPanel, djSource } from '../panels/GridPanel.tsx'
 import { registerSampleDoors } from '../panels/sampleDoors.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import { useNudge } from '../state/nudgeStore.ts'
+import { liveSetSend, useMapStore } from '../state/mapStore.ts'
 import type { Strip as StripDoc } from '../persist/mapDocument.ts'
 import type { WorkingSession } from '../store/sessionStore.ts'
 import {
@@ -101,6 +102,15 @@ export function useDeckTileBinding(
   // next unrelated re-render — the M buttons would keep editing their own mute
   // until something else moved.
   const muteGroupActive = useCompanion((c) => c.decks[deck]?.muteGroupActive ?? false)
+  // THE STRIP BEHIND THIS DECK, found by deck rather than passed in — the plane
+  // hands `DeckFace` a strip, but the plugin's face is built from the same
+  // binding with a one-strip map it installs itself, and looking it up here
+  // means neither caller has to remember to thread it through. Subscribed, so
+  // moving a send re-renders the row that shows it.
+  const deckStrip = useMapStore(
+    (s) =>
+      s.map.strips.find((st) => st.element.kind === 'grid' && st.element.deck === deck) ?? null,
+  )
   const browserLink = link instanceof BrowserLink ? link : null
 
   // The per-deck handler slots — every gesture the dj band fires lands on THIS
@@ -185,6 +195,12 @@ export function useDeckTileBinding(
         keyboardActive: keyboardDeck === deck,
         // CM-5b: with the group engaged, this grid's M buttons edit MEMBERSHIP.
         muteGroupActive,
+        // THE DECK'S MASTER SENDS — the strip channel's four sends, which is
+        // what `core.setDeckMasterSend` is already fed from. MasterRow rendered
+        // this cluster from a hard-coded [] on every host, so it never appeared
+        // anywhere; with no strip behind this mount it stays empty, which is
+        // still how the compose grid hides it honestly.
+        masterSends: deckStrip ? [...deckStrip.sends] : [],
       })
     refresh()
     keyboardWatchers.set(deck, refresh)
@@ -201,7 +217,20 @@ export function useDeckTileBinding(
       }
       browserLink.djGridBackend(deck).setMetaFacts({ keyboardActive: false })
     }
-  }, [browserLink, deck, element, masterBpm, nudge, muteGroupActive])
+  }, [browserLink, deck, element, masterBpm, nudge, muteGroupActive, deckStrip])
+
+  // …and the WRITE half. MasterRow's S-fader write had no arm anywhere and fell
+  // to BrowserLink's "no document" warn, so the four faders moved nothing. This
+  // RECEIVES that write (the row is still its only author — see
+  // `uiOwnership.test.ts`) and lands it where the value actually lives: the
+  // strip channel's sends. `liveSetSend` updates the document AND emits
+  // `slChannel setSend`, which the engine projects onto the deck's master send.
+  useEffect(() => {
+    if (!browserLink || !deckStrip) return
+    browserLink.setDeckMasterSendHandler((_d, send, level) => {
+      liveSetSend(link, deckStrip, send, level)
+    })
+  }, [browserLink, link, deckStrip])
 
   return { session, scene }
 }

@@ -214,6 +214,47 @@ describe("MergedLink routing", () => {
     vi.stubGlobal("requestAnimationFrame", () => 0);
   });
 
+  it("routes the DECK MASTER SENDS to the strip owner, not the param lane", () => {
+    // MasterRow's S1-S4 cluster had NO arm anywhere: the write fell through to
+    // BrowserLink's "no document" warn and the four faders moved nothing.
+    //
+    // The engine is not the wrong destination — it is the wrong ROUTE. A grid
+    // deck's master sends are its strip channel's four sends, and the engine
+    // hears them through `slChannel setSend` → `projectToCore` →
+    // `core.setDeckMasterSend`. There is no `deckMasterSend` param to write.
+    const { sent } = installJuceBackend();
+    const link = createEngineLink()! as import("./browserLink.ts").BrowserLink;
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
+      frames.push(fn);
+      return frames.length;
+    });
+    const flush = () => frames.splice(0).forEach((fn) => fn(0));
+
+    const landed: [number, number, number][] = [];
+    link.setDeckMasterSendHandler((deck, send, level) => landed.push([deck, send, level]));
+    // MasterRow speaks the engine's 1-BASED send index; the handler is 0-based,
+    // and exactly one place converts.
+    link.paramWrite("deckMasterSend" as never, 0.25, 0, 1);
+    link.paramWrite("deckMasterSend" as never, 0.75, 2, 4);
+    expect(landed).toEqual([
+      [0, 0, 0.25],
+      [2, 3, 0.75],
+    ]);
+    flush();
+    expect(sent.filter((s) => s.name === "slParam")).toHaveLength(0);
+
+    // An index outside 1…4 is NOT CLAMPED — a caller that starts counting at
+    // zero must fail rather than silently move send 1. It falls through to the
+    // native lane, where there is no `deckMasterSend` param and the shell
+    // refuses it: wrong, loudly, instead of right-looking and wrong.
+    landed.length = 0;
+    link.paramWrite("deckMasterSend" as never, 0.5, 0, 0);
+    link.paramWrite("deckMasterSend" as never, 0.5, 0, 5);
+    expect(landed).toEqual([]);
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+  });
+
   it("keeps the GRID DOCUMENT on the companion side", async () => {
     // `MergedMain` implements none of the document methods, and the flip that
     // would move them native is P3. Routing these native would break the grid
