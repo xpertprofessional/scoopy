@@ -171,9 +171,19 @@ private:
     /** Our row in the process-wide peer table (see PeerRegistry). -1 = none,
         which is not an error: the deck simply cannot be a reference. */
     int peerSlot = -1;
-    /** The ppq boundary the last successful arm resolved to — this deck's cycle
-        ANCHOR, published so peers can compute where its boundaries fall. */
+    /** The ppq this deck's current run came in on — its cycle ANCHOR, published
+        so peers can compute where its boundaries fall.
+
+        ⚠️ NOT just "the last arm's boundary". A deck starts playing plenty of
+        ways that never arm: the quantum is `off`, the DAW's transport follow
+        started it, the keyboard did, or an arm found no playhead and fell
+        through. In all of those the deck still HAS a phase — the moment it
+        began — and advertising a stale one instead would put a peer's launch on
+        a boundary this deck never had. Silently, and looking like sync being
+        subtly off rather than like a bug. `peerAnchorSet` is what distinguishes
+        "anchored for this run" from "left over from the last one". */
     double peerAnchorPpq = 0.0;
+    bool peerAnchorSet = false;
     double peerCyclePpq = 0.0;
 
 public:

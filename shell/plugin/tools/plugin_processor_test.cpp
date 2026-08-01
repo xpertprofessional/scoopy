@@ -301,6 +301,58 @@ int main() {
         CHECK(bFrame - anchorB == 96000);
         CHECK(ref.isNotEmpty()); // it says WHAT it is waiting on
 
+        // A DECK STARTED WITHOUT AN ARM still advertises a real phase.
+        //
+        // It reaches "playing" plenty of ways that never arm — quantum `off`,
+        // the DAW's transport follow, the keyboard. Before this the anchor was
+        // only ever written by a successful arm, so such a deck published ppq 0
+        // (or the previous run's boundary) and a peer landed on a grid it had
+        // never played to. Silently, looking like sync being subtly off.
+        {
+            ScoopyPluginProcessor c;
+            c.prepareToPlay(48000.0, 512);
+            CHECK(publishTone(c, 120.0, true));
+            CHECK(c.peerSlotForTest() >= 0);
+            head.ppq = 3.0; // came in mid-bar, by hand
+            c.setPlayHead(&head);
+            renderPeak(c, 512, 1);
+            c.publishPeerCycle(8.0, true); // no arm ever ran on this instance
+
+            // A fresh deck resolving against it must see ppq 3, not ppq 0:
+            // boundaries 3, 11, 19… From ppq 0 the first ahead is 3 — 1.5 s.
+            ScoopyPluginProcessor d;
+            d.prepareToPlay(48000.0, 512);
+            CHECK(publishTone(d, 120.0, true));
+            // Silence the earlier pair so `auto` resolves to `c`, not to them.
+            a.publishPeerCycle(8.0, false);
+            b.publishPeerCycle(8.0, false);
+            head.ppq = 0.0;
+            d.setPlayHead(&head);
+            renderPeak(d, 512, 1);
+            const uint64_t anchorD = d.hostSync().snapshot().engineTime;
+            juce::String r;
+            const uint64_t dFrame = d.armPeerQuantizedLaunch(r);
+            CHECK(dFrame > 0);
+            CHECK(dFrame - anchorD == 72000); // 3 beats @120 = 1.5 s @48k
+
+            // …and STOPPING clears it, so the next run gets its own phase
+            // rather than inheriting this one's.
+            c.publishPeerCycle(8.0, false);
+            head.ppq = 5.0;
+            renderPeak(c, 512, 1);
+            c.publishPeerCycle(8.0, true);
+            head.ppq = 0.0;
+            renderPeak(d, 512, 1);
+            const uint64_t anchorD2 = d.hostSync().snapshot().engineTime;
+            const uint64_t d2 = d.armPeerQuantizedLaunch(r);
+            CHECK(d2 > 0);
+            CHECK(d2 - anchorD2 == 120000); // now ppq 5 — 5 beats, not 3
+            c.publishPeerCycle(8.0, false);
+        }
+
+        // Restore the pair for the assertions below.
+        a.publishPeerCycle(8.0, true);
+
         // A STOPPED peer is not a reference — waiting on a boundary that will
         // never come round is the hang this whole design refuses.
         a.publishPeerCycle(8.0, /*playing*/ false);

@@ -381,12 +381,31 @@ uint64_t ScoopyPluginProcessor::armHostQuantizedLaunch(double quantumBeats) {
     // The boundary we came in on IS this deck's cycle anchor — publish it, or a
     // peer waiting on us would compute boundaries from a phase we never had.
     peerAnchorPpq = targetPpq;
+    peerAnchorSet = true;
     return target;
 }
 
 void ScoopyPluginProcessor::publishPeerCycle(double cycleBeats, bool playing) {
     if (peerSlot < 0) return;
     peerCyclePpq = cycleBeats > 0.0 ? cycleBeats : 0.0;
+
+    // ANCHOR THIS RUN, if an arm has not already. A deck reaches "playing"
+    // plenty of ways that never arm — quantum `off`, the DAW's transport
+    // follow, the keyboard, or an arm that found no playhead — and each of
+    // those still has a phase: the moment it began. Without this it would
+    // advertise the previous run's boundary (or ppq 0 on a fresh instance) and
+    // a peer would land on a grid this deck never played to.
+    if (!playing) {
+        peerAnchorSet = false; // the next run gets its own phase
+    } else if (!peerAnchorSet) {
+        if (const auto s = sync.snapshot(); s.valid) {
+            peerAnchorPpq = s.ppq;
+            peerAnchorSet = true;
+        }
+        // No playhead → no phase to record, and no peer can resolve against us
+        // anyway (their arm needs a valid snapshot too). Left unset so a later
+        // tick with a playhead still anchors correctly.
+    }
     PeerRegistry::Row row;
     row.cyclePpq = peerCyclePpq;
     row.anchorPpq = peerAnchorPpq;
@@ -428,6 +447,7 @@ uint64_t ScoopyPluginProcessor::armPeerQuantizedLaunch(juce::String& outRef) {
     // Our own boundaries now line up with the reference's, which is the whole
     // point — so that is the anchor we publish for anyone waiting on US.
     peerAnchorPpq = targetPpq;
+    peerAnchorSet = true;
     outRef = juce::String::fromUTF8(ref.name);
     if (outRef.isEmpty()) outRef = "peer deck";
     return target;
