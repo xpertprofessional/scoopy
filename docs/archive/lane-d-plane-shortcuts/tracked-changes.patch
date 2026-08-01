@@ -1,0 +1,212 @@
+diff --git a/web/src/commands/keymap.test.ts b/web/src/commands/keymap.test.ts
+index 13c2296..7836737 100644
+--- a/web/src/commands/keymap.test.ts
++++ b/web/src/commands/keymap.test.ts
+@@ -11,10 +11,14 @@
+  * below compares CHORDS. It found three overlaps the token test could not see;
+  * they are in `KNOWN_COLLISIONS` with their reasons.
+  *
+- * What these pins still cannot see: whether any of this is DISPATCHED. Nothing
+- * consumes `KEYMAP` but this file (P7-K4), and WizardMerged has no native
+- * keyboard at all (NAV-SHORTCUTS §1.1) — so a green run here proves the table
+- * is coherent, never that a key does anything.
++ * What these pins still cannot see: whether any of this is DISPATCHED.
++ * WizardMerged has no native keyboard at all (NAV-SHORTCUTS §1.1) — so a green
++ * run here proves the table is coherent, never that a key does anything.
++ *
++ * ⚠️ ONE CLAUSE OF THAT IS NOW STALE, and retiring it is P7-K4: this file was
++ * `KEYMAP`'s ONLY consumer. `plane/Shortcuts.tsx` renders it now, behind the
++ * plane bar's `? keys` — so a wrong row is visible to a person rather than only
++ * to a gate. What still has no consumer is `chords`: the dispatcher is P7-K1.
+  */
+ import { describe, expect, test } from "vitest";
+ import { COMMANDS } from "./registry";
+diff --git a/web/src/plane/PlanePanel.tsx b/web/src/plane/PlanePanel.tsx
+index cf8a3b0..b7648bb 100644
+--- a/web/src/plane/PlanePanel.tsx
++++ b/web/src/plane/PlanePanel.tsx
+@@ -58,6 +58,7 @@ import { autoStartEngine } from './bootEngine.ts'
+ import { deckTempoIntent, formatSyncedBpm, inferTapeBpm } from '../persist/tempo.ts'
+ import { applyTempo, updateStrip } from '../state/mapStore.ts'
+ import { Composer } from './Composer.tsx'
++import { Shortcuts } from './Shortcuts.tsx'
+ import { encodeComposeArg } from './composeArg.ts'
+ import { handlePanelClosed } from './composeOwnership.ts'
+ import './plane.css'
+@@ -181,6 +182,9 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
+   /** Which deck the in-window composer is showing, or null for the plane. */
+   const [composing, setComposing] = useState<number | null>(null)
+   const [libraryOpen, setLibraryOpen] = useState(false)
++  /** P7-K4 — the shortcut list overlay. Plain state, like `matrix` above: the
++      window is a render of a frozen constant and owns nothing. */
++  const [keysOpen, setKeysOpen] = useState(false)
+   // P3-C2: decks whose publishes a compose WINDOW currently owns. While a deck
+   // is in here the plane's verbs for it lock (Strip's `composing` face, the
+   // master fan-outs, session swap/drop) — one publisher at a time.
+@@ -1099,6 +1103,37 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
+           >
+             ≡ panels
+           </button>
++          {/* THE SHORTCUT LIST'S DOOR (P7-K4). The donor reached it as
++              **Help ▸ Keyboard Shortcuts…** — a macOS menu bar the merged host
++              does not have (NAV-SHORTCUTS §1.1: WizardMerged has no native
++              keyboard and no MenuBarModel at all), so the door has to be drawn.
++
++              WHY HERE, and not in either menu beside it:
++
++                · `map ▾` acts on the MAP — save, open, export, settings. The
++                  same argument that kept `library ▾` out of it (it acts on
++                  SESSIONS) keeps this out: filing the keyboard under a menu
++                  named for the document would be a tidier bar telling a lie.
++                · `≡ panels` opens PANELS — five surfaces and four FX returns,
++                  each a real window in the merged host. This opens neither a
++                  panel nor a window; it is an overlay on this page.
++                · The bar's LEFT zone is the app's chrome and the first place a
++                  hand goes that is not the transport, and `?` is the one glyph
++                  every application has agreed means this. That is the whole
++                  reachability test: findable without being told.
++
++              It is NOT on the plane's own toolbar beside `⌘R` (the routing
++              ledger, `Plane.tsx:723`) even though that overlay is its closest
++              relative — that toolbar is about the CANVAS (add, zoom, fit), and
++              the keyboard belongs to the app. */}
++          <button
++            type="button"
++            className="plane-compose"
++            onClick={() => setKeysOpen(true)}
++            title="keyboard shortcuts — every chord the app declares, and why 57 of them are parked"
++          >
++            ? keys
++          </button>
+           {/* COMPOSE IS RETIRED FROM THE BAR (P11-1, D-SL-TOPROW-01) — it is a
+               PER-STRIP verb, and the strip's own door is strictly better.
+ 
+@@ -1201,6 +1236,10 @@ export function PlanePanel({ link }: { link: EngineLink | null }) {
+       {composing !== null && (
+         <Composer link={link} deck={composing} onClose={() => setComposing(null)} />
+       )}
++      {/* The third instance of the overlay-mount pattern NAV-SHORTCUTS §5.3
++          ruled (P7-K4). It reads a frozen constant, so unlike its two siblings
++          it takes no `link`. */}
++      {keysOpen && <Shortcuts onClose={() => setKeysOpen(false)} />}
+     </main>
+   )
+ }
+diff --git a/web/src/plane/plane.css b/web/src/plane/plane.css
+index 100a1a0..a4b2c6c 100644
+--- a/web/src/plane/plane.css
++++ b/web/src/plane/plane.css
+@@ -1057,6 +1057,113 @@
+   border-top: var(--hairline) solid var(--line);
+ }
+ 
++/* ── the shortcut list (P7-K4) ───────────────────────────────────────────────
++   Help ▸ Keyboard Shortcuts…, ported. The donor's window was 440×600 and
++   monospaced (`ShortcutsWindowController.swift:17`, `ShortcutListView.swift:40`);
++   ours is wider because it carries a third column the donor had no field for —
++   where a chord is live, or `parked`.
++
++   Deliberately the same scrim/dialog shape as `.plane-matrix` rather than a
++   fourth overlay species: both are SUMMONED REFERENCE surfaces you open, read
++   and dismiss, and one vocabulary is the same argument the plane bar's two
++   menus already make. */
++
++.plane-keys-scrim {
++  position: fixed;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  background: var(--bg);
++  z-index: var(--z-popover);
++}
++
++.plane-keys {
++  width: min(720px, 92vw);
++  max-height: 86vh;
++  overflow: auto;
++  background: var(--bg-raised);
++  border: var(--hairline) solid var(--line);
++  border-radius: var(--radius);
++  padding: 10px;
++}
++
++.plane-keys-head {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  padding-bottom: 8px;
++  border-bottom: var(--hairline) solid var(--line);
++  /* The head carries the honest ratio and the parked toggle — it must stay put
++     while 99 rows scroll under it, or the count is only true at the top. */
++  position: sticky;
++  top: 0;
++  background: var(--bg-raised);
++}
++
++.plane-keys-head button {
++  min-width: 26px;
++  height: 22px;
++  background: var(--bg);
++  color: var(--text);
++  border: var(--hairline) solid var(--line);
++  border-radius: var(--radius-sm);
++  cursor: pointer;
++}
++
++/* ⚠️ The temporary caption (see `Shortcuts.tsx` DISPATCH_CAVEAT) — WARN, not
++   dim: it is the difference between a list of shortcuts and a list of
++   intentions, and it goes when P7-K1 lands. */
++.plane-keys-caveat {
++  margin: 8px 0 0;
++  color: var(--warn);
++}
++
++.plane-keys-section { margin-top: 14px; }
++
++.plane-keys-section h3 {
++  margin: 0 0 4px;
++  color: var(--text-dim);
++  font-weight: normal;
++}
++
++.plane-keys-table {
++  width: 100%;
++  border-collapse: collapse;
++}
++
++.plane-keys-table td {
++  text-align: left;
++  padding: 2px 6px;
++  border-bottom: var(--hairline) solid var(--line);
++  vertical-align: top;
++}
++
++/* The donor padded this column to 22 characters. A fixed column does the same
++   job without clipping the 35-character piano row. */
++.plane-keys-chord {
++  width: 22ch;
++  white-space: nowrap;
++}
++
++.plane-keys-where {
++  width: 9ch;
++  text-align: right;
++  white-space: nowrap;
++}
++
++/* Parked rows RECEDE — same treatment, and the same reason, as the matrix's
++   default wiring: present, readable, and visibly not the answer. */
++.plane-keys-table tr.is-parked { opacity: 0.45; }
++.plane-keys-table tr.is-parked:hover { opacity: 0.8; cursor: pointer; }
++
++.plane-keys-reason td {
++  color: var(--warn);
++  padding-bottom: 6px;
++}
++
++.plane-keys-note { margin: 6px 0 0; }
++
+ /* ── the master section ──────────────────────────────────────────────────── */
+ 
+ /* In the BAR, not on the plane. A strip is something you place; the master is
