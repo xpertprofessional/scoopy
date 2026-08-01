@@ -4,13 +4,15 @@
 
 namespace wizard::plugin {
 
-PluginBackend::PluginBackend(sl_engine* e)
+PluginBackend::PluginBackend(sl_engine* e, const juce::String& faceDir)
     : engine(e),
       // Its OWN data directory (D-SL-DECKPLUGIN-01): a plugin instance sharing
       // WizardMerged/settings.json would fight the app over launch.face and
-      // recordings.dir from inside somebody's DAW session.
+      // recordings.dir from inside somebody's DAW session. `faceDir` is per
+      // PRODUCT, not per instance — every ScoopyTape shares one settings.json
+      // and none of them touch ScoopyDeck's.
       settings(juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                   .getChildFile("ScoopyDeck/settings.json")),
+                   .getChildFile(faceDir + "/settings.json")),
       drainSource(e) {
     // ⚠️ THE LIBRARY IS SHARED WITH THE APP, deliberately.
     //

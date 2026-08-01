@@ -27,8 +27,16 @@
 # renames the files, and without it CMake would keep zipping the file list it
 # globbed on the day the build tree was created. Sourcemaps (4.3 of the 6.8 MB)
 # and .DS_Store are excluded; `.buildhash` is a gate artefact nothing fetches.
+#
+# ⚠️ ONE ARCHIVE, EVERY PLUGIN — the names here are deliberately product-neutral.
+# There is a single web bundle in this repo and a face is chosen at runtime by
+# the `window.__slPanel` the editor injects, so ScoopyDeck and ScoopyTape embed
+# BYTE-IDENTICAL zips. Giving each its own binary-data target would double the
+# archive in the build and in every artefact for no difference in content. It
+# was named ScoopyDeckWebDist while the deck was the only plugin; that name is
+# what made `EmbeddedWeb.cpp` look product-specific when it never was.
 # ─────────────────────────────────────────────────────────────────────────────
-file(GLOB_RECURSE SCOOPYDECK_WEB_FILES CONFIGURE_DEPENDS
+file(GLOB_RECURSE SCOOPY_PLUGIN_WEB_FILES CONFIGURE_DEPENDS
     RELATIVE ${CMAKE_SOURCE_DIR}/webdist
     ${CMAKE_SOURCE_DIR}/webdist/*.html
     ${CMAKE_SOURCE_DIR}/webdist/*.css
@@ -44,11 +52,11 @@ file(GLOB_RECURSE SCOOPYDECK_WEB_FILES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/webdist/*.woff2
     ${CMAKE_SOURCE_DIR}/webdist/*.wasm
     ${CMAKE_SOURCE_DIR}/webdist/*.json)
-list(FILTER SCOOPYDECK_WEB_FILES EXCLUDE REGEX "\\.map$")
+list(FILTER SCOOPY_PLUGIN_WEB_FILES EXCLUDE REGEX "\\.map$")
 
-if(NOT SCOOPYDECK_WEB_FILES)
+if(NOT SCOOPY_PLUGIN_WEB_FILES)
     message(FATAL_ERROR
-        "ScoopyDeck: webdist/ has no bundle to embed. Build it first: "
+        "Scoopy plugins: webdist/ has no bundle to embed. Build it first: "
         "cd web && npm run bundle")
 endif()
 
@@ -56,30 +64,30 @@ endif()
 # names the WebView asks for, so `assets/x.js` must not become an absolute
 # path), while DEPENDS needs them ABSOLUTE or make resolves them against this
 # directory and demands a `shell/plugin/index.html` that does not exist.
-set(SCOOPYDECK_WEB_FILES_ABS "")
-foreach(_f IN LISTS SCOOPYDECK_WEB_FILES)
-    list(APPEND SCOOPYDECK_WEB_FILES_ABS ${CMAKE_SOURCE_DIR}/webdist/${_f})
+set(SCOOPY_PLUGIN_WEB_FILES_ABS "")
+foreach(_f IN LISTS SCOOPY_PLUGIN_WEB_FILES)
+    list(APPEND SCOOPY_PLUGIN_WEB_FILES_ABS ${CMAKE_SOURCE_DIR}/webdist/${_f})
 endforeach()
 
-set(SCOOPYDECK_WEB_ZIP ${CMAKE_CURRENT_BINARY_DIR}/webdist_zip)
+set(SCOOPY_PLUGIN_WEB_ZIP ${CMAKE_CURRENT_BINARY_DIR}/webdist_zip)
 add_custom_command(
-    OUTPUT ${SCOOPYDECK_WEB_ZIP}
-    COMMAND ${CMAKE_COMMAND} -E tar cf ${SCOOPYDECK_WEB_ZIP} --format=zip -- ${SCOOPYDECK_WEB_FILES}
+    OUTPUT ${SCOOPY_PLUGIN_WEB_ZIP}
+    COMMAND ${CMAKE_COMMAND} -E tar cf ${SCOOPY_PLUGIN_WEB_ZIP} --format=zip -- ${SCOOPY_PLUGIN_WEB_FILES}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/webdist
-    DEPENDS ${SCOOPYDECK_WEB_FILES_ABS}
-    COMMENT "ScoopyDeck: packing the web bundle for embedding"
+    DEPENDS ${SCOOPY_PLUGIN_WEB_FILES_ABS}
+    COMMENT "Scoopy plugins: packing the web bundle for embedding"
     VERBATIM)
-add_custom_target(ScoopyDeckWebZip DEPENDS ${SCOOPYDECK_WEB_ZIP})
+add_custom_target(ScoopyPluginWebZip DEPENDS ${SCOOPY_PLUGIN_WEB_ZIP})
 
 # The extension-less name is deliberate: juce_add_binary_data derives the
 # symbol from the filename, so `webdist_zip` is what EmbeddedWeb.cpp asks for.
-juce_add_binary_data(ScoopyDeckWebDist
-    HEADER_NAME ScoopyDeckWebDist.h
-    NAMESPACE ScoopyDeckWebDist
-    SOURCES ${SCOOPYDECK_WEB_ZIP})
-add_dependencies(ScoopyDeckWebDist ScoopyDeckWebZip)
+juce_add_binary_data(ScoopyPluginWebDist
+    HEADER_NAME ScoopyPluginWebDist.h
+    NAMESPACE ScoopyPluginWebDist
+    SOURCES ${SCOOPY_PLUGIN_WEB_ZIP})
+add_dependencies(ScoopyPluginWebDist ScoopyPluginWebZip)
 # Static libs linked into a shared plugin bundle need PIC.
-set_target_properties(ScoopyDeckWebDist PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(ScoopyPluginWebDist PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 juce_add_plugin(ScoopyDeck
     PRODUCT_NAME "Scoopy Deck"
@@ -124,10 +132,10 @@ target_compile_definitions(ScoopyDeck PRIVATE
     JUCE_VST3_CAN_REPLACE_VST2=0)
 # ⚠️ No MERGED_WEBDIST_DIR here, deliberately: this target must not be ABLE to
 # read the source tree, or a dev machine would keep passing while an installed
-# copy served nothing. The bundle arrives through ScoopyDeckWebDist.
+# copy served nothing. The bundle arrives through ScoopyPluginWebDist.
 
 target_link_libraries(ScoopyDeck PRIVATE
-    ScoopyDeckWebDist # the UI, carried inside the binary
+    ScoopyPluginWebDist # the UI, carried inside the binary
     wz_sl_engine     # the v3 engine
     wz_sl_command    # SlDispatch: the same command surface the app answers
     wz_sl_world      # applyWorld, for transport-follow's world re-apply
@@ -183,7 +191,7 @@ target_compile_definitions(plugin_processor_test PRIVATE
     JUCE_STANDALONE_APPLICATION=1)
 
 target_link_libraries(plugin_processor_test PRIVATE
-    ScoopyDeckWebDist
+    ScoopyPluginWebDist
     wz_sl_engine wz_sl_command wz_sl_world wz_sl_settings wz_record wz_webresources
     juce::juce_audio_utils
     juce::juce_gui_extra
@@ -205,7 +213,7 @@ add_test(NAME plugin_processor_test COMMAND plugin_processor_test)
 add_executable(embedded_web_test tools/embedded_web_test.cpp src/EmbeddedWeb.cpp)
 target_include_directories(embedded_web_test PRIVATE src ${CMAKE_SOURCE_DIR}/shell/src)
 target_link_libraries(embedded_web_test PRIVATE
-    ScoopyDeckWebDist wz_webresources juce::juce_recommended_config_flags)
+    ScoopyPluginWebDist wz_webresources juce::juce_recommended_config_flags)
 add_test(NAME embedded_web_test COMMAND embedded_web_test)
 
 # Same JUCE 8 gap as the shell's WebView targets: juce_gui_extra declares no

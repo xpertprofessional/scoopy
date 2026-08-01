@@ -1,4 +1,6 @@
-// ScoopyDeck's Backend: the shell Backend minus the device (D-SL-DECKPLUGIN-01).
+// The Backend every Scoopy PLUGIN uses: the shell Backend minus the device
+// (D-SL-DECKPLUGIN-01). Shared by ScoopyDeck and ScoopyTape — the only thing
+// that varies between products is `faceDir` (which settings.json is theirs).
 //
 // Deliberately a SIBLING of wizard::merged::Backend rather than a
 // parameterisation of it: that ctor's device-open and error string are app law
@@ -36,7 +38,14 @@ struct PluginBackend {
     wizard::record::Service recorder;
     wizard::sl::HostServices services;
 
-    explicit PluginBackend(sl_engine* e);
+    /** @param faceDir  the per-product application-data folder holding THIS
+        plugin's `settings.json` — "ScoopyDeck", "ScoopyTape". Required rather
+        than defaulted: which face you are is not a thing to get wrong quietly,
+        and a default would silently hand a second product the first one's
+        preferences. ⚠️ It names the SETTINGS folder only. The takes/session
+        library stays shared under WizardMerged/ for every face — see the .cpp,
+        where that is a ruling with a bug report behind it. */
+    PluginBackend(sl_engine* e, const juce::String& faceDir);
     ~PluginBackend();
 };
 

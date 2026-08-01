@@ -65,7 +65,7 @@ ScoopyPluginProcessor::ScoopyPluginProcessor()
     // host's, which reads as a bug in the sync rather than in the warm-up.
     if (engine != nullptr) sl_engine_set_sync_stretch_warmup(engine, 1);
 
-    backend = std::make_unique<PluginBackend>(engine);
+    backend = std::make_unique<PluginBackend>(engine, "ScoopyDeck");
 
     // The pump that must survive a closed editor (tempo follow, transport
     // edges). 40 Hz ≈ the shipping app's 25 ms sync debounce.
