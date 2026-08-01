@@ -192,11 +192,30 @@ describe('row 3 — the scene controls (B2 completes P7-T3)', () => {
   })
 })
 
-describe('row 4 — the view switches', () => {
-  it('carries GRID and PERF', () => {
-    const out = html(<DeckViewRow {...props({ onToggleCells: () => {}, onTogglePerform: () => {} })} />)
+describe('row 4 — the view switch', () => {
+  it('carries GRID, and NOT PERF', () => {
+    // PERF moved to the SYNC row (user, 2026-08-01). It is a POINTER MODE —
+    // drag a track to set its locator window live — not a view, and sitting
+    // beside GRID is what made it look like somewhere a view change could be
+    // hung: it briefly drove a reduced control density too, which is exactly
+    // the overreach that got rejected ("abused for view changes we did not
+    // request"). This row is the view axis; PERF is not on it.
+    const out = html(
+      <DeckViewRow {...props({ onToggleCells: () => {}, onTogglePerform: () => {} })} />,
+    )
     expect(out).toContain('GRID')
-    expect(out).toContain('PERF')
+    expect(out).not.toContain('PERF')
   })
+})
 
+describe('row 2 — PERF rides with the live gestures', () => {
+  it('the sync row carries PERF, beside BR and REV', () => {
+    // Its neighbours are the point: BR (beat repeat) and REV are the other
+    // gestures that change what PLAYS without editing the document, armed and
+    // released mid-set. PERF is one of those.
+    const out = html(<DeckSyncRow {...props({ onTogglePerform: () => {} })} />)
+    expect(out).toContain('PERF')
+    expect(out).toContain('BR')
+    expect(out).toContain('REV')
+  })
 })

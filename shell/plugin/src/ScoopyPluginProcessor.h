@@ -85,13 +85,16 @@ public:
      *  down, so every reopen threw away the window the user had arranged —
      *  inside a DAW, where the plugin window is furniture you set up once.
      *
-     *  Two sizes, because PERF is a different shape of window (a compact deck
-     *  face, not a compose surface) and switching modes should not cost you the
-     *  other mode's arrangement. Both ride the state chunk.
+     *  ⚠️ ONE size. There were briefly TWO, swapped on the PERF edge — which
+     *  meant arming a locator drag RESIZED YOUR WINDOW. Same overreach the user
+     *  rejected on 2026-08-01 ("the PERF button was abused for view changes we
+     *  did not request"): PERF is a pointer mode and must not move furniture.
      *
      *  Zero = "never set", which restores the built-in default rather than
-     *  collapsing the window to nothing — the shape a v1/v2 chunk written
-     *  before this restores as. */
+     *  collapsing the window to nothing — the shape a chunk written before this
+     *  restores as. */
+    int editorW = 0, editorH = 0;
+
     /** WHICH SESSION THIS INSTANCE HOLDS (real-host report, 2026-08-01).
      *
      *  The chunk carried the world, the samples and the sync recipe — but never
@@ -106,9 +109,6 @@ public:
      *  remembers its own, and nothing races to be the newest. */
     juce::String sessionName;
 
-    int editorW = 0, editorH = 0;         // the composing window
-    int performW = 0, performH = 0;       // the PERF deck face
-    bool editorPerforming = false;        // which of the two is showing
 
     /** The startStep the last host-driven launch actually published. Exists
         for the phase-alignment gate: reading it back beats inferring the

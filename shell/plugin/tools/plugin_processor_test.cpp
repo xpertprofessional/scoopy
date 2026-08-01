@@ -474,8 +474,6 @@ int main() {
             // furniture you arrange once.
             a.editorW = 1440;
             a.editorH = 900;
-            a.performW = 900;
-            a.performH = 460;
             // …and WHICH SESSION this instance holds. Without it the chunk
             // replayed the right audio while the editor had no idea what it
             // was, manufactured an `Untitled`, and showed an empty grid over a
@@ -512,10 +510,8 @@ int main() {
         CHECK(std::abs(b.hostSync().currentRecipe().masterBpm - 99.0) < 1e-9);
         CHECK(std::abs(sl_param_get(b.engineForTest(), 0, idSync) - 99.0 / 132.0) < 1e-3);
 
-        // The window came back too — both modes, independently, so switching
-        // PERF does not cost you the other mode's arrangement.
+        // The window came back too.
         CHECK(b.editorW == 1440 && b.editorH == 900);
-        CHECK(b.performW == 900 && b.performH == 460);
 
         // …and so did the session's IDENTITY, which is what lets the editor
         // reopen the document this instance was playing. Per-instance on
@@ -537,29 +533,27 @@ int main() {
             CHECK(s.getProperty("result", juce::var()).getProperty("name", "x").isVoid());
         }
 
-        // …and the PERF edge drives the window through the processor, which is
-        // what lets a size outlive the editor that set it. No editor is open
-        // here, so `resizeEditor` is null — the call must be a quiet no-op
+        // …and the page's own grip drives the window through the processor,
+        // which is what lets a size outlive the editor that set it. No editor is
+        // open here, so `resizeEditor` is null — the call must be a quiet no-op
         // rather than a crash, since that is the normal state of a plugin the
         // DAW is merely playing.
+        //
+        // ⚠️ There is deliberately NO `perform` arm. One briefly existed and
+        // swapped between two remembered sizes on the PERF edge, so arming a
+        // locator drag resized the user's window (rejected 2026-08-01).
         CHECK(!b.resizeEditor);
-        const auto sized = b.dispatchFromUi("editorSize", juce::JSON::parse(R"({"perform":true})"));
-        CHECK((bool) sized.getProperty("ok", false));
-        const auto szResult = sized.getProperty("result", juce::var());
-        CHECK((bool) szResult.getProperty("perform", false));
-        CHECK((int) szResult.getProperty("width", 0) == 900);
-        CHECK((int) szResult.getProperty("height", 0) == 460);
-
-        // With an editor attached, the edge actually resizes — and only on a
-        // CHANGE, so a repeated report does not fight a window the user is
-        // dragging.
         int calls = 0, gotW = 0, gotH = 0;
         b.resizeEditor = [&](int w, int h) { ++calls; gotW = w; gotH = h; };
-        b.dispatchFromUi("editorSize", juce::JSON::parse(R"({"perform":true})"));
-        CHECK(calls == 0); // already performing — no edge
-        b.dispatchFromUi("editorSize", juce::JSON::parse(R"({"perform":false})"));
-        CHECK(calls == 1);
-        CHECK(gotW == 1440 && gotH == 900);
+        const auto sized =
+            b.dispatchFromUi("editorSize", juce::JSON::parse(R"({"width":1280,"height":800})"));
+        CHECK((bool) sized.getProperty("ok", false));
+        CHECK(calls == 1 && gotW == 1280 && gotH == 800);
+        CHECK(b.editorW == 1280 && b.editorH == 800);
+        // Clamped to the editor's own limits, so the page cannot ask for a
+        // window the constrainer refuses and end up with nothing happening.
+        b.dispatchFromUi("editorSize", juce::JSON::parse(R"({"width":99,"height":99})"));
+        CHECK(gotW == 720 && gotH == 480);
         b.resizeEditor = nullptr;
 
         // Garbage in must not be half-loaded: a chunk from another plugin, or

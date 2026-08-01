@@ -336,31 +336,6 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     seeded,
   ])
 
-  // THE WINDOW FOLLOWS THE VIEW (§5). PERF is a different SHAPE of window — a
-  // compact deck face rather than a compose surface — so the editor changes size
-  // with it, and each mode keeps its own arrangement.
-  //
-  // The sizes live NATIVE, not here: they ride the plugin state chunk so a
-  // reopened project gives back the window the user set up. This only reports
-  // the EDGE; the processor decides whether it has a remembered size to apply.
-  // Read from the deck's META topic, which is where PERF already lives — the
-  // same `performActive` GridPanel derives its density from. Not from the DOM,
-  // and not from a second copy of the toggle's state: one truth, and this panel
-  // does not own it (DeckFace's view row does).
-  const [perfWindow, setPerfWindow] = useState(false)
-  useEffect(() => {
-    if (!link) return
-    return link.onUiState(`djMeta/${DECK}`, (raw) => {
-      const active = (raw as { performActive?: boolean } | null)?.performActive
-      if (typeof active === 'boolean') setPerfWindow(active)
-    })
-  }, [link])
-  useEffect(() => {
-    if (!link) return
-    // Refused by the app host, like every other plugin-only method here.
-    void link.command('editorSize' as never, { perform: perfWindow }).catch(() => {})
-  }, [link, perfWindow])
-
   // The library, for the deck row's OPEN. Refreshed on mount and whenever the
   // session menu reports it did something.
   const refreshSessions = () => void listSessions().then(setSessions).catch(() => {})
@@ -696,9 +671,8 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
               // the "focus doesn't stick" report. The plane leaves it undefined
               // on purpose; see DeckFace.
               djSlotIndex={0}
-              // The COMPOSE/DECK switch. PERF still overrides both — it is the
-              // performance view, and arming it while looking at compose rows
-              // should still reduce them.
+              // The COMPOSE/DECK switch. Nothing else feeds it: PERF is a
+              // pointer mode and no longer touches the view (user, 2026-08-01).
               viewDensity={composeView ? 'compose' : 'dj'}
               // ⚠️ THE STRIP MUST FOLLOW THE SESSION. Opening alone leaves
               // `element.sessionId`/`bpm` pointing at the PREVIOUS session, so

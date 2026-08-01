@@ -5,8 +5,9 @@
  * expanded tile's grid:
  *
  *   toolbar   OPEN · ⟳ · ▸ · ↻ · ◼ · » · DBL · SAVE · ⏏
- *   sync      SYNC · pulse ‹› · TR ‹› · TP · WIN · BR + scale + ‹› · REV · nudge
- *   scene     the pads, second rendering · GRID/PERF
+ *   sync      SYNC · pulse ‹› · TR ‹› · TP · WIN · BR + scale + ‹› · REV · PERF · nudge
+ *   scene     the pads, second rendering
+ *   view      GRID
  *
  * WHY REBUILT AND NOT MOUNTED (D-SL-DECKFULL-01). `panels/TransportPanel.tsx`
  * carries a fully-ported `DeckBlock` with these exact rows — and every one of
@@ -74,10 +75,13 @@ export interface DeckRowsProps {
       owner (it is the only thing that can see the whole plane). */
   doubleTargets?: { key: string; label: string; deck: number }[]
   onDouble?: (targetDeck: number) => void
-  /** PERF/GRID — the tile's own view state, owned by the mount (session
-      lifetime by user ruling 2026-07-31; a MAPPERF overlay row persists it). */
+  /** GRID — the tile's own view state, owned by the mount (session lifetime by
+      user ruling 2026-07-31; a MAPPERF overlay row persists it). */
   cellsHidden?: boolean
   onToggleCells?: () => void
+  /** PERF — a POINTER MODE, not a view: a drag sets a track's locator window
+      live instead of selecting cells. Rendered on the SYNC row beside BR and
+      REV, the other live gestures (user, 2026-08-01). */
   performActive?: boolean
   onTogglePerform?: () => void
   /** P3-C2: a compose window owns this deck — ONE PUBLISHER AT A TIME. Every
@@ -289,7 +293,15 @@ export function DeckToolbarRow({
  * is that the tile HAS room, so the pulse relation and transpose get their pair
  * of arrows here instead of a labelled field.
  */
-export function DeckSyncRow({ strip, element, link, masterBpm, locked = false }: DeckRowsProps) {
+export function DeckSyncRow({
+  strip,
+  element,
+  link,
+  masterBpm,
+  locked = false,
+  performActive = false,
+  onTogglePerform,
+}: DeckRowsProps) {
   const deck = element.deck
   const intent = deckTempoIntent(element, masterBpm, 0)
   const br = useCompanion((c) => c.decks[deck]?.beatRepeat ?? null)
@@ -528,6 +540,32 @@ export function DeckSyncRow({ strip, element, link, masterBpm, locked = false }:
       >
         REV
       </button>
+      {/* PERF — the POINTER MODE for performative locator dragging: a drag on a
+          track sets its ⌊ start · length ⌉ window live instead of selecting
+          cells.
+
+          ⚠️ REHOMED here from the VIEW row (user, 2026-08-01). It sat beside
+          GRID, which is a genuine view toggle, and that adjacency is part of why
+          it looked reasonable to hang a reduced control set off it — "the PERF
+          button was abused for view changes we did not request". It belongs
+          with BR and REV: live gestures that change what PLAYS without editing
+          the document, and which you arm and release mid-set. GRID keeps the
+          view row to itself. */}
+      <button
+        type="button"
+        className={`dr mono${performActive ? ' latched' : ''}`}
+        disabled={locked || !onTogglePerform}
+        onClick={() => onTogglePerform?.()}
+        title={
+          locked
+            ? LOCKED_TITLE
+            : performActive
+              ? 'PERF — back to editing; drags select cells again'
+              : 'PERF — perform mode: drag a track to set its locator window live'
+        }
+      >
+        PERF
+      </button>
       {/* NUDGE — hold to bend, release to snap back. Never the document. */}
       {(['‹', '›'] as const).map((glyph) => {
         const delta = glyph === '‹' ? -4 : 4
@@ -659,14 +697,11 @@ export function DeckSceneRow({ element, locked = false }: DeckRowsProps) {
 }
 
 /**
- * ROW 4 — the view switches.
+ * ROW 4 — the view switch. GRID alone since PERF moved to the live-gesture row
+ * (user, 2026-08-01): PERF is a pointer mode, not a view, and sitting here is
+ * what made it look like somewhere a view change could be hung.
  */
-export function DeckViewRow({
-  cellsHidden = false,
-  onToggleCells,
-  performActive = false,
-  onTogglePerform,
-}: DeckRowsProps) {
+export function DeckViewRow({ cellsHidden = false, onToggleCells }: DeckRowsProps) {
   return (
     <div className="ds-row strip-row deckrow deckrow-view" data-no-drag>
       <button
@@ -681,19 +716,6 @@ export function DeckViewRow({
         }
       >
         GRID
-      </button>
-      <button
-        type="button"
-        className={`dr mono${performActive ? ' latched' : ''}`}
-        disabled={!onTogglePerform}
-        onClick={() => onTogglePerform?.()}
-        title={
-          performActive
-            ? 'PERF — back to editing; drags select cells again'
-            : 'PERF — perform mode: drag a track to set its locator window live'
-        }
-      >
-        PERF
       </button>
     </div>
   )

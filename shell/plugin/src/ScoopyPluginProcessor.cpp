@@ -437,29 +437,19 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         // wrapper honours in more hosts than a user-drag on the corner does.
         // Clamped to the editor's own limits so the page cannot ask for a
         // window the constrainer will refuse and end up with nothing happening.
+        //
+        // ⚠️ There was briefly a `perform` arm here that swapped between two
+        // remembered sizes on the PERF edge. Removed 2026-08-01: PERF is a
+        // POINTER MODE for locator dragging, and arming a gesture must not move
+        // the user's window.
         if (params.hasProperty("width") && params.hasProperty("height")) {
-            const int w = juce::jlimit(720, 3000, (int) params["width"]);
-            const int h = juce::jlimit(480, 2000, (int) params["height"]);
-            if (editorPerforming) { performW = w; performH = h; }
-            else { editorW = w; editorH = h; }
-            if (resizeEditor) resizeEditor(w, h);
-        }
-        if (params.hasProperty("perform")) {
-            const bool want = (bool) params["perform"];
-            if (want != editorPerforming) {
-                editorPerforming = want;
-                const int w = want ? performW : editorW;
-                const int h = want ? performH : editorH;
-                // Only drive the window when we actually have a remembered size
-                // for the mode being entered; otherwise leave it where the user
-                // put it. A zero here would collapse the window.
-                if (w > 0 && h > 0 && resizeEditor) resizeEditor(w, h);
-            }
+            editorW = juce::jlimit(720, 3000, (int) params["width"]);
+            editorH = juce::jlimit(480, 2000, (int) params["height"]);
+            if (resizeEditor) resizeEditor(editorW, editorH);
         }
         auto* out = new juce::DynamicObject();
-        out->setProperty("perform", editorPerforming);
-        out->setProperty("width", editorPerforming ? performW : editorW);
-        out->setProperty("height", editorPerforming ? performH : editorH);
+        out->setProperty("width", editorW);
+        out->setProperty("height", editorH);
         return okEnvelope(juce::var(out));
     }
 
@@ -575,9 +565,6 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto* win = new juce::DynamicObject();
     win->setProperty("w", editorW);
     win->setProperty("h", editorH);
-    win->setProperty("performW", performW);
-    win->setProperty("performH", performH);
-    win->setProperty("perform", editorPerforming);
     index->setProperty("window", juce::var(win));
 
     // The document's IDENTITY, so a reloaded project reopens the session it was
@@ -709,9 +696,6 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         win.getDynamicObject() != nullptr) {
         editorW = (int) win.getProperty("w", 0);
         editorH = (int) win.getProperty("h", 0);
-        performW = (int) win.getProperty("performW", 0);
-        performH = (int) win.getProperty("performH", 0);
-        editorPerforming = (bool) win.getProperty("perform", false);
     }
     sessionName = header.getProperty("sessionName", juce::var()).toString();
 

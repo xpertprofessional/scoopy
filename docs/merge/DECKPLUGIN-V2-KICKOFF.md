@@ -23,7 +23,7 @@ D-SL-DECKPLUGIN-02 — read that entry before acting on any item.
 | §6 LCM meter | **DONE** — geometry; the data was never broken here | `9e34d9d` |
 | §8 keyboard | **PART** — (i) `djSlotIndex` + (iv) OS focus landed; (ii)/(iii)/(v) held for NAV-SHORTCUTS §7 (R-2, R-4) | `7e4f61f` |
 | §4 multi-out | **PART** — five buses, and the sends actually emit; the **Live diagnosis is still owed** | `1804250` |
-| §5 PERF deck view + window persistence | **DONE** | `31007c0` |
+| §5 window persistence | **DONE**; its PERF-density half was **REVERSED** by user ruling — see §5 | `31007c0` |
 | §7 tempo morph plumbing | **open** |
 | §9 multi-deck | **open** — rescoped by D4 from registry to N decks in one instance |
 
@@ -238,41 +238,42 @@ randomize/clear (`:2280`), the compose H row (`:2328`) and choke/voice/stereo
 (`:2652`). What is still full-fat at dj density: the DSP band (`:2443`), the mod
 slots (`:2762`) and the S1–S4 row (`:2780`).
 
-**DONE 2026-08-01.** `Density` is a third level — `"compose" | "dj" | "perform"`
-— DERIVED in GridPanel from `meta.performActive` rather than carried on
-`GridSource`, because a source is memoized per deck and cannot see a mid-session
-mode flip. `METRICS.perform` trades band height for cell height (`bandH` 74→44,
-`cellRowH` 40→56): mid-set the waveform and the playhead *are* the information.
+**PARTLY REVERSED — read this before touching PERF.**
 
-⚠️ The subtle one: `trackRowControls`' `dj` flag became `variant !== "compose"`,
-NOT `variant === "dj"`. Strict equality there would have brought every cluster
-the dj row already hides straight BACK the moment PERF was armed — the opposite
-of the feature. Perform additionally drops the DSP band, the mod slots and the
-S1–S4 row. The rows wear `density-dj density-perform` together so every
-compact-horizontal dj rule still applies and the two cannot drift.
+The window half stands (below). The DENSITY half was built and then **removed by
+user ruling, 2026-08-01**: *"the PERF button was abused for some view changes we
+did not request."*
 
-Compose is deliberately excluded: PERF there still means "drag sets a locator
-window", and stripping a composer's DSP band out from under them because they
-armed a perform gesture would be a different feature wearing this one's name.
+⚠️ **PERF is a POINTER MODE, not a view.** It arms performative locator dragging
+— a drag on a track sets its ⌊ start · length ⌉ window live instead of selecting
+cells — and it must change **nothing** about what is on screen. This brief's own
+§5 proposed deriving a reduced density from `meta.performActive`; that shipped,
+hid the DSP band / mod slots / S1–S4 the moment PERF was armed, and was rejected
+on sight in the real host. Do not re-propose it.
 
-**Window:** two sizes (compose + perform), kept NATIVE on the processor and
-ridden in the state chunk, because a reopened project must give back the window
-the user arranged and the web tier is not running when the DAW restores one. The
-page reports only the PERF **edge** via `editorSize`; the processor decides
-whether it has a remembered size to apply, and a zero ("never set", which is
-also what a pre-§5 chunk restores as) leaves the window alone rather than
-collapsing it.
+What replaced it:
+- **The view axis is its own control.** `viewDensity` — the plugin's COMPOSE /
+  DECK switch — is the only thing that changes row density, and you pick it
+  deliberately. `Density` is back to two levels.
+- **PERF MOVED ROWS.** It was beside `GRID` on the view row, and that adjacency
+  is part of why hanging a view change on it looked reasonable. It now sits on
+  the **sync row beside BR and REV** — the other live gestures that change what
+  *plays* without editing the document. The view row is `GRID` alone.
+- **The window no longer follows PERF.** There were briefly two persisted sizes
+  swapped on the PERF edge, which meant arming a locator drag resized your
+  window. One size now.
 
-**Verified:** the walk asserts perform density engages, the control count drops
-(136 → 96), the DSP band goes, and nothing overflows in PERF.
-`plugin_processor_test` round-trips both sizes through the chunk and pins that
-the edge fires once per CHANGE — and that it is a quiet no-op with no editor
-open, which is the normal state of a plugin the DAW is merely playing.
-⚠️ The S1–S4 half of the reduction is not observable in the walk: `?host=browser`
-reports `returnFx:false` honestly, so that row is already absent there. The DSP
-band is the witness instead.
+**Window persistence (unchanged and still wanted):** the editor was resizable
+and its size was never written down, so every reopen threw away the arrangement
+— in a DAW, where a plugin window is furniture. The size lives on the processor
+and rides the state chunk, because a reopened project must give it back and the
+web tier is not running when the DAW restores one. Zero means "never set" and
+falls back to the built-in default rather than collapsing the window.
 
----
+**Verified:** the walk asserts PERF is on the sync row, that the view row is
+`GRID` alone, and that arming PERF changes the control count by **nothing**
+(136 = 136) — the assertion that would catch the coupling coming back. The
+locator commit itself is still pinned (§1).
 
 ## 6. LCM meter missing  ·  **frozen sentinel + an 8 px box**
 

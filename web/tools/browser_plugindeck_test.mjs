@@ -230,47 +230,51 @@ const perfState = () =>
 const before = await perfState()
 check('the deck has track rows with locator readouts', before.length > 0, `${before.length} rows`)
 
-// ── PERF IS THE REDUCED VIEW (DECKPLUGIN v2 §5) ────────────────────────────
+// ── PERF IS A POINTER MODE, AND LIVES WITH THE LIVE GESTURES ──────────────
 //
-// `meta.performActive` was read in exactly ONE place — the pointer router,
-// deciding drag-sets-locator vs select-cells — and influenced nothing that
-// rendered. So PERF changed what the mouse did while leaving a full-fat row on
-// screen. It is a third DENSITY now: everything `dj` hides, plus the DSP band,
-// the mod slots and the S1-S4 row.
+// It briefly ALSO drove a reduced control density, derived from
+// `meta.performActive`. Removed by user ruling (2026-08-01): "the PERF button
+// was abused for view changes we did not request." PERF arms performative
+// locator dragging and changes NOTHING about what is on screen — the view axis
+// belongs to the COMPOSE/DECK switch, which you pick on purpose.
+//
+// It also moved OFF the view row, where it sat beside GRID (a real view
+// toggle), onto the SYNC row beside BR and REV — the other live gestures that
+// change what plays without editing the document.
 const rowShape = () =>
   page.evaluate(() => ({
-    // Every control the track rows carry. The count is the claim: it must DROP.
     controls: document.querySelectorAll(
       '.track-strips .ds-dragbox, .track-strips .ds-georange, .track-strips .trk-tog',
     ).length,
-    ctrlRows: document.querySelectorAll('.track-strips .trk-ctrl-row').length,
-    // The DSP band's first control. Chosen as the witness because it is the one
-    // of PERF's three dropped clusters that RENDERS in this host: the S1-S4 row
-    // is already absent under `?host=browser` (BrowserLink reports
-    // returnFx:false honestly — see §3), so asserting on it would pass whether
-    // or not perform density did anything.
     gains: document.querySelectorAll('.track-strips [data-focus-id$="/gain"]').length,
-    sends: document.querySelectorAll('.track-strips [data-focus-id$="/send1"]').length,
-    perform: document.querySelectorAll('.track-strips.density-perform').length,
     dj: document.querySelectorAll('.track-strips.density-dj').length,
+    perfInSync: [...document.querySelectorAll('.deckrow-sync .dr')].filter(
+      (b) => b.textContent.trim() === 'PERF',
+    ).length,
+    viewRow: [...document.querySelectorAll('.deckrow-view .dr')].map((b) => b.textContent.trim()),
     docScrollH: document.documentElement.scrollHeight,
     viewportH: window.innerHeight,
   }))
 const shapeBefore = await rowShape()
 check(
-  'the deck row starts at DJ density',
-  shapeBefore.dj > 0 && shapeBefore.perform === 0,
+  'PERF lives on the SYNC row, with BR and REV',
+  shapeBefore.perfInSync === 1,
   JSON.stringify(shapeBefore),
 )
+check(
+  'the view row is GRID alone — PERF is not a view',
+  JSON.stringify(shapeBefore.viewRow) === JSON.stringify(['GRID']),
+  JSON.stringify(shapeBefore.viewRow),
+)
 
-const perfBtn = await page.$('.deckrow-view .dr:has-text("PERF")')
+const perfBtn = await page.$('.deckrow-sync .dr:has-text("PERF")')
 check('the PERF control exists', perfBtn !== null)
 if (perfBtn) {
   await perfBtn.click()
   await page.waitForTimeout(200)
   const latched = await page.evaluate(
     () =>
-      [...document.querySelectorAll('.deckrow-view .dr')]
+      [...document.querySelectorAll('.deckrow-sync .dr')]
         .find((b) => b.textContent.trim() === 'PERF')
         ?.classList.contains('latched') ?? false,
   )
@@ -278,32 +282,17 @@ if (perfBtn) {
 }
 
 const shapeAfter = await rowShape()
+// THE CLAIM: arming PERF changes the POINTER, not the picture. A control count
+// that moved would mean the density coupling had come back.
 check(
-  'PERF switches the rows to PERFORM density',
-  shapeAfter.perform > 0,
-  JSON.stringify(shapeAfter),
+  'arming PERF hides NOTHING — it is not a view',
+  shapeAfter.controls === shapeBefore.controls && shapeAfter.gains === shapeBefore.gains,
+  `controls ${shapeBefore.controls}→${shapeAfter.controls}, gains ${shapeBefore.gains}→${shapeAfter.gains}`,
 )
 check(
-  'perform still wears density-dj — it is a step DOWN the same ladder, not a peer',
-  shapeAfter.dj > 0,
-  `dj=${shapeAfter.dj}`,
-)
-check(
-  'the control count DROPS — PERF is the reduced view, not just a pointer mode',
-  shapeAfter.controls < shapeBefore.controls,
-  `${shapeBefore.controls} → ${shapeAfter.controls}`,
-)
-check(
-  'the DSP band is among what goes',
-  shapeBefore.gains > 0 && shapeAfter.gains === 0,
-  `gain controls ${shapeBefore.gains} → ${shapeAfter.gains}`,
-)
-// A reduced view that overflows has reduced nothing: in a plugin there is no
-// page to scroll, so anything below the fold is simply unreachable.
-check(
-  'nothing overflows the window in PERF',
-  shapeAfter.docScrollH <= shapeAfter.viewportH + 2,
-  `scrollHeight=${shapeAfter.docScrollH} viewport=${shapeAfter.viewportH}`,
+  '…and does not change the row density either',
+  shapeAfter.dj === shapeBefore.dj && shapeAfter.dj > 0,
+  `dj ${shapeBefore.dj}→${shapeAfter.dj}`,
 )
 
 // The cells are drawn to a canvas, so a gate cannot address "step N" (the same
@@ -518,7 +507,7 @@ check(
 // PERF is released first — it outranks the view switch by design, so leaving it
 // armed would have this assert perform density and prove nothing.
 {
-  const perfOff = await page.$('.deckrow-view .dr:has-text("PERF")')
+  const perfOff = await page.$('.deckrow-sync .dr:has-text("PERF")')
   if (perfOff) {
     await perfOff.click()
     await page.waitForTimeout(200)
@@ -582,7 +571,7 @@ console.log(
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
     `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
     `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}" · ` +
-    `PERF controls ${shapeBefore.controls}→${shapeAfter.controls} · ` +
+    `PERF pointer-only (controls ${shapeBefore.controls}=${shapeAfter.controls}) · ` +
     `LOAD deck ${deckView.loads} → compose ${composeView.loads}`,
 )
 

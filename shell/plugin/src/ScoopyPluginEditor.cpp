@@ -75,9 +75,8 @@ ScoopyPluginEditor::ScoopyPluginEditor(ScoopyPluginProcessor& p)
     // project saved before this, or one whose editor was never opened; that
     // falls back to the built-in default rather than collapsing to nothing.
     {
-        const int w = deck.editorPerforming ? deck.performW : deck.editorW;
-        const int h = deck.editorPerforming ? deck.performH : deck.editorH;
-        setSize(w > 0 && h > 0 ? w : 1100, w > 0 && h > 0 ? h : 720);
+        const bool remembered = deck.editorW > 0 && deck.editorH > 0;
+        setSize(remembered ? deck.editorW : 1100, remembered ? deck.editorH : 720);
     }
     // The processor drives the window when PERF flips; same lifetime contract as
     // `emitToEditor` (registered here, cleared in the destructor — never a raw
@@ -143,18 +142,13 @@ void ScoopyPluginEditor::resized() {
     // and the window cannot be dragged bigger at all.
     if (webView != nullptr) webView->setBounds(getLocalBounds().withTrimmedBottom(kChromeH));
     loadError.setBounds(getLocalBounds());
-    // Record the arrangement as it happens, into whichever mode is showing —
-    // this is the only moment the size is known, and the editor may be closed
-    // by the host without any teardown we would otherwise see. Guarded on >0 so
-    // a transient zero-size layout pass never writes a window nobody can reopen.
+    // Record the arrangement as it happens — this is the only moment the size is
+    // known, and the editor may be closed by the host without any teardown we
+    // would otherwise see. Guarded on >0 so a transient zero-size layout pass
+    // never writes a window nobody can reopen.
     if (getWidth() > 0 && getHeight() > 0) {
-        if (deck.editorPerforming) {
-            deck.performW = getWidth();
-            deck.performH = getHeight();
-        } else {
-            deck.editorW = getWidth();
-            deck.editorH = getHeight();
-        }
+        deck.editorW = getWidth();
+        deck.editorH = getHeight();
     }
 }
 

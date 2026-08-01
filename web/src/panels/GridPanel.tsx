@@ -282,29 +282,21 @@ export interface GridSource {
    * isn't real — destroying the very evidence it exists to produce.
    */
   shadow: boolean;
-  /** Row metrics. "dj" = the compact deck strip. A source is never `"perform"`:
-      that is a DERIVED third level (see `Density`), because PERF is meta state
-      that flips mid-session and a source is memoized per deck. */
+  /** Row metrics. "dj" = the compact deck strip. */
   density: "compose" | "dj";
 }
 
 /**
- * THE THREE DENSITIES — and why PERF is one of them rather than a separate
- * switch (DECKPLUGIN v2 §5).
+ * THE TWO DENSITIES.
  *
- * `meta.performActive` already existed and was read in exactly ONE place: the
- * pointer router, deciding whether a drag sets a locator window or selects
- * cells. It never influenced what RENDERED. So PERF was a mode that changed
- * what the mouse did while leaving a full compose-fat row on screen — the
- * opposite of what a performance view is for.
- *
- * The reduction mechanism was already here too: `trackRowControls`' `dj`
- * variant hides the cell-tools cluster, randomize/clear, the compose H row and
- * choke/voice/stereo. `perform` is the next step down the same ladder — it also
- * drops the DSP band, the mod slots and the S1-S4 row — so PERF *is* the
- * reduced view instead of a second thing to remember to switch.
+ * ⚠️ A THIRD, "perform", existed briefly and was REMOVED by user ruling
+ * (2026-08-01). It was derived from `meta.performActive`, which made arming a
+ * locator drag silently strip the DSP band, the mod slots and the S1-S4 row —
+ * "the PERF button was abused for view changes we did not request". PERF is a
+ * POINTER MODE for performative locator dragging and nothing else; the view
+ * axis belongs to a control you choose on purpose (`viewDensity`).
  */
-export type Density = "compose" | "dj" | "perform";
+export type Density = "compose" | "dj";
 
 /** Cell-row / control-band metrics per density. */
 const METRICS = {
@@ -318,11 +310,6 @@ const METRICS = {
   // performance information); the control band goes compact-horizontal, which
   // the CSS density class handles.
   dj: { cellRowH: 40, bandH: 74, gap: 4 },
-  // PERFORM: three more clusters gone, so the band needs less height — and the
-  // cells get it. This is the trade the view exists for: mid-set the waveform
-  // and the playhead ARE the information, and a control you are not going to
-  // reach for during a transition is costing you the ability to see one.
-  perform: { cellRowH: 56, bandH: 44, gap: 4 },
 } as const;
 
 /** Coarse-pointer metrics. Compose ships UNCHANGED (68px min row already
@@ -331,7 +318,6 @@ const METRICS = {
 const METRICS_COARSE = {
   compose: { cellRowH: 68, bandH: 116, gap: 7 },
   dj: { cellRowH: 44, bandH: 74, gap: 4 },
-  perform: { cellRowH: 56, bandH: 48, gap: 4 },
 } as const;
 
 /** Row metrics per density + pointer class. Device class, not per-event:
@@ -388,9 +374,6 @@ export function GridPanel({
    * — "sound design, not performance") left the plugin with no way to put a
    * sample on a track at all. On the plane that was fine: a compose window is
    * one double-click away. Here the deck IS the app.
-   *
-   * PERF still wins over this — it is the performance view, and arming it while
-   * looking at compose rows should still reduce them.
    */
   viewDensity?: Density;
   /**
@@ -435,18 +418,9 @@ export function GridPanel({
   // handlers are recreated each render, so reading it as a plain derived value
   // here is enough — no ref needed. See onPointerDown/Move/Up.
   const performActive = meta?.performActive ?? false;
-  /**
-   * THE EFFECTIVE DENSITY. PERF *is* the reduced view (§5) rather than a second
-   * switch beside it — so this is derived here, not carried on `source`, which
-   * is memoized per deck and cannot see a mid-session mode flip.
-   *
-   * Compose is deliberately excluded: PERF on the compose grid still means
-   * "drag sets a locator window", and quietly stripping a composer's DSP band
-   * out from under them because they armed a perform gesture would be a
-   * different feature wearing this one's name.
-   */
-  const density: Density =
-    performActive && source.density === "dj" ? "perform" : (viewDensity ?? source.density);
+  // The VIEW's density, and only the view's. `performActive` deliberately does
+  // NOT appear here (see `Density`): PERF is a pointer mode, not a view.
+  const density: Density = viewDensity ?? source.density;
   const metrics = gridMetrics(density);
   const CONTROL_BAND_H = metrics.bandH;
   const tracksRef = useRef<(GridTrackState | null)[]>(Array(MAX_GRID_TRACKS).fill(null));
@@ -3573,12 +3547,7 @@ function TrackStrips({
     .filter((x): x is { t: GridTrackState; i: number } => x.t !== null)
     .slice(0, meta.trackCount);
   if (live.length === 0 || height <= 0)
-    return (
-      <div
-        className={`track-strips density-${density === "perform" ? "dj density-perform" : density}`}
-        ref={containerRef}
-      />
-    );
+    return <div className={`track-strips density-${density}`} ref={containerRef} />;
 
   // Solo makes the mix collapse to the soloed track(s). The canvas already dims
   // the silenced cells (hasSolo greyMultiplier, :2961); mirror it on the control
@@ -3597,15 +3566,7 @@ function TrackStrips({
   );
 
   return (
-    // PERFORM wears `density-dj` TOO, on purpose: it is the dj row with three
-    // more clusters removed, so every compact-horizontal rule the dj density
-    // class carries still applies. `density-perform` is added beside it for the
-    // handful of rules that are perform's alone — duplicating the dj block
-    // would guarantee the two drift.
-    <div
-      className={`track-strips density-${density === "perform" ? "dj density-perform" : density}`}
-      ref={containerRef}
-    >
+    <div className={`track-strips density-${density}`} ref={containerRef}>
       {live.map(({ t, i }, k) => {
         const b = blocks[k]!;
         return (
