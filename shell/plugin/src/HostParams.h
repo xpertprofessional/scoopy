@@ -70,6 +70,31 @@ public:
         chunk written before this feature restores as fully neutral. */
     void readState(const juce::var& stored);
 
+    /** ANNOUNCE A CONTROL TOUCH TO THE HOST — the door for Ableton's Configure.
+     *
+     *  Live discovers a plugin's parameters by watching for a change GESTURE
+     *  while Configure is armed: you click a control in the plugin's window and
+     *  Live captures whatever reported being touched. Our window is a WebView
+     *  whose controls write base values through the command lane and never go
+     *  near a juce parameter — deliberately, since the host owns offsets and the
+     *  page owns bases (D-SL-DECKPLUGIN-04). The cost of that separation is that
+     *  Configure had nothing to capture and adding a parameter by clicking was
+     *  simply impossible.
+     *
+     *  So the page says "the user touched track N's pitch" and this emits an
+     *  empty begin/end gesture pair on the matching offset. The VALUE NEVER
+     *  MOVES; the host is only told which parameter that control belongs to.
+     *
+     *  ⚠️ FIRST TOUCH PER CONTROL ONLY. Configure needs exactly one gesture to
+     *  capture a parameter, and a gesture is also what puts Live into `touched`
+     *  state for latch-mode automation — firing on every drag would punch
+     *  neutral envelopes nobody asked for while a project is recording.
+     *
+     *  Message thread only (gestures are not RT-safe). Returns true if a gesture
+     *  was actually emitted — false for an unknown target, an out-of-range
+     *  track, or a control that has already been announced.  */
+    bool announceTouch(int track, const juce::String& target);
+
     /** Test seam: the parameter for an id, or nullptr. */
     juce::RangedAudioParameter* find(juce::StringRef paramId) const;
 
@@ -88,6 +113,10 @@ private:
         // restored chunk into the engine, with no separate apply path to keep
         // in step with this one.
         float lastSent = std::numeric_limits<float>::quiet_NaN();
+        // Whether this control has already announced itself to the host (see
+        // announceTouch). Deliberately NOT persisted: it is about what this
+        // editor session has told the DAW, not about the document.
+        bool announced = false;
     };
 
     std::vector<Entry> entries;

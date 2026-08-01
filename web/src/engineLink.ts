@@ -345,6 +345,14 @@ class MergedLink extends BrowserLink {
     //              resolves the same host ppq through its own clock, so nothing
     //              is shared and nothing races.
     "deckLaunch",
+    //   paramTouch      ScoopyDeck only, processor-answered. "The user touched
+    //              track N's <target>" — the plugin answers with an empty
+    //              parameter gesture so a DAW's learn mode (Ableton's Configure)
+    //              can capture that offset. Needed because this window is a
+    //              WebView: its controls write base values down the command lane
+    //              and never touch a juce parameter, so Configure had nothing to
+    //              watch and no amount of clicking would add anything.
+    "paramTouch",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

@@ -180,6 +180,24 @@ void HostParams::readState(const juce::var& stored) {
     }
 }
 
+bool HostParams::announceTouch(int track, const juce::String& target) {
+    const int32_t modId = sl_track_mod_id_for_name(target.toRawUTF8());
+    if (modId == SL_PARAM_UNKNOWN) return false;
+    for (auto& entry : entries) {
+        if (entry.scope != Scope::track || entry.track != track || entry.modId != modId)
+            continue;
+        if (entry.announced) return false; // already shown to the host
+        entry.announced = true;
+        // An EMPTY pair: begin, then end, with no performEdit between them. That
+        // is the whole trick — enough for a host to learn which parameter was
+        // touched, and not enough for it to write anything.
+        entry.param->beginChangeGesture();
+        entry.param->endChangeGesture();
+        return true;
+    }
+    return false;
+}
+
 juce::RangedAudioParameter* HostParams::find(juce::StringRef paramId) const {
     for (const auto& entry : entries)
         if (static_cast<juce::AudioParameterFloat*>(entry.param)->paramID == paramId)

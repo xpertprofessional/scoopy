@@ -515,6 +515,23 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
     // tempo authority — this is its OUTPUT, not a second law). Not in
     // SlDispatch: the app host has no recipe sink, and a v0 method the schema
     // does not know yet stays out of the gated surface until v1 adds it.
+    // paramTouch: "the user just touched track N's <target> control". Emits an
+    // empty gesture on the matching offset so Ableton's Configure — which
+    // discovers parameters by watching for a touch, and had nothing to watch
+    // because this window is a WebView — can capture it. See
+    // HostParams::announceTouch for why it is first-touch-only.
+    //
+    // Not in SlDispatch, for the same reason as hostSyncConfig below: the app
+    // host has no parameter surface to announce to. The reply says whether a
+    // gesture actually went out, so the page is never guessing.
+    if (method == "paramTouch") {
+        const int track = (int) params.getProperty("track", -1);
+        const auto target = params.getProperty("target", juce::var()).toString();
+        auto* out = new juce::DynamicObject();
+        out->setProperty("announced", automation->announceTouch(track, target));
+        return okEnvelope(juce::var(out));
+    }
+
     if (method == "hostSyncConfig") {
         auto r = sync.currentRecipe();
         if (params.hasProperty("sessionBpm")) r.sessionBpm = (double) params["sessionBpm"];

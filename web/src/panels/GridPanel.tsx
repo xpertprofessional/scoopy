@@ -337,6 +337,38 @@ export const COMPOSE_SOURCE: GridSource = {
 };
 
 /** The deck-scoped source for DJ deck `deck` (0=A, 1=B, 2=C). */
+/** Which host-automation offset a track edit corresponds to, or null if none.
+ *
+ * The eight per-track targets ScoopyDeck exposes as host parameters
+ * (D-SL-DECKPLUGIN-04). Touching one of these controls inside the plugin is how
+ * a DAW's learn mode gets told the parameter exists — see `announceHostTouch`.
+ * Every other track op (mute, reverse, chop, step count…) maps to nothing,
+ * because there is no offset for it to announce.
+ *
+ * Exported for its own test: the mapping is a lookup table between two
+ * vocabularies that live in different languages, which is exactly the shape
+ * that rots silently when one side is renamed.
+ */
+export function hostTouchTargetFor(params: Record<string, unknown>): string | null {
+  if (params.op === "setSend") {
+    // `index` is 1-based here and the engine's targets are send1…send4.
+    const n = params.index;
+    return typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 4 ? `send${n}` : null;
+  }
+  switch (params.op) {
+    case "setPitch":
+      return "pitch";
+    case "setVolume":
+      return "volume";
+    case "setPan":
+      return "pan";
+    case "setTone":
+      return "tone";
+    default:
+      return null;
+  }
+}
+
 export const djSource = (deck: number): GridSource => ({
   metaTopic: `djMeta/${deck}`,
   patternTopic: (i) => DJ_PATTERN_TOPIC(deck, i),
@@ -3058,11 +3090,40 @@ export function GridPanel({
       }
     }
   };
+  // TELL THE HOST THIS CONTROL EXISTS (D-SL-DECKPLUGIN-04).
+  //
+  // Ableton's Configure adds a plugin parameter when it sees that parameter
+  // TOUCHED. ScoopyDeck's window is a WebView, so its controls write base values
+  // down the command lane and never touch a juce parameter — Configure had
+  // nothing to watch, and clicking controls added nothing no matter how long you
+  // tried. This tells the processor which offset the touched control belongs to;
+  // it answers with an empty gesture that moves no value.
+  //
+  // ONCE PER CONTROL. A drag fires onChange dozens of times a second and this
+  // must not become a command per frame; the processor keeps the authoritative
+  // guard (a remount would clear this set), so a second call is merely wasted,
+  // never wrong.
+  const hostTouchedRef = useRef<Set<string>>(new Set());
+  const announceHostTouch = (params: Record<string, unknown>) => {
+    // The plugin host only. In the app and the browser there is no parameter
+    // surface to announce to, and `link` is native in BOTH the plugin and the
+    // merged shell — so the panel flag is the only honest discriminator.
+    if (!link || (window as { __slPanel?: string }).__slPanel !== "plugindeck") return;
+    const target = hostTouchTargetFor(params);
+    const track = params.trackIndex;
+    if (target === null || typeof track !== "number") return;
+    const key = `${track}.${target}`;
+    if (hostTouchedRef.current.has(key)) return;
+    hostTouchedRef.current.add(key);
+    link.command("paramTouch" as never, { track, target }).catch(() => {});
+  };
+
   // One undo entry per gesture — but LAZILY: beginUndoActivity pushes a
   // snapshot unconditionally, so a focus-only click (pointerdown with no edit)
   // must NOT bracket. The bracket opens on the FIRST real edit within a
   // gesture and closes on pointer-up.
   const sendTrackEdit = (params: Record<string, unknown>) => {
+    announceHostTouch(params);
     const g = undoBracketRef.current;
     // setActiveCellParameter is focus-only (arms the dial, mutates no
     // pattern data) — it must not push an undo snapshot.

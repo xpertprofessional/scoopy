@@ -1147,6 +1147,72 @@ int main() {
         CHECK(renderPeak(old, 512, 24) > 1e-4);                      // and it plays
     }
 
+    // §4d paramTouch: the door Ableton's Configure discovers parameters through.
+    //
+    // Live captures a parameter when it sees one TOUCHED, and this window is a
+    // WebView whose controls never touch a juce parameter — so Configure saw
+    // nothing and adding a control by clicking was impossible. The page now says
+    // which offset it touched and the processor answers with an empty gesture.
+    {
+        struct GestureCounter final : juce::AudioProcessorParameter::Listener {
+            int starts = 0, ends = 0;
+            float valueChanges = 0;
+            void parameterValueChanged(int, float) override { valueChanges += 1.0f; }
+            void parameterGestureChanged(int, bool starting) override {
+                if (starting) ++starts; else ++ends;
+            }
+        };
+
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+
+        auto* pitch = p.hostParams().find("d0.t02.pitch");
+        auto* send3 = p.hostParams().find("d0.t02.send3");
+        CHECK(pitch != nullptr && send3 != nullptr);
+        GestureCounter onPitch, onSend3;
+        pitch->addListener(&onPitch);
+        send3->addListener(&onSend3);
+
+        const auto touch = [&](int track, const char* target) {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("track", track);
+            o->setProperty("target", target);
+            const auto reply = p.dispatchFromUi("paramTouch", juce::var(o));
+            return (bool) reply.getProperty("result", juce::var())
+                              .getProperty("announced", false);
+        };
+
+        // First touch announces: a matched begin/end pair, and NO value change —
+        // the host learns the control exists without anything being written.
+        CHECK(touch(2, "pitch"));
+        CHECK(onPitch.starts == 1);
+        CHECK(onPitch.ends == 1);
+        CHECK(onPitch.valueChanges == 0.0f);
+        CHECK(std::abs(pitch->convertFrom0to1(pitch->getValue())) < 1e-6); // still neutral
+
+        // …and only the first. Configure needs one gesture; a gesture is also
+        // what latches a parameter for automation recording, so a drag firing
+        // this per frame would punch envelopes nobody asked for.
+        CHECK(!touch(2, "pitch"));
+        CHECK(!touch(2, "pitch"));
+        CHECK(onPitch.starts == 1);
+
+        // Each control announces itself independently.
+        CHECK(onSend3.starts == 0); // pitch's touch was not smeared across the row
+        CHECK(touch(2, "send3"));
+        CHECK(onSend3.starts == 1);
+
+        // Refusals are refusals: no gesture, and a truthful `announced:false`.
+        CHECK(!touch(2, "nope"));       // not a target
+        CHECK(!touch(2, "transpose"));  // a DECK target, not a track one
+        CHECK(!touch(99, "pitch"));     // past the declared track count
+        CHECK(!touch(-1, "pitch"));
+        CHECK(onPitch.starts == 1 && onSend3.starts == 1);
+
+        pitch->removeListener(&onPitch);
+        send3->removeListener(&onSend3);
+    }
+
     // §4c Automation is PER INSTANCE — two decks in one project, one automated.
     {
         ScoopyPluginProcessor a, b;
