@@ -419,6 +419,43 @@ naming its donor binding, the rows it consumes, and its door.
 
 ---
 
+## 10d. ScoopyTape (the looper-strip plugin) — planning, 2026-08-01
+
+A kickoff brief exists at `docs/merge/TAPEPLUGIN-KICKOFF.md`. **Nothing is
+built.** Eight design questions were answered by the user on 2026-08-01 and are
+recorded in that file's "The ground" section — read them there, they are the
+premise of the whole brief. Headline: a **new effect plugin** (not a second
+ScoopyDeck face), an **8-snapshot** bank with presets, a **broad host-automatable
+parameter surface** (the sharpest deviation from ScoopyDeck, which ships zero
+parameters), and the finding that **the looper engine already exists** — the
+`sl_tape_*` tier is record/loop/varispeed/stretch/scrub/overdub/takes, done.
+
+### Awaiting the user (added 2026-08-01)
+
+1. **The product name and its 4-char `PLUGIN_CODE` / bundle id.** "Scoopy Tape"
+   is a working name only. `ScDk` / `com.scoopyloops.scoopydeck` are taken, and
+   the code is baked into `auval -v aufx <CODE> Scpy` and into every saved DAW
+   project — it cannot be changed after anything ships.
+2. **The parameter ID list must be signed before ANY build leaves the machine.**
+   A7 chose a broad automatable surface; param IDs freeze at first ship and a
+   rename silently breaks every saved automation lane. The proposed list is
+   TAPEPLUGIN-KICKOFF §8. This is the one item that is genuinely blocking —
+   everything else can proceed and be revised.
+3. **Snapshot-flip quantization**: free, or on the launch quantum? And does
+   reloading a snapshot mid-playback crossfade or cut? ⚠️ Interacts with item 1
+   of §10c below — **the launch quantum ruling (P11-3c) is itself still open**,
+   so do not settle it sideways here.
+4. **The A6 embed cap** — the byte/second threshold above which a snapshot is
+   stored as a take *reference* instead of embedded PCM. Proposal: 60 s total
+   gzipped. (8 snapshots × 30 s stereo float32 ≈ 180 MB raw is why "always
+   embed" was rejected.)
+5. **Overdub default** — does the record verb on an already-filled snapshot mean
+   SUM or REPLACE? Both exist in the engine; INSERT is deliberately absent.
+   D-WZ-OVERDUB-01 signed destructive mix-into-buffer for the wizard deck, which
+   argues SUM, but a looper's "record" button meaning "overdub" surprises people.
+
+---
+
 ## 10c. Handoff — state at 2026-07-31, end of the autonomous run
 
 **B1 and B2 are both done** bar what only the user can settle. Eleven commits,
