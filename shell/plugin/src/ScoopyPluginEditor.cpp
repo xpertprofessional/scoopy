@@ -122,8 +122,26 @@ ScoopyPluginEditor::~ScoopyPluginEditor() {
     stopTimer();
 }
 
+void ScoopyPluginEditor::paint(juce::Graphics& g) {
+    // The strip the webview is trimmed off. Painted rather than left blank so a
+    // deliberate piece of chrome does not read as the page failing to fill the
+    // window — and dark enough to disappear against the UI above it.
+    g.fillAll(juce::Colour(0xff121212));
+    const auto strip = getLocalBounds().removeFromBottom(kChromeH).reduced(6, 0);
+    g.setColour(juce::Colour(0xff6a6a6a));
+    g.setFont(juce::FontOptions(11.0f));
+    // Says what the corner does, because an 18px grip on a dark strip is not
+    // self-evident, and "the window will not resize" was the actual report.
+    g.drawText(juce::String(getWidth()) + " x " + juce::String(getHeight()) +
+                   "  -  drag the corner to resize",
+               strip.withTrimmedRight(kChromeH), juce::Justification::centredLeft, true);
+}
+
 void ScoopyPluginEditor::resized() {
-    if (webView != nullptr) webView->setBounds(getLocalBounds());
+    // TRIMMED, not full-bleed — see kChromeH. The corner resizer lives in the
+    // strip this leaves behind; without it the native WKWebView covers the grip
+    // and the window cannot be dragged bigger at all.
+    if (webView != nullptr) webView->setBounds(getLocalBounds().withTrimmedBottom(kChromeH));
     loadError.setBounds(getLocalBounds());
     // Record the arrangement as it happens, into whichever mode is showing —
     // this is the only moment the size is known, and the editor may be closed

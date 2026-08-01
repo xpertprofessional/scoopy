@@ -368,9 +368,31 @@ export function GridPanel({
   source = COMPOSE_SOURCE,
   cellsHidden = false,
   djSlotIndex,
+  viewDensity,
 }: {
   link: EngineLink | null;
   source?: GridSource;
+  /**
+   * VIEW density, overriding the source's — how the rows are DRAWN, never where
+   * their data comes from.
+   *
+   * The two are genuinely separate and conflating them is the trap: compose
+   * density reads its playhead from `HotFrameLayout.trackStep0`, and NOTHING in
+   * the merged engine writes those lanes, so a real compose MOUNT shows a
+   * frozen playhead. A deck source drawn at compose density keeps reading
+   * `djTrackStepD<d>T*` — written every block — so the playhead moves and the
+   * full row comes back.
+   *
+   * ScoopyDeck needs exactly that: it mounts one deck and nothing else, so the
+   * dj row's deliberate omissions (no H row, i.e. no sample browse and NO LOAD
+   * — "sound design, not performance") left the plugin with no way to put a
+   * sample on a track at all. On the plane that was fine: a compose window is
+   * one double-click away. Here the deck IS the app.
+   *
+   * PERF still wins over this — it is the performance view, and arming it while
+   * looking at compose rows should still reduce them.
+   */
+  viewDensity?: Density;
   /**
    * Collapse the cell grid away, leaving only the control bands (the DJ deck's
    * GRID toggle). The rows stay fully live — this hides the pattern canvas, not
@@ -423,7 +445,8 @@ export function GridPanel({
    * out from under them because they armed a perform gesture would be a
    * different feature wearing this one's name.
    */
-  const density: Density = performActive && source.density === "dj" ? "perform" : source.density;
+  const density: Density =
+    performActive && source.density === "dj" ? "perform" : (viewDensity ?? source.density);
   const metrics = gridMetrics(density);
   const CONTROL_BAND_H = metrics.bandH;
   const tracksRef = useRef<(GridTrackState | null)[]>(Array(MAX_GRID_TRACKS).fill(null));
@@ -3205,8 +3228,16 @@ export function GridPanel({
         link={link}
         meta={meta}
         deck={source.deck}
-        showMod={source.density === "compose"}
-        showAdd={source.density === "compose"}
+        // The VIEW density, not the source's. Both of these are compose VERBS —
+        // the modulation lane and `+` add-track are things you do while
+        // building, and a deck drawn at compose density is a place you are
+        // building. ScoopyDeck is the case that forced the distinction: it
+        // mounts one deck and no compose window, so keying `+` to the SOURCE
+        // left it with no way to make a track at all.
+        // (`uiOwnership.test.ts` pins `+`'s single home as MasterRow, which is
+        // untouched — this is about WHEN that home renders, not where it is.)
+        showMod={density === "compose"}
+        showAdd={density === "compose"}
       />
       <div className="grid-canvas-stack" style={{ height: stackH }}>
         {/* Cells hidden (DJ GRID toggle): the canvases don't mount at all, so

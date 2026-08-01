@@ -24,6 +24,21 @@ public:
     ~ScoopyPluginEditor() override;
 
     void resized() override;
+    void paint(juce::Graphics&) override;
+
+    /** THE CHROME STRIP along the bottom, and why the UI is not full-bleed.
+     *
+     *  JUCE puts its `ResizableCornerComponent` at (w-18, h-18, 18, 18) and
+     *  calls `setAlwaysOnTop(true)` on it — which does nothing here. The corner
+     *  is a LIGHTWEIGHT JUCE component; `WebBrowserComponent` on macOS is a real
+     *  `WKWebView` NSView child, and a native subview always renders above
+     *  CoreGraphics-drawn JUCE content whatever the internal z-order says. So
+     *  the grip was painted underneath the page: invisible, and unhittable.
+     *
+     *  Reported from the real host as "window still not expandable"
+     *  (2026-08-01). Trimming the webview by exactly the resizer's height gives
+     *  the corner somewhere to live that the page cannot cover. */
+    static constexpr int kChromeH = 18;
 
     /** THE EDITOR MUST TAKE OS KEYBOARD FOCUS, or none of the web tier's key
         handling is reachable inside a DAW (D-SL-DECKPLUGIN-02 · D3).

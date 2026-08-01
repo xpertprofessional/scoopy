@@ -36,7 +36,7 @@ import type { EngineLink } from '../engineLink.ts'
 import { HotFrameLayout } from '../../protocol/schema.ts'
 import { projectScene, type SceneLetter } from '../audio/sceneProjection.ts'
 import { lcmForScene } from '../audio/patternClock.ts'
-import { GridPanel, djSource } from '../panels/GridPanel.tsx'
+import { GridPanel, djSource, type Density } from '../panels/GridPanel.tsx'
 import { registerSampleDoors } from '../panels/sampleDoors.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import { useNudge } from '../state/nudgeStore.ts'
@@ -115,8 +115,17 @@ export function useDeckTileBinding(
 
   // The per-deck handler slots — every gesture the dj band fires lands on THIS
   // deck's document. Mirrors useComposeBinding's registrations plus the two
-  // sample doors (the band's header row carries browse·LOAD at dj density too,
-  // and a LOAD that does nothing is a dead control — the four-rules line).
+  // sample doors.
+  //
+  // ⚠️ This used to claim "the band's header row carries browse·LOAD at dj
+  // density too". It does NOT, and never did: `trackRowControls` gates the whole
+  // H row — name · browse ◀▶ · LOAD — on `!dj`. On the plane that omission is
+  // deliberate and harmless (sample browsing is sound design, and a compose
+  // window is one double-click away), but ScoopyDeck mounts a deck and nothing
+  // else, so it left the plugin with NO WAY TO LOAD A SAMPLE AT ALL — reported
+  // from the real host, 2026-08-01. The doors below were registered and correct
+  // the whole time; there was simply no control wired to them. Fixed by the
+  // COMPOSE/DECK view switch (`viewDensity`), not by growing a second LOAD here.
   useEffect(() => {
     if (!browserLink) return
     browserLink.setGridEditHandler((trackIndex, row) => applyGridRow(trackIndex, row, deck), deck)
@@ -267,6 +276,7 @@ export function DeckFace({
   onDouble,
   locked = false,
   djSlotIndex,
+  viewDensity,
 }: {
   link: EngineLink | null
   strip: StripDoc
@@ -282,6 +292,11 @@ export function DeckFace({
   /** Which fixed deck column this face occupies; omit on the plane, which has
       none. See the note above for exactly what it turns on. */
   djSlotIndex?: number
+  /** Draw the rows at a different density than the deck source implies — see
+      `GridPanel.viewDensity`. Omit on the plane: a strip's expanded face is a
+      deck face, and COMPOSE is a window you open instead. ScoopyDeck has no
+      such window, so its COMPOSE/DECK switch lands here. */
+  viewDensity?: Density
 }) {
   const { session, scene } = useDeckTileBinding(link, element, masterBpm)
   // STABLE identity (the DjPanel DeckSlot rule): GridPanel keys its topic
@@ -343,6 +358,7 @@ export function DeckFace({
           source={source}
           cellsHidden={cellsHidden}
           djSlotIndex={djSlotIndex}
+          viewDensity={viewDensity}
         />
       </div>
       <LcmBar link={link} deck={element.deck} session={session} scene={scene} />

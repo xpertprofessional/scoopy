@@ -331,6 +331,13 @@ class MergedLink extends BrowserLink {
     //              window the user arranged, and the web tier is not running
     //              when the DAW restores one.
     "editorSize",
+    //   pluginSession   ScoopyDeck only, processor-answered like the two above.
+    //              WHICH document this instance holds. It lives in the chunk
+    //              rather than in a shared "most recent" setting because that
+    //              pointer would RACE across instances — whichever deck saved
+    //              last would win, and every new insert would inherit whatever
+    //              another deck happened to touch. Per-instance, it just works.
+    "pluginSession",
     // The GRID's world sink. Native for the same reason the strips are: this
     // app HAS the engine, and publishing to the browser's WASM copy of the same
     // core would put the grid on a second clock and a second output.

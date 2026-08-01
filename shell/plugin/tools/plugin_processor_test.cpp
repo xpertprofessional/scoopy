@@ -476,6 +476,12 @@ int main() {
             a.editorH = 900;
             a.performW = 900;
             a.performH = 460;
+            // …and WHICH SESSION this instance holds. Without it the chunk
+            // replayed the right audio while the editor had no idea what it
+            // was, manufactured an `Untitled`, and showed an empty grid over a
+            // correctly-playing deck — the same call that filled the user's
+            // shared library with one `Untitled N` per insert.
+            a.dispatchFromUi("pluginSession", juce::JSON::parse(R"({"name":"beach"})"));
             a.getStateInformation(saved);
         }
         CHECK(saved.getSize() > 0);
@@ -510,6 +516,26 @@ int main() {
         // PERF does not cost you the other mode's arrangement.
         CHECK(b.editorW == 1440 && b.editorH == 900);
         CHECK(b.performW == 900 && b.performH == 460);
+
+        // …and so did the session's IDENTITY, which is what lets the editor
+        // reopen the document this instance was playing. Per-instance on
+        // purpose: a shared "most recent" pointer would race across decks —
+        // whichever saved last would win, and every new insert would inherit
+        // whatever another deck happened to touch.
+        {
+            const auto s = b.dispatchFromUi("pluginSession", juce::JSON::parse("{}"));
+            CHECK((bool) s.getProperty("ok", false));
+            CHECK(s.getProperty("result", juce::var()).getProperty("name", "").toString() ==
+                  "beach");
+        }
+        // A NEVER-USED instance answers an explicit null, not an empty string:
+        // "this deck has never held a session" and "it holds one called ''" want
+        // opposite behaviour on boot, so the page must be able to tell them apart.
+        {
+            ScoopyPluginProcessor fresh;
+            const auto s = fresh.dispatchFromUi("pluginSession", juce::JSON::parse("{}"));
+            CHECK(s.getProperty("result", juce::var()).getProperty("name", "x").isVoid());
+        }
 
         // …and the PERF edge drives the window through the processor, which is
         // what lets a size outlive the editor that set it. No editor is open

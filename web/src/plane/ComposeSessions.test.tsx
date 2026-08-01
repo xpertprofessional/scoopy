@@ -23,6 +23,7 @@ const on = () => ({
   save: vi.fn(),
   rename: vi.fn(),
   exportZip: vi.fn(),
+  importFile: vi.fn(),
 })
 
 const sessions = (...names: string[]): SessionSummary[] =>
@@ -37,6 +38,20 @@ const labels = (items: MenuItem[]) =>
   labelled(items).filter((i) => i.kind === 'item').map((i) => i.label)
 
 describe('the session menu', () => {
+  it('offers IMPORT with nothing in the library, and never disables it', () => {
+    // The plugin can boot with an empty library and NO session (it no longer
+    // manufactures an Untitled — that is what filled the real library with
+    // `Untitled N`, one per insert). Import is then one of only two ways in, so
+    // gating it on a current session the way save/rename/export are gated would
+    // make the empty state a dead end.
+    const items = sessionMenuItems([], null, on())
+    const imp = labelled(items).find((i) => i.label.startsWith('import')) as {
+      disabled?: boolean
+    }
+    expect(imp).toBeTruthy()
+    expect(imp.disabled).toBeFalsy()
+  })
+
   it('offers NEW even with nothing in the library — the mapless path starts here', () => {
     // On the boot chooser's COMPOSE path this window may be the only thing
     // running. If `new` were gated on an existing session there would be no way
@@ -93,10 +108,12 @@ describe('the session menu', () => {
     run('save')
     run('rename')
     run('export')
+    run('import')
     expect(acts.create).toHaveBeenCalled()
     expect(acts.save).toHaveBeenCalled()
     expect(acts.rename).toHaveBeenCalled()
     expect(acts.exportZip).toHaveBeenCalled()
+    expect(acts.importFile).toHaveBeenCalled()
     ;(labelled(items).find((i) => i.label === 'beach') as { onSelect: () => void }).onSelect()
     expect(acts.open).toHaveBeenCalledWith('beach')
   })

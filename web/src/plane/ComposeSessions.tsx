@@ -27,6 +27,7 @@ import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
 import {
   createSession,
   exportSession,
+  isSessionFile,
   listSessions,
   renameSession,
   type SessionSummary,
@@ -47,11 +48,18 @@ export function sessionMenuItems(
     save: () => void
     rename: () => void
     exportZip: () => void
+    importFile: () => void
   },
 ): MenuItem[] {
   const items: MenuItem[] = [
     { kind: 'info', label: 'session' },
     { kind: 'item', label: 'new', onSelect: on.create },
+    // IMPORT — the door the plugin had no way to reach (real-host report,
+    // 2026-08-01: "we need to import session from hd"). The library is OPFS, so
+    // without this a session that exists as a file on disk was simply
+    // unreachable from inside a DAW; the plane had drag-and-drop, and a plugin
+    // window is not somewhere you drop a Finder item.
+    { kind: 'item', label: 'import…', onSelect: on.importFile },
     // SAVE IS ⌘S (D-SL-SAVE-01), and the row says so — a verb whose shortcut is
     // invisible is one people never learn.
     { kind: 'item', label: 'save  ⌘S', disabled: !current, onSelect: on.save },
@@ -77,6 +85,34 @@ export function sessionMenuItems(
     }
   }
   return items
+}
+
+/**
+ * Open the native file panel and resolve the chosen session package, or null if
+ * the user cancelled.
+ *
+ * A detached `<input type="file">` rather than a native command: JUCE's
+ * WKWebView implements `runOpenPanelWithParameters`, so this IS the platform
+ * panel inside a DAW. Resolves on `cancel` too — without that, cancelling would
+ * leave the promise (and the menu's `run` wrapper) hanging forever.
+ */
+function pickSessionFile(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.scoopySession,.zip'
+    let settled = false
+    const done = (f: File | null) => {
+      if (settled) return
+      settled = true
+      resolve(f)
+    }
+    input.addEventListener('change', () => done(input.files?.[0] ?? null))
+    // Safari/WKWebView fire `cancel` on dismissal; older engines fire nothing,
+    // which is why `done` is idempotent rather than assuming exactly one event.
+    input.addEventListener('cancel', () => done(null))
+    input.click()
+  })
 }
 
 /** The bar control. `deck` is the deck this window composes. */
@@ -125,7 +161,23 @@ export function ComposeSessions({ deck, onNote }: { deck: number; onNote: (n: st
                 await renameSession(current, next)
                 await useCompanion.getState().open(next, deck)
               }),
+            // A real file picker. JUCE's WKWebView implements
+            // `runOpenPanelWithParameters` (juce_WebBrowserComponent_mac.mm),
+            // so a plain <input type=file> opens the native panel inside the
+            // plugin — no new native command needed.
+            importFile: () =>
+              run('import', async () => {
+                const file = await pickSessionFile()
+                if (!file) return
+                if (!isSessionFile(file)) {
+                  onNote(`import failed — ${file.name} is not a session package`)
+                  return
+                }
+                await useCompanion.getState().importFile(file)
+                onNote(`imported ${file.name}`)
+              }),
             exportZip: () =>
+
               run('export', async () => {
                 const s = useCompanion.getState().decks[deck]?.session
                 if (!s) return

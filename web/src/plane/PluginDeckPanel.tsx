@@ -89,8 +89,21 @@ function pulseMultiplierOf(
   return intent.syncedBpm / masterBpm
 }
 
+/** The one-strip map the deck rows write through. Its master tempo is the
+    HOST's — see pluginDeckMap.ts. Hoisted so BOTH the boot path and a session
+    opened later from the menu install it the same way. */
+function installMapFor(open: { name: string; pattern: unknown }): void {
+  installPluginDeckMap({
+    sessionId: open.name,
+    bpm: (open.pattern as { bpm?: number }).bpm ?? 120,
+    syncToMaster: true,
+    tempoMode: 'timeStretch' as never,
+    hostBpm: 0,
+  })
+}
+
 export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
-  const [boot, setBoot] = useState<'starting' | 'ready' | string>('starting')
+  const [boot, setBoot] = useState<'starting' | 'ready' | 'empty' | string>('starting')
   const [note, setNote] = useState<string | null>(null)
   const [hostPlaying, setHostPlaying] = useState(false)
   const [sessions, setSessions] = useState<{ name: string }[]>([])
@@ -116,6 +129,22 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
    *
    *  OFF (default): the DAW's playhead. ON: the number in the box beside it. */
   const [tempoInternal, setTempoInternal] = useState(false)
+  /** COMPOSE / DECK — how the track rows are DRAWN (§ real-host report,
+   *  2026-08-01).
+   *
+   *  Not a different mount and not a different data source: the deck source
+   *  stays, so the playhead keeps reading `djTrackStepD0T*` (written every
+   *  block) instead of compose's `trackStep0`, which NOTHING in the merged
+   *  engine writes. A real compose mount here would show a frozen playhead.
+   *
+   *  It exists because the dj row deliberately has no H row — no sample browse
+   *  and no LOAD, "sound design, not performance". On the plane that is fine; a
+   *  compose window is one double-click away. ScoopyDeck has no such window, so
+   *  the omission meant there was no way to put a sample on a track at all.
+   *
+   *  DECK is the default: a plugin dropped on a track should come up playable,
+   *  not in an editing surface. */
+  const [composeView, setComposeView] = useState(false)
 
   // The strip the deck rows read and write. Subscribed through the store so a
   // control's own write re-renders the row that made it.
@@ -160,25 +189,41 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
         await autoStartEngine(true, () => useCompanion.getState())
         if (cancelled) return
 
-        // Adopt whatever is already open (a reloaded DAW project may have
-        // restored one) rather than stacking a second empty session on top.
-        if (!useCompanion.getState().decks[DECK]?.session) {
-          await useCompanion.getState().newSession()
+        // WHICH SESSION IS THIS INSTANCE'S? The chunk knows — ask it.
+        //
+        // ⚠️ THIS USED TO CALL `newSession()`, and that was two bugs at once.
+        // `createSession` ends in `saveSession`, so EVERY insert wrote a fresh
+        // `Untitled N` folder into the shared library (reported from the real
+        // host, 2026-08-01: "open session shows loads of untitled"). And on a
+        // reloaded DAW project the chunk had already replayed the right audio
+        // into the engine, so the manufactured Untitled sat as an empty grid on
+        // top of a correctly-playing deck.
+        //
+        // Per-INSTANCE, deliberately. A shared "most recent session" pointer
+        // would race: with several decks open, whichever autosaved last would
+        // win and every new insert would inherit whatever another deck touched.
+        let want: string | null = null
+        try {
+          const r = await link?.command('pluginSession' as never, {})
+          want = (r as { name?: string | null } | null)?.name ?? null
+        } catch {
+          // The app host refuses the method; there is simply nothing to restore.
+        }
+        if (cancelled) return
+        if (want && !useCompanion.getState().decks[DECK]?.session) {
+          // A session named in the chunk but since deleted from the library must
+          // not take the boot down with it — fall through to the empty state,
+          // which can say so and offer the library.
+          await useCompanion.getState().open(want).catch(() => {})
           if (cancelled) return
         }
         const open = useCompanion.getState().decks[DECK]?.session
-        if (open) {
-          // The one-strip map the deck rows write through. Its master tempo is
-          // the HOST's — see pluginDeckMap.ts.
-          installPluginDeckMap({
-            sessionId: open.name,
-            bpm: (open.pattern as { bpm?: number }).bpm ?? 120,
-            syncToMaster: true,
-            tempoMode: 'timeStretch' as never,
-            hostBpm: 0,
-          })
-        }
-        setBoot(open ? 'ready' : 'no session')
+        if (open) installMapFor(open)
+        // NOTHING IS CREATED. An insert with no chunk comes up empty with the
+        // session menu open — see the `boot === 'empty'` body below, which
+        // exists so that emptiness is a door rather than the broken-looking
+        // grid PluginDeckPanel was originally written to avoid.
+        setBoot(open ? 'ready' : 'empty')
       } catch (err) {
         // Say it on screen. A plugin that fails to boot its document and shows
         // a placeholder is indistinguishable from a plugin that is simply
@@ -189,7 +234,24 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [link])
+
+  // A session opened LATER — from the menu, on an instance that booted empty.
+  // The map and the ready state have to follow it, or picking a session would
+  // leave the deck rows unmounted with a document loaded behind them.
+  useEffect(() => {
+    if (!session) return
+    installMapFor(session)
+    setBoot((b) => (b === 'ready' ? b : 'ready'))
+  }, [session?.name])
+
+  // …and native must be told, so THIS instance reopens it next time. Written on
+  // every change rather than on save: the chunk is the instance's memory of
+  // which document it holds, not a record of what was persisted.
+  useEffect(() => {
+    if (!link || !session) return
+    void link.command('pluginSession' as never, { name: session.name }).catch(() => {})
+  }, [link, session?.name])
 
   // THE ARROW KEYS, without having to click first.
   //
@@ -379,10 +441,42 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
   // block, so the playhead moves. DeckFace is that binding plus the rows.
   const quiet = silenceNote(session?.name ?? '', { engine, decodeFailures, missingSamples })
 
-  if (boot !== 'ready') {
+  if (boot === 'starting' || (boot !== 'ready' && boot !== 'empty')) {
     return (
       <main className="panel compose-window mono dim" aria-label="scoopy deck starting">
         <div style={{ padding: '12px' }}>{`scoopy deck · ${boot}…`}</div>
+      </main>
+    )
+  }
+
+  // EMPTY IS A DOOR, not a dead end.
+  //
+  // The original panel manufactured an `Untitled` here precisely because an
+  // empty grid "read as a broken plugin" — but that solved the appearance by
+  // writing a folder into the user's library on every insert. The honest fix is
+  // to SAY the state and put the library right next to it: `session ▾` carries
+  // new · open · import, and it is the same menu the ready face uses.
+  if (boot === 'empty') {
+    return (
+      <main className="panel compose-window" aria-label="scoopy deck — no session">
+        <header className="compose-window-bar mono">
+          <ComposeSessions deck={DECK} onNote={setNote} />
+          <span>scoopy deck</span>
+          {note && <span className="dim">{` · ${note}`}</span>}
+          {error && <span className="warn">{` ${error}`}</span>}
+        </header>
+        <div className="compose-window-body">
+          <div className="plugin-deck-pane mono dim" style={{ padding: '16px', gap: '8px' }}>
+            <div>no session open</div>
+            <div style={{ maxWidth: '46ch', lineHeight: 1.5 }}>
+              Pick one from <strong>session ▾</strong> — it lists your library, and
+              carries <strong>new</strong> and <strong>import…</strong>. Whatever you
+              open is remembered by <em>this</em> plugin instance, so reopening the
+              project brings it back.
+            </div>
+          </div>
+          <ComposeFiles link={link} />
+        </div>
       </main>
     )
   }
@@ -456,6 +550,21 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
         >
           {tempoInternal ? 'TEMPO INT' : 'TEMPO HOST'}
         </button>
+        {/* COMPOSE / DECK — how the rows are drawn. First, because it is the
+            widest thing this bar does: it is the difference between a surface
+            you build on and a surface you perform on. */}
+        <button
+          type="button"
+          className={`dr mono${composeView ? ' latched' : ''}`}
+          onClick={() => setComposeView((v) => !v)}
+          title={
+            composeView
+              ? 'COMPOSE — full track rows: sample browse, LOAD, the DSP band and + to add a track'
+              : 'DECK — the compact performance rows. Switch to COMPOSE to load samples and build.'
+          }
+        >
+          {composeView ? 'COMPOSE' : 'DECK'}
+        </button>
         {/* CLK — host transport vs internal clock. The tempo axis is SYNC/FREE
             on the deck row; this is the TRANSPORT axis, and they are
             independent on purpose (see followTransport). */}
@@ -470,6 +579,51 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
           }
         >
           {followTransport ? 'CLK HOST' : 'CLK INT'}
+        </button>
+        {/* ⤢ — THE IN-PAGE RESIZE GRIP.
+            The native corner is reclaimed (the editor trims itself a strip for
+            it, because a WKWebView covers a lightweight JUCE component no
+            matter what z-order says), but a host that refuses to let a plugin
+            window grow leaves that grip inert — and "the window will not
+            expand" is what was reported. This drives `setSize` on the editor
+            instead, which more hosts honour. Drag it: right/down grows.
+            Refused by the app host like every other plugin-only method. */}
+        <button
+          type="button"
+          className="dr mono"
+          title="drag to resize the plugin window — right/down grows it"
+          style={{ cursor: 'nwse-resize', touchAction: 'none' }}
+          onPointerDown={(e) => {
+            if (!link) return
+            e.preventDefault()
+            e.currentTarget.setPointerCapture(e.pointerId)
+            const x0 = e.clientX
+            const y0 = e.clientY
+            // The OUTER window, not the viewport: the editor trims a chrome
+            // strip off the webview, so innerHeight is short by that much and
+            // resizing from it would shrink the window a little on every drag.
+            const w0 = window.outerWidth || window.innerWidth
+            const h0 = window.outerHeight || window.innerHeight
+            const el = e.currentTarget
+            const move = (ev: PointerEvent) => {
+              void link
+                .command('editorSize' as never, {
+                  width: Math.round(w0 + (ev.clientX - x0)),
+                  height: Math.round(h0 + (ev.clientY - y0)),
+                })
+                .catch(() => {})
+            }
+            const up = () => {
+              el.removeEventListener('pointermove', move)
+              el.removeEventListener('pointerup', up)
+              el.removeEventListener('pointercancel', up)
+            }
+            el.addEventListener('pointermove', move)
+            el.addEventListener('pointerup', up)
+            el.addEventListener('pointercancel', up)
+          }}
+        >
+          ⤢
         </button>
         {note && <span className="dim">{` · ${note}`}</span>}
         {error && <span className="warn">{` ${error}`}</span>}
@@ -542,6 +696,10 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
               // the "focus doesn't stick" report. The plane leaves it undefined
               // on purpose; see DeckFace.
               djSlotIndex={0}
+              // The COMPOSE/DECK switch. PERF still overrides both — it is the
+              // performance view, and arming it while looking at compose rows
+              // should still reduce them.
+              viewDensity={composeView ? 'compose' : 'dj'}
               // ⚠️ THE STRIP MUST FOLLOW THE SESSION. Opening alone leaves
               // `element.sessionId`/`bpm` pointing at the PREVIOUS session, so
               // djSyncLaw divides by a stale denominator, the header shows the

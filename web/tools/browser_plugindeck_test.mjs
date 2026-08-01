@@ -59,11 +59,48 @@ page.on('pageerror', (e) => pageErrors.push(String(e)))
 // same either way, which is the whole point — the geometry does not depend on
 // which host is answering.
 await page.goto('http://localhost:4601/?panel=plugindeck&host=browser')
-// It creates a session on boot before it renders anything, so this waits on
-// the real ready state rather than a fixed guess.
-await page
-  .waitForSelector('.plugin-deck-scenes', { timeout: 15000 })
-  .catch(() => {})
+
+// ── THE EMPTY BOOT IS A DOOR (real-host report, 2026-08-01) ────────────────
+//
+// The panel used to call `newSession()` here, and `createSession` ends in
+// `saveSession` — so EVERY insert wrote a fresh `Untitled N` folder into the
+// user's shared library ("open session shows loads of untitled"). It no longer
+// creates anything: an instance with nothing to restore comes up empty, and
+// that emptiness has to be a way IN rather than the broken-looking grid the
+// auto-create was papering over.
+//
+// This host has no chunk to restore from, so the walk always takes that path —
+// which makes it the natural place to prove it.
+await page.waitForSelector('.compose-session-menu', { timeout: 20000 }).catch(() => {})
+const emptyBoot = await page.evaluate(() => ({
+  label: document.querySelector('main')?.getAttribute('aria-label') ?? '',
+  says: /no session open/i.test(document.body.innerText),
+  menu: !!document.querySelector('.compose-session-menu'),
+  decks: document.querySelectorAll('.plugin-deck-scenes').length,
+}))
+check('a fresh instance boots with NO session', emptyBoot.decks === 0, JSON.stringify(emptyBoot))
+check('…and says so, rather than showing an empty grid', emptyBoot.says)
+check('…with the session menu right there', emptyBoot.menu)
+
+// Now go in through that door: session ▾ → new. Everything below tests the
+// ready face, exactly as before.
+await page.click('.compose-session-menu')
+await page.waitForSelector('.ds-menu-item', { timeout: 5000 })
+const menuLabels = await page.evaluate(() =>
+  [...document.querySelectorAll('.ds-menu-item')].map((e) => e.textContent.trim()),
+)
+check(
+  'the menu carries IMPORT — a library you cannot add to from disk is not one',
+  menuLabels.some((l) => l.startsWith('import')),
+  JSON.stringify(menuLabels),
+)
+await page.evaluate(() => {
+  const el = [...document.querySelectorAll('.ds-menu-item')].find(
+    (e) => e.textContent.trim() === 'new',
+  )
+  el?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
+await page.waitForSelector('.plugin-deck-scenes', { timeout: 20000 }).catch(() => {})
 await page.waitForTimeout(800)
 
 const m = await page.evaluate(() => {
@@ -469,6 +506,67 @@ check(
   `title=${JSON.stringify(lcm?.title)}`,
 )
 
+// ── COMPOSE / DECK, AND THE MISSING LOAD (real-host report, 2026-08-01) ────
+//
+// `trackRowControls` gates the whole H row — name · browse ◀▶ · LOAD — on
+// `!dj`. On the plane that is deliberate and harmless: sample browsing is sound
+// design, and a compose window is one double-click away. ScoopyDeck mounts a
+// deck and nothing else, so it shipped with NO WAY TO PUT A SAMPLE ON A TRACK.
+// The sample doors were registered and correct the whole time; no control was
+// wired to them.
+//
+// PERF is released first — it outranks the view switch by design, so leaving it
+// armed would have this assert perform density and prove nothing.
+{
+  const perfOff = await page.$('.deckrow-view .dr:has-text("PERF")')
+  if (perfOff) {
+    await perfOff.click()
+    await page.waitForTimeout(200)
+  }
+}
+const viewShape = () =>
+  page.evaluate(() => ({
+    label:
+      [...document.querySelectorAll('.compose-window-bar .dr')]
+        .map((b) => b.textContent.trim())
+        .find((t) => t === 'COMPOSE' || t === 'DECK') ?? null,
+    loads: [...document.querySelectorAll('.track-strips button')].filter(
+      (b) => b.textContent.trim() === 'LOAD',
+    ).length,
+    add: document.querySelectorAll('.mr-add').length,
+    compose: document.querySelectorAll('.track-strips.density-compose').length,
+    dj: document.querySelectorAll('.track-strips.density-dj').length,
+    docScrollH: document.documentElement.scrollHeight,
+    viewportH: window.innerHeight,
+  }))
+
+const deckView = await viewShape()
+check('the COMPOSE/DECK switch exists', deckView.label !== null, JSON.stringify(deckView))
+check('it starts on DECK — a plugin comes up playable, not in an editor', deckView.label === 'DECK')
+
+const viewBtn = await page.$('.compose-window-bar .dr:has-text("DECK")')
+if (viewBtn) {
+  await viewBtn.click()
+  await page.waitForTimeout(300)
+}
+const composeView = await viewShape()
+check('switching gives COMPOSE density', composeView.compose > 0 && composeView.dj === 0, JSON.stringify(composeView))
+check(
+  'LOAD is reachable in COMPOSE and absent in DECK — the whole point of the switch',
+  deckView.loads === 0 && composeView.loads > 0,
+  `deck=${deckView.loads} compose=${composeView.loads}`,
+)
+check(
+  'the + add-track comes back with it — a build surface you cannot add to is not one',
+  deckView.add === 0 && composeView.add > 0,
+  `deck=${deckView.add} compose=${composeView.add}`,
+)
+check(
+  'nothing overflows the window in COMPOSE either',
+  composeView.docScrollH <= composeView.viewportH + 2,
+  `scrollHeight=${composeView.docScrollH} viewport=${composeView.viewportH}`,
+)
+
 await cleanup()
 server.close()
 
@@ -484,7 +582,8 @@ console.log(
     `↻${committed?.repeat ? 'on' : 'off'} (dy=${committed?.dy}) · ` +
     `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
     `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}" · ` +
-    `PERF controls ${shapeBefore.controls}→${shapeAfter.controls}`,
+    `PERF controls ${shapeBefore.controls}→${shapeAfter.controls} · ` +
+    `LOAD deck ${deckView.loads} → compose ${composeView.loads}`,
 )
 
 if (failures.length) {

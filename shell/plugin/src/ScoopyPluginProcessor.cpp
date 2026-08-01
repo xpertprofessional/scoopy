@@ -409,6 +409,20 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         return okEnvelope(juce::var(out));
     }
 
+    // pluginSession: which document THIS instance holds. Written when the page
+    // opens one, read back on boot so a reloaded project restores the same
+    // session rather than manufacturing an Untitled over it. `{}` is a pure
+    // read, same contract as hostSyncConfig.
+    if (method == "pluginSession") {
+        if (params.hasProperty("name")) sessionName = params["name"].toString();
+        auto* out = new juce::DynamicObject();
+        // Explicit null rather than an omitted key: "this instance has never
+        // held a session" is a state the page must be able to tell apart from
+        // "the reply was malformed", because the two want opposite behaviour.
+        out->setProperty("name", sessionName.isEmpty() ? juce::var() : juce::var(sessionName));
+        return okEnvelope(juce::var(out));
+    }
+
     // editorSize: the web tier telling us PERF was armed or released, so the
     // WINDOW can change shape with the view (§5). The sizes themselves live
     // here rather than in the page because they must survive a closed editor —
@@ -416,6 +430,20 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
     //
     // `{}` is a pure read, same contract as hostSyncConfig.
     if (method == "editorSize") {
+        // EXPLICIT SIZE from the page's own grip. The second half of the resize
+        // answer: the reclaimed corner is the platform-standard affordance, but
+        // a host that refuses to let a plugin window grow leaves it inert, and
+        // some do. This path goes through `setSize` on the editor, which the
+        // wrapper honours in more hosts than a user-drag on the corner does.
+        // Clamped to the editor's own limits so the page cannot ask for a
+        // window the constrainer will refuse and end up with nothing happening.
+        if (params.hasProperty("width") && params.hasProperty("height")) {
+            const int w = juce::jlimit(720, 3000, (int) params["width"]);
+            const int h = juce::jlimit(480, 2000, (int) params["height"]);
+            if (editorPerforming) { performW = w; performH = h; }
+            else { editorW = w; editorH = h; }
+            if (resizeEditor) resizeEditor(w, h);
+        }
         if (params.hasProperty("perform")) {
             const bool want = (bool) params["perform"];
             if (want != editorPerforming) {
@@ -551,6 +579,10 @@ void ScoopyPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     win->setProperty("performH", performH);
     win->setProperty("perform", editorPerforming);
     index->setProperty("window", juce::var(win));
+
+    // The document's IDENTITY, so a reloaded project reopens the session it was
+    // playing instead of an empty Untitled over the top of it.
+    index->setProperty("sessionName", sessionName);
     index->setProperty("masterLevel", sl_master_level(engine));
 
     const auto header = juce::JSON::toString(juce::var(index), true);
@@ -681,6 +713,7 @@ void ScoopyPluginProcessor::setStateInformation(const void* data, int sizeInByte
         performH = (int) win.getProperty("performH", 0);
         editorPerforming = (bool) win.getProperty("perform", false);
     }
+    sessionName = header.getProperty("sessionName", juce::var()).toString();
 
     if (engine != nullptr)
         sl_master_set_level(engine, (double) header.getProperty("masterLevel", 1.0));

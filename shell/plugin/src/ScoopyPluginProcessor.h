@@ -92,6 +92,20 @@ public:
      *  Zero = "never set", which restores the built-in default rather than
      *  collapsing the window to nothing — the shape a v1/v2 chunk written
      *  before this restores as. */
+    /** WHICH SESSION THIS INSTANCE HOLDS (real-host report, 2026-08-01).
+     *
+     *  The chunk carried the world, the samples and the sync recipe — but never
+     *  the document's IDENTITY. So a reloaded DAW project replayed the right
+     *  audio while the editor had no idea what it was, called `newSession()`,
+     *  and showed an empty Untitled grid over a correctly-playing engine. The
+     *  same call is what filled the shared library with `Untitled N` folders,
+     *  one per insert, because `createSession` ends in `saveSession`.
+     *
+     *  Identity belongs HERE rather than in a global "most recent" pointer, and
+     *  that is the whole reason it works with several instances open: each deck
+     *  remembers its own, and nothing races to be the newest. */
+    juce::String sessionName;
+
     int editorW = 0, editorH = 0;         // the composing window
     int performW = 0, performH = 0;       // the PERF deck face
     bool editorPerforming = false;        // which of the two is showing
