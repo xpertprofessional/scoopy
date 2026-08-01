@@ -179,8 +179,19 @@ juce_add_plugin(ScoopyTape
     COMPANY_NAME "ScoopyLoops"
     BUNDLE_ID com.scoopyloops.scoopytape
     PLUGIN_MANUFACTURER_CODE Scpy
-    PLUGIN_CODE ScTp
+    # CLAIMED FROM THE LINE-WIDE REGISTRY, not invented here. The codes are
+    # mnemonics of the THING — `SpFx` Spectral FX · `Trmb` Trombone · `Puls`
+    # Pulsar — so an Sc-prefixed `ScTp` was off-style as well as unclaimed.
+    # ⚠️ THE REGISTRY ITSELF LIVES IN A REPO THIS PROJECT MAY NOT WRITE TO
+    # (`../scoopyloops/docs/plugins/PLUGIN-DESIGN-SYSTEM.md` §7, which says
+    # "claim the next here"). The entry is therefore OWED — see
+    # docs/merge/TAPEPLUGIN-KICKOFF.md, which carries it as an open item so the
+    # claim is recorded somewhere a later session will actually look.
+    PLUGIN_CODE Tape
     FORMATS AU VST3 Standalone
+    # The line convention for an effect. ScoopyDeck predates this file being
+    # read and declares no categories at all; that is its gap, not a precedent.
+    VST3_CATEGORIES Fx
     # A PROCESSOR, not a source: it has nothing to loop until audio arrives.
     # This is the line that makes the DAW list it under effects and give it a
     # real main input rather than an instrument's optional sidechain.
@@ -270,7 +281,11 @@ target_include_directories(plugin_processor_test PRIVATE
     src
     ${CMAKE_SOURCE_DIR}/shell/src
     ${CMAKE_SOURCE_DIR}/host/src
-    ${CMAKE_SOURCE_DIR}/slengine/include)
+    ${CMAKE_SOURCE_DIR}/slengine/include
+    # The GENERATED HotFrame lane enum, so the playhead gate can name a lane
+    # rather than hard-code its index — the indices are generated precisely
+    # because hand-counting them drifts (see sl_hotframe.inc's header).
+    ${CMAKE_SOURCE_DIR}/slengine/generated)
 
 target_compile_definitions(plugin_processor_test PRIVATE
     JUCE_WEB_BROWSER=1

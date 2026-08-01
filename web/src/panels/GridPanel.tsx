@@ -418,6 +418,9 @@ export function GridPanel({
   // handlers are recreated each render, so reading it as a plain derived value
   // here is enough — no ref needed. See onPointerDown/Move/Up.
   const performActive = meta?.performActive ?? false;
+  /** Has the first meta push landed? The panel renders a placeholder until it
+      has, so this is "are the canvases mounted yet" — see the hot layer's deps. */
+  const hasMeta = meta !== null;
   // The VIEW's density, and only the view's. `performActive` deliberately does
   // NOT appear here (see `Density`): PERF is a pointer mode, not a view.
   const density: Density = viewDensity ?? source.density;
@@ -1076,7 +1079,24 @@ export function GridPanel({
     // rendered too, so a toggle must re-bind the loop to the new element. (`meta` used to cover
     // that by accident — a push happens to re-run this — which is exactly the kind of self-heal
     // that hides the real dependency until someone removes the accidental one.)
-  }, [link, source, cellsHidden]);
+    //
+    // ⚠️ AND `hasMeta` IS THE OTHER HALF OF THAT MOUNT REASON — without it THE
+    // PLAYHEAD NEVER DREW AT ALL, on any host (reported from the plugin,
+    // 2026-08-01: "playhead is not working and has never worked").
+    //
+    // Removing the accidental `meta` dep took the real one with it. The panel
+    // renders a "waiting for pattern state…" PLACEHOLDER while meta is null, so
+    // on the only pass this effect ever got, `hotRef.current` was null: it
+    // returned, and nothing in `[link, source, cellsHidden]` ever changes again,
+    // so it never rebound to the canvas that appeared a moment later. The static
+    // layer escaped by accident too — it depends on `meta?.trackCount`, which
+    // goes undefined → number when meta lands, which is why the CELLS drew and
+    // only the playhead was missing.
+    //
+    // A BOOLEAN, deliberately, not `meta`: it flips false→true exactly once, so
+    // the loop binds when the canvas appears and is NOT torn down and rebuilt on
+    // every subsequent meta push — which is the thrash the note above is about.
+  }, [link, source, cellsHidden, hasMeta]);
 
   // --- SIG-3: the row OUTPUT meter ---------------------------------------
   // Each TrackBand registers its .trk-led well here; one loop drives all of

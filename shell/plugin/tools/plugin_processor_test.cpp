@@ -21,6 +21,9 @@
 #include "ScoopyPluginProcessor.h"
 #include "sl_engine.h"
 
+// The generated lane indices, for the playhead gate (§1b).
+#include "sl_hotframe.inc"
+
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -141,6 +144,24 @@ int main() {
                 CHECK(peak > 1e-4);
             }
         }
+    }
+
+    // ── §1b THE PLAYHEAD LANES (real-host report: "never worked") ───────────
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(p, 120.0, true));
+        renderPeak(p, 512, 8);
+
+        std::vector<double> hf(sl_hotframe_length(), -999.0);
+        const auto n = sl_hotframe(p.engineForTest(), hf.data(), (uint32_t) hf.size());
+        CHECK(n > 0);
+        std::printf("  playhead: deck0=%.0f djT0=%.0f djT1=%.0f pos=%.0f level=%.3f\n",
+                    hf[SL_HF_playheadStepDeck0], hf[SL_HF_djTrackStepD0T0],
+                    hf[SL_HF_djTrackStepD0T1], hf[SL_HF_djTrackPosD0T0],
+                    hf[SL_HF_djTrackLevelD0T0]);
+        CHECK(hf[SL_HF_playheadStepDeck0] >= 0.0);
+        CHECK(hf[SL_HF_djTrackStepD0T0] >= 0.0);
     }
 
     // ── §2 TEMPO FOLLOW ─────────────────────────────────────────────────────

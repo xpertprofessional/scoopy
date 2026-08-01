@@ -24,7 +24,9 @@ import { useState } from 'react'
 
 import { useContextMenu, type MenuItem } from '../design/ContextMenu.tsx'
 import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import { entriesFromDirectoryInput } from '../persist/folderImport.ts'
 import {
+  SESSION_EXTENSION,
   createSession,
   exportSession,
   isSessionFile,
@@ -48,6 +50,9 @@ export function sessionMenuItems(
     save: () => void
     rename: () => void
     exportZip: () => void
+    /** The `.scoopySession` DIRECTORY — the form the app actually writes. */
+    importFolder: () => void
+    /** The zipped form, which a directory picker cannot select. */
     importFile: () => void
   },
 ): MenuItem[] {
@@ -59,7 +64,13 @@ export function sessionMenuItems(
     // without this a session that exists as a file on disk was simply
     // unreachable from inside a DAW; the plane had drag-and-drop, and a plugin
     // window is not somewhere you drop a Finder item.
-    { kind: 'item', label: 'import…', onSelect: on.importFile },
+    //
+    // ⚠️ TWO ROWS, not one. A `.scoopySession` is a FOLDER, and no single input
+    // can take both a directory and a zip (see `pickSession`). The first cut
+    // shipped the file door alone and the picker would not show a session at
+    // all. The FOLDER is first because it is the form the app writes.
+    { kind: 'item', label: 'import folder…', onSelect: on.importFolder },
+    { kind: 'item', label: 'import .zip…', onSelect: on.importFile },
     // SAVE IS ⌘S (D-SL-SAVE-01), and the row says so — a verb whose shortcut is
     // invisible is one people never learn.
     { kind: 'item', label: 'save  ⌘S', disabled: !current, onSelect: on.save },
@@ -88,26 +99,47 @@ export function sessionMenuItems(
 }
 
 /**
- * Open the native file panel and resolve the chosen session package, or null if
- * the user cancelled.
+ * Open the native panel and resolve what the user chose, or null if they
+ * cancelled.
  *
- * A detached `<input type="file">` rather than a native command: JUCE's
- * WKWebView implements `runOpenPanelWithParameters`, so this IS the platform
- * panel inside a DAW. Resolves on `cancel` too — without that, cancelling would
- * leave the promise (and the menu's `run` wrapper) hanging forever.
+ * A detached `<input>` rather than a native command: JUCE's WKWebView
+ * implements `runOpenPanelWithParameters`, so this IS the platform panel inside
+ * a DAW — and it honours `allowsDirectories`, which WebKit sets from
+ * `webkitdirectory` (`juce_WebBrowserComponent_mac.mm`).
+ *
+ * ⚠️ TWO DOORS, because ONE INPUT CANNOT TAKE BOTH FORMS. A
+ * `.scoopySession` is a FOLDER on disk; a plain file input cannot select a
+ * directory at all, and a `webkitdirectory` input cannot select the zipped
+ * form. The first cut shipped only the file door, so the picker simply would
+ * not let you choose your sessions — "cant recognize .scoopy folder in
+ * documentpicker", reported from the real host 2026-08-01. `Library.tsx` has
+ * carried the same two-door note (and a drop target as the third) since it was
+ * written; this is the same lesson arriving late.
+ *
+ * Resolves on `cancel` too — without that, cancelling would leave the promise
+ * (and the menu's `run` wrapper) hanging forever.
  */
-function pickSessionFile(): Promise<File | null> {
+function pickSession(kind: 'folder' | 'file'): Promise<File[] | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.scoopySession,.zip'
+    if (kind === 'folder') {
+      // Non-standard but universal, and the ONLY attribute that makes a picker
+      // take a directory. React/TS have no typing for it.
+      ;(input as unknown as Record<string, unknown>).webkitdirectory = true
+    } else {
+      input.accept = `${SESSION_EXTENSION},.zip`
+    }
     let settled = false
-    const done = (f: File | null) => {
+    const done = (f: File[] | null) => {
       if (settled) return
       settled = true
       resolve(f)
     }
-    input.addEventListener('change', () => done(input.files?.[0] ?? null))
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files ?? [])
+      done(files.length ? files : null)
+    })
     // Safari/WKWebView fire `cancel` on dismissal; older engines fire nothing,
     // which is why `done` is idempotent rather than assuming exactly one event.
     input.addEventListener('cancel', () => done(null))
@@ -165,9 +197,18 @@ export function ComposeSessions({ deck, onNote }: { deck: number; onNote: (n: st
             // `runOpenPanelWithParameters` (juce_WebBrowserComponent_mac.mm),
             // so a plain <input type=file> opens the native panel inside the
             // plugin — no new native command needed.
+            importFolder: () =>
+              run('import', async () => {
+                const files = await pickSession('folder')
+                if (!files) return
+                const { dirName, entries } = await entriesFromDirectoryInput(files)
+                await useCompanion.getState().importEntries(dirName, entries)
+                onNote(`imported ${dirName}`)
+              }),
             importFile: () =>
               run('import', async () => {
-                const file = await pickSessionFile()
+                const files = await pickSession('file')
+                const file = files?.[0]
                 if (!file) return
                 if (!isSessionFile(file)) {
                   onNote(`import failed — ${file.name} is not a session package`)

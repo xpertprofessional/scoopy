@@ -89,9 +89,18 @@ await page.waitForSelector('.ds-menu-item', { timeout: 5000 })
 const menuLabels = await page.evaluate(() =>
   [...document.querySelectorAll('.ds-menu-item')].map((e) => e.textContent.trim()),
 )
+// TWO import rows, and the FOLDER one matters most: a `.scoopySession` is a
+// directory on disk, and a plain file input cannot select one — the picker
+// simply would not show a session ("cant recognize .scoopy folder in
+// documentpicker", real host 2026-08-01).
 check(
-  'the menu carries IMPORT — a library you cannot add to from disk is not one',
-  menuLabels.some((l) => l.startsWith('import')),
+  'the menu carries a FOLDER import — that is the form sessions take on disk',
+  menuLabels.includes('import folder…'),
+  JSON.stringify(menuLabels),
+)
+check(
+  '…and a zip import, which a directory picker cannot reach',
+  menuLabels.some((l) => l.startsWith('import .zip')),
   JSON.stringify(menuLabels),
 )
 await page.evaluate(() => {
@@ -556,6 +565,68 @@ check(
   `scrollHeight=${composeView.docScrollH} viewport=${composeView.viewportH}`,
 )
 
+let playhead = null
+// ── THE PLAYHEAD ACTUALLY DRAWS (real-host report, 2026-08-01) ─────────────
+//
+// "Playhead is not working and has never worked so far in plugin" — and it was
+// not the engine: `sl_hotframe` fills `djTrackStepD0T*` every block (pinned in
+// plugin_processor_test §1b). The hot canvas simply never bound. Its effect
+// guards on `hotRef.current`, the panel renders a "waiting for pattern state…"
+// PLACEHOLDER until the first meta push, and its deps — link/source/cellsHidden
+// — never change again. So it ran once against a canvas that did not exist yet
+// and never re-ran.
+//
+// Nothing short of pixels catches that: the subscription exists, the engine is
+// correct, and every unit test passes. So this reads the CANVAS.
+{
+  // ⚠️ THE LANES MUST BE FAKED HERE, and that is honest rather than a cheat.
+  // `?host=browser` has no native emitter: BrowserLink stamps every playhead
+  // lane to −1 in its constructor and never writes them again (the same gap
+  // that leaves the LCM bar's FILL untestable here). The engine side is pinned
+  // natively instead — plugin_processor_test §1b measures `sl_hotframe` filling
+  // `djTrackStepD0T0`. What is left for a browser to answer is the half that
+  // actually broke: is the canvas LOOP BOUND to receive them.
+  //
+  // `__scoopyLink` is the e2e handle BrowserLink already exposes for exactly
+  // this (browser_grid_test drives the write path through it).
+  const injected = await page.evaluate(() => {
+    const link = window.__scoopyLink
+    if (!link || !link.frame) return null
+    // djTrackStepD0T* — deck 0's per-track playhead lanes.
+    const base = 44
+    for (let t = 0; t < 16; t++) link.frame[base + t] = 2
+    return link.hotFrameCbs ? link.hotFrameCbs.size : -1
+  })
+  check('the e2e link handle is present', injected !== null, 'no window.__scoopyLink.frame')
+  // A bound loop is a SUBSCRIBER. Zero here is the bug itself: the effect ran
+  // once against a canvas that did not exist yet and never re-ran.
+  check(
+    'something is SUBSCRIBED to the hot frame',
+    typeof injected === 'number' && injected > 0,
+    `${injected} hot-frame subscribers`,
+  )
+  await page.waitForTimeout(600)
+  const hot = await page.evaluate(() => {
+    const c = document.querySelector('.grid-hot')
+    if (!c) return null
+    const ctx = c.getContext('2d')
+    const { data } = ctx.getImageData(0, 0, c.width, c.height)
+    let lit = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 8) lit++
+    return { w: c.width, h: c.height, lit }
+  })
+  check('the hot (playhead) canvas is mounted', hot !== null, 'no .grid-hot')
+  check('it has a real backing store', hot !== null && hot.w > 0 && hot.h > 0, JSON.stringify(hot))
+  // The claim: SOMETHING is painted on it. A never-bound loop leaves it
+  // completely transparent forever, which is exactly what shipped.
+  check(
+    'the playhead PAINTS — the hot loop is bound to the canvas',
+    hot !== null && hot.lit > 0,
+    `${hot?.lit} lit pixels on ${hot?.w}x${hot?.h}`,
+  )
+  playhead = { subs: injected, lit: hot?.lit, w: hot?.w, h: hot?.h }
+}
+
 await cleanup()
 server.close()
 
@@ -572,7 +643,8 @@ console.log(
     `${bar.clk} · ${bar.tempo}→${armed.tempo} master ${armed.text}→${moved} · ` +
     `master sends ${sends.count} · LCM ${lcm?.h}px "${lcm?.text}" · ` +
     `PERF pointer-only (controls ${shapeBefore.controls}=${shapeAfter.controls}) · ` +
-    `LOAD deck ${deckView.loads} → compose ${composeView.loads}`,
+    `LOAD deck ${deckView.loads} → compose ${composeView.loads} · ` +
+    `playhead ${playhead?.subs} subs, ${playhead?.lit} lit px`,
 )
 
 if (failures.length) {

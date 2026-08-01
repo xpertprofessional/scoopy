@@ -23,6 +23,7 @@ const on = () => ({
   save: vi.fn(),
   rename: vi.fn(),
   exportZip: vi.fn(),
+  importFolder: vi.fn(),
   importFile: vi.fn(),
 })
 
@@ -45,11 +46,22 @@ describe('the session menu', () => {
     // gating it on a current session the way save/rename/export are gated would
     // make the empty state a dead end.
     const items = sessionMenuItems([], null, on())
-    const imp = labelled(items).find((i) => i.label.startsWith('import')) as {
+    const imports = labelled(items).filter((i) => i.label.startsWith('import')) as {
       disabled?: boolean
-    }
-    expect(imp).toBeTruthy()
-    expect(imp.disabled).toBeFalsy()
+    }[]
+    expect(imports.length).toBeGreaterThan(0)
+    for (const i of imports) expect(i.disabled).toBeFalsy()
+  })
+
+  it('offers a FOLDER import, not only a file one', () => {
+    // ⚠️ A `.scoopySession` is a DIRECTORY on disk. A plain file input cannot
+    // select one and a `webkitdirectory` input cannot select the zipped form,
+    // so one row can only ever reach half the sessions that exist. Shipping the
+    // file door alone meant the picker would not show a session at all —
+    // "cant recognize .scoopy folder in documentpicker" (real host, 2026-08-01).
+    const labels = labelled(sessionMenuItems([], null, on())).map((i) => i.label)
+    expect(labels).toContain('import folder…')
+    expect(labels.some((l) => l.startsWith('import .zip'))).toBe(true)
   })
 
   it('offers NEW even with nothing in the library — the mapless path starts here', () => {
@@ -108,11 +120,13 @@ describe('the session menu', () => {
     run('save')
     run('rename')
     run('export')
-    run('import')
+    run('import folder')
+    run('import .zip')
     expect(acts.create).toHaveBeenCalled()
     expect(acts.save).toHaveBeenCalled()
     expect(acts.rename).toHaveBeenCalled()
     expect(acts.exportZip).toHaveBeenCalled()
+    expect(acts.importFolder).toHaveBeenCalled()
     expect(acts.importFile).toHaveBeenCalled()
     ;(labelled(items).find((i) => i.label === 'beach') as { onSelect: () => void }).onSelect()
     expect(acts.open).toHaveBeenCalledWith('beach')
