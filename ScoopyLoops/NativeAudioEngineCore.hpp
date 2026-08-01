@@ -1593,6 +1593,24 @@ public:
     void requestQuantizedLaunch(std::size_t deck, std::size_t refDeck,
                                 std::uint16_t quantizeSteps) noexcept;
     void cancelQuantizedLaunch(std::size_t deck) noexcept;
+
+    // HOST-GRID LAUNCH (D-SL-DECKPLUGIN-03). Release `deck` on the NEXT render,
+    // placing its step-0 downbeat `leadInOutputFrames` into that block — the same
+    // sample-accurate placement requestQuantizedLaunch() computes from a
+    // reference deck, but with the boundary supplied by the caller.
+    //
+    // WHY THE CALLER SUPPLIES IT: the boundary this exists for is the DAW's
+    // ppq grid, and the core has no idea what a ppq is — nor should it. The
+    // tier that owns the host playhead (sl_render_io) converts "the next bar"
+    // into "this many output frames from the start of the block I am about to
+    // render" and hands over only that. The core keeps its one job: releasing a
+    // held deck on an exact frame.
+    //
+    // Preconditions are requestQuantizedLaunch()'s, unchanged — the deck must
+    // already be published active + launchArmed with snapshot.startStep set, so
+    // the expensive republish has happened on the message thread and this is a
+    // single atomic. Consumed by the render that acts on it; re-arm per block.
+    void requestLaunchWithLeadIn(std::size_t deck, std::uint32_t leadInOutputFrames) noexcept;
     // Monotonic counter bumped each time a quantized launch fires for `deck`. The launcher tracks
     // the last-seen value to detect "audio actually started" and clear its pending UI state.
     std::uint32_t launchFiredSequence(std::size_t deck) const noexcept;
@@ -1873,6 +1891,11 @@ private:
     // Per-deck quantized-launch boundary params (see requestQuantizedLaunch()). Read in render only
     // while the deck is held; the held state itself is edge-driven from DeckWorld::launchArmed.
     std::array<std::atomic<QuantizedLaunchCommand>, kMaxDecks> pendingLaunch_ {};
+    // Per-deck host-grid launch (see requestLaunchWithLeadIn). 0 = none; otherwise
+    // leadInOutputFrames + 1, so that a lead-in of exactly 0 — a boundary landing
+    // on the block's first sample, which is the common case on a bar line — is
+    // still distinguishable from "nothing armed".
+    std::array<std::atomic<std::uint32_t>, kMaxDecks> pendingHostLaunch_ {};
     // Per-deck previous (active && launchArmed) value, so the render loop detects arm/disarm edges.
     std::array<bool, kMaxDecks> deckLaunchArmedPrev_ {};
     // Per-deck previous bus-stretch bypass state. When the bus is neutral (ratio ≈ 1.0, no

@@ -881,6 +881,31 @@ void sl_deck_request_quantized_launch(sl_engine* e, uint32_t deck, uint32_t ref_
 /** Disarm a pending launch. Safe when nothing is armed. */
 void sl_deck_cancel_quantized_launch(sl_engine* e, uint32_t deck);
 
+/** HOST-GRID LAUNCH (D-SL-DECKPLUGIN-03) — arm `deck` to start at an ABSOLUTE
+    engine frame, the clock `sl_engine_time_samples` reports.
+ *
+ *  This is what makes launches line up ACROSS PLUGIN INSTANCES. The quantized
+ *  launch above is cycle-relative to another deck IN THIS ENGINE, which cannot
+ *  reach an instance the DAW loaded separately. A frame can: every instance
+ *  receives the same host `ppqPosition` on the same block boundaries, so each
+ *  one independently converts "the next bar" into its own engine frame and they
+ *  land on the same sample — with no shared memory and nothing to race.
+ *
+ *  The caller owns the musical question (which bar, what quantum, whose cycle);
+ *  this owns only "release exactly there". `sl_render_io` resolves the frame
+ *  against the block it is about to render and hands the core a lead-in.
+ *
+ *  Preconditions are the quantized launch's, unchanged: publish the deck active
+ *  + launchArmed with its start step FIRST, so the world republish happens on
+ *  the message thread and the arm itself is one atomic. A frame already in the
+ *  past releases on the next block rather than being dropped — a boundary you
+ *  missed by a hair should still fire, not hang the deck. `frame == 0`, an
+ *  out-of-range deck or a null engine is IGNORED. */
+void sl_deck_request_launch_at_frame(sl_engine* e, uint32_t deck, uint64_t frame);
+
+/** Disarm a pending host-grid launch. Safe when nothing is armed. */
+void sl_deck_cancel_launch_at_frame(sl_engine* e, uint32_t deck);
+
 /** Monotonic count of launches that have FIRED for `deck`. A host compares it
     against the last value it saw: a bump means the audio actually started,
     which is when a "pending" lamp may honestly clear — the armed flag only says

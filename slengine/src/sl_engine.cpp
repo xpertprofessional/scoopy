@@ -151,6 +151,11 @@ struct sl_engine {
     // takes recorded at different moments is a pure subtraction. Take stamps,
     // the record→loop handoff ordering and the §7 transport all root here.
     std::atomic<std::uint64_t> engineTimeSamples{0};
+    /** HOST-GRID LAUNCH targets (D-SL-DECKPLUGIN-03), in absolute engine frames.
+        0 = nothing armed. Resolved against each block in sl_render_io, which is
+        the only place that knows both the clock and the block it is about to
+        render. Written from the message thread, read on the audio thread. */
+    std::array<std::atomic<std::uint64_t>, 3> hostLaunchFrame{};
 
     // The plane's front-of-house level. Control-thread target, render-owned
     // smoothed value; negative means "not seeded yet" so the first block after
@@ -345,6 +350,29 @@ void renderInto(sl_engine* e,
             if (held < frames) std::fill_n(feed + held, frames - held, 0.0f);
         } else {
             std::fill_n(feed, frames, 0.0f);
+        }
+    }
+
+    // ── HOST-GRID LAUNCH: resolve the boundary against THIS block ────────────
+    //
+    // The only place that knows both the engine clock and the block about to be
+    // rendered, which is exactly what turns "the DAW's next bar" into a sample.
+    // Every instance runs this against the same host ppq on the same block
+    // boundaries, so they release on the same frame without sharing anything.
+    //
+    // A target already PAST fires immediately (lead-in 0) rather than being
+    // dropped — a boundary missed by a hair should still launch, not hang the
+    // deck silently, which is the failure mode nobody can diagnose mid-set.
+    {
+        const std::uint64_t now = e->engineTimeSamples.load(std::memory_order_relaxed);
+        for (std::uint32_t d = 0; d < kMaxDecks; ++d) {
+            const std::uint64_t target =
+                e->hostLaunchFrame[d].load(std::memory_order_acquire);
+            if (target == 0) continue;
+            const std::uint64_t lead = target > now ? target - now : 0;
+            if (lead >= frames) continue;  // further out than this block — wait
+            e->hostLaunchFrame[d].store(0, std::memory_order_release);
+            e->core.requestLaunchWithLeadIn(d, static_cast<std::uint32_t>(lead));
         }
     }
 
@@ -1298,6 +1326,42 @@ void sl_deck_request_quantized_launch(sl_engine* e, uint32_t deck, uint32_t ref_
     e->core.publishDJWorld(e->deckWorlds, e->mixer);
     e->core.requestQuantizedLaunch(static_cast<std::size_t>(deck),
                                    static_cast<std::size_t>(ref_deck), quantize_steps);
+}
+
+/**
+ * HOST-GRID LAUNCH (D-SL-DECKPLUGIN-03) — arm at an ABSOLUTE engine frame.
+ *
+ * Same contract as the quantized launch above, and the SAME ORDER for the same
+ * reason: `launchArmed` on, world published, only then the boundary requested.
+ * The core's render branch keys the hold off (active && launchArmed), which
+ * travels with the world — request first and it would be looking at a deck the
+ * world does not say is waiting.
+ *
+ * What differs is only WHERE the boundary comes from. The quantized launch
+ * resolves it against another deck IN THIS ENGINE, which cannot reach an
+ * instance the DAW loaded separately. A frame can: every instance converts the
+ * same host ppq into its own engine clock and they release on the same sample,
+ * sharing nothing. `sl_render_io` does that conversion per block.
+ */
+void sl_deck_request_launch_at_frame(sl_engine* e, uint32_t deck, uint64_t frame) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    // Frame 0 is the engine's very first sample — arming there is meaningless
+    // and the value doubles as the "nothing armed" sentinel. Refused rather
+    // than rounded, the discipline the rest of this surface uses.
+    if (frame == 0) return;
+    e->deckWorlds[deck].launchArmed = true;
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
+    e->hostLaunchFrame[deck].store(frame, std::memory_order_release);
+}
+
+/** Disarm a pending host-grid launch, and release the hold with it — otherwise
+    a cancelled deck would stay silent forever waiting for a frame nobody will
+    now resolve. */
+void sl_deck_cancel_launch_at_frame(sl_engine* e, uint32_t deck) {
+    if (e == nullptr || deck >= kMaxDecks) return;
+    e->hostLaunchFrame[deck].store(0, std::memory_order_release);
+    e->deckWorlds[deck].launchArmed = false;
+    e->core.publishDJWorld(e->deckWorlds, e->mixer);
 }
 
 /** Disarm a pending launch. Safe to call when nothing is armed. */

@@ -43,6 +43,14 @@ target_link_libraries(track_params_test PRIVATE scoopy_engine)
 target_compile_options(track_params_test PRIVATE -ffp-contract=off)
 add_test(NAME track_params_test COMMAND track_params_test)
 
+# The host-grid launch gate (D-SL-DECKPLUGIN-03). Its OWN binary rather than a
+# section of sl_snapshot_test: it needs several independently-clocked engines,
+# and that test's whole body shares one.
+add_executable(sl_host_launch_test tools/sl_host_launch_test.cpp)
+target_link_libraries(sl_host_launch_test PRIVATE wz_sl_engine)
+target_include_directories(sl_host_launch_test PRIVATE generated)
+add_test(NAME sl_host_launch_test COMMAND sl_host_launch_test)
+
 # §6 session snapshots: name resolution across the ABI, the refused deck axis,
 # and the thing that matters most — a committed world with a registered sample
 # renders non-silence.

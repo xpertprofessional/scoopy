@@ -2476,6 +2476,31 @@ void NativeAudioEngineCore::render(const float* inputLeft,
                     deckLaunchArmedPrev_[di] = armedNow;
                     if (!armedNow || !rs.transportHeld) continue;  // not held → nothing to release
 
+                    // HOST-GRID LAUNCH first (D-SL-DECKPLUGIN-03): the caller has already
+                    // resolved the boundary — the DAW's bar line — into output frames from
+                    // this block's start, so there is no reference deck to consult and
+                    // nothing to compute. Consumed here (exchange) because it describes THIS
+                    // block; a boundary further out is re-armed next block.
+                    if (const std::uint32_t host =
+                            pendingHostLaunch_[di].exchange(0, std::memory_order_acq_rel);
+                        host != 0) {
+                        const std::uint32_t leadOut = host - 1;
+                        const double armedRatio = busRatios[di] > 1.0e-9 ? busRatios[di] : 1.0;
+                        rs.transportHeld = false;
+                        rs.stepFrame = 0;
+                        rs.prevResolvedStep.fill(-1);
+                        rs.locatorEngaged.fill(0);
+                        rs.locatorWasActive.fill(0);
+                        rs.clearRateMorph();
+                        // Output frames → this deck's SOURCE frames, the same conversion the
+                        // reference-deck path makes, so the downbeat lands on the intended
+                        // output sample whatever ratio the deck is stretching at.
+                        rs.launchLeadInFrames = static_cast<std::uint64_t>(
+                            std::llround(static_cast<double>(leadOut) / armedRatio));
+                        launchFiredSeq_[di].fetch_add(1, std::memory_order_release);
+                        continue;
+                    }
+
                     // Params (reference deck + granularity). Until they arrive the deck stays held.
                     const QuantizedLaunchCommand cmd = pendingLaunch_[di].load(std::memory_order_acquire);
                     if (!cmd.armed) continue;
@@ -3723,6 +3748,13 @@ void NativeAudioEngineCore::requestQuantizedLaunch(std::size_t deck, std::size_t
     cmd.refDeck = static_cast<std::uint8_t>(refDeck);
     cmd.quantizeSteps = quantizeSteps == 0 ? 1 : quantizeSteps;
     pendingLaunch_[deck].store(cmd, std::memory_order_release);
+}
+
+void NativeAudioEngineCore::requestLaunchWithLeadIn(std::size_t deck,
+                                                    std::uint32_t leadInOutputFrames) noexcept {
+    if (deck >= kMaxDecks) return;
+    // +1 so a zero lead-in is still "armed" — see pendingHostLaunch_.
+    pendingHostLaunch_[deck].store(leadInOutputFrames + 1, std::memory_order_release);
 }
 
 void NativeAudioEngineCore::cancelQuantizedLaunch(std::size_t deck) noexcept {
