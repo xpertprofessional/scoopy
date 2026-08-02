@@ -1362,3 +1362,116 @@ already proves, at a different density. The two products stop being two implemen
   preset-home ruling under L2; whether the JUCE token header may be edited in
   `apps/scoopyloops/PluginCommon/` or must move to `xpert/shared/` first (L3); and
   whether the Chrome-extension bridge follows the DJ deck into freeze.
+
+## D-SL-RENAME-01 · 2026-08-02 · Scoopy Studio, all the way down — and the library moves with it
+
+**Decision:** The full rename, not a display name. CMake target `WizardMerged` →
+**`ScoopyStudio`**; product name **"Scoopy Studio"**; bundle id `com.wizard.merged` →
+`com.scoopyloops.scoopystudio`; app data `~/Library/Application Support/WizardMerged/` →
+`~/Library/Application Support/Scoopy/`.
+
+⚠️ **THE APP-DATA MOVE IS A MIGRATION, AND IT IS THE WHOLE RISK.** That directory is not
+preferences. `PluginBackend.cpp:17-32` derives the **shared session library** from it
+(`<data>/Takes/../Library`), deliberately, so the app and both plugins read one library —
+*"sessions, samples and takes belong to the PERSON, not to which face of scoopy they
+opened."* And ScoopyDeck's state chunk stores `sessionName` — a **reference by name into
+that library**. So a DAW project saved before the rename asks for a session by name after
+it, and if the library did not come along, `session ▾` lists nothing and every saved
+project comes back empty. The failure is silent, delayed, and lands in someone's set.
+
+**Therefore the rename ships with all three of these or it does not ship:**
+1. **Move on first run** — old directory → new, once, before anything reads either.
+2. **An old-path fallback** — if the new path is absent and the old one exists, read the
+   old one. A migration that fails must degrade to "still works", never to "empty".
+3. **A test** that a library written at the old path is found after the rename. Pulsar
+   already paid for this lesson in the same `Application Support` territory
+   (`Snapshots.cpp:258-265`, and its first-run fix for JUCE's `userApplicationDataDirectory`
+   returning `~/Library`, one level too high) — read it before writing this.
+
+**ORDERING:** the rename lands **before S7**, which makes the sessions folder
+user-settable. Migrating a path and then making that path configurable in the other order
+means doing the migration twice, against a moving target.
+
+**Rationale:** the window said the wizard-era name while every doc, decision and gate said
+Scoopy Studio. `D-WZ-NAME-01` set the precedent that a rebrand is *"a deliberate, gated,
+all-artifacts increment, not a casual edit"* — this is that increment, taken on purpose.
+
+**Consequences:** `~/Library/Application Support/Scoopy/` becomes the line-wide root, which
+is also where `D-SL-THEME-01` publishes `theme.json` — one directory for the whole product
+line rather than one per binary. Docs, gate output and ~130 commits' worth of prose name
+`WizardMerged`; they are not rewritten, and this entry is what explains the mismatch.
+
+## D-SL-PRESET-01 · 2026-08-02 · The session owns instruments; the machine owns its bank
+
+**Decision:** One home per kind of preset state, replacing the three that exist today.
+
+· **Instruments live in the SESSION.** `instrumentPluginIdentifier` +
+  `instrumentPluginStateBase64` + `instrumentPluginRef` on the track, as the donor has it
+  (`Track.swift:405-418`). A session is the unit that travels, and a track that sounds
+  through a plugin is not the same track without it.
+· **`PortablePluginRef` comes across with it** — `resolveInstrumentIdentifier`'s ladder
+  (`BeatSequencer.swift:19809`): exact id → this machine's format hint → same
+  manufacturer+name in any format → **nil = inert but PRESERVED**. An unresolvable plugin
+  must never be dropped from the document; a session that forgets is worse than one that
+  cannot play.
+· **Machine-scoped state uses the SHARED BANK, and the bank wins.** Pulsar's shape
+  (`README.md:81-90`, pinned by `plugin_state_test.cpp`): the bank is authoritative, a
+  project carries a copy, restore MERGES and the project fills only the slots the bank
+  lacks. Its reason is exact — a project embeds the bank as of the save, so letting the
+  project win makes opening a month-old project roll every slot back.
+· **The permanent caveat is recorded, not fixed** (verbatim from
+  `PortablePluginIdentityTests.swift`): crossing formats keeps the BINDING and may lose the
+  plugin's internal preset. That is a cross-platform fact, not a defect.
+
+⚠️ **DERIVED, AND FLAGGED AS SUCH: the FX-return presets have to move.** They work today
+(schema v96 + P6-5b) and they live in the **`.scoopyMap`** — which `D-SL-STUDIO-01` just
+froze. Studio has no map, so as things stand it has nowhere to keep an FX chain. Reading
+this ruling with the donor's own split (FX returns were app-level in `AudioDeviceManager`,
+never in the session), FX-return plugin + state becomes **machine-scoped: the shared bank,
+bank-wins, with a project copy** — a "studio setup" that follows the machine rather than
+each song. This is the reading S4/S6 will build unless corrected; it is called out here
+because it is a consequence of the ruling rather than part of the question asked.
+
+## D-SL-THEME-01 · 2026-08-02 · The JUCE token header moves to `shared/`, and is loaded, not compiled
+
+**Decision:** `PluginCommon/ScoopyTokens.h` moves to **`xpert/shared/design/`** and vendors
+back into each consumer through `shared.lock.json` + `shared:sync`, exactly as
+`tokens.core.ts` already does. It stops being `constexpr`-only: it becomes a **runtime
+loader** for the token blob `D-SL-STUDIO-01`'s L3 publishes, with today's compiled values as
+the fallback, so a missing or malformed file degrades to the current look rather than a
+blank rectangle — the discipline Pulsar's fallback panel already follows.
+
+**Rationale:** the palette is restated **three times in C++ today** —
+`apps/scoopyloops/PluginCommon/ScoopyTokens.h`, `scoopy-pulsar`'s `FallbackPanel.h`, and a
+bare literal in its `PluginEditor.cpp:317` — and they have already drifted: the header still
+carries `accent 0xffbfbfbf` "placeholder" against the shared core's `#ef8b9a`. Its own rule
+says it is *"the single edit point… enforced by review"*, and review did not hold.
+`D-WZ-SHARED-01`'s rule of three is satisfied by the drift itself.
+
+**Consequences:** `shared:check` gains a hash gate over a file that has never had one, and
+the `#bfbfbf` → `#ef8b9a` fix ships with the move. The blob lands at
+`~/Library/Application Support/Scoopy/theme.json` — a **file**, never `UserDefaults.standard`,
+because a plugin in Logic runs under the host's bundle id and would never see it.
+
+⚠️ **ONE THING THIS DOES NOT AUTHORISE.** Creating `shared/design/ScoopyTokens.h` writes to
+`shared/`. **Vendoring it back into `apps/scoopyloops/PluginCommon/` writes to the donor
+repo, which `CLAUDE.md` forbids** — moving the file to `shared/` does not dissolve that rule,
+it only moves where the source of truth lives. So Trombone and Spectral keep their current
+compiled copy until that write is separately authorised or their repo is worked in directly.
+Pulsar is in `xpert/plugins/` and is not covered by the rule, so it can adopt immediately.
+
+## D-SL-COMPANION-01 · 2026-08-02 · The extension bridge grows with the companion
+
+**Decision:** `web/src/companion/` (the Chrome-extension bridge) is **live work**, not
+frozen with the DJ deck. It grows with the browser companion.
+
+**Rationale:** the companion is a product the user keeps using; the bridge is its control
+surface, and the DJ deck's retirement is about the app's surface, not the browser's.
+
+**Consequences:** its capability list is DJ-shaped and will need reshaping —
+`transport · tempo · tempoOverride · mainGain · levels · restartAt`, where `restartAt`
+exists specifically to schedule dual-window DJ launches (`RESTART_IMMEDIATE_MS = 20`). A
+compose-shaped companion wants different verbs, and `BRIDGE_VERSION` is how that change is
+made without breaking an installed extension. Note the ceiling this inherits from the WASM
+engine and cannot exceed: **no tape, no recording, one deck**, and sends render **dry**
+(`returnFx: false`) — deliberately, "a dry host rather than a wrong-sounding one".
