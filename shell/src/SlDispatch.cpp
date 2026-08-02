@@ -1,6 +1,7 @@
 #include "SlDispatch.h"
 
 #include "AudioIO.h"
+#include "MidiClockOut.h"
 #include "MidiHost.h"
 #include "NativePluginHost.hpp" // JUCE-free scanner surface (P6-2)
 #include "RecordService.h"
@@ -79,7 +80,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 98);
+    obj->setProperty("schemaVersion", 99);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -193,6 +194,43 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // Before this, all eleven MIDI methods were specified in `schema.ts` and
     // answered by NOBODY, so `MidiPanel.tsx` — a complete donor-parity pane —
     // showed "loading endpoints…" forever.
+    // MIDI CLOCK OUT (S9). The destination is the `clockOutput` ROLE — one
+    // selection, one lane, so a clock cannot end up going somewhere the picker
+    // never named. Opened lazily on first use and re-opened whenever the role
+    // changes underneath it.
+    if (method == "midiClock") {
+        auto* midi = services != nullptr ? services->midi : nullptr;
+        auto* clock = services != nullptr ? services->midiClock : nullptr;
+        if (midi == nullptr || clock == nullptr)
+            return fail("midiClock: no MIDI surface on this build");
+
+        const auto op = params.getProperty("op", "stop").toString();
+        const double bpm = params.getProperty("bpm", 120.0);
+
+        // Resolve the selected destination to its JUCE identifier every call:
+        // the picker can change between one transport press and the next, and
+        // a cached handle would keep driving the device the user just left.
+        juce::String wanted;
+        const int id = midi->selected(host::MidiHost::Role::clockOutput);
+        for (const auto& e : midi->destinations())
+            if (e.id == id) wanted = e.identifier;
+
+        if (wanted != clock->openedIdentifier()) clock->open(wanted);
+
+        if (op == "start") clock->start(bpm, false);
+        else if (op == "continue") clock->start(bpm, true);
+        else if (op == "stop") clock->stop();
+        else if (op == "tempo") clock->setTempo(bpm);
+
+        auto* st = new juce::DynamicObject();
+        st->setProperty("running", clock->running());
+        // `open` is the honest half: a destination of "none" is a valid
+        // selection, so a UI can tell "clock is off" from "clock has nowhere
+        // to go" instead of both looking like silence.
+        st->setProperty("open", clock->isOpen());
+        return ok(juce::var(st));
+    }
+
     if (method == "enumerateMidiEndpoints" || method == "refreshMidiDevices" ||
         method == "setMidiEnabled" || method == "selectMidiDevice" ||
         method == "setMidiSyncMode" || method == "setMidiSlaveTransportPolicy" ||

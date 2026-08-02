@@ -95,6 +95,7 @@ Backend::Backend(sl_engine* e)
     if (recorder.start(drainSource, services.takesDir)) services.recorder = &recorder;
     services.audio = &audioIO; // the plane's input source picker reads this
     services.midi = &midi;     // S9: MidiPanel enumerates through this
+    services.midiClock = &midiClock;
 #if SCOOPY_PLUGIN_HOST
     services.pluginScanner = &pluginScanner; // flips pluginHosting true (P6-2)
 #endif

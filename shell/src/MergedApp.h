@@ -35,6 +35,7 @@
 
 #include "AudioIO.h"
 #include "RecordService.h"
+#include "MidiClockOut.h"
 #include "MidiHost.h"
 #include "SlDispatch.h"
 #include "SlRenderSink.h"
@@ -57,7 +58,7 @@ namespace wizard::merged {
     Carried into `sl_engine_create` for the HotFrame slot-0 echo (sl_engine.h §1).
     ⚠️ Was **88** against a schema.ts of 96 — eight versions stale, because its
     only consumer is an echo nobody compared. Gated now: `npm run schema:check`. */
-inline constexpr int kScoopySchemaVersion = 98;
+inline constexpr int kScoopySchemaVersion = 99;
 
 /** The engine + device + settings the whole app shares. One engine, one device;
     every window is another view onto it. */
@@ -67,6 +68,7 @@ struct Backend {
     wizard::host::AudioIO audioIO;
     /** S9: enumeration + role selection. See SlDispatch's MIDI block. */
     wizard::host::MidiHost midi;
+    wizard::host::MidiClockOut midiClock;
     wizard::sl::FileSettingsStore settings;
     juce::String deviceError;
 

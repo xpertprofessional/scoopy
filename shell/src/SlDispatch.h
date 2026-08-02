@@ -39,7 +39,7 @@ class AudioIO;
 }
 
 
-namespace wizard::host { class MidiHost; }
+namespace wizard::host { class MidiHost; class MidiClockOut; }
 
 namespace wizard::sl {
 
@@ -68,6 +68,9 @@ struct HostServices {
         headless dispatcher has none and every MIDI command refuses by name
         rather than pretending to enumerate. */
     host::MidiHost* midi = nullptr;
+    /** The clock lane (S9). Separate from `midi` because one is configuration
+        and the other is a live output that owns a device handle. */
+    host::MidiClockOut* midiClock = nullptr;
     /** The AU/VST3 plugin scanner (P6-2) — owned by the app, which is the only
         process with the real NativePluginHost implementation and a JUCE message
         loop for it to marshal on. Null = this host cannot host plugins, and the

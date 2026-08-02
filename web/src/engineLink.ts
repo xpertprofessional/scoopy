@@ -409,6 +409,7 @@ class MergedLink extends BrowserLink {
     "setMidiSyncMode",
     "setMidiSlaveTransportPolicy",
     "getMidiClockStatus",
+    "midiClock",
     "openAudioRoutingWindow",
   ]);
 
