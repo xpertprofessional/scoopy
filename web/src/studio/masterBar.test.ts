@@ -60,6 +60,24 @@ describe("MasterBar — it delegates, it does not calculate", () => {
     expect(CODE).toContain("useSetting");
   });
 
+  it("the RAMP control exists — setTempoRamp shipped with no caller", () => {
+    // The gap this closes: `setTempoRamp` was exported and called by nothing,
+    // so the ramp was permanently the default and no setting could have been
+    // honoured. A verb with no door is the same defect as a door with no verb.
+    expect(CODE).toContain("setTempoRamp");
+    expect(CODE).toContain("studio/masterRamp");
+    // Its own key, app-global like the tempo — how fast your tempo moves is a
+    // property of how you work, not of the song that happens to be open.
+    expect(CODE).toContain("studio.masterTempoRamp");
+  });
+
+  it("says 'off' rather than '0.00s' at zero", () => {
+    // 0 is not a short ramp, it is NO ramp — the tempo snaps, exactly as it did
+    // before the glide existed. A box reading "0.00s" would suggest a very fast
+    // ride rather than a different behaviour.
+    expect(CODE).toContain("'off'");
+  });
+
   it("a disabled control still says why (§6)", () => {
     expect(CODE).toContain("title={why ??");
     expect(CODE).toContain("session ▾");

@@ -38,7 +38,7 @@ import { useEffect } from 'react'
 import type { EngineLink } from '../engineLink.ts'
 import { DragBox } from '../design/DragBox.tsx'
 import { setMasterBpm, useMapStore } from '../state/mapStore.ts'
-import { glideToMaster, stopGlide } from '../state/tempoGlide.ts'
+import { RAMP, glideToMaster, setTempoRamp, stopGlide } from '../state/tempoGlide.ts'
 import { updateGridTempo } from '../state/mapStore.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import { asNumber, useSetting } from '../useSetting.ts'
@@ -46,6 +46,11 @@ import { STUDIO_STRIP_KEY, useStudioElement, type StudioTempoMode } from './stud
 
 /** App-global, like the donor's. */
 export const MASTER_TEMPO_KEY = 'studio.masterTempo'
+/** The ramp length. Its own key, like the donor's
+ *  `djMode.masterTempoRampSeconds` — and app-global for the same reason the
+ *  tempo is: how quickly your tempo moves is a property of how you work, not
+ *  of the song you have open. */
+export const RAMP_KEY = 'studio.masterTempoRamp'
 
 /** The donor clamps its master tempo to 0…300 and the sync law carries its own
  *  ceilings; 20 is the floor the session BPM uses (`clampBPM`). A 0 typed here
@@ -69,6 +74,15 @@ export function MasterBar({ link, session }: { link: EngineLink | null; session:
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
   const element = useStudioElement()
   const [, setStored] = useSetting(link, MASTER_TEMPO_KEY, MASTER_TEMPO.def, asNumber)
+  const [rampSec, setRampSec] = useSetting(link, RAMP_KEY, RAMP.def, asNumber)
+
+  // ⚠️ THE GLIDE MODULE HELD THIS VALUE AND NOTHING EVER SET IT. `setTempoRamp`
+  // shipped exported and uncalled, so the ramp was permanently the default and
+  // the setting below could not have been honoured even if it existed — a verb
+  // with no door, which is the same defect as a door with no verb (DESIGN.md
+  // §7) and the one this session keeps finding. The stored value is pushed in
+  // whenever it loads or changes, including on first mount.
+  useEffect(() => setTempoRamp(rampSec), [rampSec])
 
   /** The precondition every control here shares — the same shape `Transport`
    *  uses, so an empty studio explains itself the same way twice. */
@@ -108,6 +122,25 @@ export function MasterBar({ link, session }: { link: EngineLink | null; session:
         onChange={write}
       />
       <span className="ds-label mono dim">master</span>
+      {/* RAMP — how long the tempo takes to arrive. 0 snaps (the behaviour
+          before the glide existed), 5 s is a long tape stop. Seconds, because
+          that is the unit the gesture is felt in. */}
+      <DragBox
+        id="studio/masterRamp"
+        value={rampSec}
+        display={rampSec <= 0.001 ? 'off' : `${rampSec.toFixed(2)}s`}
+        min={RAMP.min}
+        max={RAMP.max}
+        step={0.05}
+        defaultValue={RAMP.def}
+        disabled={!!why}
+        title={
+          why ??
+          'RAMP — how long the master tempo takes to arrive. 0 = snap; higher rides like a tape stop'
+        }
+        onChange={(v) => setRampSec(Math.round(v * 100) / 100)}
+      />
+      <span className="ds-label mono dim">ramp</span>
       {MODES.map((m) => (
         <button
           key={m.id}
