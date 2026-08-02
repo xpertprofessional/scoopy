@@ -1,9 +1,14 @@
-// The rename's migration (D-SL-RENAME-01). Headless, against a temp tree —
-// because the alternative is testing it on somebody's real library.
+// The library merge (D-SL-RENAME-01). Headless, against a temp tree — because
+// the alternative is testing it on somebody's real library.
 //
 // What is being defended: the data root holds the SHARED SESSION LIBRARY, and
 // ScoopyDeck's saved DAW projects reference sessions in it BY NAME. A migration
-// that loses it fails silently, later, in someone's set.
+// that loses one fails silently, later, in someone's set.
+//
+// ⚠️ THE DESTINATION IS SHARED AND PRE-EXISTING. `ScoopyLoops/` already holds the
+// original app's data and Pulsar's snapshot bank on machines that have never run
+// this app. So this is a MERGE that may only ever ADD — half these cases exist to
+// prove it cannot clobber, cannot resurrect, and cannot half-finish.
 #include "ScoopyPaths.h"
 
 #include <cstdio>
@@ -20,8 +25,8 @@ using namespace wizard::paths;
 
 namespace {
 
-/** A library that looks like a real one: a session under Library/sessions, a
-    take, and a settings file — the three things a user would notice missing. */
+/** A library that looks like a real one: a session, a take, and settings — the
+    three things a user would notice missing. */
 void seedLibrary(const juce::File& root) {
     root.getChildFile("Library/sessions/Beach").createDirectory();
     root.getChildFile("Library/sessions/Beach/pattern.json").replaceWithText("{\"bpm\":120}");
@@ -42,20 +47,23 @@ bool libraryIntact(const juce::File& root) {
 int main() {
     const auto tmp =
         juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("scoopy-paths-test");
-
-    // ── 1. First run: no old library, no new one. Creates and returns the new.
-    {
+    const auto reset = [&] {
         tmp.deleteRecursively();
         tmp.createDirectory();
+    };
+
+    // ── 1. First run, nothing anywhere. Creates the root and stamps it.
+    {
+        reset();
         const auto root = dataRoot(tmp);
         CHECK(root == tmp.getChildFile(kDirName));
         CHECK(root.isDirectory());
+        CHECK(root.getChildFile(kMigrationMarker).existsAsFile());
     }
 
-    // ── 2. THE MIGRATION. An old library is COPIED, and the original stays.
+    // ── 2. THE MERGE. A legacy library arrives, and the original is untouched.
     {
-        tmp.deleteRecursively();
-        tmp.createDirectory();
+        reset();
         const auto legacy = tmp.getChildFile(kLegacyDirName);
         seedLibrary(legacy);
 
@@ -63,60 +71,77 @@ int main() {
         const auto root = dataRoot(tmp, &note);
 
         CHECK(root == tmp.getChildFile(kDirName));
-        // The user's work arrived, whole.
         CHECK(libraryIntact(root));
-        // …and the original is UNTOUCHED. This is the promise that makes the
-        // rename safe to ship: if any of it is wrong, nothing was lost, and an
-        // older build still finds its library where it left it.
+        // The promise that makes this safe to ship: if any of it is wrong,
+        // nothing was lost and an older build still finds its library.
         CHECK(libraryIntact(legacy));
-        CHECK(note.isNotEmpty()); // it says so, rather than migrating silently
+        CHECK(note.isNotEmpty()); // it says so, rather than merging silently
     }
 
-    // ── 3. IDEMPOTENT. A second launch migrates nothing and disturbs nothing —
-    //       including edits made AFTER the migration, which must not be
-    //       overwritten by the stale copy still sitting at the old path.
+    // ── 3. IT MUST NOT CLOBBER. The destination pre-exists and is not ours:
+    //       the original app's data and Pulsar's bank live here. Anything
+    //       already present wins; only what is MISSING is added.
     {
-        tmp.deleteRecursively();
-        tmp.createDirectory();
-        seedLibrary(tmp.getChildFile(kLegacyDirName));
-        const auto first = dataRoot(tmp);
-        first.getChildFile("Library/sessions/Beach/pattern.json").replaceWithText("{\"bpm\":174}");
-
-        juce::String note;
-        const auto second = dataRoot(tmp, &note);
-        CHECK(second == first);
-        CHECK(second.getChildFile("Library/sessions/Beach/pattern.json")
-                  .loadFileAsString()
-                  .contains("174"));
-        CHECK(note.isEmpty()); // nothing happened, so nothing is announced
-    }
-
-    // ── 4. THE PERMANENT FALLBACK. This is not a migration-season courtesy: if
-    //       the new root is absent and an old library exists, the old one is
-    //       used. Simulated by making the new path un-creatable — a FILE where
-    //       the directory would go, which is what a failed copy leaves behind.
-    {
-        tmp.deleteRecursively();
-        tmp.createDirectory();
+        reset();
         const auto legacy = tmp.getChildFile(kLegacyDirName);
         seedLibrary(legacy);
-        tmp.getChildFile(kDirName).replaceWithText("not a directory");
 
-        juce::String note;
-        const auto root = dataRoot(tmp, &note);
+        const auto root = tmp.getChildFile(kDirName);
+        root.getChildFile("Pulsar").createDirectory();
+        root.getChildFile("Pulsar/snapshots.xml").replaceWithText("<SNAPSHOTS/>");
+        // The SAME relative path as the legacy tree, with different content.
+        root.getChildFile("Library/sessions/Beach").createDirectory();
+        root.getChildFile("Library/sessions/Beach/pattern.json").replaceWithText("{\"bpm\":174}");
 
-        // Whatever it returns, it must be a root whose library is COMPLETE.
-        // Running against a half-copied library is worse than an old name.
-        CHECK(libraryIntact(root));
-        CHECK(libraryIntact(legacy));
+        dataRoot(tmp);
+
+        // The live file survives; the legacy one did NOT overwrite it.
+        CHECK(root.getChildFile("Library/sessions/Beach/pattern.json")
+                  .loadFileAsString()
+                  .contains("174"));
+        // A neighbour's file is untouched…
+        CHECK(root.getChildFile("Pulsar/snapshots.xml").loadFileAsString().contains("SNAPSHOTS"));
+        // …and what was genuinely missing still arrived.
+        CHECK(root.getChildFile("Takes/deck0_take.wav").existsAsFile());
     }
 
-    // ── 5. An EMPTY legacy directory is not a library. A dotfile-only folder
-    //       (a stray .DS_Store) must not announce a migration that moved
-    //       nothing — this is the case that would make the log line lie.
+    // ── 4. IT MUST NOT RESURRECT. Delete a session after migrating; a second
+    //       launch must not bring it back from the legacy tree, which still has
+    //       it. This is what the marker is for, and without it the merge would
+    //       quietly undo a deletion on every launch.
     {
-        tmp.deleteRecursively();
-        tmp.createDirectory();
+        reset();
+        seedLibrary(tmp.getChildFile(kLegacyDirName));
+        const auto root = dataRoot(tmp);
+        CHECK(root.getChildFile("Library/sessions/Beach").isDirectory());
+
+        root.getChildFile("Library/sessions/Beach").deleteRecursively();
+
+        juce::String note;
+        CHECK(dataRoot(tmp, &note) == root);
+        CHECK(!root.getChildFile("Library/sessions/Beach").exists()); // stays deleted
+        CHECK(note.isEmpty());                                       // nothing happened
+    }
+
+    // ── 5. IDEMPOTENT for edits too: a change made AFTER the merge is not
+    //       reverted by the stale copy still sitting at the legacy path.
+    {
+        reset();
+        seedLibrary(tmp.getChildFile(kLegacyDirName));
+        const auto root = dataRoot(tmp);
+        root.getChildFile("Library/sessions/Beach/pattern.json").replaceWithText("{\"bpm\":174}");
+
+        dataRoot(tmp);
+        CHECK(root.getChildFile("Library/sessions/Beach/pattern.json")
+                  .loadFileAsString()
+                  .contains("174"));
+    }
+
+    // ── 6. An EMPTY legacy directory is not a library. A dotfile-only folder
+    //       must not announce a merge that moved nothing — the case that would
+    //       make the log line lie.
+    {
+        reset();
         const auto legacy = tmp.getChildFile(kLegacyDirName);
         legacy.createDirectory();
         legacy.getChildFile(".DS_Store").replaceWithText("x");
@@ -125,6 +150,56 @@ int main() {
         const auto root = dataRoot(tmp, &note);
         CHECK(root == tmp.getChildFile(kDirName));
         CHECK(note.isEmpty());
+    }
+
+    // ── 7. A TYPE COLLISION IS A SKIP, NOT A FAILURE. If something else owns
+    //       that name — here a DIRECTORY where `settings.json` would go — the
+    //       merge leaves it. This is the non-clobber rule doing its job on the
+    //       nastiest input, and it is why the destination being shared with
+    //       another app is safe.
+    {
+        reset();
+        seedLibrary(tmp.getChildFile(kLegacyDirName));
+        const auto root = tmp.getChildFile(kDirName);
+        root.getChildFile("settings.json").createDirectory(); // occupied, wrong type
+
+        dataRoot(tmp);
+        CHECK(root.getChildFile("settings.json").isDirectory());    // untouched
+        CHECK(root.getChildFile("Takes/deck0_take.wav").existsAsFile()); // rest arrived
+    }
+
+    // ── 8. A PARTIAL MERGE RETRIES. A read-only destination directory makes a
+    //       real write fail, so NO marker is stamped and the next launch
+    //       finishes the job. Safe precisely because the merge only ever adds —
+    //       there is no half-built root, only files that have or have not
+    //       arrived yet.
+    {
+        reset();
+        seedLibrary(tmp.getChildFile(kLegacyDirName));
+        const auto root = tmp.getChildFile(kDirName);
+        const auto takes = root.getChildFile("Takes");
+        takes.createDirectory();
+        takes.setReadOnly(true);
+
+        juce::String note;
+        dataRoot(tmp, &note);
+        const bool blocked = !takes.getChildFile("deck0_take.wav").existsAsFile();
+        takes.setReadOnly(false); // always restore, or the temp tree cannot be removed
+
+        if (blocked) {
+            // The write really was refused: no marker, and it says so.
+            CHECK(!root.getChildFile(kMigrationMarker).existsAsFile());
+            CHECK(note.isNotEmpty());
+            // The retry completes and stamps it.
+            dataRoot(tmp);
+            CHECK(takes.getChildFile("deck0_take.wav").existsAsFile());
+            CHECK(root.getChildFile(kMigrationMarker).existsAsFile());
+        } else {
+            // Some filesystems (and root) ignore the read-only bit. Skip rather
+            // than assert a premise the platform did not honour — a test that
+            // fails for the wrong reason teaches nothing.
+            std::printf("  (skipped case 8: this filesystem ignored read-only)\n");
+        }
     }
 
     tmp.deleteRecursively();
