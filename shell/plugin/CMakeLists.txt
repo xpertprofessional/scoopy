@@ -140,7 +140,7 @@ target_compile_definitions(ScoopyDeck PRIVATE
 target_link_libraries(ScoopyDeck PRIVATE
     ScoopyPluginWebDist # the UI, carried inside the binary
     wz_sl_engine     # the v3 engine
-    wz_sl_command    # SlDispatch: the same command surface the app answers
+    wz_sl_command wz_scoopy_paths    # SlDispatch: the same command surface the app answers
     wz_sl_world      # applyWorld, for transport-follow's world re-apply
     wz_sl_settings   # FileSettingsStore (under ScoopyDeck/, not WizardMerged/)
     wz_record        # takes + the drain thread
@@ -246,7 +246,7 @@ target_compile_definitions(ScoopyTape PRIVATE
 target_link_libraries(ScoopyTape PRIVATE
     ScoopyPluginWebDist
     wz_sl_engine
-    wz_sl_command
+    wz_sl_command wz_scoopy_paths
     wz_sl_world
     wz_sl_settings   # FileSettingsStore, under ScoopyTape/ — see PluginBackend
     wz_record        # takes + the drain thread, shared library with the app
@@ -302,7 +302,7 @@ target_compile_definitions(plugin_processor_test PRIVATE
 
 target_link_libraries(plugin_processor_test PRIVATE
     ScoopyPluginWebDist
-    wz_sl_engine wz_sl_command wz_sl_world wz_sl_settings wz_record wz_webresources
+    wz_sl_engine wz_sl_command wz_scoopy_paths wz_sl_world wz_sl_settings wz_record wz_webresources
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags)
@@ -353,7 +353,7 @@ target_compile_definitions(tape_plugin_processor_test PRIVATE
 
 target_link_libraries(tape_plugin_processor_test PRIVATE
     ScoopyPluginWebDist
-    wz_sl_engine wz_sl_command wz_sl_world wz_sl_settings wz_record wz_webresources
+    wz_sl_engine wz_sl_command wz_scoopy_paths wz_sl_world wz_sl_settings wz_record wz_webresources
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags)

@@ -19,6 +19,21 @@ add_test(NAME web_resources_test COMMAND web_resources_test)
 
 # File-backed SettingsStore for the live window; GUI-free so its persistence
 # and atomic-write discipline are tested headlessly (SessionStore precedent).
+# WHERE SCOOPY KEEPS THINGS (D-SL-RENAME-01) — one resolver, because the path
+# was written twice before and the two copies disagreeing is a REPORTED bug
+# (PluginBackend.cpp's header: the plugin got an empty world and `session ▾`
+# listed nothing). GUI-free so the migration is provable on a temp tree rather
+# than on somebody's library.
+add_library(wz_scoopy_paths STATIC src/ScoopyPaths.cpp)
+target_include_directories(wz_scoopy_paths PUBLIC src)
+target_link_libraries(wz_scoopy_paths
+    PUBLIC juce::juce_core
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(scoopy_paths_test tools/scoopy_paths_test.cpp)
+target_link_libraries(scoopy_paths_test PRIVATE wz_scoopy_paths)
+add_test(NAME scoopy_paths_test COMMAND scoopy_paths_test)
+
 add_library(wz_sl_settings STATIC src/SlSettingsStore.cpp)
 target_include_directories(wz_sl_settings PUBLIC src)
 target_link_libraries(wz_sl_settings
@@ -143,7 +158,7 @@ add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
 # reason every phase here ends on an `awaiting-user` gate. `wz_merged_app` holds
 # the whole shell; two entry points link it:
 #
-#   WizardMerged  src/MergedMain.cpp        the app
+#   ScoopyStudio  src/MergedMain.cpp        the app (was WizardMerged)
 #   MergedWalk    tools/merged_walk.cpp     the same app, driven by a script (H5)
 #
 # One source of truth, two ways in. A walk against a COPY of the shell would
@@ -159,6 +174,7 @@ add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
 add_library(wz_merged_app STATIC src/MergedApp.cpp)
 target_include_directories(wz_merged_app PUBLIC src
     ${CMAKE_SOURCE_DIR}/slengine/include ${CMAKE_SOURCE_DIR}/host/src)
+target_link_libraries(wz_merged_app PUBLIC wz_scoopy_paths)
 
 target_compile_definitions(wz_merged_app PUBLIC
     JUCE_WEB_BROWSER=1
@@ -191,23 +207,29 @@ if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
     target_link_libraries(wz_merged_app PUBLIC juce::juce_audio_processors)
 endif()
 
-juce_add_gui_app(WizardMerged
-    PRODUCT_NAME "WizardMerged"
-    COMPANY_NAME "Wizard"
-    BUNDLE_ID com.wizard.merged
+# SCOOPY STUDIO (D-SL-RENAME-01). The target, the product name and the bundle id
+# all move together — a rename that left the bundle id behind would install the
+# new app over the old one's preferences and call it a coincidence.
+# ⚠️ The DATA path is NOT renamed here; it is migrated by `ScoopyPaths.cpp`,
+# which copies and keeps a permanent fallback. That is the half with a user's
+# library on the other side of it.
+juce_add_gui_app(ScoopyStudio
+    PRODUCT_NAME "Scoopy Studio"
+    COMPANY_NAME "ScoopyLoops"
+    BUNDLE_ID com.scoopyloops.scoopystudio
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "ScoopyLoops mixes and records audio; microphone access makes your inputs available.")
 
-target_sources(WizardMerged PRIVATE src/MergedMain.cpp)
+target_sources(ScoopyStudio PRIVATE src/MergedMain.cpp)
 
-target_compile_definitions(WizardMerged PRIVATE
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WizardMerged,JUCE_VERSION>")
+target_compile_definitions(ScoopyStudio PRIVATE
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ScoopyStudio,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ScoopyStudio,JUCE_VERSION>")
 
 # Everything else — the engine, the dispatcher, the webdist, the WebView flags —
 # arrives PUBLIC through the shell library. The app target's own list is now
 # only what is genuinely app-specific: its name and version.
-target_link_libraries(WizardMerged PRIVATE
+target_link_libraries(ScoopyStudio PRIVATE
     wz_merged_app
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
@@ -219,13 +241,13 @@ target_link_libraries(WizardMerged PRIVATE
 # It stays on the EXECUTABLE and out of wz_merged_app (see the ⚠️ above the library):
 # in an archive it can lose the symbol race to that stub, silently.
 if(APPLE AND SCOOPY_PLUGIN_HOST_ENABLED)
-    target_sources(WizardMerged PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
-    set_target_properties(WizardMerged PROPERTIES
+    target_sources(ScoopyStudio PRIVATE ${CMAKE_SOURCE_DIR}/ScoopyLoops/NativePluginHost.mm)
+    set_target_properties(ScoopyStudio PROPERTIES
         OBJCXX_STANDARD 20
         OBJCXX_STANDARD_REQUIRED ON)
     # CoreAudioKit explicitly: JUCE's module metadata only auto-links the frameworks its
     # DEFAULT config needs, and the AU-host code (AUGenericView) is behind our define.
-    target_link_libraries(WizardMerged PRIVATE "-framework CoreAudioKit")
+    target_link_libraries(ScoopyStudio PRIVATE "-framework CoreAudioKit")
 endif()
 
 # ─────────────────────────────────────────────────────────────────────────────

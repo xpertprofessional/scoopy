@@ -147,7 +147,7 @@ private:
 class MergedApplication : public juce::JUCEApplication,
                           private juce::Timer {
 public:
-    const juce::String getApplicationName() override { return "WizardMerged"; }
+    const juce::String getApplicationName() override { return "Scoopy Studio"; }
     const juce::String getApplicationVersion() override { return "0.0.1"; }
 
     void initialise(const juce::String&) override;

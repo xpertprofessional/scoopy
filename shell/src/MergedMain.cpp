@@ -12,7 +12,7 @@
 namespace {
 /** The app's own subclass exists only to be the thing START_JUCE_APPLICATION
     names. It adds nothing: the app is the walk, minus the walk. */
-class WizardMergedApplication final : public wizard::merged::MergedApplication {};
+class ScoopyStudioApplication final : public wizard::merged::MergedApplication {};
 } // namespace
 
 // START_JUCE_APPLICATION, opened one notch (P6-1): the out-of-process plugin
@@ -22,7 +22,7 @@ class WizardMergedApplication final : public wizard::merged::MergedApplication {
 // a plugin that crashes on instantiation kills only the throwaway child while
 // the parent records an empty result and scans on. Everything after the
 // intercept is the macro's own expansion, verbatim.
-JUCE_CREATE_APPLICATION_DEFINE(WizardMergedApplication)
+JUCE_CREATE_APPLICATION_DEFINE(ScoopyStudioApplication)
 JUCE_MAIN_FUNCTION
 {
 #if SCOOPY_PLUGIN_HOST

@@ -5,6 +5,8 @@
 // members are defined out-of-line, and the page-loaded hook H5 needs is added.
 #include "MergedApp.h"
 
+#include "ScoopyPaths.h"
+
 #include "WebResources.h"
 #include "sl_engine.h"
 
@@ -67,8 +69,10 @@ Backend::Backend(sl_engine* e)
     : engine(e),
       sink(e),
       audioIO(sink),
-      settings(juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                   .getChildFile("WizardMerged/settings.json")),
+      // D-SL-RENAME-01: one resolver, which also carries the migration off the
+      // wizard-era directory name. Not spelled out here — it was spelled out in
+      // two places before, and the two disagreeing is a reported bug.
+      settings(wizard::paths::dataRoot().getChildFile("settings.json")),
       drainSource(e) {
     // Opening the device starts the engine (SlRenderSink::setSampleRate does
     // the D-WZ-RATE-01 stop→set→start). A failure leaves the app running,
@@ -83,8 +87,7 @@ Backend::Backend(sl_engine* e)
     const auto takesDir =
         stored.isNotEmpty()
             ? juce::File(stored)
-            : juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                  .getChildFile("WizardMerged/Takes");
+            : wizard::paths::dataRoot().getChildFile("Takes");
     services.takesDir = takesDir.getFullPathName().toStdString();
     // start() creates the directory and launches the drain thread. If it
     // fails, `recorder` stays unstarted and the dispatcher's record commands

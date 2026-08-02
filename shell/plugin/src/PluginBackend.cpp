@@ -1,6 +1,7 @@
 #include "PluginBackend.h"
 
 #include "sl_engine.h"
+#include "ScoopyPaths.h"
 
 namespace wizard::plugin {
 
@@ -12,7 +13,7 @@ PluginBackend::PluginBackend(sl_engine* e, const juce::String& faceDir)
       // PRODUCT, not per instance — every ScoopyTape shares one settings.json
       // and none of them touch ScoopyDeck's.
       settings(juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                   .getChildFile(faceDir + "/settings.json")),
+                   .getChildFile(faceDir).getChildFile("settings.json")),
       drainSource(e) {
     // ⚠️ THE LIBRARY IS SHARED WITH THE APP, deliberately.
     //
@@ -30,8 +31,10 @@ PluginBackend::PluginBackend(sl_engine* e, const juce::String& faceDir)
     const auto takesDir =
         stored.isNotEmpty()
             ? juce::File(stored)
-            : juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                  .getChildFile("WizardMerged/Takes");
+            // THE SAME RESOLVER THE APP USES (D-SL-RENAME-01), and that is the
+            // point rather than tidiness: this path was hardcoded separately
+            // once and drifted, which is the bug the comment above records.
+            : wizard::paths::dataRoot().getChildFile("Takes");
     services.takesDir = takesDir.getFullPathName().toStdString();
     // Same honesty contract as the app: an unstarted recorder makes the record
     // commands refuse rather than pretend to capture.
