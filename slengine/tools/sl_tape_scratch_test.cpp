@@ -257,7 +257,7 @@ bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double s
     sl_tape_seek(e, 0, kAnchorFrame);
 
     sl_tape_set_scratch_tempo(e, bpm);
-    sl_tape_scratch_start(e, 0, technique, periodBeats, span);
+    sl_tape_scratch_start(e, 0, technique, periodBeats, span, -1.0);
 
     const double cycleSamples = periodBeats * (60.0 / bpm) * kRate;
     const auto total = static_cast<uint64_t>(cycleSamples * cycles);
@@ -390,7 +390,7 @@ int main() {
             if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1;
             sl_tape_seek(e, 0, kAnchorFrame);
             sl_tape_set_scratch_tempo(e, bpm);
-            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07);
+            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07, -1.0);
 
             const double cycleSamples = 0.5 * (60.0 / bpm) * kRate;
             const auto total = static_cast<uint64_t>(cycleSamples * 4.0);
@@ -459,7 +459,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         CHECK(sl_tape_set_record_source(e, 0, 0 /* deviceInput */, 0, 1) == 1);
         sl_tape_record_start(e, 0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, -1.0);
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
@@ -481,7 +481,7 @@ int main() {
         std::vector<float> tone(kLen, 0.5f);
         const float* planar[1] = {tone.data()};
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
-        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07);
+        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07, -1.0);
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
@@ -508,7 +508,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         sl_tape_seek(e, 0, kAnchorFrame);
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, -1.0);
 
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
@@ -517,7 +517,7 @@ int main() {
         // convenient moment, and the one a naive implementation cuts at.
         const int quarterIn = static_cast<int>(cycle * 0.125) / 64;
         for (int i = 0; i < quarterIn; ++i) sl_render(e, outs, 2, 64);
-        sl_tape_scratch_stop(e, 0);
+        sl_tape_scratch_stop(e, 0, 1 /* HOLD — these fixtures pin the latch, not the play-out */);
         // It must still be moving immediately after the stop.
         sl_render(e, outs, 2, 64);
         const double rateJustAfter = sl_tape_scrub_rate(e, 0);
@@ -587,7 +587,7 @@ int main() {
         sl_tape_set_loop(e, 0, 1, 0, kLoopFrames);
         sl_tape_trigger(e, 0, 0); // LOOPING, at rate 1.0
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */);
+        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */, -1.0);
 
         std::vector<float> l(64), r(64), captured;
         float* outs[2] = {l.data(), r.data()};
@@ -617,7 +617,7 @@ int main() {
 
         // RELEASE MUST NOT CLICK. A closed-rest technique would otherwise
         // deactivate with the gate shut and step straight to full output.
-        sl_tape_scratch_stop(e, 0);
+        sl_tape_scratch_stop(e, 0, 1 /* HOLD — these fixtures pin the latch, not the play-out */);
         std::vector<float> tail;
         for (int i = 0; i < 400; ++i) {
             sl_render(e, outs, 2, 64);
@@ -646,6 +646,204 @@ int main() {
         CHECK(measure(64, again));
         CHECK(again.strokeRms == fine.strokeRms);
         CHECK(again.floorRms == fine.floorRms);
+    }
+
+    /* ── 11. THE SPIN-BACK — launched at a point, the record travels there ──
+       "start where we click in the waveform, with a super fast reverse if the
+       current position is elsewhere, like on turntables seeking a section"
+       (user, 2026-08-02). Audible, faster than the hand-scrub law allows, and it
+       must ARRIVE rather than merely head that way. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        for (uint32_t t = 0; t < sl_channel_count(); ++t)
+            CHECK(sl_channel_set_source(e, t, 1, t) == 1);
+        std::vector<float> tone(kLen);
+        for (size_t i = 0; i < kLen; ++i)
+            tone[i] = static_cast<float>(
+                std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        // Park at the END and launch the gesture near the START, so the journey
+        // is a long REVERSE — the case the user described.
+        sl_tape_seek(e, 0, kLen - 2000);
+        sl_tape_set_scratch_tempo(e, 120.0);
+        const double cue = 4000.0;
+        sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.02, cue);
+
+        std::vector<float> l(64), r(64), heard;
+        float* outs[2] = {l.data(), r.data()};
+        double fastest = 0.0;
+        bool arrived = false;
+        for (int i = 0; i < 400 && !arrived; ++i) {
+            sl_render(e, outs, 2, 64);
+            heard.insert(heard.end(), l.begin(), l.end());
+            const double v = sl_tape_scrub_rate(e, 0);
+            // Track the extreme by MAGNITUDE. The first cut tracked the minimum
+            // and reported 0.00 for a journey that plainly happened — which was
+            // the tell that the travel had gone FORWARD from frame 0, because
+            // the engine was discarding the pending seek that put the head at
+            // the far end. A one-sided metric hid a real defect for one run.
+            if (std::abs(v) > std::abs(fastest)) fastest = v;
+            if (std::abs(sl_tape_playhead(e, 0) - cue) < 200.0) arrived = true;
+        }
+        std::printf("  spin-back: extreme %.2fx, arrived=%s, playhead %.0f (cue %.0f)\n",
+                    fastest, arrived ? "yes" : "NO", sl_tape_playhead(e, 0), cue);
+        CHECK(arrived);
+        // FASTER THAN A HAND COULD ASK FOR. The hand-scrub law is clamped to ±4
+        // and this must exceed it, or the whole point (a seek that feels like a
+        // turntable rather than a slow crawl) is lost.
+        CHECK(std::abs(fastest) > 4.0);
+        CHECK(fastest < 0.0); // and it was a REVERSE, which is what was asked for
+        // AND IT IS HEARD. A silent relocation is a teleport, not a spin-back.
+        double loud = 0.0;
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        for (size_t w = 0; w + 1 < heard.size() / win; ++w)
+            loud = std::max(loud, acRms(heard, w * win, win));
+        // AND IT DOES NOT CLIP. Level follows speed and this runs at up to 16x,
+        // so unbounded the seek would arrive +3.5 dB hot on a plugin path with
+        // no limiter (D-SL-DECKPLUGIN-01 leaves protection to the DAW's chain).
+        // PEAK rather than RMS, because "does it clip" is the actual question —
+        // the windowed RMS of a heavily resampled tone sits a little above a
+        // pure sine's 0.707 from interpolation ripple, which is not the same
+        // thing and would make an RMS bound read as a defect.
+        double peak = 0.0;
+        for (float v : heard) peak = std::max(peak, std::abs(static_cast<double>(v)));
+        std::printf("  spin-back is audible: peak window RMS %.4f, peak sample %.4f\n",
+                    loud, peak);
+        CHECK(loud > 0.05);
+        CHECK(peak <= 1.0);
+        sl_engine_destroy(e);
+    }
+
+    /* ── 12. RELEASE MODE 0 = RESUME: THE RECORD PLAYS ON ──────────────────
+       pd-scrub-engine.md §5 designed this and shipped neither mode. Let go and
+       the passage you were scratching keeps playing from where you left it —
+       and CRUCIALLY does not jump back to the region entry, which is what would
+       happen if release fell through to the ordinary scrub coast. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        for (uint32_t t = 0; t < sl_channel_count(); ++t)
+            CHECK(sl_channel_set_source(e, t, 1, t) == 1);
+        std::vector<float> tone(kLen);
+        for (size_t i = 0; i < kLen; ++i)
+            tone[i] = static_cast<float>(
+                std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        sl_tape_set_scratch_tempo(e, 120.0);
+        // An IDLE tape, launched mid-buffer: the case where "play out" has to
+        // invent a transport rather than restore one.
+        const double cue = static_cast<double>(kAnchorFrame);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, cue);
+
+        std::vector<float> l(64), r(64);
+        float* outs[2] = {l.data(), r.data()};
+        for (int i = 0; i < 200; ++i) sl_render(e, outs, 2, 64);
+        sl_tape_scratch_stop(e, 0, 0 /* RESUME */);
+        // Run past the stroke boundary and well into the play-out.
+        std::vector<float> after;
+        for (int i = 0; i < 600; ++i) {
+            sl_render(e, outs, 2, 64);
+            after.insert(after.end(), l.begin(), l.end());
+        }
+        const double ph = sl_tape_playhead(e, 0);
+        std::printf("  resume: state %u, playhead %.0f (launched at %.0f)\n",
+                    sl_tape_state(e, 0), ph, cue);
+        // IT IS PLAYING, and it is a one-shot — a tape that was idle plays out
+        // "from here until it ends", which is what a turntable does.
+        CHECK(sl_tape_state(e, 0) == 2 /* oneShot — TapeState{idle 0, looping 1, oneShot 2, recording 3} */);
+        // AND IT PLAYED ON FROM WHERE IT WAS LEFT, rather than snapping to the
+        // region entry. Forward of the launch point, nowhere near frame 0.
+        CHECK(ph > cue);
+        CHECK(ph < cue + kRate); // and it is playing at speed, not flying
+        double loud = 0.0;
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        for (size_t w = 0; w + 1 < after.size() / win; ++w)
+            loud = std::max(loud, acRms(after, w * win, win));
+        CHECK(loud > 0.05); // it is audible, not a silent playhead
+        sl_engine_destroy(e);
+    }
+
+    /* ── 13. RELEASE MODE 1 = HOLD is still today's behaviour ──────────────
+       The setting has to actually mean something, so pin the other branch. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        std::vector<float> tone(kLen, 0.25f);
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        sl_tape_set_scratch_tempo(e, 120.0);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, static_cast<double>(kAnchorFrame));
+        std::vector<float> l(64), r(64);
+        float* outs[2] = {l.data(), r.data()};
+        for (int i = 0; i < 200; ++i) sl_render(e, outs, 2, 64);
+        sl_tape_scratch_stop(e, 0, 1 /* HOLD */);
+        for (int i = 0; i < 600; ++i) sl_render(e, outs, 2, 64);
+        std::printf("  hold: state %u (idle = latched)\n", sl_tape_state(e, 0));
+        CHECK(sl_tape_state(e, 0) == 0 /* idle */);
+        sl_engine_destroy(e);
+    }
+
+    /* ── 14. THE PLAYER'S CROSSFADER, and its battle curve ─────────────────
+       It multiplies the technique's gate rather than replacing it, so a hand can
+       cut a pattern that is itself chopping. The curve is the measured one: a
+       narrow transition with dead ground either side, which is what makes the
+       resting positions usable. */
+    {
+        auto runWithFader = [](double faderPos) {
+            sl_engine* e = sl_engine_create(kRate, 64, 86);
+            if (e == nullptr) return -1.0;
+            if (sl_engine_start(e) != 1) return -1.0;
+            sl_watchdog_set_enabled(e, 0);
+            for (uint32_t t = 0; t < sl_channel_count(); ++t)
+                if (sl_channel_set_source(e, t, 1, t) != 1) return -1.0;
+            std::vector<float> tone(kLen);
+            for (size_t i = 0; i < kLen; ++i)
+                tone[i] = static_cast<float>(
+                    std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+            const float* planar[1] = {tone.data()};
+            if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1.0;
+            sl_tape_set_scratch_tempo(e, 120.0);
+            sl_tape_scratch_start(e, 0, 0 /* baby: gate always open, so what is
+                                             measured is the FADER alone */,
+                                  0.5, 0.05, static_cast<double>(kAnchorFrame));
+            sl_tape_scratch_fader(e, 0, faderPos);
+            std::vector<float> l(64), r(64), got;
+            float* outs[2] = {l.data(), r.data()};
+            for (int i = 0; i < 400; ++i) {
+                sl_render(e, outs, 2, 64);
+                got.insert(got.end(), l.begin(), l.end());
+            }
+            const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+            double loud = 0.0;
+            for (size_t w = 0; w + 1 < got.size() / win; ++w)
+                loud = std::max(loud, acRms(got, w * win, win));
+            sl_engine_destroy(e);
+            return loud;
+        };
+        const double open = runWithFader(1.0);
+        const double justOpen = runWithFader(0.56);
+        const double justShut = runWithFader(0.44);
+        const double shut = runWithFader(0.0);
+        std::printf("  battle curve: 1.00=%.4f  0.56=%.4f  0.44=%.4f  0.00=%.4f\n",
+                    open, justOpen, justShut, shut);
+        CHECK(open > 0.05);
+        CHECK(shut < open * 0.01); // shut is SHUT, not quieter
+        // ⚠️ THE DEAD GROUND IS THE POINT. Either side of the narrow band the
+        // fader does nothing at all — that is where a hand RESTS, and it is what
+        // makes clicking fast possible. A linear law would fail this by being
+        // audibly different at every position.
+        CHECK(justOpen == open);
+        CHECK(justShut == shut);
+        sl_engine_destroy(nullptr); // no-op; keeps the shape of the block above
     }
 
     std::printf("sl_tape_scratch_test OK\n");

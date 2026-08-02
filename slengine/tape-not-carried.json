@@ -59,6 +59,10 @@
     {
       "name": "sl_tape_set_scratch_tempo",
       "reason": "The tempo scratch patterns lock to. The engine has no tempo of its own to read \u2014 its only tempo concept is a per-deck sync RATIO (sl_deck_set_tempo_sync) \u2014 so whoever knows must push it: ScoopyTape from HostSync inside processBlock, Studio from the master tempo. Engine-wide rather than per-tape because a pattern is locked to THE tempo, and eight tapes disagreeing about the length of a 1/8 note would be eight clocks. Wizard's deck had no tempo input at all."
+    },
+    {
+      "name": "sl_tape_scratch_fader",
+      "reason": "The PLAYER's own hand on the crossfader during a scratch, 0 shut .. 1 open, resting open. Multiplies the technique's gate rather than replacing it \u2014 the pattern is a figure the fader hand plays, and this is the hand on top of it, which is what lets you cut a pattern that is itself chopping. Shaped by the measured BATTLE CURVE (a 45 mm run whose silence-to-full transition spans 2-3 mm) rather than linearly, because the dead ground either side is where the hand rests and is what makes clicking fast possible at all. Wizard had no crossfader anywhere."
     }
   ]
 }

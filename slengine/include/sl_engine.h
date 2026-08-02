@@ -353,15 +353,45 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
     period/span are CLAMPED rather than refused — these come from a UI control,
     and a refused start is a button that does nothing.
 
+    `cue_frame` is WHERE THE GESTURE WAS LAUNCHED — the point on the record a
+    hand landed on. If the playhead is elsewhere the tape SPINS TO IT first,
+    fast and audibly (up to ±16×, its own clamp — never the hand-scrub ±4, which
+    is a law about what a finger can honestly ask for), and the pattern begins on
+    arrival. Negative means "wherever the head already is", which is what a
+    button with no position behind it means.
+
     `stop` completes the current stroke before releasing (reversals land at the
-    extrema; strokes are whole units), then hands over to the ordinary 10 ms
-    scrub release fade. */
+    extrema; strokes are whole units), then hands over per its release mode. */
 void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
-                           double period_beats, double span);
+                           double period_beats, double span, double cue_frame);
 /** Retune while held. Deliberately does NOT re-seed the phase: a period change
     mid-stroke should change speed, not restart the figure. */
 void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span);
-void sl_tape_scratch_stop(sl_engine* e, uint32_t tape);
+
+/** Release. `release_mode` is the pair `pd-scrub-engine.md` §5 designed and
+    shipped neither of:
+
+      0 = RESUME (play out) — the record keeps turning from where the stroke
+          ended, so you hear the passage you were scratching play on. A tape that
+          was LOOPING keeps looping; one that was idle plays out as a ONE-SHOT,
+          "from here until it ends", which is what a turntable does. No seek, no
+          reset, and deliberately no region-entry snap — that snap would throw
+          away the entire point. The cue is armed at the released frame, so the
+          next ⟳ starts where you dropped the needle.
+      1 = HOLD — finish the stroke, fade out on the 10 ms ramp, latch. */
+void sl_tape_scratch_stop(sl_engine* e, uint32_t tape, uint32_t release_mode);
+
+/** THE PLAYER'S OWN HAND ON THE CROSSFADER, 0 shut .. 1 open, resting OPEN.
+    MULTIPLIES the technique's gate rather than replacing it — the pattern is a
+    figure the fader hand plays, and this is the hand on top of it, which is what
+    lets you cut a pattern that is itself chopping.
+
+    Shaped by the BATTLE CURVE, not linearly: measured, a crossfader's run is
+    45 mm but "the interesting part, from silence to full volume, spans only two
+    to three millimetres". It is a gate with a hair trigger, and the dead ground
+    either side is where the hand rests — which is what makes clicking fast
+    possible at all. Ignored unless finite; clamped to [0,1]. */
+void sl_tape_scratch_fader(sl_engine* e, uint32_t tape, double position);
 
 /** The tempo scratch patterns lock to, engine-wide. Pushed by whoever knows —
     ScoopyTape from HostSync inside processBlock, Studio from the master tempo —

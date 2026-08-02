@@ -148,9 +148,29 @@ struct Tape {
     // construction, and per-sample removes the 93.75 Hz control-rate ceiling
     // that made the reversal 4 ms too wide at the block size hosts really run.
     //
-    // 0 = off · 1 = running · 2 = STOPPING (finish the stroke, then release —
-    // reversals land at the extrema and strokes are whole units).
+    // 0 = off
+    // 1 = running
+    // 2 = STOPPING — finish the stroke, then release (reversals land at the
+    //     extrema and strokes are whole units)
+    // 3 = RELEASING THE GATE — fader-only, ramping back open so a closed-rest
+    //     technique cannot step to full output on release
+    // 4 = APPROACHING — travelling to the cue the gesture was launched at, fast
+    //     and AUDIBLE, the way a hand drags a record to the section it wants
     std::atomic<uint32_t> scratchActive{0};
+    /** Where the gesture was launched. <0 = "wherever the head already is",
+        which is what the SCRATCH button alone means. */
+    std::atomic<double> scratchCue{-1.0};
+    /** Release policy, latched at scratchStop: 0 = resume (play out), 1 = hold.
+        pd-scrub-engine.md §5 designed exactly these two and shipped neither. */
+    std::atomic<uint32_t> scratchRelease{0};
+    /** The transport state the tape had when the gesture began, so `resume` can
+        put it back rather than guessing. */
+    uint32_t scratchWasState = 0;
+    /** THE MANUAL CROSSFADER, 0 shut .. 1 open, resting OPEN. Multiplies the
+        technique's own gate rather than replacing it: the pattern is the fader
+        hand's figure, and this is the hand on top of it. */
+    std::atomic<double> scratchFader{1.0};
+    double scratchFaderSm = 1.0; // render-side, on the same ~2 ms gate ramp
     std::atomic<uint32_t> scratchTechnique{0}; // index into kSlScratchTechniques
     std::atomic<double> scratchPeriodBeats{0.5};
     std::atomic<double> scratchSpan{0.07}; // fraction of the loop
@@ -454,9 +474,11 @@ public:
         emitted from `slengine/scratch-techniques.json` — THE INDEX IS THE WIRE.
         `periodBeats` is one full back-and-forth in beats; `span` is a fraction
         of the loop. Stop finishes the current stroke before releasing. */
-    void scratchStart(uint32_t tape, uint32_t technique, double periodBeats, double span);
+    void scratchStart(uint32_t tape, uint32_t technique, double periodBeats, double span,
+                      double cueFrame);
     void scratchSet(uint32_t tape, double periodBeats, double span);
-    void scratchStop(uint32_t tape);
+    void scratchStop(uint32_t tape, uint32_t releaseMode);
+    void scratchFader(uint32_t tape, double position);
     /** The tempo a beat-locked pattern runs against, engine-wide. Pushed by
         whoever knows: ScoopyTape from HostSync inside processBlock, Studio from
         the master tempo. There is no engine-level tempo to read instead — the

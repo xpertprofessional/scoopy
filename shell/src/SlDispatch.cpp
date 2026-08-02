@@ -562,7 +562,10 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                                   numProp(params, "periodBeats", 0.5),
                                   // span 0 is FADER-ONLY — the record hand moves
                                   // nothing and the loop plays on underneath.
-                                  numProp(params, "span", 0.07));
+                                  numProp(params, "span", 0.07),
+                                  // Where the hand landed on the record. -1 = "no
+                                  // point given", i.e. start where the head is.
+                                  numProp(params, "frame", -1.0));
             return ok(okFlag());
         }
         if (action == "scratchSet") {
@@ -570,7 +573,16 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                                 numProp(params, "span", 0.07));
             return ok(okFlag());
         }
-        if (action == "scratchStop") { sl_tape_scratch_stop(engine, tape); return ok(okFlag()); }
+        if (action == "scratchStop") {
+            // mode 0 = RESUME (play out, the default), 1 = HOLD.
+            sl_tape_scratch_stop(engine, tape,
+                                 static_cast<uint32_t>(intProp(params, "mode", 0)));
+            return ok(okFlag());
+        }
+        if (action == "scratchFader") {
+            sl_tape_scratch_fader(engine, tape, numProp(params, "fader", 1.0));
+            return ok(okFlag());
+        }
         if (action == "scratchTempo") {
             // ENGINE-WIDE, so `tape` is ignored here on purpose: a pattern locks
             // to THE tempo, and eight tapes disagreeing about a 1/8 note would be

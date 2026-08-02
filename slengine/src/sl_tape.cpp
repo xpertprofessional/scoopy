@@ -132,6 +132,44 @@ inline double speedLevel(double rate) {
     return g > 1.5 ? 1.5 : g;
 }
 
+/** THE SPIN-BACK. Travelling to the point the gesture was launched at, fast and
+    AUDIBLE — a real deck cannot teleport, and hearing the record wind to the
+    section you want is half of what makes it read as a turntable.
+
+    ⚠️ ITS OWN CLAMP, and it must stay its own. The hand-scrub law is hard-clamped
+    to ±4 (a finger cannot ask for more without lying about where it is), and
+    raising THAT would change a shipped gesture. ±16 is not a new number: it is
+    the varispeed clamp the tape already enforces on `sl_tape_set_rate`. Past it
+    the 2-point interpolator is mostly noise anyway.
+
+    The time constant makes the approach block-size independent, which the gap
+    law's own `/ frames` would not be. */
+constexpr double kScratchSeekRate = 16.0;
+constexpr double kScratchSeekSeconds = 0.09;
+/** Close enough to call it arrived. Under a millisecond at any sane rate, so the
+    hand-off into the pattern is inaudible. */
+constexpr double kScratchArriveFrames = 24.0;
+
+/** THE BATTLE CURVE. Measured: the run is 45 mm but "the interesting part, from
+    silence to full volume, spans only two-three millimetres" — so a crossfader
+    is a GATE WITH A HAIR TRIGGER, not a fader, and the dead ground either side
+    is where the hand rests. That resting ground is what makes clicking fast
+    possible at all; a linear law would feel nothing like it.
+
+    ⚠️ DELIBERATE DEVIATION, and it is about placement rather than character. The
+    measured transition sits a few mm from ONE END of the physical travel, where
+    a hand rests against the stop. A pointer dragging on a waveform has no stop
+    to rest against and starts wherever it was pressed, so the band is centred
+    instead — both dead zones reachable, the narrowness (the part that carries
+    the feel) kept exactly. */
+constexpr double kFaderBand = 0.03; // ±3% of travel: ~6% total, the measured 2-3mm of 45mm
+inline double battleCurve(double p) {
+    if (p <= 0.5 - kFaderBand) return 0.0;
+    if (p >= 0.5 + kFaderBand) return 1.0;
+    const double t = (p - (0.5 - kFaderBand)) / (2.0 * kFaderBand);
+    return 0.5 * (1.0 - std::cos(kPi * t)); // the one raised-cosine shape
+}
+
 /** How hard the playhead is pulled back onto the commanded position. The
     integrated one-pole lags the command — which is the POINT, it is what makes
     the reversal notch — but over minutes that lag's numerical residue could
@@ -344,7 +382,7 @@ double TapeBank::scrubRate(uint32_t tape) const {
 }
 
 void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeats,
-                            double span) {
+                            double span, double cueFrame) {
     if (tape >= kMaxTapes) return;
     Tape& d = tapes_[tape];
     // Recording owns the playhead, exactly as scrubBegin has it: the write head
@@ -365,7 +403,18 @@ void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeat
     // playhead actually IS — pubPlayhead is a block-old copy, and starting a
     // gesture from a stale anchor puts a lurch at the top of every pattern.
     d.scratchSeeded.store(0, std::memory_order_relaxed);
-    d.scratchActive.store(1, std::memory_order_release);
+    // WHAT THE TAPE WAS DOING, so `resume` can put it back instead of guessing.
+    // Read here rather than at release, because by then the scratch has already
+    // been running and the answer would be about itself.
+    d.scratchWasState = d.state.load(std::memory_order_acquire);
+    d.scratchRelease.store(0, std::memory_order_relaxed);
+    d.scratchFader.store(1.0, std::memory_order_relaxed); // a fader RESTS open
+    d.scratchCue.store(cueFrame, std::memory_order_relaxed);
+    // LAUNCHED AT A POINT ON THE RECORD → travel there first, audibly, the way a
+    // hand drags a record to the section it wants. State 4 is that journey; the
+    // pattern does not begin until it arrives, so a gesture launched far from
+    // the head is a spin-back followed by a scratch rather than a teleport.
+    d.scratchActive.store(cueFrame >= 0.0 ? 4u : 1u, std::memory_order_release);
     // ⚠️ SPAN 0 IS FADER-ONLY, and it is not a magic number — it is literally
     // what the field says: the record hand moves nothing. That is the
     // transformer played over a NORMALLY PLAYING LOOP, which
@@ -391,15 +440,32 @@ void TapeBank::scratchSet(uint32_t tape, double periodBeats, double span) {
         d.scratchSpan.store(std::clamp(span, 0.0005, 1.0), std::memory_order_relaxed);
 }
 
-void TapeBank::scratchStop(uint32_t tape) {
+void TapeBank::scratchStop(uint32_t tape, uint32_t releaseMode) {
     if (tape >= kMaxTapes) return;
     Tape& d = tapes_[tape];
+    d.scratchRelease.store(releaseMode != 0 ? 1u : 0u, std::memory_order_relaxed);
     // 2 = STOPPING, not 0. Release completes the stroke: reversals land at the
     // extrema and strokes are whole units, so cutting mid-stroke would leave the
     // playhead somewhere the gesture never rests — and then scrubEnd's coast
     // hands it to the `entry` snap from wherever that happened to be.
+    //
+    // Released DURING THE APPROACH (state 4) there is no stroke to finish, so it
+    // ends immediately — a hand that lets go mid-spin-back has not started
+    // scratching yet, and making it wait for a phase boundary it never entered
+    // would hang the gesture.
     uint32_t running = 1;
-    d.scratchActive.compare_exchange_strong(running, 2, std::memory_order_acq_rel);
+    if (!d.scratchActive.compare_exchange_strong(running, 2, std::memory_order_acq_rel)) {
+        uint32_t approaching = 4;
+        if (d.scratchActive.compare_exchange_strong(approaching, 2, std::memory_order_acq_rel))
+            d.scratchSeeded.store(1, std::memory_order_relaxed); // no seeding pass owed
+    }
+}
+
+void TapeBank::scratchFader(uint32_t tape, double position) {
+    if (tape >= kMaxTapes) return;
+    if (!std::isfinite(position)) return;
+    tapes_[tape].scratchFader.store(std::clamp(position, 0.0, 1.0),
+                                    std::memory_order_relaxed);
 }
 
 void TapeBank::setScratchTempo(double bpm) {
@@ -821,12 +887,28 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             // phase evaluated PER SAMPLE rather than from a mailbox read once
             // per block, so the reversal is not smeared across 10.7 ms of
             // control grain.
-            const uint32_t scratchState = d.scratchActive.load(std::memory_order_acquire);
+            uint32_t scratchState = d.scratchActive.load(std::memory_order_acquire);
             const bool scratching = scratchState != 0 && scrubHeld;
+            const bool approaching = scratchState == 4;
             uint32_t tech = d.scratchTechnique.load(std::memory_order_relaxed);
             if (tech >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) tech = 0;
             const SlScratchTechnique& T = kSlScratchTechniques[tech];
-            if (scratching && d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
+            if (scratching && approaching && d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
+                // ⚠️ THE SPIN-BACK STARTS FROM WHERE THE HEAD REALLY IS, and a
+                // pending seek is part of that. Draining and DISCARDING it (the
+                // first cut) left the head at whatever the scrub branch last saw
+                // — so a gesture launched right after a seek travelled from the
+                // wrong end of the record, in the wrong direction. The anchor
+                // still comes from the cue; only the departure point is this.
+                const int64_t pend = d.pendingSeek.exchange(-1, std::memory_order_acq_rel);
+                if (pend >= 0) {
+                    const double t = static_cast<double>(pend);
+                    d.playhead = t < static_cast<double>(dFrames)
+                                     ? t
+                                     : static_cast<double>(dFrames - 1);
+                }
+                d.scratchSeeded.store(1, std::memory_order_relaxed);
+            } else if (scratching && d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
                 // ⚠️ DRAIN A PENDING SEEK FIRST. The scrub branch does not
                 // consume `pendingSeek` — only the playback branch and the idle
                 // early-out do — so "park the head, then scratch there" silently
@@ -866,8 +948,46 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             const double clickPhaseWidth =
                 cycleSamples > 1.0 ? (T.clickWidthMs * 0.001 * fs) / (cycleSamples * 0.5) : 0.0;
 
+            const double cue = d.scratchCue.load(std::memory_order_relaxed);
+            const double seekDiv = kScratchSeekSeconds * fs;
+
+            // Set the instant a pattern lets go, so the REST of this block does
+            // not keep generating a gesture nobody is holding. Without it a
+            // release costs up to a full block of extra pattern — inaudible at
+            // 64 frames, a tenth of a stroke at 512.
+            bool coasting = false;
+
             for (uint32_t i = 0; i < frames; ++i) {
-                if (scratching) {
+                if (coasting) {
+                    // At a stroke boundary the velocity IS zero (that is what a
+                    // reversal is), so this coast is very nearly a no-op — it
+                    // exists so the arithmetic is honest rather than because
+                    // there is momentum to bleed off.
+                    d.scrubRate += alpha * (0.0 - d.scrubRate);
+                    d.playhead += d.scrubRate;
+                } else if (scratchState == 4) {
+                    // THE SPIN-BACK. A gap law like the hand's, but against a
+                    // fixed TIME rather than the block (so it is block-size
+                    // independent) and against its own ±16 clamp rather than the
+                    // hand's ±4. Audible on purpose.
+                    const double gap = cue - d.playhead;
+                    const double wantSeek =
+                        std::clamp(gap / seekDiv, -kScratchSeekRate, kScratchSeekRate);
+                    d.scrubRate += alpha * (wantSeek - d.scrubRate);
+                    d.playhead += d.scrubRate;
+                    if (std::abs(cue - d.playhead) < kScratchArriveFrames) {
+                        // ARRIVED. Land exactly, and let the pattern take over
+                        // from here — the anchor is the point that was asked
+                        // for, not wherever the glide happened to stop.
+                        d.playhead = cue;
+                        d.scratchAnchor = cue;
+                        d.scratchPhase = 0.0;
+                        d.scratchGate = 1.0;
+                        d.scratchSeeded.store(1, std::memory_order_relaxed);
+                        d.scratchActive.store(1, std::memory_order_release);
+                        scratchState = 1;
+                    }
+                } else if (scratching) {
                     // ANALYTIC VELOCITY: the generator knows how fast the record
                     // is moving, so it says so instead of opening a gap and
                     // letting the engine infer it. That is also what makes this
@@ -911,6 +1031,40 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                             // Hands over to the ordinary 10 ms release fade,
                             // which is what stops it clicking.
                             d.scrubActive.store(0, std::memory_order_release);
+                            scratchState = 0;
+                            coasting = true;
+                            // ── RELEASE MODE 0 = RESUME: THE RECORD PLAYS ON ──
+                            // pd-scrub-engine.md §5 designed this and shipped
+                            // neither mode. It is what a real scratch does: let
+                            // go and the record keeps turning from where you
+                            // left it, so you hear the passage you were
+                            // scratching play out.
+                            //
+                            // The playhead is ALREADY where the stroke ended and
+                            // the playback path reads it directly, so "resume"
+                            // is a state change and nothing else — no seek, no
+                            // reset, and deliberately no `pendingReset`, which
+                            // would send it back to the region entry and throw
+                            // away the entire point.
+                            if (d.scratchRelease.load(std::memory_order_relaxed) == 0) {
+                                const auto was = d.scratchWasState;
+                                // A tape that was IDLE plays out as a ONE-SHOT —
+                                // "from here until it ends", which is what a
+                                // turntable does. A tape that was looping keeps
+                                // looping: it was already a loop before anyone
+                                // scratched it.
+                                d.state.store(was == static_cast<uint32_t>(TapeState::idle)
+                                                  ? static_cast<uint32_t>(TapeState::oneShot)
+                                                  : was,
+                                              std::memory_order_release);
+                                // The cue is armed HERE and only here. A running
+                                // pattern must not arm it (it would rewrite the
+                                // point every sample), but the frame you let go
+                                // at is exactly what D-WZ-SCRUBCUE-01 means by
+                                // one — so the next ⟳ starts where you dropped
+                                // the needle.
+                                d.cueFrame = d.playhead;
+                            }
                         }
                     }
                 } else {
@@ -925,16 +1079,44 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     d.scratchGate = 1.0;
                 }
                 d.scrubGain = rampStep(d.scrubGain, scrubHeld ? 1.0 : 0.0, step);
+                // THE HAND ON THE CROSSFADER, on the same ~2 ms ramp as the
+                // pattern's own gate — it is the same physical control, so it
+                // cannot be slower. Smoothed rather than stepped because the
+                // pointer that drives it arrives at the pointer-event rate, not
+                // per sample.
+                d.scratchFaderSm =
+                    rampStep(d.scratchFaderSm,
+                             scratching ? d.scratchFader.load(std::memory_order_relaxed) : 1.0,
+                             gateStep);
                 if (d.playhead < 0.0) d.playhead = 0.0;
                 const double lastFrame = static_cast<double>(dFrames) - 1.0;
                 if (d.playhead > lastFrame) d.playhead = lastFrame;
-                // The fader lane and the speed law multiply the SAME scrubGain
-                // the release fade rides, so a pattern released mid-click still
-                // cannot click: two independent envelopes, one product.
-                const double sg = rampShape(d.scrubGain) *
-                                  (scratching ? rampShape(d.scratchGate) *
-                                                    speedLevel(d.scrubRate)
-                                              : 1.0);
+                // Four envelopes, one product, and each is a different thing:
+                // the release fade, the technique's gate, the player's own hand
+                // on the fader, and level-following-speed. Multiplying rather
+                // than picking one is what lets a pattern be released mid-click
+                // without clicking — and what lets a hand cut a pattern that is
+                // itself chopping, which is what an orbit into a crab IS.
+                //
+                // ⚠️ THE APPROACH IS UNGATED BY THE TECHNIQUE. A spin-back is
+                // not part of any figure, so the technique's clicks must not
+                // chop it — but the player's fader still can, because that hand
+                // is on the mixer the whole time.
+                // ⚠️ THE SPIN-BACK IS NEVER LOUDER THAN THE MUSIC. Level follows
+                // speed, and the approach runs at up to 16× — so unbounded it
+                // would arrive +3.5 dB hot, on a plugin path with no limiter
+                // (D-SL-DECKPLUGIN-01 leaves protection to the DAW's chain). A
+                // seek is a transport move, not a musical event; the boost
+                // belongs to the gesture, so the approach only ever attenuates.
+                const double speed = scratchState == 4
+                                         ? std::min(speedLevel(d.scrubRate), 1.0)
+                                         : speedLevel(d.scrubRate);
+                const double sg =
+                    rampShape(d.scrubGain) *
+                    (scratching && !coasting
+                         ? battleCurve(d.scratchFaderSm) * speed *
+                               (scratchState == 4 ? 1.0 : rampShape(d.scratchGate))
+                         : 1.0);
                 const float scrubL = d.sampleLerp(0, d.playhead);
                 const float scrubR = dchan > 1 ? d.sampleLerp(1, d.playhead) : scrubL;
                 dl[i] = static_cast<float>(scrubL * sg);
