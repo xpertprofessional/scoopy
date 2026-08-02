@@ -407,11 +407,11 @@ sub-lettered chores. Feature work now moves in **bundles**.*
    several commits; each commit is coherent and green on its own, and the bundle
    is not done until its door is reachable in the real host.
 3. **Verify:** `ctest --test-dir build --output-on-failure`, then in `web/`:
-   `npm run typecheck && npm test` plus **all TEN drift gates** (`params:check` ·
+   `npm run typecheck && npm test` plus **all ELEVEN drift gates** (`params:check` ·
    `shared:check` · `worldmap:check` · `hotframe:check` · `tape:check` ·
    `trackparams:check` · `webdist:check` · `check:tokens` · `schema:check` ·
-   `nativemethods:check` — `web/package.json` is the authority; there is no
-   `protocol:check`), then the walks and the real-host proof the row's gate line
+   `nativemethods:check` · `faces:check` — `web/package.json` is the authority;
+   there is no `protocol:check`), then the walks and the real-host proof the row's gate line
    names. `npm run bundle` **LAST** before `git add`. Red → fix or revert fully.
 4. **Continue or park:** more machine-runnable work → next bundle step. Only
    human-gated items left → post "awaiting sign-off/decision on: …" and stop.

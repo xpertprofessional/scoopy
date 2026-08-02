@@ -102,17 +102,26 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
 ## Verify (the gate for every commit in a bundle)
 - C++: `ctest --test-dir build --output-on-failure`
 - Web (in `web/`): `npm run typecheck && npm test`
-- **Drift gates — run all TEN every session, not only when a row names one**
+- **Drift gates — run all ELEVEN every session, not only when a row names one**
   (2026-07-29: two were RED at HEAD and one uncovered two real UI defects):
   `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` ·
   `tape:check` · `trackparams:check` · `webdist:check` · `check:tokens` ·
-  `schema:check` · `nativemethods:check`.
-  `schema:check` is the newest (H5-a, 2026-07-30) and was added because three
+  `schema:check` · `nativemethods:check` · `faces:check`.
+  `faces:check` is the newest (2026-08-02, D-SL-STUDIO-01 L1): a FACE composes
+  blocks and never rebuilds one, because six products share one bundle and
+  differ only in which blocks they mount, what `getCapabilities` answers, and
+  `viewDensity`. It exists because that had failed twice — `PluginDeckPanel`'s
+  hand-wired first cut left PERF doing nothing, and `CompanionPanel`'s
+  hand-written save lifecycle had silently lost half its job. ⚠️ It deliberately
+  does NOT try to detect a rebuilt transport by its glyphs: measured, those
+  appear legitimately in tooltips, in prose and as the tape's own transport, and
+  a gate needing an allowlist on day one is not a gate.
+  `schema:check` (H5-a, 2026-07-30) was added because three
   hosts were reporting three different protocol versions — schema.ts 96,
   `getCapabilities` 92, `kScoopySchemaVersion` 88 — while `sl_dispatch_test`
   **asserted the stale 92**, so ctest defended the drift for four bumps.
   Older docs and ledger rows say "eight"; this list is the count.
-  `nativemethods:check` is the newest (2026-07-30) and exists because the same
+  `nativemethods:check` (2026-07-30) exists because the same
   defect shipped TWICE: a method the shell implements but `MergedLink.NATIVE_METHODS`
   omits falls through to `BrowserLink` and throws, and callers swallow it — so the
   feature is silently unreachable **in the real host only**. It caught `fxSlot`
