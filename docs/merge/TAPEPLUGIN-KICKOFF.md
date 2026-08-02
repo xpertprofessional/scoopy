@@ -32,12 +32,35 @@ drift gates green.
 
 ### What §1 owes, and what it does NOT claim
 
-- ⚠️ **A real-host check is owed.** The walk boots `?host=browser`, where
-  `slTape` reaches `BrowserLink` and answers nothing — so the walk proves the
-  BOX, never the sound. Nobody has yet put this plugin on a track in Logic or
-  Live, fed it audio and pressed REC. **That is the next thing to do, before
-  any §2 work**, and it is exactly the class of gap CLAUDE.md's four rules
-  exist for.
+- ✅ **The real-host check happened on 2026-08-02, and it found a total defect
+  the whole green suite had missed.** Reported: *"the looper vst does not
+  generate any output currently, stays silent even with recorded content."*
+  Root cause: **a tape renders into a CHANNEL, and a fresh channel's source is
+  kind 0 = none.** Nothing ever bound them, so the looper recorded correctly,
+  reported `looping`, drew its waveform and put out silence. Fixed in
+  `ScoopyTapeProcessor`'s constructor — channel *i* carries tape *i*, bound on
+  the PROCESSOR so a DAW playing a closed-editor project still makes sound.
+  The app does the same per strip at `PlanePanel.tsx:710`.
+
+  **Why every gate missed it, which is the part worth keeping.** §1's gate
+  asserted the insert passes DRY through — which it did, perfectly, while the
+  looper itself was mute. The walk asserted the layout, and the layout was
+  right. `auval` passed. *No test anywhere asked whether the thing this product
+  exists to do makes a sound.* The gate now does (`tape_plugin_processor_test`
+  §7): record a tone, stop, trigger, render SILENCE in, and demand output.
+  Rendering silence is what isolates the loop from the dry path.
+
+  ⚠️ **A GATE GAP THIS EXPOSED, still open.** The same commit shipped a LEVEL
+  control addressed to `slTape setLevel` — an action that does not exist, on a
+  method that does. It was silently discarded. `nativemethods:check` compares
+  METHOD names against `SlDispatch`; nothing compares the `action` string
+  inside a method, so a typo'd or misfiled action is invisible until a human
+  notices a dead control. Worth a gate: the actions are string literals on both
+  sides and both sides are greppable.
+
+- ⚠️ **A second real-host pass is still owed** for the verbs the first one did
+  not reach: scrub under a finger, the loop brace, reverse rates, and slot
+  flipping while audio runs.
 - **Nothing persists.** A DAW project saved now gives back an empty plugin
   (§3).
 - **Unbuilt verbs are ABSENT from the face, not disabled** — rule 7. The walk

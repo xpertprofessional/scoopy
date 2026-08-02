@@ -156,6 +156,116 @@ int main() {
         CHECK(maxDiff(bufB, ref) <= 1e-6);
     }
 
+    // ── §7 A RECORDED LOOP IS AUDIBLE ───────────────────────────────────────
+    //
+    // THE CLAIM §1 NEVER MADE, AND THE DEFECT IT LET THROUGH. The gate above
+    // proves the insert passes DRY through, which it did perfectly while the
+    // looper itself was silent — "no output, stays silent even with recorded
+    // content" (real host, 2026-08-02). A tape renders into a CHANNEL, and a
+    // fresh channel's source is kind 0 = none, so the audio had nowhere to go.
+    // Nothing bound them, and nothing asked whether anything had.
+    //
+    // Recording is driven through the ABI rather than through `slRecord` on
+    // purpose: this asserts the AUDIO path, and slRecord additionally needs the
+    // take-file recorder started, which would make a file-system failure look
+    // like silence — the two must not be able to alias.
+    {
+        ScoopyTapeProcessor p;
+        constexpr double kRate = 48000.0;
+        constexpr int kBlock = 512;
+        p.prepareToPlay(kRate, kBlock);
+        auto* e = p.engineForTest();
+        CHECK(e != nullptr);
+
+        juce::AudioBuffer<float> buf(2, kBlock);
+        juce::MidiBuffer midi;
+
+        // Record ~8 blocks of tone off the plugin's own input bus.
+        CHECK(sl_tape_set_record_source(e, 0, /*deviceInput*/ 0, 0, 1) == 1);
+        sl_tape_record_service(e);
+        sl_tape_record_start(e, 0);
+        for (int b = 0; b < 8; ++b) {
+            fillTone(buf, kRate, b * kBlock);
+            midi.clear();
+            p.processBlock(buf, midi);
+        }
+        sl_tape_record_stop(e, 0);
+        // Law C-3: the same chunks become the playback buffer in the same block.
+        CHECK(sl_tape_frames(e, 0) > 0);
+
+        sl_tape_trigger(e, 0, /*loop*/ 0);
+
+        // NOW RENDER SILENCE IN. Any output at all is the tape, which is what
+        // makes this isolate the loop from the dry path completely.
+        double loudest = 0.0;
+        for (int b = 0; b < 24; ++b) {
+            buf.clear();
+            midi.clear();
+            p.processBlock(buf, midi);
+            loudest = juce::jmax(loudest, (double) peakOf(buf));
+        }
+        CHECK(sl_tape_state(e, 0) == 1 /* looping */);
+        if (loudest <= 1.0e-4) {
+            std::fprintf(stderr,
+                         "FAIL §7: a recorded, looping tape is SILENT (peak %g). "
+                         "frames=%llu state=%u — is the tape bound to a channel?\n",
+                         loudest, (unsigned long long) sl_tape_frames(e, 0),
+                         sl_tape_state(e, 0));
+            return 1;
+        }
+    }
+
+    // ── §8 RECORDING DOES NOT DOUBLE THE INPUT ──────────────────────────────
+    //
+    // The engine opens the channel MONITOR itself at record-start when the
+    // source is a device input (D-WZ-MON-01) and closes it at the Law C-3
+    // handoff (D-WZ-MON-02). That exists for a host with a sound card, where
+    // the input is not otherwise audible. In a DAW INSERT it already is — it is
+    // the track — so the monitor's copy lands on top of the dry this processor
+    // sums, and the signal jumps while a take is running.
+    //
+    // §1 recorded this as a question §2 would inherit. It became reachable the
+    // moment the silence was fixed, so it is answered here instead.
+    {
+        ScoopyTapeProcessor p;
+        constexpr double kRate = 48000.0;
+        constexpr int kBlock = 512;
+        p.prepareToPlay(kRate, kBlock);
+        auto* e = p.engineForTest();
+
+        juce::AudioBuffer<float> buf(2, kBlock), reference(2, kBlock);
+        juce::MidiBuffer midi;
+
+        // Baseline: idle, so output == input exactly (§1's thru claim).
+        fillTone(buf, kRate);
+        reference.makeCopyOf(buf);
+        p.processBlock(buf, midi);
+        const double idlePeak = peakOf(buf);
+
+        sl_tape_set_record_source(e, 0, 0, 0, 1);
+        sl_tape_record_service(e);
+        sl_tape_record_start(e, 0);
+
+        double recPeak = 0.0;
+        for (int b = 0; b < 8; ++b) {
+            fillTone(buf, kRate, b * kBlock);
+            midi.clear();
+            p.processBlock(buf, midi);
+            recPeak = juce::jmax(recPeak, peakOf(buf));
+        }
+        sl_tape_record_stop(e, 0);
+
+        // The same tone in must give the same tone out. A monitor summing a
+        // second copy shows up here as ~2x and nowhere else.
+        if (recPeak > idlePeak * 1.5) {
+            std::fprintf(stderr,
+                         "FAIL §8: the input DOUBLES while recording (idle %g → rec %g). "
+                         "The engine's monitor is summing a copy the insert already carries.\n",
+                         idlePeak, recPeak);
+            return 1;
+        }
+    }
+
     // §6 — the tape tier answers from inside the plugin. `info` is the read-only
     // verb, so this asserts reachability without changing any state.
     {

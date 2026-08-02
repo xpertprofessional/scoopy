@@ -209,9 +209,15 @@ export function PluginTapePanel({ link }: { link: EngineLink | null }) {
           max={1}
           step={0.01}
           display={level.toFixed(2)}
+          // ⚠️ slCHANNEL, not slTape. Level, mute, sends and the source binding
+          // all belong to the CHANNEL a tape renders into — `slTape` has no
+          // setLevel arm at all, so the first cut of this control addressed a
+          // command that does not exist and was silently discarded. Same root
+          // cause as the silence bug: a tape and its channel are two objects.
+          // Channel i carries tape i (ScoopyTapeProcessor's constructor).
           onChange={(v) => {
             setLevel(v)
-            send(link, 'slTape', { action: 'setLevel', tape: slot, level: v })
+            send(link, 'slChannel', { action: 'setLevel', channel: slot, level: v })
           }}
         />
         <GeoRange

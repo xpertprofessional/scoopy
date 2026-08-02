@@ -45,6 +45,36 @@ ScoopyTapeProcessor::ScoopyTapeProcessor() : juce::AudioProcessor(makeBuses()) {
     // moment and then snap, which reads as a bug in the sync, not the warm-up.
     if (engine != nullptr) sl_engine_set_sync_stretch_warmup(engine, 1);
 
+    // ⚠️ BIND EVERY TAPE TO ITS OWN CHANNEL. WITHOUT THIS THE PLUGIN IS SILENT.
+    //
+    // A tape does not render to the main bus; it renders into a CHANNEL, and a
+    // fresh channel's source is kind 0 = none (sl_engine.h: "a fresh strip's
+    // resting state — not an error"). So §1 shipped a looper that recorded
+    // perfectly, reported `looping`, drew its waveform, and put out nothing at
+    // all — "no output, stays silent even with recorded content" (real host,
+    // 2026-08-02). The routes were never the problem: a fresh engine already
+    // wires every channel to main. The SOURCE was simply never set, and the one
+    // ABI call that can refuse this was never made, so nothing anywhere had an
+    // opportunity to complain.
+    //
+    // Channel i carries tape i, which is also what makes the face's 8 slot pads
+    // address one number instead of two. The app binds per strip as strips are
+    // created (PlanePanel.tsx:710); this product's bank is fixed at 8, so the
+    // whole map is static and belongs here — on the PROCESSOR, so a DAW playing
+    // a project with no editor open still makes sound.
+    if (engine != nullptr) {
+        const uint32_t n = juce::jmin(sl_tape_count(), sl_channel_count());
+        for (uint32_t i = 0; i < n; ++i) {
+            constexpr uint32_t kSourceKindTape = 1; // sl_engine.h §4
+            const bool bound = sl_channel_set_source(engine, i, kSourceKindTape, i) == 1;
+            jassert(bound);
+            if (!bound)
+                juce::Logger::writeToLog("ScoopyTape: the engine refused to bind tape " +
+                                         juce::String((int) i) + " to its channel — that slot "
+                                         "will be silent");
+        }
+    }
+
     backend = std::make_unique<PluginBackend>(engine, "ScoopyTape");
 
     // The `hostTransport` broadcast. 40 Hz to match ScoopyDeck's pump, and on
