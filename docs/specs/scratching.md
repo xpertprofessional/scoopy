@@ -506,7 +506,51 @@ cause and the fader lane is already the fix.
    product.
 4. ~~**Sign the D-WZ-RAMP-01 exception**~~ (**signed**, decision 8), then build
    the gate → chirp, transformer, flare, crab, orbit.
-5. Scratch mode's X/Y pad inside the block.
+5. ~~Scratch mode's X/Y pad inside the block.~~ **SUPERSEDED 2026-08-02 — folded
+   into the waveform** (user, after playing the plugin). The waveform IS the
+   record, so it is the surface, and a separate pad would be a second
+   performance area doing the same job. X is position (already there), Y is the
+   crossfader on the same drag.
+
+### What playing it changed — 2026-08-02, after the first real-host test
+
+Three findings from use, all now built (commits SCRATCH 8 and 9):
+
+- **A scratch is LAUNCHED AT A POINT.** `SCRATCH` became a **latch**, not a
+  hold; while armed, pressing the waveform starts the pattern at that frame. If
+  the head is elsewhere the record **spins there first, audibly** — up to ±16×,
+  which is the varispeed clamp, and pointedly **not** the hand-scrub ±4 (that
+  clamp is a statement about what a finger can honestly ask for and must not
+  move). The approach only ever attenuates: level follows speed, so an unbounded
+  16× seek would land +3.5 dB hot on a plugin path with no limiter.
+- **RELEASE PLAYS OUT.** This is `scrub_end` mode 0 = *resume*, which
+  `pd-scrub-engine.md` §5 designed and shipped neither of — §4.5 listed it as a
+  trap and it turned out to be the feature. Let go and the record keeps turning
+  from where the stroke ended; a tape that was idle plays out as a **one-shot**
+  ("from here until it ends"), one that was looping keeps looping. **No
+  region-`entry` snap** — that snap was the thing making release feel wrong.
+  Mode 1 = *hold* is the old latch, kept behind a PLAY OUT / HOLD switch.
+- **THE PLAYER GETS A FADER TOO.** `scratch_fader` **multiplies** the technique's
+  gate rather than replacing it — the pattern is a figure the fader hand plays,
+  and this is the hand on top of it, which is what lets you cut a pattern that is
+  itself chopping. Battle curve, ⚠️ with the band **centred** rather than near
+  one end: the measured position assumes a hand resting against a physical stop,
+  and a pointer on a waveform has none. The *narrowness* — the part that carries
+  the feel — is kept exactly.
+
+⚠️ **Y is RELATIVE to the press point.** An absolute mapping would make pressing
+low on the waveform start silent, which reads as broken. Press = open, 90 px of
+downward travel = fully shut, transition ~45 px down. The dead ground does a
+second job here that it does not do on a real mixer: it absorbs the vertical
+drift of a horizontal gesture, so cutting stays deliberate.
+
+### Still not built
+
+- **Grid alignment.** The pattern is period-locked but its phase starts at the
+  press, not on the beat. Aligning pattern *starts* needs the `hostLaunchFrame`
+  shape (§4.4), which the tape has no equivalent of.
+- **Scratch is not host-automatable** — `HostParams` is a frozen 131-entry table
+  with no tape lane (§4.5).
 
 **Invariant for steps 3–4, and it is the one thing that must not be broken.**
 The scratch is a **producer of scrub position, nothing more**. It reaches the
