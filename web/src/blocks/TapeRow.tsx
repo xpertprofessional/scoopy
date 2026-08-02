@@ -37,11 +37,12 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { SL_TAPE_STATE, slTapeIndex } from '../../protocol/schema.ts'
-import { Button, GeoRange } from '../design/controls.tsx'
+import { Button, GeoRange, Select, Stepper } from '../design/controls.tsx'
 import type { EngineLink } from '../engineLink.ts'
 import { useCapabilities } from '../state/capabilitiesStore.ts'
 import { TapeWave } from '../plane/TapeWave.tsx'
 import { ask, send } from '../plane/send.ts'
+import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
 import '../plane/plane.css'
 
 /** The engine's bank width (`kMaxTapes`), which is also the line's snapshot
@@ -65,7 +66,32 @@ const RECORD_SOURCE_DEVICE_INPUT = 0
 /** `sl_channel_set_source` kind 1 = tape. */
 const SOURCE_KIND_TAPE = 1
 
-export function TapeRow({ link }: { link: EngineLink | null }) {
+/** PERIOD, as musical divisions — never milliseconds. Crossfader IOIs cluster on
+    1/32, 1/16 and 1/8 and record strokes are dominated by 1/8, so this list is a
+    description of what DJs do rather than a convenient range. Stepped by INDEX
+    (the `stepSpeedRatio` detent idiom): the values are geometric, so stepping by
+    value would give five different feels across one control. */
+const DIVISIONS = [
+  { beats: 0.125, label: '1/32' },
+  { beats: 0.25, label: '1/16' },
+  { beats: 0.5, label: '1/8' },
+  { beats: 1, label: '1/4' },
+  { beats: 2, label: '1/2' },
+] as const
+/** 1/8 — the division the measurements put record strokes at (mean IOI 213 ms). */
+const DEFAULT_DIVISION = 2
+
+export function TapeRow({
+  link,
+  /** The tempo scratch patterns lock to, when the FACE knows one the block
+      cannot see. Studio passes its master tempo; ScoopyTape passes nothing and
+      the block uses the DAW's, which arrives on `hostTransport`. Either way the
+      engine is told, because it has no tempo of its own to read. */
+  bpm,
+}: {
+  link: EngineLink | null
+  bpm?: number
+}) {
   const caps = useCapabilities()
   const [slot, setSlot] = useState(0)
   const [state, setState] = useState<number>(SL_TAPE_STATE.idle)
@@ -75,6 +101,10 @@ export function TapeRow({ link }: { link: EngineLink | null }) {
   const [hostBpm, setHostBpm] = useState(0)
   const [hostPlaying, setHostPlaying] = useState(false)
   const [filled, setFilled] = useState<boolean[]>(() => new Array(SLOTS).fill(false))
+  const [technique, setTechnique] = useState(0)
+  const [division, setDivision] = useState(DEFAULT_DIVISION)
+  const [depth, setDepth] = useState(0.07)
+  const [scratching, setScratching] = useState(false)
 
   // ⚠️ BIND EVERY TAPE TO ITS OWN CHANNEL, OR THE BLOCK IS SILENT.
   //
@@ -153,6 +183,45 @@ export function TapeRow({ link }: { link: EngineLink | null }) {
     ).then(setFilled)
   }
   useEffect(refreshFilled, [link, caps.tape])
+
+  // THE ENGINE HAS NO TEMPO TO READ. Its only tempo concept is a per-deck sync
+  // ratio, so a beat-locked pattern has to be TOLD — by the DAW's playhead in a
+  // plugin, or by the face's master tempo in Studio. Pushed on change rather
+  // than per block: a bpm change is not a per-block event, and the engine
+  // ignores anything non-finite.
+  const scratchBpm = hostBpm > 0 ? hostBpm : (bpm ?? 0)
+  useEffect(() => {
+    if (!link || !caps.tape || scratchBpm <= 0) return
+    send(link, 'slTape', { action: 'scratchTempo', tape: slot, bpm: scratchBpm })
+  }, [link, caps.tape, scratchBpm, slot])
+
+  /** Held, not pressed — the pattern runs for exactly as long as the finger is
+      down, which is what a scratch IS. Release completes the stroke engine-side. */
+  const holdScratch = (on: boolean) => {
+    if (!link) return
+    setScratching(on)
+    if (on)
+      send(link, 'slTape', {
+        action: 'scratchStart',
+        tape: slot,
+        technique,
+        periodBeats: DIVISIONS[division]!.beats,
+        span: depth,
+      })
+    else send(link, 'slTape', { action: 'scratchStop', tape: slot })
+  }
+
+  /** Retune WHILE HELD through `scratchSet`, which deliberately does not re-seed
+      the phase — otherwise every knob movement restarts the figure mid-gesture. */
+  const retune = (nextDivision: number, nextDepth: number) => {
+    if (!link || !scratching) return
+    send(link, 'slTape', {
+      action: 'scratchSet',
+      tape: slot,
+      periodBeats: DIVISIONS[nextDivision]!.beats,
+      span: nextDepth,
+    })
+  }
 
   // NO TAPE ON THIS HOST — inert WITH A STATED REASON (DESIGN.md §6/§7), never
   // broken and never absent. The browser companion's WASM engine has no tape at
@@ -288,6 +357,61 @@ export function TapeRow({ link }: { link: EngineLink | null }) {
           onChange={(v) => {
             setRate(v)
             send(link, 'slTape', { action: 'setRate', tape: slot, rate: v })
+          }}
+        />
+      </div>
+
+      {/* SCRATCH. The technique is the PRESET — choosing "two-click flare" fixes
+          fader rest, click positions, click width and stroke shape, and leaves
+          exactly two things live. That matches how a technique works (a fixed
+          figure; tempo and placement vary), and keeps the surface one row
+          instead of six. Everything a technique fixes is NOT DRAWN, per
+          DESIGN.md rule 7 — not drawn disabled. */}
+      <div className="strip-row plugin-tape-bar">
+        <Button
+          label="SCRATCH"
+          hot
+          active={scratching}
+          title={
+            scratchBpm > 0
+              ? `hold to scratch — ${SCRATCH_TECHNIQUES[technique]?.hint ?? ''}`
+              : 'hold to scratch — no tempo yet, so the pattern runs at 120'
+          }
+          onClick={() => {}}
+          onHoldStart={() => holdScratch(true)}
+          onHoldEnd={() => holdScratch(false)}
+        />
+        <Select
+          value={technique}
+          options={SCRATCH_TECHNIQUES.map((t, i) => ({ value: i, label: t.label }))}
+          onChange={(raw) => setTechnique(Number(raw))}
+        />
+        <Stepper
+          value={division}
+          min={0}
+          max={DIVISIONS.length - 1}
+          onChange={(v) => {
+            setDivision(v)
+            retune(v, depth)
+          }}
+        />
+        <span className="plugin-tape-state">{DIVISIONS[division]?.label}</span>
+        <GeoRange
+          label="DEPTH"
+          value={depth}
+          min={0}
+          max={0.3}
+          step={0.005}
+          display={depth <= 0 ? 'fader' : depth.toFixed(3)}
+          // ⚠️ ZERO IS A REAL SETTING, not the bottom of a range: at depth 0 the
+          // record hand moves nothing and only the crossfader chops, which is
+          // how a transformer is played over a normally playing loop. The
+          // display says "fader" rather than "0.000" so that is discoverable by
+          // turning the control rather than by reading a spec.
+          title="how far the record travels — 0 is FADER ONLY, chopping a loop that keeps playing"
+          onChange={(v) => {
+            setDepth(v)
+            retune(division, v)
           }}
         />
       </div>

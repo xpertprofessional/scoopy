@@ -159,6 +159,17 @@ void ScoopyTapeProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         return;
     }
 
+    // THE SCRATCH CLOCK. A tempo-locked pattern needs a tempo and the engine has
+    // none to read — its only tempo concept is a per-deck sync ratio, and a tape
+    // has no deck. `capture` above already has the DAW's, so hand it over here.
+    //
+    // From processBlock rather than the 40 Hz timer, and for the same reason
+    // HostParams::pushToEngine writes engine state from here under the
+    // D-SL-DECKPLUGIN-04 amendment: the pump is not good enough for musical
+    // timing. One relaxed store, and the engine ignores anything non-finite.
+    if (const auto snap = sync.snapshot(); snap.bpm > 0.0)
+        sl_tape_set_scratch_tempo(engine, snap.bpm);
+
     const int engineBlock = (int) sl_engine_max_block_frames(engine);
     const int inCh = juce::jmin(2, buffer.getNumChannels());
 

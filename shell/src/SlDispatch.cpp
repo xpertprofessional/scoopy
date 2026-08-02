@@ -80,7 +80,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 100);
+    obj->setProperty("schemaVersion", 101);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -553,6 +553,32 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             return ok(okFlag());
         }
         if (action == "scrubEnd") { sl_tape_scrub_end(engine, tape); return ok(okFlag()); }
+        // TURNTABLISM SCRATCH (docs/specs/scratching.md). Three verbs, and the
+        // reason `set` is not just another `start`: retuning while HELD must not
+        // re-seed the phase, or every knob movement restarts the figure.
+        if (action == "scratchStart") {
+            sl_tape_scratch_start(engine, tape,
+                                  static_cast<uint32_t>(intProp(params, "technique", 0)),
+                                  numProp(params, "periodBeats", 0.5),
+                                  // span 0 is FADER-ONLY — the record hand moves
+                                  // nothing and the loop plays on underneath.
+                                  numProp(params, "span", 0.07));
+            return ok(okFlag());
+        }
+        if (action == "scratchSet") {
+            sl_tape_scratch_set(engine, tape, numProp(params, "periodBeats", 0.5),
+                                numProp(params, "span", 0.07));
+            return ok(okFlag());
+        }
+        if (action == "scratchStop") { sl_tape_scratch_stop(engine, tape); return ok(okFlag()); }
+        if (action == "scratchTempo") {
+            // ENGINE-WIDE, so `tape` is ignored here on purpose: a pattern locks
+            // to THE tempo, and eight tapes disagreeing about a 1/8 note would be
+            // eight clocks. Studio pushes this when the master tempo changes;
+            // ScoopyTape's processor pushes it from HostSync every block.
+            sl_tape_set_scratch_tempo(engine, numProp(params, "bpm", 120.0));
+            return ok(okFlag());
+        }
         if (action == "overdubStart") {
             // A PUNCH, MADE WHOLE (P3-U3). The engine layers the tape's RECORD
             // SOURCE into the loop — so the source must be SET here (an unset

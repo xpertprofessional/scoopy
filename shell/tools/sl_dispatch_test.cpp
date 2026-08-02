@@ -71,14 +71,14 @@ int main(int argc, char* argv[]) {
         const auto r = dispatch("getCapabilities", juce::var(), settings, nullptr);
         CHECK(replyOk(r));
         const auto caps = result(r);
-        CHECK((int) caps.getProperty("schemaVersion", 0) == 100); // scoopy SCHEMA_VERSION
+        CHECK((int) caps.getProperty("schemaVersion", 0) == 101); // scoopy SCHEMA_VERSION
         CHECK((bool) caps.getProperty("fileSystem", false) == true);
         CHECK((bool) caps.getProperty("audioDeviceSelection", false) == true);
         CHECK((bool) caps.getProperty("pluginHosting", true) == false);
         CHECK((bool) caps.getProperty("midiHardware", true) == false);
         CHECK((bool) caps.getProperty("returnFx", true) == false);
         // The exported helper agrees with the dispatched answer.
-        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 100);
+        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 101);
     }
 
     // An unset key reads as null (value present, null) — NOT absent, NOT a

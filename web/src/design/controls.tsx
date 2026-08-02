@@ -202,14 +202,32 @@ export function Button(props: {
   hot?: boolean;
   /** Tooltip — the web equivalent of SwiftUI `.help()`. */
   title?: string;
+  /**
+   * HELD, not pressed. A few gestures in this app run for exactly as long as the
+   * finger is down — a scratch pattern is the first — and they need the press and
+   * the release as separate events rather than one `click` after both.
+   *
+   * ⚠️ `onHoldEnd` fires on pointerup, on pointercancel AND on pointerleave, and
+   * all three are load-bearing: releasing outside the button, or a scroll/gesture
+   * stealing the pointer, would otherwise leave the gesture RUNNING with nothing
+   * on screen still pressed. `onClick` is not called when these are supplied —
+   * a held control has no click.
+   */
+  onHoldStart?: () => void;
+  onHoldEnd?: () => void;
 }) {
+  const held = props.onHoldStart !== undefined || props.onHoldEnd !== undefined;
   return (
     <button
       className={`ds-button${props.active ? " active" : ""}${props.tone ? ` tone-${props.tone}` : ""}${props.hot ? " ds-hot" : ""}`}
       disabled={props.disabled}
       title={props.title}
-      onClick={props.onClick}
+      onClick={held ? undefined : props.onClick}
       onContextMenu={props.onContextMenu}
+      onPointerDown={held ? () => props.onHoldStart?.() : undefined}
+      onPointerUp={held ? () => props.onHoldEnd?.() : undefined}
+      onPointerCancel={held ? () => props.onHoldEnd?.() : undefined}
+      onPointerLeave={held ? () => props.onHoldEnd?.() : undefined}
     >
       {props.label}
     </button>

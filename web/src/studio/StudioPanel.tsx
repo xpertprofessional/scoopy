@@ -149,7 +149,9 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
         >
           {`${tapeOpen ? '▾' : '▸'} tape`}
         </button>
-        {tapeOpen && <TapeRow link={link} />}
+        {/* Studio has no host playhead, so the FACE is what knows the tempo a
+            scratch pattern locks to — the same master the tempo law uses. */}
+        {tapeOpen && <TapeRow link={link} bpm={storedMaster} />}
       </div>
     </main>
   )

@@ -20,6 +20,7 @@ import { TapeRow } from './TapeRow.tsx'
 import { PluginTapePanel } from '../plane/PluginTapePanel.tsx'
 import { StudioPanel } from '../studio/StudioPanel.tsx'
 import { getCaps, useCapabilitiesStore } from '../state/capabilitiesStore.ts'
+import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
 
 const withTape = (tape: boolean) =>
   useCapabilitiesStore.setState({ caps: { ...getCaps(), tape } })
@@ -54,6 +55,47 @@ describe('TapeRow — the block', () => {
     expect(html).not.toContain('REC')
     expect(html).not.toContain('LEVEL')
     for (const glyph of ['⟳', '▸', '↻', '◼']) expect(html).not.toContain(glyph)
+  })
+})
+
+describe('the SCRATCH row', () => {
+  it('draws the technique choice, the division and DEPTH', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    expect(html).toContain('SCRATCH')
+    expect(html).toContain('DEPTH')
+    // Every technique the one authority declares is offered — no hand-picked
+    // subset, which would silently make some of the generated table dead.
+    for (const t of SCRATCH_TECHNIQUES) expect(html).toContain(t.label)
+    // Period is a musical division, and the default is 1/8 — the division the
+    // measurements put record strokes at.
+    expect(html).toContain('1/8')
+  })
+
+  it('THE TECHNIQUE IS THE PRESET: what it fixes is not drawn at all', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    // DESIGN.md rule 7 — never a control that reaches nothing, and never one
+    // drawn disabled where "absent" is the honest shape. Click width, click
+    // positions, fader rest and stroke shape are all fixed by the choice, so
+    // none of them gets a control.
+    for (const absent of ['clickWidth', 'CLICKS', 'REST', 'SHAPE'])
+      expect(html).not.toContain(absent)
+  })
+
+  it('depth 0 reads as FADER, because it is a setting rather than a floor', () => {
+    withTape(true)
+    // The display is what makes fader-only discoverable by turning the control
+    // instead of by reading a spec, so it is worth pinning.
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    expect(html).toMatch(/FADER ONLY/i) // the title says so at any depth
+  })
+
+  it('no tape: the scratch row goes with it', () => {
+    withTape(false)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    expect(html).not.toContain('SCRATCH')
+    expect(html).not.toContain('DEPTH')
   })
 })
 
