@@ -108,16 +108,35 @@ export function deckTempoIntent(
   }
 }
 
+/**
+ * ⚠️ `liveMasterBpm` IS THE GLIDE, AND IT MUST REACH BOTH OF THESE.
+ *
+ * The master tempo has two values once it ramps (D-SL-STUDIO-01 · S3, the
+ * donor's split): `map.transport.masterBpm` is the TARGET — what the box shows
+ * and what persists — while the engine follows a LIVE value approaching it.
+ * Omitted, they are the same number, so every existing caller and test is
+ * unchanged by construction.
+ *
+ * It is threaded through `mapTapeRateOps` as well as `mapTempoIntents`, and
+ * that is the part worth stating: BOTH read the master tempo, so an override
+ * given to only one would ramp the decks while the tapes jumped straight to the
+ * target. Mid-ramp the two would be running at different tempos — a split
+ * nobody would think to look for, in the one module whose whole job is that
+ * there is exactly one tempo law.
+ */
+
 /** Every grid strip's tempo intent, in strip order. `nudgeOf` supplies the
     TRANSIENT per-deck bend (P3-D4-2, hold-to-bend) — omitted = no hand on the
     fader, which keeps every pre-nudge caller (map load) exact. */
 export function mapTempoIntents(
   map: PlaneMap,
   nudgeOf?: (deck: number) => number,
+  liveMasterBpm?: number,
 ): TempoIntent[] {
+  const master = liveMasterBpm ?? map.transport.masterBpm
   return map.strips.flatMap((s) =>
     s.element.kind === 'grid'
-      ? [deckTempoIntent(s.element, map.transport.masterBpm, nudgeOf?.(s.element.deck) ?? 0)]
+      ? [deckTempoIntent(s.element, master, nudgeOf?.(s.element.deck) ?? 0)]
       : [],
   )
 }
@@ -200,13 +219,15 @@ export function tapeEffectiveRate(element: TapeElement, masterBpm: number): numb
     hand's rate, not leave the engine carrying the last synced one. */
 export function mapTapeRateOps(
   map: PlaneMap,
+  liveMasterBpm?: number,
 ): { tape: number; rate: number; mode: 0 | 1 }[] {
+  const master = liveMasterBpm ?? map.transport.masterBpm
   return map.strips.flatMap((s) =>
     s.element.kind === 'tape'
       ? [
           {
             tape: s.element.index,
-            rate: tapeEffectiveRate(s.element, map.transport.masterBpm),
+            rate: tapeEffectiveRate(s.element, master),
             mode: (s.element.tempoMode === 'timeStretch' ? 1 : 0) as 0 | 1,
           },
         ]

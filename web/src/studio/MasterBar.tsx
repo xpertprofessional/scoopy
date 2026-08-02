@@ -33,9 +33,12 @@
  * is never saved (`studioMap.ts`), so a setting is also the only thing here
  * that survives a restart.
  */
+import { useEffect } from 'react'
+
 import type { EngineLink } from '../engineLink.ts'
 import { DragBox } from '../design/DragBox.tsx'
 import { setMasterBpm, useMapStore } from '../state/mapStore.ts'
+import { glideToMaster, stopGlide } from '../state/tempoGlide.ts'
 import { updateGridTempo } from '../state/mapStore.ts'
 import { deckTempoIntent } from '../persist/tempo.ts'
 import { asNumber, useSetting } from '../useSetting.ts'
@@ -59,6 +62,10 @@ const MODES: ReadonlyArray<{ id: StudioTempoMode; label: string; title: string }
 ]
 
 export function MasterBar({ link, session }: { link: EngineLink | null; session: string | null }) {
+  // A glide must not outlive the surface that started it: a timer still pushing
+  // tempo after the face is gone would be writing to an engine nobody is
+  // driving, the same shape as the clock's unmount stop.
+  useEffect(() => stopGlide, [])
   const masterBpm = useMapStore((s) => s.map.transport.masterBpm)
   const element = useStudioElement()
   const [, setStored] = useSetting(link, MASTER_TEMPO_KEY, MASTER_TEMPO.def, asNumber)
@@ -76,11 +83,14 @@ export function MasterBar({ link, session }: { link: EngineLink | null; session:
 
   const write = (bpm: number) => {
     const v = Math.round(Math.min(MASTER_TEMPO.max, Math.max(MASTER_TEMPO.min, bpm)))
-    // The store first (it runs applyTempo, which is what reaches the engine),
-    // then the setting. A setting that saved without pushing would be a tempo
-    // that is remembered and never heard.
+    // THE TARGET goes in immediately — the box reads what you asked for, not
+    // where the ramp has got to. `setMasterBpm` also pushes, which covers the
+    // no-ramp case; the glide then rides from the OLD value toward the new one
+    // and pushes on each tick (S3, the donor's motorised platter).
+    const from = masterBpm
     setMasterBpm(v, link)
     setStored(v)
+    glideToMaster(link, from)
   }
 
   return (

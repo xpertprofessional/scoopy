@@ -37,6 +37,9 @@ import {
   type Strip,
 } from "../persist/mapDocument.ts";
 import { TEMPO_MODE_ID, mapTapeRateOps, mapTempoIntents } from "../persist/tempo.ts";
+// Deferred-use cycle, same shape as nudgeStore above: tempoGlide calls
+// applyTempo on each tick and applyTempo reads liveMasterBpm at push time.
+import { liveMasterBpm } from "./tempoGlide.ts";
 // Deferred-use cycle, deliberately: nudgeStore calls applyTempo at gesture time
 // and applyTempo reads nudgeOf at push time — neither touches the other at
 // module evaluation, which is what makes the cycle safe under ESM.
@@ -408,7 +411,12 @@ const unresolvedFx = new Set<string>();
 export async function applyTempo(link: EngineLink | null): Promise<void> {
   if (!link) return
   const map = getMap()
-  for (const intent of mapTempoIntents(map, nudgeOf)) {
+  // THE GLIDE, if one is running (S3). `null` at rest, so this is the document
+  // value and nothing changes when the tempo is not moving. Threaded into the
+  // TAPE ops too — both read the master tempo, and giving it to only one would
+  // ramp the decks while the tapes jumped.
+  const live = liveMasterBpm() ?? undefined
+  for (const intent of mapTempoIntents(map, nudgeOf, live)) {
     // All three sent every time rather than diffed: the engine is the only
     // thing that knows what it is currently carrying, and a diff against a
     // stale local guess is how a deck ends up stretched with the UI at 1:1.
@@ -428,7 +436,7 @@ export async function applyTempo(link: EngineLink | null): Promise<void> {
   // in the other direction. Every tape's effective rate is sent every time,
   // unsynced ones included at their manual rate: un-syncing must RESTORE the
   // hand's rate, not leave the engine carrying the last synced one.
-  for (const t of mapTapeRateOps(map)) {
+  for (const t of mapTapeRateOps(map, live)) {
     // MODE BEFORE RATE, like the deck trio: the mode decides what the rate
     // drives, so a rate landing on yesterday's mode would briefly drive the
     // wrong mechanism.
