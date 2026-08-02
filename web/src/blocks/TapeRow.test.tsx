@@ -18,6 +18,7 @@ import { describe, expect, it, afterEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { TapeRow } from './TapeRow.tsx'
 import { PluginTapePanel } from '../plane/PluginTapePanel.tsx'
+import { TapeWave } from '../plane/TapeWave.tsx'
 import { StudioPanel } from '../studio/StudioPanel.tsx'
 import { getCaps, useCapabilitiesStore } from '../state/capabilitiesStore.ts'
 import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
@@ -89,6 +90,49 @@ describe('the SCRATCH row', () => {
     // instead of by reading a spec, so it is worth pinning.
     const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
     expect(html).toMatch(/FADER ONLY/i) // the title says so at any depth
+  })
+
+  it('SCRATCH is a LATCH, and says what arming will do', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    // Not "SCRATCH" alone — DESIGN.md, a control explains itself, and a latch
+    // whose off state is silent about what it turns on is a puzzle.
+    expect(html).toMatch(/arm the scratch/)
+    expect(html).not.toMatch(/SCRATCH ARMED/)
+  })
+
+  // ⚠️ The waveform itself is NOT in this face's server-rendered markup: its
+  // box is measured by a ResizeObserver, which does not run here, so `TapeRow`
+  // renders the field empty. The gesture therefore has to be pinned on
+  // `TapeWave` directly — asserting it through the block would silently assert
+  // nothing, which is worse than not asserting it.
+  it('the waveform means ONE thing at a time: scrub, or scratch when armed', () => {
+    const scrubOnly = renderToStaticMarkup(
+      <TapeWave link={null} tape={0} width={200} revision={0} canScrub
+        onScrub={{ begin: () => {}, to: () => {}, end: () => {} }} />,
+    )
+    expect(scrubOnly).toMatch(/drag to scrub/)
+    expect(scrubOnly).not.toMatch(/SCRATCH ARMED/)
+
+    const armed = renderToStaticMarkup(
+      <TapeWave link={null} tape={0} width={200} revision={0} canScrub
+        onScrub={{ begin: () => {}, to: () => {}, end: () => {} }}
+        onScratch={{ begin: () => {}, to: () => {}, fader: () => {}, end: () => {} }} />,
+    )
+    expect(armed).toMatch(/SCRATCH ARMED/)
+    // The whole gesture is named, including the axis a person would never guess.
+    expect(armed).toMatch(/drag down to cut the fader/)
+    expect(armed).not.toMatch(/drag to scrub/)
+  })
+
+  it('release policy is a visible switch, defaulting to PLAY OUT', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    // The default is the turntable behaviour: let go and the record keeps
+    // turning. The switch exists because a looper that always runs on after a
+    // scratch is not always what you want.
+    expect(html).toContain('PLAY OUT')
+    expect(html).toMatch(/play on from where you left it/)
   })
 
   it('no tape: the scratch row goes with it', () => {

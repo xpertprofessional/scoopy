@@ -43,7 +43,12 @@ import { useCapabilities } from '../state/capabilitiesStore.ts'
 import { TapeWave } from '../plane/TapeWave.tsx'
 import { ask, send } from '../plane/send.ts'
 import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
+import { asBoolean, useSetting } from '../useSetting.ts'
 import '../plane/plane.css'
+
+/** Release policy, remembered per person rather than per session — it is a
+    playing preference like the master tempo, not something a document owns. */
+const SCRATCH_PLAY_OUT_KEY = 'scratch.playOut'
 
 /** The engine's bank width (`kMaxTapes`), which is also the line's snapshot
     count — see PLUGIN-DESIGN-SYSTEM §5. The two agreeing is not a coincidence
@@ -104,6 +109,10 @@ export function TapeRow({
   const [technique, setTechnique] = useState(0)
   const [division, setDivision] = useState(DEFAULT_DIVISION)
   const [depth, setDepth] = useState(0.07)
+  /** ARMED — a latch, not a hold. While it is lit the waveform's unmodified drag
+      is a SCRATCH instead of a scrub, which is what makes re-grabbing during a
+      play-out fall out for free rather than needing its own mechanism. */
+  const [armed, setArmed] = useState(false)
   const [scratching, setScratching] = useState(false)
 
   // ⚠️ BIND EVERY TAPE TO ITS OWN CHANNEL, OR THE BLOCK IS SILENT.
@@ -195,20 +204,32 @@ export function TapeRow({
     send(link, 'slTape', { action: 'scratchTempo', tape: slot, bpm: scratchBpm })
   }, [link, caps.tape, scratchBpm, slot])
 
-  /** Held, not pressed — the pattern runs for exactly as long as the finger is
-      down, which is what a scratch IS. Release completes the stroke engine-side. */
-  const holdScratch = (on: boolean) => {
+  // RELEASE POLICY. Play out by default — let go and the record keeps turning
+  // from where you left it, which is what a real scratch does. A setting rather
+  // than a fixed law because a looper that always runs on after a scratch is not
+  // always what you want, and the engine has both modes (pd-scrub-engine §5).
+  const [playOut, setPlayOut] = useSetting(link, SCRATCH_PLAY_OUT_KEY, true, asBoolean)
+
+  /** The waveform IS the record, so a press on it is where the gesture lands.
+      The engine spins the record there first if the head is elsewhere. */
+  const beginScratch = (frame: number) => {
     if (!link) return
-    setScratching(on)
-    if (on)
-      send(link, 'slTape', {
-        action: 'scratchStart',
-        tape: slot,
-        technique,
-        periodBeats: DIVISIONS[division]!.beats,
-        span: depth,
-      })
-    else send(link, 'slTape', { action: 'scratchStop', tape: slot })
+    setScratching(true)
+    send(link, 'slTape', {
+      action: 'scratchStart',
+      tape: slot,
+      technique,
+      periodBeats: DIVISIONS[division]!.beats,
+      span: depth,
+      frame,
+    })
+  }
+
+  const endScratch = () => {
+    if (!link) return
+    setScratching(false)
+    // mode 0 = resume (play out) · 1 = hold.
+    send(link, 'slTape', { action: 'scratchStop', tape: slot, mode: playOut ? 0 : 1 })
   }
 
   /** Retune WHILE HELD through `scratchSet`, which deliberately does not re-seed
@@ -313,6 +334,23 @@ export function TapeRow({
               to: (frame) => send(link, 'slTape', { action: 'scrubTo', tape: slot, frame }),
               end: () => send(link, 'slTape', { action: 'scrubEnd', tape: slot }),
             }}
+            // SUPPLIED ONLY WHILE ARMED, which is what makes the waveform mean
+            // one thing at a time: armed it scratches, otherwise it scrubs, and
+            // TapeWave decides once at pointerdown so a drag cannot change
+            // meaning mid-flight.
+            onScratch={
+              armed
+                ? {
+                    begin: beginScratch,
+                    // Re-aiming while held walks the pattern along the record.
+                    to: (frame) =>
+                      send(link, 'slTape', { action: 'scrubTo', tape: slot, frame }),
+                    fader: (position) =>
+                      send(link, 'slTape', { action: 'scratchFader', tape: slot, fader: position }),
+                    end: endScratch,
+                  }
+                : undefined
+            }
             onLoopDrag={(start, end) =>
               send(link, 'slTape', { action: 'setLoop', tape: slot, enabled: true, start, end })
             }
@@ -371,15 +409,19 @@ export function TapeRow({
         <Button
           label="SCRATCH"
           hot
-          active={scratching}
+          active={armed}
+          tone={scratching ? 'solo' : undefined}
           title={
-            scratchBpm > 0
-              ? `hold to scratch — ${SCRATCH_TECHNIQUES[technique]?.hint ?? ''}`
-              : 'hold to scratch — no tempo yet, so the pattern runs at 120'
+            armed
+              ? `armed — press the waveform to scratch there · ${SCRATCH_TECHNIQUES[technique]?.hint ?? ''}`
+              : 'arm the scratch — the waveform drag becomes a scratch instead of a scrub'
           }
-          onClick={() => {}}
-          onHoldStart={() => holdScratch(true)}
-          onHoldEnd={() => holdScratch(false)}
+          onClick={() => {
+            // Disarming mid-gesture must not leave a pattern running with
+            // nothing on screen holding it.
+            if (armed && scratching) endScratch()
+            setArmed((v) => !v)
+          }}
         />
         <Select
           value={technique}
@@ -413,6 +455,16 @@ export function TapeRow({
             setDepth(v)
             retune(division, v)
           }}
+        />
+        <Button
+          label={playOut ? 'PLAY OUT' : 'HOLD'}
+          active={playOut}
+          title={
+            playOut
+              ? 'release lets the record play on from where you left it — press to latch instead'
+              : 'release stops and latches the head — press to let it play out'
+          }
+          onClick={() => setPlayOut(!playOut)}
         />
       </div>
 

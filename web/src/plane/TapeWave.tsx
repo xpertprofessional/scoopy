@@ -25,6 +25,13 @@ export const WAVE_H = 48
     strips recording at once is 64 small commands a second, not 480. */
 const REC_REFETCH_MS = 125
 
+/** Vertical pixels from the press point to a fully shut crossfader. The battle
+    curve's transition sits at the halfway mark, so the CUT lands ~45px below
+    where you pressed — far enough that vertical drift during a horizontal
+    scratch stays in the open dead zone, close enough to flick to deliberately.
+    The dead ground doing that work is the whole reason the curve is not linear. */
+const FADER_TRAVEL_PX = 90
+
 type Envelope = { min: number[]; max: number[] }
 
 export function TapeWave({
@@ -37,6 +44,7 @@ export function TapeWave({
   loop,
   onLoopDrag,
   onScrub,
+  onScratch,
   canScrub = false,
   hint,
   missing,
@@ -60,6 +68,24 @@ export function TapeWave({
       gap (the turntable law). */
   onScrub?: { begin: (frame: number) => void; to: (frame: number) => void; end: () => void }
   canScrub?: boolean
+  /**
+   * SCRATCH, when a pattern is ARMED (docs/specs/scratching.md). Supplied only
+   * while armed, and it then REPLACES the scrub on the unmodified drag — the
+   * waveform is the record, so it is the surface a scratch is launched from.
+   * `begin` carries the frame the hand landed on; the engine spins the record
+   * there before the pattern starts, the way a hand drags a deck to a section.
+   *
+   * `fader` is the crossfader, driven by VERTICAL movement and RELATIVE to
+   * where the press happened, so a press never mutes: down is toward shut, up
+   * stays open. It is relative for a reason — an absolute mapping would make
+   * pressing low on the waveform start silent, which reads as broken.
+   */
+  onScratch?: {
+    begin: (frame: number) => void
+    to: (frame: number) => void
+    fader: (position: number) => void
+    end: () => void
+  }
   hint?: string
   /** The referenced take could not be found. Draw the field, say so in it. */
   missing?: boolean
@@ -241,19 +267,34 @@ export function TapeWave({
   // lock, copied): a drag that could change meaning mid-flight is two bugs.
   const onPointerDown = (e: React.PointerEvent) => {
     if (frames <= 0) return
-    const scrub = !e.shiftKey && canScrub && onScrub !== undefined
-    if (!scrub && !onLoopDrag) return
+    // ARMED WINS. When a scratch is armed the unmodified drag IS the scratch —
+    // the same gesture, a different instrument — and ⇧ still means the loop
+    // brace. Decided here with everything else, so the lock still holds.
+    const scratch = !e.shiftKey && onScratch !== undefined
+    const scrub = !scratch && !e.shiftKey && canScrub && onScrub !== undefined
+    if (!scratch && !scrub && !onLoopDrag) return
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const at = (clientX: number) =>
       Math.round(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * frames)
     const anchor = at(e.clientX)
+    const y0 = e.clientY
     const el = e.currentTarget as HTMLElement
     el.setPointerCapture(e.pointerId)
-    if (scrub) onScrub!.begin(anchor)
+    if (scratch) onScratch!.begin(anchor)
+    else if (scrub) onScrub!.begin(anchor)
 
     const move = (ev: PointerEvent) => {
       const here = at(ev.clientX)
-      if (scrub) {
+      if (scratch) {
+        // X re-aims the gesture — you can walk the pattern along the record
+        // while holding it, which is what an orbit travelling up a break IS.
+        onScratch!.to(here)
+        // Y IS THE CROSSFADER, relative to the press so a press never mutes.
+        // The dead ground either side of the battle curve's narrow band is what
+        // makes this safe on a horizontal gesture: ordinary vertical drift while
+        // scratching stays well inside it, and cutting is a deliberate move.
+        onScratch!.fader(Math.min(1, Math.max(0, 1 - (ev.clientY - y0) / FADER_TRAVEL_PX)))
+      } else if (scrub) {
         // Position, not velocity: the engine derives the rate from the gap
         // (sl_tape's turntable law), so pixels never pretend to be physics.
         onScrub!.to(here)
@@ -270,7 +311,8 @@ export function TapeWave({
       el.removeEventListener('pointercancel', up)
       // Letting go arms the cue (D-WZ-SCRUBCUE-01) engine-side; nothing to do
       // here but say the drag is over.
-      if (scrub) onScrub!.end()
+      if (scratch) onScratch!.end()
+      else if (scrub) onScrub!.end()
     }
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerup', up)
@@ -283,11 +325,13 @@ export function TapeWave({
       style={{ width, height: height }}
       onPointerDown={onPointerDown}
       title={
-        canScrub
-          ? 'drag to scrub — the tape follows your hand, release arms the cue · ⇧-drag sets the loop region'
-          : onLoopDrag
-            ? 'drag to set the loop region'
-            : undefined
+        onScratch
+          ? 'SCRATCH ARMED — press to scratch there (the record spins to it) · drag down to cut the fader · ⇧-drag sets the loop region'
+          : canScrub
+            ? 'drag to scrub — the tape follows your hand, release arms the cue · ⇧-drag sets the loop region'
+            : onLoopDrag
+              ? 'drag to set the loop region'
+              : undefined
       }
       data-no-drag
     >
