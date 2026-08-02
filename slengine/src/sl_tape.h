@@ -182,9 +182,21 @@ struct Tape {
     uint32_t scratchCycle = 0;         // which half of the twin-peaks pair
     double scratchSpanMul = 1.0;       // this cycle's span, as a multiple
     uint32_t scratchClicksOn = 1;      // whether this cycle uses the fader at all
-    std::atomic<uint32_t> scratchTechnique{0}; // index into kSlScratchTechniques
+    double scratchCycleBeats = 0.5;    // THIS cycle's division (SPREAD picks it)
     std::atomic<double> scratchPeriodBeats{0.5};
     std::atomic<double> scratchSpan{0.07}; // fraction of the loop
+    /** HOW MUCH CROSSFADER, 0..1 — one axis where a technique picker used to be.
+        The named figures were never separate mechanisms, only different amounts
+        of the same two things (how many times the fader moves in a stroke, and
+        which way it rests), so they are positions on this rather than presets.
+        See `cutShape` in sl_tape.cpp for the ladder. */
+    std::atomic<double> scratchCut{0.0};
+    /** HOW MUCH THE TIMING MOVES, 0..1. Crossfader IOIs cluster on 1/32, 1/16
+        and 1/8 with two constant-duration trends measured at 73 ms and 155 ms —
+        so real playing moves BETWEEN divisions rather than sitting on one. At 0
+        every cycle uses the division you set; above it each cycle may step a
+        division either way. Always ON the grid, never between. */
+    std::atomic<double> scratchSpread{0.0};
     // Render-owned.
     double scratchPhase = 0.0;   // [0,1): 0 and 0.5 are the two reversals
     double scratchAnchor = 0.0;  // the frame the gesture departs from and returns to
@@ -485,9 +497,15 @@ public:
         emitted from `slengine/scratch-techniques.json` — THE INDEX IS THE WIRE.
         `periodBeats` is one full back-and-forth in beats; `span` is a fraction
         of the loop. Stop finishes the current stroke before releasing. */
-    void scratchStart(uint32_t tape, uint32_t technique, double periodBeats, double span,
-                      double vary, double cueFrame);
-    void scratchSet(uint32_t tape, double periodBeats, double span, double vary);
+    struct ScratchParams {
+        double periodBeats = 0.5;
+        double span = 0.07;
+        double cut = 0.0;
+        double vary = 0.0;
+        double spread = 0.0;
+    };
+    void scratchStart(uint32_t tape, const ScratchParams& p, double cueFrame);
+    void scratchSet(uint32_t tape, const ScratchParams& p);
     void scratchStop(uint32_t tape, uint32_t releaseMode);
     void scratchFader(uint32_t tape, double position);
     /** The tempo a beat-locked pattern runs against, engine-wide. Pushed by

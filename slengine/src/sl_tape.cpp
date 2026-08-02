@@ -15,11 +15,6 @@
 namespace sl {
 namespace {
 
-// THE TECHNIQUE TABLE, generated from slengine/scratch-techniques.json. Never
-// hand-edited, and the same authority emits the UI's copy — the index IS the
-// wire, so a drift here means picking "crab" and hearing an orbit.
-#include "sl_scratch_table.inc"
-
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRampSeconds = 0.010; // D-WZ-RAMP-01: one 10 ms constant
 
@@ -60,77 +55,120 @@ inline double strokePos(double phase) { return 0.5 * (1.0 - std::cos(2.0 * kPi *
     it does not have to infer it from a gap the way a finger's positions do. */
 inline double strokeVel(double phase) { return kPi * std::sin(2.0 * kPi * phase); }
 
-/** ASYMMETRIC (the stab): a fast push and a slow re-cue. A piecewise-linear
-    phase warp whose knee lands at the half-cycle point, so the derivative
-    discontinuity falls exactly where sin() is zero and the VELOCITY stays
-    continuous — a jump there would be an authored click at the extremum, which
-    is the one place a technique must not have one. */
-constexpr double kStabKnee = 0.3;
-inline double warpPhase(double phase) {
-    return phase < kStabKnee ? 0.5 * (phase / kStabKnee)
-                             : 0.5 + 0.5 * (phase - kStabKnee) / (1.0 - kStabKnee);
-}
-inline double warpSlope(double phase) {
-    return phase < kStabKnee ? 0.5 / kStabKnee : 0.5 / (1.0 - kStabKnee);
-}
-
-inline double shapePos(int shape, double phase) {
-    return shape == 1 ? strokePos(warpPhase(phase)) : strokePos(phase);
-}
-inline double shapeVel(int shape, double phase) {
-    return shape == 1 ? strokeVel(warpPhase(phase)) * warpSlope(phase) : strokeVel(phase);
-}
-
 /* ── the fader hand (D-SL-SCRATCHGATE-01) ────────────────────────────────────
    THE NAMED EXCEPTION TO D-WZ-RAMP-01, and the only one. That decision governs
    state changes that should be INAUDIBLE — its own consequences clause lists
    "solo, monitor assign, insert bypass" — and a scratch click is the opposite
    category: a musical event the listener is meant to hear. 10 ms does not merely
    sound wrong here, it cannot produce the phenomenon: measured clicks run
-   30-70 ms end to end, so 10 ms down plus 10 ms up never reaches silence and a
-   crab's four clicks smear into a wobble.
+   30-70 ms end to end, so 10 ms down plus 10 ms up never reaches silence.
 
    Same rampShape function, different step. Nothing else in the engine moves. */
 constexpr double kScratchGateSeconds = 0.002; // ~2 ms, the signed 1-3 ms range
 
-/** Is the fader open at this phase, for this technique? Rest state per stroke,
-    plus momentary EXCURSIONS from it — TTM's click is a momentary close, not a
-    toggle, so on a closed-rest technique (transformer, chirp) the same list
-    means momentary OPENS. One list, both polarities. */
-inline bool gateOpen(const SlScratchTechnique& T, double phase, double clickPhaseWidth) {
-    // Stroke 0 is the forward push, phase [0, 0.5); stroke 1 is the pull.
+/** ARTICULATION — the measured ratio of SOUNDING time to inter-onset interval,
+    mean 59% (SD 26), with 68% of tones in the staccato-to-detached band. It is
+    what decides how wide a click is, and taking it from here rather than from an
+    absolute millisecond value is a CORRECTION, not a refinement.
+
+    ⚠️ WHAT WENT WRONG BEFORE, because it is an easy mistake to make twice. The
+    width was a fixed 30-55 ms per technique, applied against the STROKE. That
+    figure is real — it is roughly 41% of a typical IOI — but an IOI is the gap
+    between CLICKS, not the length of a stroke. So with four clicks in a 125 ms
+    stroke the closures stacked: a crab came out 96% silent and a transformer
+    100%, which is exactly why the only figures that sounded good were the two
+    with no clicks at all. Deriving the width from articulation and the actual
+    spacing makes it scale with tempo AND density, which no per-technique
+    constant can. */
+constexpr double kArticulation = 0.59;
+
+/** THE CUT LADDER — one continuous control where a technique picker used to be.
+    The named figures were never separate mechanisms, only different amounts of
+    the same two: how many times the fader moves within a stroke, and which way
+    it rests. So they become positions on an axis, and everything between them is
+    reachable — which the picker made impossible and which is most of why it
+    sounded canned.
+
+        0.00 .. 0.10   no fader at all      baby, scribble
+        0.10 .. 0.30   1 click, forward     the 1-click flare
+        0.30 .. 0.50   2 clicks, forward    the 2-click flare
+        0.50 .. 0.70   3 clicks, both       orbit territory
+        0.70 .. 0.85   4 clicks, both       crab
+        0.85 ..        rest CLOSED          transformer, chirp
+
+    Clicks land at (i + 0.5)/n within their stroke — CENTRED in their slots, so
+    none sits on the reversal where the phantom click already is. Doubling that
+    break would blur the one articulation nobody has to author. */
+struct CutShape {
+    int clicks;
+    bool bothStrokes;
+    bool restClosed;
+};
+
+inline CutShape cutShape(double cut) {
+    CutShape c{};
+    c.restClosed = cut >= 0.85;
+    if (c.restClosed) {
+        // Rest closed: the "clicks" are momentary OPENINGS, and there must be
+        // some or the stroke is silence.
+        c.clicks = cut >= 0.93 ? 4 : 3;
+        c.bothStrokes = true;
+    } else if (cut < 0.10) {
+        c.clicks = 0; // the pure record hand
+        c.bothStrokes = false;
+    } else {
+        c.clicks = 1 + static_cast<int>((cut - 0.10) / 0.15);
+        if (c.clicks > 4) c.clicks = 4;
+        // A flare runs on ONE stroke; an orbit is "a flare that continues on
+        // both". The taxonomy's own distinction, kept as a point on the axis
+        // rather than as a second control.
+        c.bothStrokes = cut >= 0.50;
+    }
+    return c;
+}
+
+/** Is the fader open at this phase? Rest state plus momentary EXCURSIONS from
+    it — TTM's click is a momentary close, not a toggle, so on a closed-rest
+    setting the same rule means momentary OPENS. One rule, both polarities. */
+inline bool gateOpen(const CutShape& c, double phase) {
+    if (c.clicks <= 0) return true;
     const int stroke = phase < 0.5 ? 0 : 1;
+    if (!c.bothStrokes && stroke != 0) return !c.restClosed;
     const double within = stroke == 0 ? phase * 2.0 : (phase - 0.5) * 2.0;
-    bool open = T.rest[stroke] != 0;
-    for (int c = 0; c < T.clickCount; ++c) {
-        const SlScratchClick& k = kSlScratchClicks[T.clickFirst + c];
-        if (k.stroke != 2 && k.stroke != stroke) continue;
-        // A click straddling the end of a stroke wraps INTO that stroke rather
-        // than leaking into the next one: strokes are whole units, and a figure
-        // is defined within one.
-        double d = within - k.at;
+    const double spacing = 1.0 / static_cast<double>(c.clicks);
+    // WIDTH FROM ARTICULATION: a closure takes the non-sounding share of one
+    // spacing, an opening takes the sounding share. Both scale with tempo and
+    // with how many there are, which is the whole point.
+    const double width = spacing * (c.restClosed ? kArticulation : (1.0 - kArticulation));
+    bool open = !c.restClosed;
+    for (int i = 0; i < c.clicks; ++i) {
+        const double at = (static_cast<double>(i) + 0.5) * spacing;
+        double d = within - at;
         if (d < 0.0) d += 1.0;
-        if (d < clickPhaseWidth) open = !open;
+        if (d < width) open = !open;
     }
     return open;
 }
 
 /** SOUND LEVEL FOLLOWS RECORD SPEED, correlation 0.8 in the measurements —
-    faster is louder, independently of the fader, and we did not model it.
-    Normalised so 1x is unity, floored so a reversal does not become a second
-    gate (the phantom click is the rate curve's job, not this one's), and capped
-    so a 4x excursion cannot make the tape louder than the material.
-
-    ⚠️ SCRATCH PATH ONLY. Applying it to hand scrubs would change a shipped
-    feature and move fixtures that pin the current behaviour. */
+    faster is louder, independently of the fader. Normalised so 1x is unity,
+    floored so a reversal does not become a second gate (the phantom click is the
+    rate curve's job), and capped so a fast excursion cannot make the tape louder
+    than its material. ⚠️ SCRATCH PATH ONLY: applying it to hand scrubs would
+    change a shipped feature. */
 inline double speedLevel(double rate) {
     const double m = std::abs(rate);
     if (!(m > 0.0)) return 0.0;
-    // Half-power: audible as "faster is louder" without the level collapsing
-    // through every stroke the way a linear law would.
     const double g = std::sqrt(m);
     return g > 1.5 ? 1.5 : g;
 }
+
+/* ⚠️ THE ASYMMETRIC STROKE SHAPE IS RETIRED WITH THE TECHNIQUE PICKER. It
+   existed for one figure (the stab: a fast push and a slow re-cue) and was
+   reachable only by choosing that figure by name. With one mode there is no
+   control that selects it, and a shape nobody can reach is dead weight —
+   DESIGN.md rule 7 applied to the engine. If a fast-push character is wanted
+   back it belongs on an axis, like `cut`, not as a hidden variant. */
 
 /** THE SPIN-BACK. Travelling to the point the gesture was launched at, fast and
     AUDIBLE — a real deck cannot teleport, and hearing the record wind to the
@@ -228,7 +266,7 @@ inline double rnd01(uint32_t& s) {
     only ever lands at phase 0, where both position and velocity are zero
     whatever the span is, so a changed span cannot make the playhead jump. */
 inline void rollCycle(uint32_t& rng, uint32_t& cycle, double& spanMul, uint32_t& clicksOn,
-                      double vary) {
+                      double& cycleBeats, double vary, double spread, double baseBeats) {
     cycle ^= 1u;
     // TWIN PEAKS: big, then small. At vary 0 both are 1.0 and every stroke is
     // identical, which is the old behaviour and is nobody's playing.
@@ -239,6 +277,22 @@ inline void rollCycle(uint32_t& rng, uint32_t& cycle, double& spanMul, uint32_t&
     // crossfader attacks on the second (small) peak than the first.
     const double keep = cycle == 0 ? (1.0 - vary * kThinBigPeak) : 1.0;
     clicksOn = rnd01(rng) < keep ? 1u : 0u;
+
+    // TIMING MOVES BETWEEN DIVISIONS, never between the grid lines. IOIs cluster
+    // on 1/32, 1/16 and 1/8, and the measurement found two CONSTANT-duration
+    // trends (73 ms and 155 ms) rather than one — so a performance steps between
+    // divisions, which is what "the timing changes between the scratches" is.
+    // Halving or doubling keeps every cycle on the grid by construction: there
+    // is no value it can land on that is not a division of the one you set.
+    cycleBeats = baseBeats;
+    if (spread > 0.0) {
+        const double r = rnd01(rng);
+        // At spread 1 the base keeps half the weight, so it still sounds like
+        // the division you chose rather than a shuffle of three.
+        const double side = spread * 0.25;
+        if (r < side) cycleBeats = baseBeats * 0.5;
+        else if (r < side * 2.0) cycleBeats = baseBeats * 2.0;
+    }
 }
 
 
@@ -444,6 +498,24 @@ void TapeBank::scrubEnd(uint32_t tape) {
     tapes_[tape].scrubActive.store(0, std::memory_order_release);
 }
 
+namespace {
+/** Hostile input is CLAMPED rather than refused: these arrive from UI controls,
+    and a refused start is a button that does nothing — which is worse than a
+    gesture at the edge of its range. */
+void applyScratchParams(Tape& d, const TapeBank::ScratchParams& p) {
+    const double period = std::isfinite(p.periodBeats) && p.periodBeats > 0.0 ? p.periodBeats : 0.5;
+    d.scratchPeriodBeats.store(std::clamp(period, 1.0 / 64.0, 8.0), std::memory_order_relaxed);
+    d.scratchSpan.store(std::isfinite(p.span) ? std::clamp(p.span, 0.0, 1.0) : 0.07,
+                        std::memory_order_relaxed);
+    d.scratchCut.store(std::isfinite(p.cut) ? std::clamp(p.cut, 0.0, 1.0) : 0.0,
+                       std::memory_order_relaxed);
+    d.scratchVary.store(std::isfinite(p.vary) ? std::clamp(p.vary, 0.0, 1.0) : 0.0,
+                        std::memory_order_relaxed);
+    d.scratchSpread.store(std::isfinite(p.spread) ? std::clamp(p.spread, 0.0, 1.0) : 0.0,
+                          std::memory_order_relaxed);
+}
+} // namespace
+
 double TapeBank::scrubRate(uint32_t tape) const {
     // The readback for pubScrubRate, which was WRITE-ONLY until this existed —
     // no getter, no HotFrame slot, no reader anywhere (scratching.md §4.5). A
@@ -453,26 +525,14 @@ double TapeBank::scrubRate(uint32_t tape) const {
                              : tapes_[tape].pubScrubRate.load(std::memory_order_relaxed);
 }
 
-void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeats,
-                            double span, double vary, double cueFrame) {
+void TapeBank::scratchStart(uint32_t tape, const ScratchParams& p, double cueFrame) {
     if (tape >= kMaxTapes) return;
     Tape& d = tapes_[tape];
     // Recording owns the playhead, exactly as scrubBegin has it: the write head
-    // is not the user's to drag, and a pattern is only a faster drag.
+    // is not the user's to drag, and a gesture is only a faster drag.
     if (d.state.load(std::memory_order_acquire) == static_cast<uint32_t>(TapeState::recording))
         return;
-    if (technique >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) return;
-    // Hostile input is CLAMPED rather than refused: these arrive from a UI
-    // control and a refused start is a button that does nothing, which is worse
-    // than a gesture at the edge of its range.
-    if (!(periodBeats > 0.0) || !std::isfinite(periodBeats)) periodBeats = 0.5;
-    if (!(span >= 0.0) || !std::isfinite(span)) span = 0.07;
-    d.scratchTechnique.store(technique, std::memory_order_relaxed);
-    d.scratchPeriodBeats.store(std::clamp(periodBeats, 1.0 / 64.0, 8.0),
-                               std::memory_order_relaxed);
-    d.scratchSpan.store(std::clamp(span, 0.0, 1.0), std::memory_order_relaxed);
-    d.scratchVary.store(std::isfinite(vary) ? std::clamp(vary, 0.0, 1.0) : 0.0,
-                        std::memory_order_relaxed);
+    applyScratchParams(d, p);
     // The render seeds the anchor and the phase, because only it knows where the
     // playhead actually IS — pubPlayhead is a block-old copy, and starting a
     // gesture from a stale anchor puts a lurch at the top of every pattern.
@@ -486,32 +546,20 @@ void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeat
     d.scratchCue.store(cueFrame, std::memory_order_relaxed);
     // LAUNCHED AT A POINT ON THE RECORD → travel there first, audibly, the way a
     // hand drags a record to the section it wants. State 4 is that journey; the
-    // pattern does not begin until it arrives, so a gesture launched far from
-    // the head is a spin-back followed by a scratch rather than a teleport.
+    // gesture does not begin until it arrives, so a launch far from the head is
+    // a spin-back followed by a scratch rather than a teleport.
     d.scratchActive.store(cueFrame >= 0.0 ? 4u : 1u, std::memory_order_release);
-    // ⚠️ SPAN 0 IS FADER-ONLY, and it is not a magic number — it is literally
-    // what the field says: the record hand moves nothing. That is the
-    // transformer played over a NORMALLY PLAYING LOOP, which
-    // D-SL-SCRATCHGATE-01 names explicitly as a case the gate has to reach, and
-    // it is a real technique rather than a degenerate one. Leaving the scrub
-    // path shut is what keeps the loop running underneath.
-    if (span > 0.0) {
-        // The scrub path is what renders a moving record, so open that too. A
-        // scratch IS a scrub; the only difference is who posts the positions.
+    // The scrub path renders a MOVING record. Span 0 is fader-only, so leave it
+    // shut and let the loop keep playing underneath.
+    if (d.scratchSpan.load(std::memory_order_relaxed) > 0.0)
         d.scrubActive.store(1, std::memory_order_release);
-    }
 }
 
-void TapeBank::scratchSet(uint32_t tape, double periodBeats, double span, double vary) {
+void TapeBank::scratchSet(uint32_t tape, const ScratchParams& p) {
     if (tape >= kMaxTapes) return;
-    Tape& d = tapes_[tape];
-    // Live while held, and deliberately NOT re-seeding the phase: a pattern
+    // Live while held, and deliberately NOT re-seeding the phase: a gesture
     // whose period jumps mid-stroke should change speed, not restart.
-    if (periodBeats > 0.0 && std::isfinite(periodBeats))
-        d.scratchPeriodBeats.store(std::clamp(periodBeats, 1.0 / 64.0, 8.0),
-                                   std::memory_order_relaxed);
-    if (span > 0.0 && std::isfinite(span))
-        d.scratchSpan.store(std::clamp(span, 0.0005, 1.0), std::memory_order_relaxed);
+    applyScratchParams(tapes_[tape], p);
 }
 
 void TapeBank::scratchStop(uint32_t tape, uint32_t releaseMode) {
@@ -964,9 +1012,7 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             uint32_t scratchState = d.scratchActive.load(std::memory_order_acquire);
             const bool scratching = scratchState != 0 && scrubHeld;
             const bool approaching = scratchState == 4;
-            uint32_t tech = d.scratchTechnique.load(std::memory_order_relaxed);
-            if (tech >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) tech = 0;
-            const SlScratchTechnique& T = kSlScratchTechniques[tech];
+            const CutShape cut = cutShape(d.scratchCut.load(std::memory_order_relaxed));
             if (scratching && approaching && d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
                 // ⚠️ THE SPIN-BACK STARTS FROM WHERE THE HEAD REALLY IS, and a
                 // pending seek is part of that. Draining and DISCARDING it (the
@@ -1001,7 +1047,9 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 d.scratchPhase = 0.0; // phase 0 IS the start of the forward push
                 d.scratchCycle = 1u;  // so the first roll lands on the BIG peak
                 rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul, d.scratchClicksOn,
-                          d.scratchVary.load(std::memory_order_relaxed));
+                          d.scratchCycleBeats, d.scratchVary.load(std::memory_order_relaxed),
+                          d.scratchSpread.load(std::memory_order_relaxed),
+                          d.scratchPeriodBeats.load(std::memory_order_relaxed));
                 d.scratchSeeded.store(1, std::memory_order_relaxed);
             }
             // Span is a fraction of the LOOP, and the measured spans are small —
@@ -1009,12 +1057,12 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             // gesture cannot reach past the material it is scratching.
             const double spanFrames =
                 d.scratchSpan.load(std::memory_order_relaxed) * static_cast<double>(dFrames);
-            const double beats = d.scratchPeriodBeats.load(std::memory_order_relaxed);
+            const double baseBeats = d.scratchPeriodBeats.load(std::memory_order_relaxed);
             const double bpm = scratchBpm_.load(std::memory_order_relaxed);
-            // One full back-and-forth in BEATS, because crossfader IOIs cluster
-            // on 1/32, 1/16 and 1/8 — the grid is a description of what DJs do,
-            // not an approximation of it.
-            const double cycleSamples = beats * (60.0 / bpm) * fs;
+            // THIS CYCLE's division, which SPREAD may have stepped. In BEATS,
+            // because crossfader IOIs cluster on 1/32, 1/16 and 1/8 — the grid
+            // is a description of what DJs do, not an approximation of it.
+            const double cycleSamples = d.scratchCycleBeats * (60.0 / bpm) * fs;
             const double phaseInc = cycleSamples > 1.0 ? 1.0 / cycleSamples : 0.0;
             const double anchorPull = 1.0 / (kScratchAnchorSeconds * fs);
             // D-SL-SCRATCHGATE-01: the fader hand. Width is in MILLISECONDS
@@ -1022,10 +1070,9 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             // about the tempo; converting to phase here is what lets the gate be
             // compared against a phase in the inner loop without a division.
             const double gateStep = 1.0 / (kScratchGateSeconds * fs);
-            const double clickPhaseWidth =
-                cycleSamples > 1.0 ? (T.clickWidthMs * 0.001 * fs) / (cycleSamples * 0.5) : 0.0;
 
             const double vary = d.scratchVary.load(std::memory_order_relaxed);
+            const double spread = d.scratchSpread.load(std::memory_order_relaxed);
             const double cue = d.scratchCue.load(std::memory_order_relaxed);
             const double seekDiv = kScratchSeekSeconds * fs;
 
@@ -1063,7 +1110,8 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                         d.scratchGate = 1.0;
                         d.scratchCycle = 1u; // so the first roll lands on the BIG peak
                         rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul,
-                                  d.scratchClicksOn, vary);
+                                  d.scratchClicksOn, d.scratchCycleBeats, vary, spread,
+                                  baseBeats);
                         // ⚠️ CATCH THE RECORD. Arriving at 16× and handing over
                         // to a pattern whose peak velocity is a third of a frame
                         // per sample left the platter still FLYING: the one-pole
@@ -1093,7 +1141,7 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     // THIS CYCLE's span, not the nominal one — the twin-peaks
                     // alternation and the jitter both live here.
                     const double sf = spanFrames * d.scratchSpanMul;
-                    const double v = sf * shapeVel(T.shape, d.scratchPhase) * phaseInc;
+                    const double v = sf * strokeVel(d.scratchPhase) * phaseInc;
                     const double wantS = std::clamp(v, -4.0, 4.0);
                     d.scrubRate += alpha * (wantS - d.scrubRate);
                     d.playhead += d.scrubRate;
@@ -1102,7 +1150,7 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     // constant), so it cannot flatten the articulation — it only
                     // keeps a long hold from wandering off its anchor.
                     const double commanded =
-                        d.scratchAnchor + sf * shapePos(T.shape, d.scratchPhase);
+                        d.scratchAnchor + sf * strokePos(d.scratchPhase);
                     d.playhead += anchorPull * (commanded - d.playhead);
 
                     // THE FADER HAND, at ~2 ms rather than the engine's 10.
@@ -1113,11 +1161,9 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     // is OPEN: on a closed-rest technique (transformer, chirp)
                     // suppressing the clicks would suppress the SOUND, turning
                     // "this stroke has no fader work" into silence.
-                    const int restHere = T.rest[d.scratchPhase < 0.5 ? 0 : 1];
-                    const bool thinned = d.scratchClicksOn == 0u && restHere != 0;
+                    const bool thinned = d.scratchClicksOn == 0u && !cut.restClosed;
                     d.scratchGate = rampStep(
-                        d.scratchGate,
-                        thinned || gateOpen(T, d.scratchPhase, clickPhaseWidth) ? 1.0 : 0.0,
+                        d.scratchGate, thinned || gateOpen(cut, d.scratchPhase) ? 1.0 : 0.0,
                         gateStep);
 
                     const double prevPhase = d.scratchPhase;
@@ -1125,7 +1171,8 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     if (d.scratchPhase >= 1.0) {
                         d.scratchPhase -= 1.0;
                         rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul,
-                                  d.scratchClicksOn, vary);
+                                  d.scratchClicksOn, d.scratchCycleBeats, vary, spread,
+                                  baseBeats);
                     }
                     // RELEASE COMPLETES THE STROKE. Reversals land at the
                     // extrema and strokes are whole units, so a pattern told to
@@ -1331,19 +1378,20 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             // than costing a block of stale gate.
             uint32_t sState = d.scratchActive.load(std::memory_order_acquire);
             if (sState == 0) return;
-            uint32_t tech = d.scratchTechnique.load(std::memory_order_relaxed);
-            if (tech >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) tech = 0;
-            const SlScratchTechnique& T = kSlScratchTechniques[tech];
-            const double beats = d.scratchPeriodBeats.load(std::memory_order_relaxed);
+            const CutShape cut = cutShape(d.scratchCut.load(std::memory_order_relaxed));
+            const double baseBeats = d.scratchPeriodBeats.load(std::memory_order_relaxed);
+            const double vary = d.scratchVary.load(std::memory_order_relaxed);
+            const double spread = d.scratchSpread.load(std::memory_order_relaxed);
             const double bpm = scratchBpm_.load(std::memory_order_relaxed);
-            const double cycleSamples = beats * (60.0 / bpm) * fs;
+            const double cycleSamples = d.scratchCycleBeats * (60.0 / bpm) * fs;
             if (!(cycleSamples > 1.0)) return;
             const double phaseInc = 1.0 / cycleSamples;
             const double gateStep = 1.0 / (kScratchGateSeconds * fs);
-            const double clickPhaseWidth =
-                (T.clickWidthMs * 0.001 * fs) / (cycleSamples * 0.5);
             if (d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
                 d.scratchPhase = 0.0;
+                d.scratchCycle = 1u;
+                rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul, d.scratchClicksOn,
+                          d.scratchCycleBeats, vary, spread, baseBeats);
                 d.scratchSeeded.store(1, std::memory_order_relaxed);
             }
             for (uint32_t i = 0; i < n; ++i) {
@@ -1353,8 +1401,7 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 // shut and the output would step from silence to full — a click
                 // at release, on the one path whose entire job is not to click.
                 const bool releasing = sState == 3;
-                const bool open =
-                    releasing || gateOpen(T, d.scratchPhase, clickPhaseWidth);
+                const bool open = releasing || gateOpen(cut, d.scratchPhase);
                 d.scratchGate = rampStep(d.scratchGate, open ? 1.0 : 0.0, gateStep);
                 const double g = rampShape(d.scratchGate);
                 L[i] = static_cast<float>(L[i] * g);
@@ -1365,7 +1412,11 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 }
                 const double prev = d.scratchPhase;
                 d.scratchPhase += phaseInc;
-                if (d.scratchPhase >= 1.0) d.scratchPhase -= 1.0;
+                if (d.scratchPhase >= 1.0) {
+                    d.scratchPhase -= 1.0;
+                    rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul, d.scratchClicksOn,
+                              d.scratchCycleBeats, vary, spread, baseBeats);
+                }
                 if (sState == 2) {
                     // Strokes are whole units here too: finish this one, then
                     // start opening the gate.

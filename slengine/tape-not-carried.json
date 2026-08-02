@@ -46,11 +46,11 @@
     },
     {
       "name": "sl_tape_scratch_start",
-      "reason": "Turntablism scratch (docs/specs/scratching.md): a tempo-locked pattern that runs while held, driving the SAME scrub path a finger does. Wizard's deck had no auto-gesture of any kind. It is in the ENGINE rather than a host block callback because processBlock exists only in the plugins \u2014 the app renders through SlRenderSink's four-line adapter with no per-block hook \u2014 and because per-sample evaluation removes the ~94 Hz control-rate ceiling that smeared each reversal across a block (measured: 7 ms of reversal silence per sample vs 11 ms at a 512-frame grain, against ~5 ms on a real turntable)."
+      "reason": "Turntablism scratch (docs/specs/scratching.md): a tempo-locked gesture that runs while held, driving the SAME scrub path a finger does. Wizard's deck had no auto-gesture of any kind. It is in the ENGINE rather than a host block callback because processBlock exists only in the plugins \u2014 the app renders through SlRenderSink's four-line adapter with no per-block hook \u2014 and because per-sample evaluation removes the ~94 Hz control-rate ceiling that smeared each reversal across a block. Takes an sl_scratch_params STRUCT rather than positional doubles: five [0,1]-ish parameters in a row is a silent-miscall waiting to happen, and the fields name themselves at every call site."
     },
     {
       "name": "sl_tape_scratch_set",
-      "reason": "Retune period and span while the pattern is HELD, without re-seeding the phase \u2014 a period change mid-stroke must change speed, not restart the figure. Separate from scratch_start for exactly that reason: reusing start would make every knob movement a restart, which is audible and wrong. No wizard counterpart; wizard had no patterns."
+      "reason": "Retune period, span, cut, vary and spread while the gesture is HELD, without re-seeding the phase \u2014 a period change mid-stroke must change speed, not restart the figure. Separate from scratch_start for exactly that reason: reusing start would make every knob movement a restart, which is audible and wrong."
     },
     {
       "name": "sl_tape_scratch_stop",

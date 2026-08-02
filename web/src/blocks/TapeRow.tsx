@@ -37,12 +37,11 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { SL_TAPE_STATE, slTapeIndex } from '../../protocol/schema.ts'
-import { Button, GeoRange, Select, Stepper } from '../design/controls.tsx'
+import { Button, GeoRange, Stepper } from '../design/controls.tsx'
 import type { EngineLink } from '../engineLink.ts'
 import { useCapabilities } from '../state/capabilitiesStore.ts'
 import { TapeWave } from '../plane/TapeWave.tsx'
 import { ask, send } from '../plane/send.ts'
-import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
 import { asBoolean, useSetting } from '../useSetting.ts'
 import '../plane/plane.css'
 
@@ -106,7 +105,6 @@ export function TapeRow({
   const [hostBpm, setHostBpm] = useState(0)
   const [hostPlaying, setHostPlaying] = useState(false)
   const [filled, setFilled] = useState<boolean[]>(() => new Array(SLOTS).fill(false))
-  const [technique, setTechnique] = useState(0)
   const [division, setDivision] = useState(DEFAULT_DIVISION)
   const [depth, setDepth] = useState(0.07)
   /** How much the figure varies stroke to stroke. Defaults to a real amount
@@ -114,6 +112,17 @@ export function TapeRow({
       shipping the stale version as the default would make the feature's first
       impression its worst one. */
   const [vary, setVary] = useState(0.45)
+  /** HOW MUCH CROSSFADER. ⚠️ This replaced a technique picker, and the reason is
+      worth keeping: the named figures were never separate mechanisms, only
+      different amounts of the same two things — how many times the fader moves
+      within a stroke, and which way it rests. As ten presets, everything BETWEEN
+      them was unreachable, which is most of why it sounded canned. Defaults low:
+      the pure record hand is the part that already sounded right. */
+  const [cut, setCut] = useState(0.25)
+  /** HOW MUCH THE TIMING MOVES between cycles. Its own control rather than
+      folded into VARY, because the record hand and the clock are two different
+      kinds of looseness and a player reaches for them separately. */
+  const [spread, setSpread] = useState(0.3)
   /** ARMED — a latch, not a hold. While it is lit the waveform's unmodified drag
       is a SCRATCH instead of a scrub, which is what makes re-grabbing during a
       play-out fall out for free rather than needing its own mechanism. */
@@ -223,10 +232,11 @@ export function TapeRow({
     send(link, 'slTape', {
       action: 'scratchStart',
       tape: slot,
-      technique,
       periodBeats: DIVISIONS[division]!.beats,
       span: depth,
+      cut,
       vary,
+      spread,
       frame,
     })
   }
@@ -240,14 +250,18 @@ export function TapeRow({
 
   /** Retune WHILE HELD through `scratchSet`, which deliberately does not re-seed
       the phase — otherwise every knob movement restarts the figure mid-gesture. */
-  const retune = (nextDivision: number, nextDepth: number, nextVary: number) => {
+  /** Retune WHILE HELD through `scratchSet`, which deliberately does not re-seed
+      the phase — otherwise every knob movement restarts the figure mid-gesture. */
+  const retune = (over: Partial<{ division: number; depth: number; cut: number; vary: number; spread: number }>) => {
     if (!link || !scratching) return
     send(link, 'slTape', {
       action: 'scratchSet',
       tape: slot,
-      periodBeats: DIVISIONS[nextDivision]!.beats,
-      span: nextDepth,
-      vary: nextVary,
+      periodBeats: DIVISIONS[over.division ?? division]!.beats,
+      span: over.depth ?? depth,
+      cut: over.cut ?? cut,
+      vary: over.vary ?? vary,
+      spread: over.spread ?? spread,
     })
   }
 
@@ -420,7 +434,7 @@ export function TapeRow({
           tone={scratching ? 'solo' : undefined}
           title={
             armed
-              ? `armed — press the waveform to scratch there · ${SCRATCH_TECHNIQUES[technique]?.hint ?? ''}`
+              ? 'armed — press the waveform to scratch there, drag down to cut the fader'
               : 'arm the scratch — the waveform drag becomes a scratch instead of a scrub'
           }
           onClick={() => {
@@ -430,10 +444,22 @@ export function TapeRow({
             setArmed((v) => !v)
           }}
         />
-        <Select
-          value={technique}
-          options={SCRATCH_TECHNIQUES.map((t, i) => ({ value: i, label: t.label }))}
-          onChange={(raw) => setTechnique(Number(raw))}
+        <GeoRange
+          label="CUT"
+          value={cut}
+          min={0}
+          max={1}
+          step={0.01}
+          display={cut < 0.1 ? 'none' : cut >= 0.85 ? 'closed' : cut.toFixed(2)}
+          // The readout names the two ENDS rather than printing 0.00 and 1.00,
+          // because those are the two settings that are a different kind of
+          // thing: "none" is the pure record hand, "closed" is a fader resting
+          // shut with the clicks becoming openings.
+          title="how much crossfader — none is the pure record hand (baby, scribble), rising adds clicks, and past 0.85 the fader rests closed (transformer)"
+          onChange={(v) => {
+            setCut(v)
+            retune({ cut: v })
+          }}
         />
         <Stepper
           value={division}
@@ -441,10 +467,26 @@ export function TapeRow({
           max={DIVISIONS.length - 1}
           onChange={(v) => {
             setDivision(v)
-            retune(v, depth, vary)
+            retune({ division: v })
           }}
         />
         <span className="plugin-tape-state">{DIVISIONS[division]?.label}</span>
+        <GeoRange
+          label="SPREAD"
+          value={spread}
+          min={0}
+          max={1}
+          step={0.01}
+          display={spread <= 0 ? 'locked' : spread.toFixed(2)}
+          // Timing, and it stays ON the grid: each cycle may step a division
+          // either way, never landing between them. IOIs cluster on 1/32, 1/16
+          // and 1/8, so stepping among those IS what was measured.
+          title="how much the timing moves — each cycle may step a division either way around the one set here. Always on the grid; 0 locks it"
+          onChange={(v) => {
+            setSpread(v)
+            retune({ spread: v })
+          }}
+        />
         <GeoRange
           label="DEPTH"
           value={depth}
@@ -460,7 +502,7 @@ export function TapeRow({
           title="how far the record travels — 0 is FADER ONLY, chopping a loop that keeps playing"
           onChange={(v) => {
             setDepth(v)
-            retune(division, v, vary)
+            retune({ depth: v })
           }}
         />
         <GeoRange
@@ -479,7 +521,7 @@ export function TapeRow({
           title="how much the figure varies stroke to stroke — big/small alternation, span spread, and some strokes left uncut. 0 is strict: every stroke identical"
           onChange={(v) => {
             setVary(v)
-            retune(division, depth, v)
+            retune({ vary: v })
           }}
         />
         <Button

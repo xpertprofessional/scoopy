@@ -552,6 +552,61 @@ downward travel = fully shut, transition ~45 px down. The dead ground does a
 second job here that it does not do on a real mixer: it absorbs the vertical
 drift of a horizontal gesture, so cutting stays deliberate.
 
+### ⚠️ THE TECHNIQUE TABLE IS RETIRED — 2026-08-02, after playing it
+
+§2's table stays as the **vocabulary** and the source of the numbers. It is no
+longer a **picker**, and the generated C/TS tables and the `scratch:check` gate
+that carried it are deleted.
+
+**Why, in the user's words:** *"good results are basically just baby and
+scribble, if not mistaken they both dont use the fader curve… instead of
+selecting stale scratches we only have 1 mode with several parameters."* Both
+halves were right, and the first was a bug.
+
+**The bug — ARTICULATION.** Click width was an absolute 30–70 ms per figure,
+applied against the **stroke**. That figure is real — it is ~41% of a typical
+IOI — but an IOI is the gap between **clicks**, not the length of a stroke. Four
+clicks in a 125 ms stroke therefore stacked:
+
+| setting | sounding share, old law | now |
+|---|---|---|
+| 2 clicks (flare) | 0.36 | 0.68 |
+| 4 clicks (crab) | **0.04** | 0.53 |
+| closed rest (transformer) | **0.00** | 0.60 |
+
+Which is exactly why the only figures that sounded right were the two with no
+clicks at all. Width now derives from the measured **articulation — sounding
+time / IOI, mean 59% (SD 26)**, times the actual click spacing, so it scales with
+tempo *and* density. Measured tempo-invariance: 120 vs 90 bpm differ by 0.01.
+
+**The redesign — CUT.** The named figures were never separate mechanisms, only
+different amounts of the same two things: how many times the fader moves within
+a stroke, and which way it rests. So they are positions on one axis, and
+everything *between* them — which ten presets made unreachable — is now
+playable.
+
+```
+0.00 .. 0.10   no fader at all      baby, scribble
+0.10 .. 0.30   1 click, forward     the 1-click flare
+0.30 .. 0.50   2 clicks, forward    the 2-click flare
+0.50 .. 0.70   3 clicks, both       orbit territory
+0.70 .. 0.85   4 clicks, both       crab
+0.85 ..        rest CLOSED          transformer, chirp
+```
+
+**SPREAD — and a correction to what this spec said.** §3 was read as "duration
+is constant, so never vary the period". The measurement actually found **two
+constant-duration trends (73 ms and 155 ms = 1/32 and 1/16 at 90 bpm)** — plural.
+IOIs *cluster* on 1/32, 1/16 and 1/8, so a performance **steps between**
+divisions rather than sitting on one. `SPREAD` is that: each cycle may step a
+division either way, always **on** the grid, never between. It is its own control
+rather than folded into `VARY` because the record hand and the clock are two
+different kinds of looseness.
+
+⚠️ **The asymmetric stroke shape went with the picker.** It served one figure
+(the stab) and was reachable only by naming it. If a fast-push character is
+wanted back it belongs on an axis, not as a hidden variant.
+
 ### Still not built
 
 - **Grid alignment.** The pattern is period-locked but its phase starts at the

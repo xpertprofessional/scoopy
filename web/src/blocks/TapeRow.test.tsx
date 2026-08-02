@@ -21,7 +21,6 @@ import { PluginTapePanel } from '../plane/PluginTapePanel.tsx'
 import { TapeWave } from '../plane/TapeWave.tsx'
 import { StudioPanel } from '../studio/StudioPanel.tsx'
 import { getCaps, useCapabilitiesStore } from '../state/capabilitiesStore.ts'
-import { SCRATCH_TECHNIQUES } from './scratchTechniques.ts'
 
 const withTape = (tape: boolean) =>
   useCapabilitiesStore.setState({ caps: { ...getCaps(), tape } })
@@ -60,26 +59,39 @@ describe('TapeRow — the block', () => {
 })
 
 describe('the SCRATCH row', () => {
-  it('draws the technique choice, the division and DEPTH', () => {
+  it('ONE MODE, five parameters — and no technique picker', () => {
     withTape(true)
     const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
     expect(html).toContain('SCRATCH')
-    expect(html).toContain('DEPTH')
-    // Every technique the one authority declares is offered — no hand-picked
-    // subset, which would silently make some of the generated table dead.
-    for (const t of SCRATCH_TECHNIQUES) expect(html).toContain(t.label)
+    for (const p of ['CUT', 'SPREAD', 'DEPTH', 'VARY']) expect(html).toContain(p)
     // Period is a musical division, and the default is 1/8 — the division the
     // measurements put record strokes at.
     expect(html).toContain('1/8')
+    // ⚠️ THE NAMED FIGURES ARE GONE FROM THE SURFACE, deliberately. They were
+    // never separate mechanisms, only different amounts of the same two things,
+    // and as ten presets everything BETWEEN them was unreachable.
+    expect(html).not.toContain('<select')
+    for (const name of ['baby', 'scribble', 'crab', 'transformer', 'orbit'])
+      expect(html).not.toContain(`>${name}<`)
   })
 
-  it('THE TECHNIQUE IS THE PRESET: what it fixes is not drawn at all', () => {
+  it('CUT names its two ends rather than printing numbers at them', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    // "none" and "closed" are a different KIND of setting from the values
+    // between them — the pure record hand, and a fader resting shut — so the
+    // readout says so instead of showing 0.00 and 1.00.
+    expect(html).toMatch(/none is the pure record hand/)
+    expect(html).toMatch(/the fader rests closed/)
+  })
+
+  it('what the mode derives is not drawn at all', () => {
     withTape(true)
     const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
     // DESIGN.md rule 7 — never a control that reaches nothing, and never one
-    // drawn disabled where "absent" is the honest shape. Click width, click
-    // positions, fader rest and stroke shape are all fixed by the choice, so
-    // none of them gets a control.
+    // drawn disabled where "absent" is the honest shape. Click width comes from
+    // the measured articulation, and click count, placement and rest polarity
+    // all come from CUT, so none of them gets a control of its own.
     for (const absent of ['clickWidth', 'CLICKS', 'REST', 'SHAPE'])
       expect(html).not.toContain(absent)
   })

@@ -237,7 +237,7 @@ bool measure(uint32_t block, Notch& out) {
 /** Render one pattern and return the left channel. `blockSize` is both the
     engine's block and the render chunk, so this is the same gesture evaluated
     at three different control grains. */
-bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double span,
+bool runPattern(uint32_t block, double cut, double periodBeats, double span,
                 double bpm, uint32_t cycles, std::vector<float>& out,
                 double* endPlayhead = nullptr, double vary = 0.0) {
     sl_engine* e = sl_engine_create(kRate, block, 86);
@@ -257,7 +257,13 @@ bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double s
     sl_tape_seek(e, 0, kAnchorFrame);
 
     sl_tape_set_scratch_tempo(e, bpm);
-    sl_tape_scratch_start(e, 0, technique, periodBeats, span, vary, -1.0);
+    sl_scratch_params sp{};
+    sp.period_beats = periodBeats;
+    sp.span = span;
+    sp.cut = cut;
+    sp.vary = vary;
+    sp.spread = 0.0;
+    sl_tape_scratch_start(e, 0, &sp, -1.0);
 
     const double cycleSamples = periodBeats * (60.0 / bpm) * kRate;
     const auto total = static_cast<uint64_t>(cycleSamples * cycles);
@@ -321,9 +327,9 @@ int main() {
        reason the whole feature can live in the engine at all. */
     {
         std::vector<float> a, b, c;
-        CHECK(runPattern(64, 0 /* baby */, 0.5, 0.07, 120.0, 4, a));
-        CHECK(runPattern(256, 0, 0.5, 0.07, 120.0, 4, b));
-        CHECK(runPattern(512, 0, 0.5, 0.07, 120.0, 4, c));
+        CHECK(runPattern(64, 0.0 /* CUT none: the pure record hand */, 0.5, 0.07, 120.0, 4, a));
+        CHECK(runPattern(256, 0.0, 0.5, 0.07, 120.0, 4, b));
+        CHECK(runPattern(512, 0.0, 0.5, 0.07, 120.0, 4, c));
         const size_t n = std::min(a.size(), std::min(b.size(), c.size()));
         CHECK(n > kRate / 4); // it actually rendered something
         double worst = 0.0;
@@ -347,7 +353,7 @@ int main() {
        into discrete bursts with NO FADER AT ALL. */
     {
         std::vector<float> baby;
-        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 4, baby));
+        CHECK(runPattern(64, 0.0, 0.5, 0.07, 120.0, 4, baby));
         const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
         const size_t windows = baby.size() / win;
         CHECK(windows > 20);
@@ -390,7 +396,7 @@ int main() {
             if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1;
             sl_tape_seek(e, 0, kAnchorFrame);
             sl_tape_set_scratch_tempo(e, bpm);
-            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07, 0.0 /* vary */, -1.0);
+            { sl_scratch_params sp{}; sp.period_beats = 0.5; sp.span = 0.07; sp.cut = 0.0; sp.vary = 0.0; sp.spread = 0.0; sl_tape_scratch_start(e, 0, &sp, -1.0); }
 
             const double cycleSamples = 0.5 * (60.0 / bpm) * kRate;
             const auto total = static_cast<uint64_t>(cycleSamples * 4.0);
@@ -435,7 +441,7 @@ int main() {
     {
         std::vector<float> x;
         double endPh = 0.0;
-        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 16, x, &endPh));
+        CHECK(runPattern(64, 0.0, 0.5, 0.07, 120.0, 16, x, &endPh));
         const double anchor = static_cast<double>(kAnchorFrame);
         const double spanFrames = 0.07 * static_cast<double>(kLen);
         std::printf("  after 16 cycles: playhead %.1f, anchor %.1f, span %.1f\n",
@@ -459,7 +465,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         CHECK(sl_tape_set_record_source(e, 0, 0 /* deviceInput */, 0, 1) == 1);
         sl_tape_record_start(e, 0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, 0.0 /* vary */, -1.0);
+        { sl_scratch_params sp{}; sp.period_beats = 0.5; sp.span = 0.07; sp.cut = 0.0; sp.vary = 0.0; sp.spread = 0.0; sl_tape_scratch_start(e, 0, &sp, -1.0); }
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
@@ -468,11 +474,15 @@ int main() {
         sl_engine_destroy(e);
     }
 
-    /* ── 6. AN OUT-OF-RANGE TECHNIQUE IS REFUSED, not clamped into another ─
-       Period and span are clamped (a UI control at the edge of its range should
-       still play), but a technique INDEX is a name, and silently playing a
-       different figure than the one asked for is the exact drift scratch:check
-       exists to prevent — it must not be reachable through the ABI either. */
+    /* ── 6. A NULL PARAMETER BLOCK IS IGNORED, not defaulted ───────────────
+       Period, span, cut, vary and spread are all CLAMPED — they come from UI
+       controls, and a refused start is a button that does nothing. But a caller
+       that passed no parameters at all has a BUG, and starting the gesture at
+       some house default would hide it behind a sound.
+
+       (This replaced a test for an out-of-range technique index. There is no
+       index any more — one mode with parameters retired the table — so the
+       refusal it guarded no longer exists to guard.) */
     {
         sl_engine* e = sl_engine_create(kRate, 64, 86);
         CHECK(e != nullptr);
@@ -481,11 +491,11 @@ int main() {
         std::vector<float> tone(kLen, 0.5f);
         const float* planar[1] = {tone.data()};
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
-        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07, 0.0 /* vary */, -1.0);
+        sl_tape_scratch_start(e, 0, nullptr, -1.0);
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
-        CHECK(sl_tape_scrub_rate(e, 0) == 0.0);
+        CHECK(sl_tape_scrub_rate(e, 0) == 0.0); // nothing started
         sl_engine_destroy(e);
     }
 
@@ -508,7 +518,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         sl_tape_seek(e, 0, kAnchorFrame);
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, 0.0 /* vary */, -1.0);
+        { sl_scratch_params sp{}; sp.period_beats = 0.5; sp.span = 0.07; sp.cut = 0.0; sp.vary = 0.0; sp.spread = 0.0; sl_tape_scratch_start(e, 0, &sp, -1.0); }
 
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
@@ -538,7 +548,7 @@ int main() {
         std::vector<float> tf;
         // transformer: rest CLOSED with four openings per stroke, so most of the
         // pattern is silence and the openings are the tones.
-        CHECK(runPattern(64, 5 /* transformer */, 0.5, 0.07, 120.0, 4, tf));
+        CHECK(runPattern(64, 0.90 /* CUT: rest closed */, 0.5, 0.07, 120.0, 4, tf));
         const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
         const size_t windows = tf.size() / win;
         CHECK(windows > 20);
@@ -587,7 +597,11 @@ int main() {
         sl_tape_set_loop(e, 0, 1, 0, kLoopFrames);
         sl_tape_trigger(e, 0, 0); // LOOPING, at rate 1.0
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */, 0.0 /* vary */, -1.0);
+        sl_scratch_params sp{};
+        sp.period_beats = 0.5;
+        sp.span = 0.0; // FADER ONLY — the record hand moves nothing
+        sp.cut = 0.90; // rest CLOSED: the clicks become openings
+        sl_tape_scratch_start(e, 0, &sp, -1.0);
 
         std::vector<float> l(64), r(64), captured;
         float* outs[2] = {l.data(), r.data()};
@@ -671,7 +685,7 @@ int main() {
         sl_tape_seek(e, 0, kLen - 2000);
         sl_tape_set_scratch_tempo(e, 120.0);
         const double cue = 4000.0;
-        sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.02, 0.0 /* vary */, cue);
+        { sl_scratch_params sp{}; sp.period_beats = 0.5; sp.span = 0.02; sp.cut = 0.0; sp.vary = 0.0; sp.spread = 0.0; sl_tape_scratch_start(e, 0, &sp, cue); }
 
         std::vector<float> l(64), r(64), heard;
         float* outs[2] = {l.data(), r.data()};
@@ -751,7 +765,7 @@ int main() {
         // An IDLE tape, launched mid-buffer: the case where "play out" has to
         // invent a transport rather than restore one.
         const double cue = static_cast<double>(kAnchorFrame);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, 0.0 /* vary */, cue);
+        { sl_scratch_params sp{}; sp.period_beats = 0.5; sp.span = 0.05; sp.cut = 0.0; sp.vary = 0.0; sp.spread = 0.0; sl_tape_scratch_start(e, 0, &sp, cue); }
 
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
@@ -797,7 +811,12 @@ int main() {
         const float* planar[1] = {tone.data()};
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, 0.0 /* vary */, static_cast<double>(kAnchorFrame));
+        {
+            sl_scratch_params sp{};
+            sp.period_beats = 0.5;
+            sp.span = 0.05;
+            sl_tape_scratch_start(e, 0, &sp, static_cast<double>(kAnchorFrame));
+        }
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         for (int i = 0; i < 200; ++i) sl_render(e, outs, 2, 64);
@@ -828,9 +847,11 @@ int main() {
             const float* planar[1] = {tone.data()};
             if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1.0;
             sl_tape_set_scratch_tempo(e, 120.0);
-            sl_tape_scratch_start(e, 0, 0 /* baby: gate always open, so what is
-                                             measured is the FADER alone */,
-                                  0.5, 0.05, 0.0 /* vary */, static_cast<double>(kAnchorFrame));
+            sl_scratch_params sp{};
+            sp.period_beats = 0.5;
+            sp.span = 0.05;
+            sp.cut = 0.0; // no clicks, so what is measured is the FADER alone
+            sl_tape_scratch_start(e, 0, &sp, static_cast<double>(kAnchorFrame));
             sl_tape_scratch_fader(e, 0, faderPos);
             std::vector<float> l(64), r(64), got;
             float* outs[2] = {l.data(), r.data()};
@@ -878,8 +899,8 @@ int main() {
         // vary 0 IS THE OLD BEHAVIOUR, bit for bit. The escape hatch has to be
         // exact or "turn it off" is not a real answer.
         std::vector<float> a, b;
-        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 6, a, nullptr, 0.0));
-        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 6, b, nullptr, 0.0));
+        CHECK(runPattern(64, 0.0, 0.5, 0.07, 120.0, 6, a, nullptr, 0.0));
+        CHECK(runPattern(64, 0.0, 0.5, 0.07, 120.0, 6, b, nullptr, 0.0));
         CHECK(a.size() == b.size());
         for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
 
@@ -905,8 +926,8 @@ int main() {
         // A technique whose gate is always open, so what is measured is the
         // RECORD hand rather than the fader: span, not clicks.
         std::vector<float> flat, varied;
-        CHECK(runPattern(64, 0 /* baby */, 0.5, 0.07, 120.0, 8, flat, nullptr, 0.0));
-        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 8, varied, nullptr, 1.0));
+        CHECK(runPattern(64, 0.0 /* CUT none: the pure record hand */, 0.5, 0.07, 120.0, 8, flat, nullptr, 0.0));
+        CHECK(runPattern(64, 0.0, 0.5, 0.07, 120.0, 8, varied, nullptr, 1.0));
         const double sFlat = cycleSpread(flat, 120.0);
         const double sVaried = cycleSpread(varied, 120.0);
         std::printf("  variation: cycle-to-cycle spread %.4f at vary 0 -> %.4f at vary 1\n",
@@ -918,6 +939,57 @@ int main() {
         // variation leaked onto the period this feature would drift off the
         // grid, which is the one thing a tempo-locked scratch may not do.
         CHECK(flat.size() == varied.size());
+    }
+
+    /* ── 16. ARTICULATION — the bug that made every clicked figure unusable ─
+       This is the assertion that did not exist, and its absence is why the
+       defect shipped. The click width was an absolute 30-55 ms applied against
+       the STROKE; that figure is real (about 41% of a typical IOI) but an IOI is
+       the gap between CLICKS, so four of them in a 125 ms stroke stacked into a
+       96%-silent crab and a 100%-silent transformer. The only settings that
+       sounded right were the two with no clicks at all — which is exactly what
+       was reported from playing it.
+
+       Width now comes from the measured articulation (sounding/IOI, mean 59%),
+       so what this pins is that a clicked gesture SOUNDS FOR ROUGHLY THE
+       MEASURED SHARE OF ITS TIME, at every density and every tempo. A per-figure
+       constant cannot hold that, which is the argument for deriving it. */
+    {
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        auto sounding = [&](double cut, double bpm) {
+            std::vector<float> x;
+            if (!runPattern(64, cut, 0.5, 0.07, bpm, 8, x)) return -1.0;
+            const size_t windows = x.size() / win;
+            double loud = 0.0;
+            std::vector<double> rms(windows);
+            for (size_t w = 0; w < windows; ++w) {
+                rms[w] = acRms(x, w * win, win);
+                loud = std::max(loud, rms[w]);
+            }
+            int on = 0;
+            for (double v : rms)
+                if (v > loud * 0.05) ++on;
+            return static_cast<double>(on) / static_cast<double>(windows);
+        };
+        std::printf("  articulation (sounding share, measured target ~0.59):\n");
+        // Every density, and every one of them has to stay musical. Under the
+        // old law these fell to 0.36, 0.04 and 0.00 as the count went up.
+        for (const double cut : {0.20, 0.40, 0.60, 0.80}) {
+            const double a120 = sounding(cut, 120.0);
+            const double a90 = sounding(cut, 90.0);
+            std::printf("    cut %.2f: %.2f at 120bpm, %.2f at 90bpm\n", cut, a120, a90);
+            CHECK(a120 > 0.30);
+            CHECK(a90 > 0.30);
+            // AND IT MUST NOT DEPEND ON TEMPO. A width in milliseconds does —
+            // that is the other half of why an absolute constant was wrong — so
+            // the same setting at two tempos has to articulate the same way.
+            CHECK(std::abs(a120 - a90) < 0.20);
+        }
+        // A CLOSED-REST setting is the inverse and must still sound: its clicks
+        // are openings, so "no sound at all" is the failure mode to catch.
+        const double closed = sounding(0.90, 120.0);
+        std::printf("    cut 0.90 (rest closed): %.2f\n", closed);
+        CHECK(closed > 0.20);
     }
 
     std::printf("sl_tape_scratch_test OK\n");
