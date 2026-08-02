@@ -52,7 +52,14 @@ export interface WorldSink {
    * a sink that cannot host a second should not be made to pretend it takes the
    * argument seriously.
    */
-  publish(world: World, deck?: number): void;
+  /**
+   * `transportIntent` marks a publish that is a STATEMENT ABOUT TRANSPORT (▸ ◼
+   * ⟳ and the one-shot's stop) rather than a content publish that happens to
+   * carry the flag. Optional and ignored by the browser sink; ScoopyDeck's
+   * processor needs it because the DAW is a second transport authority the page
+   * cannot see — see `schema.ts` slWorld.transportIntent.
+   */
+  publish(world: World, deck?: number, transportIntent?: boolean): void;
   setMainGain(value: number): void;
   /** This deck's latest transport position. `deck` defaults to 0, which is what
       every pre-P11-3a-b caller meant and what the browser companion (one deck)
@@ -193,12 +200,16 @@ export class NativeWorldSink implements WorldSink {
       });
   }
 
-  publish(world: World, deck = 0): void {
+  publish(world: World, deck = 0, transportIntent = false): void {
     // The only transport truth this tier gets — see `publishedPlaying`.
     this.publishedPlaying.set(deck, world.isPlaying);
     void this.link
       .command("slWorld", {
         action: "publish",
+        // Sent only when TRUE, so an ordinary publish is byte-for-byte what it
+        // always was — a flag on every message would be a new default to
+        // reason about at every host, for a case that is rare by design.
+        ...(transportIntent ? { transportIntent: true } : {}),
         // `steps` is a Uint8Array and JSON has no typed arrays; the JUCE bridge
         // would serialise it as an OBJECT ({"0":1,"1":0,…}), which the applier
         // reads as "no steps" and refuses. Converted here, at the one boundary

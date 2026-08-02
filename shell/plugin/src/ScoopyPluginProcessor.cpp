@@ -283,8 +283,15 @@ void ScoopyPluginProcessor::pumpHostSync() {
     // there is not: a DAW playing a closed-editor project must still follow
     // its tempo, which is the whole reason this lives on the processor.
     const bool webOwnsTempo = getActiveEditor() != nullptr;
-    if (sync.pump(engine, /*writeRatio=*/!webOwnsTempo))
-        applyCachedWorld(sync.snapshot().playing);
+    if (sync.pump(engine, /*writeRatio=*/!webOwnsTempo)) {
+        const bool playing = sync.snapshot().playing;
+        // WHO OWNS THE TRANSPORT NOW. The edge only fires with follow enabled,
+        // so this says exactly "the DAW started (or ended) this run" — and it
+        // is what stops the page's next world publish from ending it by
+        // accident. See hostOwnsTransport.
+        hostOwnsTransport = playing;
+        applyCachedWorld(playing);
+    }
     // A mode switch arrives through hostSyncConfig, not through the playhead,
     // so PDC is refreshed here rather than in the pump's ratio path.
     updateLatency();
@@ -538,7 +545,14 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         if (params.hasProperty("tempoMode")) r.tempoMode = (int) params["tempoMode"];
         if (params.hasProperty("pulseMultiplier")) r.pulseMultiplier = (double) params["pulseMultiplier"];
         if (params.hasProperty("syncEnabled")) r.syncEnabled = (bool) params["syncEnabled"];
-        if (params.hasProperty("followTransport")) r.followTransport = (bool) params["followTransport"];
+        if (params.hasProperty("followTransport")) {
+            r.followTransport = (bool) params["followTransport"];
+            // CLK INT HANDS THE TRANSPORT BACK. The latch is the DAW's claim on
+            // this run; a deck the DAW no longer drives must answer the page's
+            // publishes again, or "internal clock" would still be unstoppable
+            // from the window that owns it.
+            if (!r.followTransport) hostOwnsTransport = false;
+        }
         // 0 = follow the host's tempo; positive = the user's internal master (D2).
         if (params.hasProperty("masterBpm")) r.masterBpm = (double) params["masterBpm"];
         sync.setRecipe(r);
@@ -556,6 +570,13 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
         out->setProperty("syncEnabled", r.syncEnabled);
         out->setProperty("followTransport", r.followTransport);
         out->setProperty("masterBpm", r.masterBpm);
+        // THE HOST'S TRANSPORT, READABLE. `hostTransport` is a change-detected
+        // broadcast on the editor's timer, so a window opened DURING playback
+        // may never see one — the DAW's play edge happened before the page
+        // existed. Without this the deck row's transport would show ◼ over a
+        // deck that is audibly running, and every guard that reads it (scene
+        // scheduling, beat repeat) would treat a rolling deck as stopped.
+        out->setProperty("hostPlaying", sync.snapshot().playing);
         return okEnvelope(juce::var(out));
     }
 
@@ -670,12 +691,47 @@ juce::var ScoopyPluginProcessor::dispatchFromUi(const juce::String& method,
     if (isWorldPublish) {
         const auto world = params.getProperty("world", juce::var());
         if (world.getDynamicObject() != nullptr) {
+            // CACHE THE PAGE'S OWN WORLD, not the stamped one below. This is
+            // what rides the project chunk, and a session saved while the DAW
+            // happened to be rolling must not reopen playing on its own —
+            // `applyCachedWorld` overrides the flag in both directions anyway,
+            // so the cache has no reason to carry the host's transport.
             lastWorld = world;
             const double bpm = (double) world.getProperty("bpm", 0.0);
             if (bpm > 0.0) {
                 auto r = sync.currentRecipe();
                 r.sessionBpm = bpm;
                 sync.setRecipe(r);
+            }
+
+            // ── TRANSPORT INTENT ────────────────────────────────────────────
+            //
+            // A publish that STATES its intent is obeyed: ◼ and ▸ are the
+            // page's own doors and must work whatever the DAW is doing. A
+            // stated STOP also ends the host's claim, or the very next control
+            // touch would stamp the deck back into playing and ◼ would look
+            // like it bounced.
+            //
+            // A publish that states nothing is a content publish, and while the
+            // host owns this run its transport flag is not the page's to set —
+            // the whole defect this exists to end (see hostOwnsTransport).
+            const bool stated = (bool) params.getProperty("transportIntent", false);
+            const bool wantsPlaying = (bool) world.getProperty("isPlaying", false);
+            if (stated) {
+                if (!wantsPlaying) hostOwnsTransport = false;
+            } else if (hostOwnsTransport && !wantsPlaying) {
+                auto stamped = world.getDynamicObject()->clone();
+                stamped->setProperty("isPlaying", true);
+                // AND ON THE HOST'S GRID. Ignored outright while the deck is
+                // already running (the core only reads startStep from a
+                // standing start), so this costs nothing in the common case —
+                // but a deck that had nothing to start with when the DAW hit
+                // play comes in phase-aligned rather than at step 0.
+                stamped->setProperty("startStep", hostAlignedStartStep());
+                auto forwarded = params.getDynamicObject()->clone();
+                forwarded->setProperty("world", juce::var(stamped.release()));
+                return wizard::sl::dispatch(method, juce::var(forwarded.release()),
+                                            backend->settings, engine, &backend->services);
             }
         }
     }

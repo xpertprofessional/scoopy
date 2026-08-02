@@ -235,6 +235,29 @@ private:
     // snapshot state, not a param.
     juce::var lastWorld;
 
+    /** THE HOST STARTED THIS RUN, so a world publish may not end it
+        (real-host report, 2026-08-02).
+     *
+     *  A DAW play edge starts the deck from HERE (`applyCachedWorld`), and the
+     *  page never hears about it — `hostTransport` is a 40 Hz broadcast the
+     *  editor may not even be open for. So the web tier's own `playing` flag
+     *  stays false, and it rides EVERY world publish: one control touch — a
+     *  grid edit, a scene, a fader — republished `isPlaying: false` over a deck
+     *  the host had started, and the music stopped. Internal playback was
+     *  immune only because the flag was then true.
+     *
+     *  While this is set, an incidental publish is stamped back to playing. The
+     *  rule is A WORLD PUBLISH CARRIES CONTENT; TRANSPORT INTENT TRAVELS ONLY
+     *  WHEN STATED (`transportIntent` on the envelope), and the engine already
+     *  drew the same line one field over: `launchArmed` survives a snapshot
+     *  rebuild (sl_engine.cpp:1524) because rebuilding a session's content is
+     *  not a statement about its transport.
+     *
+     *  Cleared by the host's stop edge, by a STATED stop from the page (◼ must
+     *  still stop a deck), and by CLK INT — a deck the DAW no longer drives
+     *  must not stay pinned by a latch the DAW set. */
+    bool hostOwnsTransport = false;
+
     // ── THE REPLAY JOURNAL ──────────────────────────────────────────────────
     //
     // A DAW project must reopen and make sound WITHOUT the editor ever being

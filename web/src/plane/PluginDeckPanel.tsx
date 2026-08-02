@@ -30,7 +30,7 @@
  * deck source reads `djTrackStepD0T*`, written every block. The deck face is
  * the one that moves.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // ⚠️ IMPORTED EXPLICITLY, though it arrives globally anyway (panels share one
 // bundle). This face is built out of plane pieces — `.compose-window`,
@@ -52,6 +52,7 @@ import {
   quantumSteps,
   type LaunchQuantum,
 } from '../audio/launchQuantum.ts'
+import { adoptHostTransport } from './hostTransportMirror.ts'
 import { useCompanion } from '../store/companionEngine.ts'
 import { listSessions } from '../store/sessionStore.ts'
 import { silenceNote } from '../store/sampleReport.ts'
@@ -423,8 +424,17 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
       .command('hostSyncConfig' as never, {})
       .then((r: unknown) => {
         if (cancelled) return
-        const rec = r as { followTransport?: boolean; masterBpm?: number } | null
+        const rec = r as {
+          followTransport?: boolean
+          masterBpm?: number
+          hostPlaying?: boolean
+        } | null
         if (typeof rec?.followTransport === 'boolean') setFollowTransport(rec.followTransport)
+        // THE DAW MAY ALREADY BE ROLLING. `hostTransport` is change-detected and
+        // fires on the editor's timer, so a window opened DURING playback would
+        // never hear one — the play edge happened before this page existed. The
+        // recipe read doubles as the transport read for exactly that case.
+        if (typeof rec?.hostPlaying === 'boolean') setHostPlaying(rec.hostPlaying)
         // A POSITIVE restored master means the saved project was on an internal
         // tempo. Re-arm the flag BEFORE adopting the value, or the very next
         // `hostTransport` tick would overwrite it — the same ordering hazard
@@ -492,6 +502,37 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
       if (typeof e.playing === 'boolean') setHostPlaying(e.playing)
     })
   }, [link])
+
+  /** …AND THE DAW'S TRANSPORT IS THIS DECK'S TRANSPORT, in the store too
+   *  (real-host report, 2026-08-02: "operate any control and playback stops").
+   *
+   *  The processor starts the deck on the host's play edge, but the STORE never
+   *  knew: `hostPlaying` above was a lamp and nothing more. So this deck's own
+   *  `playing` stayed false while it was audibly running, and everything that
+   *  reads it was wrong in the same direction — the deck row showed ◼ over a
+   *  playing deck, a scene launch took the "stopped" branch and cut instantly
+   *  instead of waiting for the boundary, ⟳ refused to arm, and every world
+   *  publish carried `isPlaying: false`. That last one is what actually stopped
+   *  the music; the processor now refuses an unstated transport flag while it
+   *  owns the run, and this is the other half — the page agreeing with the
+   *  audio rather than being overruled by it.
+   *
+   *  The decision itself is `adoptHostTransport` — four ways to get it wrong,
+   *  pinned there rather than inlined here. */
+  const mirroredHostPlaying = useRef<boolean | null>(null)
+  useEffect(() => {
+    const c = useCompanion.getState()
+    const { act, mirrored } = adoptHostTransport({
+      followTransport,
+      hostPlaying,
+      mirrored: mirroredHostPlaying.current,
+      hasSession: !!c.decks[DECK]?.session,
+      deckPlaying: c.decks[DECK]?.playing ?? false,
+    })
+    mirroredHostPlaying.current = mirrored
+    if (act === 'play') c.play(DECK)
+    else if (act === 'stop') c.stop(DECK)
+  }, [hostPlaying, followTransport, session?.name])
 
   // DAW MIDI → THE SCENE PADS.
   //

@@ -2019,6 +2019,22 @@ export const COMMANDS = {
           `unknown` on purpose — restating its ~90 fields here would be a third
           copy of a shape that already has exactly one authority. */
       world: z.unknown().optional(),
+      /** publish: "THIS PUBLISH IS A STATEMENT ABOUT TRANSPORT" — ▸ · ◼ · ⟳ ·
+          the one-shot's own stop. Absent (the overwhelming majority: an edit, a
+          fader, a scene, a kit change) means the publish carries CONTENT and
+          `world.isPlaying` is merely the flag it happens to ride with.
+
+          It exists because a plugin has a SECOND transport authority the page
+          cannot see: ScoopyDeck's processor starts the deck on the DAW's play
+          edge while the web tier's own flag stays false, so every incidental
+          publish was stopping the music the host had started (real-host report,
+          2026-08-02). The host that owns the transport needs to tell an edit
+          apart from a stop, and only the caller knows which it made.
+
+          Additive and optional, so no SCHEMA_VERSION bump: a host that ignores
+          it behaves exactly as before, and the browser companion — which has no
+          second transport authority — ignores it by construction. */
+      transportIntent: z.boolean().optional(),
     }).strict(),
     result: z.object({
       ok: z.boolean(),

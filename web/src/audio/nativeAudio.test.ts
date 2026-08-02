@@ -323,3 +323,41 @@ describe("NativeWorldSink — the scene commit it now drives", () => {
     expect(fired).toEqual([16]);
   });
 });
+
+/**
+ * TRANSPORT INTENT (real-host report, 2026-08-02) — a publish that is a
+ * STATEMENT about transport says so; the great majority, which carry content,
+ * say nothing.
+ *
+ * ScoopyDeck's processor is a SECOND transport authority this tier cannot see:
+ * the DAW's play edge starts the deck natively while the store's own `playing`
+ * stays false, so every incidental publish was stopping the music the host had
+ * started. The host can only tell an edit from a stop if the caller says which
+ * it made — and the flag has to be absent by default, or "no opinion" and
+ * "stop" would still look identical on the wire.
+ */
+describe("NativeWorldSink — transportIntent", () => {
+  it("omits the flag entirely on an ordinary content publish", async () => {
+    const { link } = stubLink();
+    const sink = new NativeWorldSink(link);
+    await sink.start("");
+    sink.publish(world(false));
+
+    const [, params] = (link.command as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    // ABSENT, not `false`: an ordinary publish must be byte-for-byte what it
+    // always was, so no host gains a new default to reason about.
+    expect("transportIntent" in (params as object)).toBe(false);
+  });
+
+  it("carries it when the publish IS the transport (▸ ◼ ⟳)", async () => {
+    const { link } = stubLink();
+    const sink = new NativeWorldSink(link);
+    await sink.start("");
+    sink.publish(world(false), 0, true);
+
+    const [, params] = (link.command as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect((params as { transportIntent?: boolean }).transportIntent).toBe(true);
+    // …and it does not disturb the world it rides with.
+    expect((params as { world: World }).world.isPlaying).toBe(false);
+  });
+});

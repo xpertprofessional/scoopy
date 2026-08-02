@@ -628,8 +628,24 @@ let mainGainOverride: number | null = null;
 // (P3-M-1b's beatRepeatState/reverseState module arrays moved INTO DeckState at
 // D4-2 — the deck tile's header lamps need the per-deck truth reactively.)
 
-/** Push ONE DECK's document at the engine. No-op until the engine is running. */
-function publish(state: CompanionState, deck: number, playing: boolean): string[] {
+/**
+ * Push ONE DECK's document at the engine. No-op until the engine is running.
+ *
+ * `transportIntent` marks the publishes that ARE the transport — ▸ ◼ ⟳, the
+ * one-shot's own stop, a deck being closed — as opposed to the great majority,
+ * which carry CONTENT and merely ride along with whatever `playing` currently
+ * is. Nothing in the browser cares; ScoopyDeck does, because in a DAW the host
+ * transport can start this deck without the store ever hearing about it, and an
+ * edit republishing `isPlaying: false` over that was stopping the music (see
+ * `schema.ts` slWorld.transportIntent, and the plugin processor's
+ * `hostOwnsTransport`).
+ */
+function publish(
+  state: CompanionState,
+  deck: number,
+  playing: boolean,
+  transportIntent = false,
+): string[] {
   const d = deckOf(state, deck);
   if (!audio.running || !d.session) return [];
   // The engine hears the ACTIVE SCENE's projection, not the raw base — scene "A" is the identity.
@@ -668,7 +684,7 @@ function publish(state: CompanionState, deck: number, playing: boolean): string[
   // lands on is a PUBLISH concern, not a translation one, and threading it
   // through the translator would have put an engine-slot index inside the pure
   // function that has no business knowing about slots.
-  audio.publish(world, deck);
+  audio.publish(world, deck, transportIntent);
   // The session's master level (parity: the desktop's master stage applies masterVolume; the
   // browser's main gain is a plain post-render multiply — no master clipper here, so a >1.0
   // desktop level saturates there and merely pushes toward digital ceiling here; known gap).
@@ -878,7 +894,7 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     // is not the same as the engine forgetting it, and a strip whose grid
     // element was removed would keep playing with nothing on screen to stop it.
     set((s) => patchDeck(s, deck, { playing: false }));
-    publish(get(), deck, false);
+    publish(get(), deck, false, true); // the deck is LEAVING — a transport statement
     set((s) => patchDeck(s, deck, idleDeck()));
     // The performance tempo goes with the deck. It is module state, not deck
     // state, so `idleDeck()` does not touch it — and a slot is REUSED, so
@@ -1231,7 +1247,7 @@ export const useCompanion = create<CompanionState>((set, get) => ({
         stopAtStep: null,
       }),
     );
-    set((s) => patchDeck(s, deck, { missingSamples: publish(get(), deck, true) }));
+    set((s) => patchDeck(s, deck, { missingSamples: publish(get(), deck, true, true) }));
   },
 
   stop(deck = 0) {
@@ -1244,7 +1260,7 @@ export const useCompanion = create<CompanionState>((set, get) => ({
         stopAtStep: null,
       }),
     );
-    publish(get(), deck, false);
+    publish(get(), deck, false, true);
   },
 
   playOnce(deck = 0) {
@@ -1265,7 +1281,7 @@ export const useCompanion = create<CompanionState>((set, get) => ({
     // its own write, because `play()` clears the arm — going through play() here
     // would disarm what we just set. Order is load-bearing, not style.
     set((s) => patchDeck(s, deck, { playing: true, scheduledScene: null, switchBoundaryStep: null }));
-    set((s) => patchDeck(s, deck, { stopAtStep, missingSamples: publish(get(), deck, true) }));
+    set((s) => patchDeck(s, deck, { stopAtStep, missingSamples: publish(get(), deck, true, true) }));
   },
 
   shiftBeatRepeat(deck, delta) {

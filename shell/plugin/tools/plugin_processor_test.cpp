@@ -956,6 +956,152 @@ int main() {
         p.pumpHostSync();
     }
 
+    // ── §2h A CONTROL EDIT MUST NOT STOP THE DAW'S PLAYBACK ─────────────────
+    //
+    // Reported from the real host, 2026-08-02: "start playback through the host,
+    // then operate any control in the VST window, and playback stops. Only
+    // plugin-internal playback is stable against UI changes."
+    //
+    // The mechanism, and it is a seam rather than a slip. The DAW's play edge
+    // starts the deck from the PROCESSOR (`applyCachedWorld`); the web tier
+    // never hears about it, so its own `playing` flag stays false. Every world
+    // publish carries that flag — and a grid edit, a scene switch, a fader is a
+    // world publish. So the first control the user touched republished
+    // `isPlaying: false` over a deck the host had started, and the audio
+    // stopped. Internal playback was immune only because the web's flag was
+    // then true, which is exactly the "each side looks correct alone" shape.
+    //
+    // The rule this pins: A WORLD PUBLISH CARRIES CONTENT; TRANSPORT INTENT
+    // TRAVELS ONLY WHEN STATED. The engine already made this call one field
+    // over — `launchArmed` survives a snapshot rebuild (sl_engine.cpp:1524)
+    // because "rebuilding the session's content is not a statement about
+    // transport". `isPlaying` is the same kind of field.
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        CHECK(publishTone(p, 120.0, false)); // the page's world: stopped
+
+        FakePlayHead head;
+        head.bpm = 120.0;
+        head.ppq = 0.0;
+        head.playing = false;
+        p.setPlayHead(&head);
+        renderPeak(p, 512, 1);
+        p.pumpHostSync(); // settle the stopped edge
+
+        // The DAW hits play — the deck comes in on the host's grid.
+        head.playing = true;
+        renderPeak(p, 512, 1);
+        p.pumpHostSync();
+        CHECK(renderPeak(p, 512, 24) > 1e-4);
+
+        // …and now the user touches a control. The page republishes its world
+        // with the transport flag it still believes (`false`), because nothing
+        // told it the DAW started the deck. THE AUDIO MUST NOT STOP.
+        CHECK(publishTone(p, 120.0, false));
+        CHECK(renderPeak(p, 512, 24) > 1e-4);
+
+        // A second edit, and one that CHANGES the world (a send level), so this
+        // is not passing on some "identical publish" shortcut.
+        //
+        // …AND IT DOES NOT RESTART THE PATTERN. Surviving the publish is only
+        // half of "the music kept going": the flag is stamped playing, but the
+        // world also carries `startStep: 0`, so a deck that re-entered from the
+        // top on every knob turn would still pass every peak check above while
+        // being unusable. The step counter is monotonic, so it may only move
+        // FORWARD across an edit.
+        auto stepNow = [&] {
+            std::vector<double> hf(sl_hotframe_length(), -999.0);
+            sl_hotframe(p.engineForTest(), hf.data(), (uint32_t) hf.size());
+            return hf[SL_HF_playheadStepDeck0];
+        };
+        const double before = stepNow();
+        CHECK(before > 0.0); // it has been running for a while by now
+        CHECK(publishTone(p, 120.0, false, 0.5));
+        CHECK(renderPeak(p, 512, 24) > 1e-4);
+        CHECK(stepNow() >= before);
+
+        // ◼ STILL STOPS IT. The page states the intent — `transportIntent` on
+        // the publish envelope — and a stated intent is honoured, host rolling
+        // or not. Without this the fix would trade a deck that stops when you
+        // touch a knob for a deck you cannot stop at all, which is the worse
+        // half of the same bug.
+        {
+            auto* stop = new juce::DynamicObject();
+            stop->setProperty("action", "publish");
+            stop->setProperty("transportIntent", true);
+            auto world = juce::JSON::parse(
+                R"({"deck":0,"bpm":120.0,"isPlaying":false,"startStep":0,)"
+                R"("tracks":[{"sampleId":"tone","steps":[1,1,1,1,1,1,1,1],"volume":1.0}]})");
+            stop->setProperty("world", world);
+            const auto reply = p.dispatchFromUi("slWorld", juce::var(stop));
+            CHECK((bool) reply.getProperty("ok", false));
+        }
+        CHECK(renderPeak(p, 512, 24) < 1e-6);
+
+        // …and the stop STAYS stopped through the next edit. Clearing the latch
+        // is what makes that true: without it the very next control touch would
+        // be stamped back into playing, and ◼ would look like it bounced.
+        CHECK(publishTone(p, 120.0, false));
+        CHECK(renderPeak(p, 512, 24) < 1e-6);
+
+        // The DAW's own transport is still the way back in: stop, play, and the
+        // deck runs again on the host's grid.
+        head.playing = false;
+        renderPeak(p, 512, 1);
+        p.pumpHostSync();
+        head.playing = true;
+        renderPeak(p, 512, 1);
+        p.pumpHostSync();
+        CHECK(renderPeak(p, 512, 24) > 1e-4);
+
+        // CLK INT hands the transport back to the page. The deck keeps playing
+        // (nothing stopped it), but the next incidental publish is the page's
+        // word again — a deck the DAW no longer drives must not be pinned
+        // playing by a latch the DAW set.
+        auto* clkInt = new juce::DynamicObject();
+        clkInt->setProperty("followTransport", false);
+        p.dispatchFromUi("hostSyncConfig", juce::var(clkInt));
+        CHECK(publishTone(p, 120.0, false));
+        CHECK(renderPeak(p, 512, 24) < 1e-6);
+
+        // The page can READ the host's transport, which is how a window opened
+        // mid-playback learns what the DAW is doing at all: `hostTransport` is
+        // change-detected and fires on the editor's timer, so an editor created
+        // after the play edge would otherwise never hear one.
+        const auto rec = p.dispatchFromUi("hostSyncConfig", juce::var(new juce::DynamicObject()))
+                             .getProperty("result", juce::var());
+        CHECK((bool) rec.getProperty("hostPlaying", false) == true);
+    }
+
+    // ── §2h-2 THE WINDOW OPENS WHILE THE DAW IS ALREADY ROLLING ─────────────
+    //
+    // The other half of the same seam, and the one nobody would think to try:
+    // the transport was already running when this instance came up (a project
+    // reopened mid-playback, a plugin inserted during a take), so the play edge
+    // found NO cached world and started nothing. The page then boots, opens its
+    // session and publishes it — stopped, because the store has never heard of
+    // the DAW.
+    //
+    // That publish must come in PLAYING, and on the host's grid. Left alone it
+    // would sit silent behind a transport that says ▸, which reads as a dead
+    // plugin rather than as a deck waiting for something.
+    {
+        ScoopyPluginProcessor p;
+        p.prepareToPlay(48000.0, 512);
+
+        FakePlayHead head;
+        head.bpm = 120.0;
+        head.ppq = 1.0; // one quarter note in — step 4 of an 8-step pattern
+        head.playing = true;
+        p.setPlayHead(&head);
+        renderPeak(p, 512, 1);
+        p.pumpHostSync(); // the play edge, with nothing yet to launch
+
+        CHECK(publishTone(p, 120.0, false)); // the page's first world
+        CHECK(renderPeak(p, 512, 24) > 1e-4);
+    }
+
     // ── §3 TWO INSTANCES IN ONE PROCESS ─────────────────────────────────────
     {
         ScoopyPluginProcessor a;
