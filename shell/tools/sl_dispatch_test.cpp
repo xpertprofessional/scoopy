@@ -71,14 +71,14 @@ int main(int argc, char* argv[]) {
         const auto r = dispatch("getCapabilities", juce::var(), settings, nullptr);
         CHECK(replyOk(r));
         const auto caps = result(r);
-        CHECK((int) caps.getProperty("schemaVersion", 0) == 104); // scoopy SCHEMA_VERSION
+        CHECK((int) caps.getProperty("schemaVersion", 0) == 105); // scoopy SCHEMA_VERSION
         CHECK((bool) caps.getProperty("fileSystem", false) == true);
         CHECK((bool) caps.getProperty("audioDeviceSelection", false) == true);
         CHECK((bool) caps.getProperty("pluginHosting", true) == false);
         CHECK((bool) caps.getProperty("midiHardware", true) == false);
         CHECK((bool) caps.getProperty("returnFx", true) == false);
         // The exported helper agrees with the dispatched answer.
-        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 104);
+        CHECK((int) capabilities().getProperty("schemaVersion", 0) == 105);
     }
 
     // An unset key reads as null (value present, null) — NOT absent, NOT a
@@ -157,12 +157,12 @@ int main(int argc, char* argv[]) {
         CHECK(r.getProperty("error", "").toString().contains(m));
     }
 
-    // OUTPUT ROUTING (S5). With no audio device these refuse BY NAME rather
+    // OUTPUT ROUTING (S5). With no audio device the two CHANNEL commands refuse
+    // BY NAME rather
     // than pretending to route — the shape this whole command family was stuck
     // in for months, declared in schema.ts and answered by nobody, where a
     // caller could not tell "routed" from "silently ignored".
-    for (const char* m : {"setDeckOutputChannels", "setSendOutputChannel",
-                          "setPerTrackOutputRouting"}) {
+    for (const char* m : {"setDeckOutputChannels", "setSendOutputChannel"}) {
         const auto r = dispatch(m, juce::var(), settings, nullptr);
         CHECK(!replyOk(r));
         CHECK(r.getProperty("error", "").toString().contains(m));
@@ -172,6 +172,28 @@ int main(int argc, char* argv[]) {
     // With a real engine, a flat `world` object routes through and applies; the
     // Option-B contract is enforced — a stock PatternFile `json` string, which
     // this host does not parse, is refused with a reason.
+    // PER-TRACK OUTPUT ROUTING reaches the ENGINE (S5). It refused by name for
+    // one commit, which is how the gap was found: every other piece of
+    // output-1/2 mode already existed — the world map, SL_T_OUTPUT_ASSIGN, the
+    // pattern file, the projection, worldFromSession and the track row's own
+    // control — and the core had carried `setPerTrackRoutingActive` with
+    // nothing able to call it. This asserts the answer, not a refusal.
+    //
+    // It needs an ENGINE but no audio device, unlike its two siblings: the
+    // switch is engine state, while a channel assignment is a device fact.
+    {
+        sl_engine* e = sl_engine_create(48000.0, 512, 86);
+        CHECK(e != nullptr);
+        for (const char* on : {"true", "false"}) {
+            const auto r = dispatch("setPerTrackOutputRouting",
+                                    juce::JSON::parse(juce::String("{\"enabled\":") + on +
+                                                      ",\"deviceUid\":\"dev\"}"),
+                                    settings, e);
+            CHECK(replyOk(r));
+        }
+        sl_engine_destroy(e);
+    }
+
     {
         sl_engine* e = sl_engine_create(48000.0, 512, 86);
         CHECK(e != nullptr);

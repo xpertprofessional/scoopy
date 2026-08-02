@@ -321,7 +321,7 @@ void sl_tape_scrub_end(sl_engine* e, uint32_t tape);
     `pubScrubRate` had no getter, no HotFrame slot and no reader anywhere. */
 double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
 
-/** TURNTABLISM SCRATCH (docs/specs/scratching.md). A tempo-locked pattern that
+/** TURNTABLISM SCRATCH (docs/specs/scratching.md). A tempo-locked gesture that
     runs for as long as it is held, driving the SAME scrub path a finger does —
     which is the point: the 10 ms rate one-pole is what produces the phantom
     click (the momentary silence at every direction change that gives a baby
@@ -332,66 +332,58 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
     `processBlock` exists only in the plugins — the app renders through a thin
     sink adapter with no per-block hook — and because per-sample evaluation
     removes the ~94 Hz control-rate ceiling that otherwise smears each reversal
-    across a block. Measured: 7 ms of reversal silence per sample against 11 ms
-    at a 512-frame control grain, where the sources put a real turntable at ~5.
+    across a block.
 
-    `technique` indexes the table generated from
-    `slengine/scratch-techniques.json`; THE INDEX IS THE WIRE, and the UI's copy
-    of that table is emitted from the same authority (`scratch:check`).
-    `period_beats` is one full back-and-forth in beats — musical divisions, never
-    milliseconds, because crossfader IOIs cluster on 1/32, 1/16 and 1/8.
-    `span` is a fraction of the loop, and measured spans are SMALL.
+    ⚠️ ONE MODE, NOT TEN TECHNIQUES. There was a technique table here and it is
+    retired. The named figures (baby, flare, crab, transformer…) were never
+    separate mechanisms — only different amounts of the same two things, how
+    many times the fader moves within a stroke and which way it rests — so
+    `cut` is that axis and everything between the old presets is now reachable.
+    Choosing among fixed figures was also the thing that made it sound canned. */
+typedef struct {
+    /** One full back-and-forth, in BEATS — musical divisions, never
+        milliseconds, because crossfader IOIs cluster on 1/32, 1/16 and 1/8. */
+    double period_beats;
+    /** Fraction of the loop the gesture covers; measured spans are SMALL.
+        ⚠️ 0 is FADER-ONLY — the record hand moves nothing and only the
+        crossfader chops, which is how a transformer is played over a normally
+        playing loop. The scrub path stays shut in that mode. */
+    double span;
+    /** HOW MUCH CROSSFADER, 0..1. 0 = the pure record hand (baby, scribble);
+        rising adds clicks per stroke and then spreads them to both strokes;
+        past ~0.85 the fader RESTS CLOSED and the clicks become openings
+        (transformer, chirp). Click width is derived from the measured 59%
+        articulation, so it stays musical at any tempo and any density. */
+    double cut;
+    /** HOW MUCH THE FIGURE VARIES stroke to stroke, 0..1 — twin-peaks big/small
+        alternation, ±30% span jitter, and thinning the fader off the big
+        stroke. 0 = every stroke identical, which is nobody's playing. */
+    double vary;
+    /** HOW MUCH THE TIMING MOVES, 0..1. Each cycle may step a division either
+        way around `period_beats`. Always ON the grid — it changes WHICH
+        division, never drifts between them. */
+    double spread;
+} sl_scratch_params;
 
-    `vary` [0,1] is HOW MUCH THE FIGURE VARIES, and 0 — every stroke identical —
-    is nobody's playing. The sources are blunt: *"the actual improvising does not
-    necessarily turn out to be a series of perfectly performed basic
-    techniques"*. Above 0 it drives three measured behaviours at once: the
-    TWIN-PEAKS alternation (a big excursion then one 0.585 its size, a figure
-    that took "almost one third of the performance in time"), ±30% span jitter,
-    and thinning the crossfader off the big stroke — because the measurement puts
-    more attacks on the second peak. Period is deliberately untouched: what was
-    measured is that "the record speed and gesture span varies, but the DURATION
-    is constant". Generated from the published statistics; no recorded gesture
-    data was obtained or transcribed.
-
-    ⚠️ `span = 0` IS FADER-ONLY, and it is not a magic value — it is literally
-    what the field says: the record hand moves nothing, so the loop keeps playing
-    normally and only the crossfader chops it. That is how a transformer is
-    actually played over a running loop, and D-SL-SCRATCHGATE-01 names it as a
-    case the gate must reach. The scrub path stays shut in that mode.
-
-    Refused while recording, exactly as sl_tape_scrub_begin is: the write head is
-    not the user's to drag, and a pattern is only a faster drag. Out-of-range
-    period/span are CLAMPED rather than refused — these come from a UI control,
-    and a refused start is a button that does nothing.
-
-    `cue_frame` is WHERE THE GESTURE WAS LAUNCHED — the point on the record a
+/** `cue_frame` is WHERE THE GESTURE WAS LAUNCHED — the point on the record a
     hand landed on. If the playhead is elsewhere the tape SPINS TO IT first,
     fast and audibly (up to ±16×, its own clamp — never the hand-scrub ±4, which
-    is a law about what a finger can honestly ask for), and the pattern begins on
-    arrival. Negative means "wherever the head already is", which is what a
-    button with no position behind it means.
+    is a law about what a finger can honestly ask for), and the gesture begins on
+    arrival. Negative means "wherever the head already is".
 
-    `stop` completes the current stroke before releasing (reversals land at the
-    extrema; strokes are whole units), then hands over per its release mode. */
-void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
-                           double period_beats, double span, double vary, double cue_frame);
+    Refused while recording, exactly as sl_tape_scrub_begin is. Out-of-range
+    values are CLAMPED rather than refused — these come from UI controls, and a
+    refused start is a button that does nothing.
+
+    A NULL `p` is ignored rather than defaulted: a caller that failed to build
+    its parameters has a bug, and starting a gesture at some house default would
+    hide it. */
+void sl_tape_scratch_start(sl_engine* e, uint32_t tape, const sl_scratch_params* p,
+                           double cue_frame);
 /** Retune while held. Deliberately does NOT re-seed the phase: a period change
     mid-stroke should change speed, not restart the figure. */
-void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span,
-                         double vary);
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, const sl_scratch_params* p);
 
-/** Release. `release_mode` is the pair `pd-scrub-engine.md` §5 designed and
-    shipped neither of:
-
-      0 = RESUME (play out) — the record keeps turning from where the stroke
-          ended, so you hear the passage you were scratching play on. A tape that
-          was LOOPING keeps looping; one that was idle plays out as a ONE-SHOT,
-          "from here until it ends", which is what a turntable does. No seek, no
-          reset, and deliberately no region-entry snap — that snap would throw
-          away the entire point. The cue is armed at the released frame, so the
-          next ⟳ starts where you dropped the needle.
-      1 = HOLD — finish the stroke, fade out on the 10 ms ramp, latch. */
 void sl_tape_scratch_stop(sl_engine* e, uint32_t tape, uint32_t release_mode);
 
 /** THE PLAYER'S OWN HAND ON THE CROSSFADER, 0 shut .. 1 open, resting OPEN.
@@ -1009,6 +1001,22 @@ uint32_t sl_deck_stretch_ready(const sl_engine* e, uint32_t deck);
     pays ~200 ms per deck once, at load, and is correct from the first block.
     (D-SL-DECKPLUGIN-01.) */
 void sl_engine_set_sync_stretch_warmup(sl_engine* e, uint32_t enabled);
+
+/* PER-TRACK OUTPUT ROUTING — the master switch behind "output 1/2 mode" (S5).
+ *
+ * OFF (default): a track is stereo and its pan applies, which is every session
+ * ever written. ON: any track whose `outputAssign` is 1 or 2 is mono-summed
+ * HARD onto that side of its deck's output pair and its pan is IGNORED — so a
+ * deck on pair 3/4 becomes two independent mono outs, each with its own set of
+ * tracks. The donor's `perTrackRoutingEnabledByDevice`.
+ *
+ * A SWITCH, not a per-track field, and per DEVICE rather than per session: it
+ * changes what `outputAssign` MEANS, and a session carrying tracks assigned to
+ * side 2 must still play normally on an interface with one stereo pair. The
+ * core has carried `setPerTrackRoutingActive` and its atomic all along with
+ * nothing able to call it; this is the door.
+ */
+void sl_engine_set_per_track_routing(sl_engine* e, uint32_t enabled);
 
 /* ── Quantized launch (P11-3b) ───────────────────────────────────────────────
  *

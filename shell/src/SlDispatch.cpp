@@ -81,7 +81,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 104);
+    obj->setProperty("schemaVersion", 105);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -202,8 +202,26 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // how a reorder routes a channel's right side into the next send. Deck A/B/C
     // outs are stereo pairs at 10-15, which is what `djDeckA/B/C_OutputChannels`
     // addressed on the desktop.
-    if (method == "setDeckOutputChannels" || method == "setSendOutputChannel" ||
-        method == "setPerTrackOutputRouting") {
+    // ⚠️ THIS ONE NEEDS THE ENGINE, NOT THE DEVICE, and it is handled FIRST for
+    // that reason. Per-track routing is a switch inside the mixer — it changes
+    // what `outputAssign` means to the render — whereas assigning a channel is
+    // a fact about the hardware. Grouping it with its two siblings put it
+    // behind their "no audio device" guard, so it refused on any host without a
+    // device even though it had an engine to talk to. Caught by its own test on
+    // the first run, which is the whole reason that test asserts an ANSWER.
+    if (method == "setPerTrackOutputRouting") {
+        if (engine == nullptr) return fail("setPerTrackOutputRouting: no engine on this host");
+        // `deviceUid` is accepted and not stored HERE. The donor keys the
+        // preference per device (`perTrackRoutingEnabledByDevice`) so plugging
+        // in a two-channel interface does not silently re-point a session's
+        // tracks; that memory belongs with the settings, and the engine only
+        // ever needs the answer for the device in use now.
+        sl_engine_set_per_track_routing(
+            engine, params.getProperty("enabled", false) ? 1u : 0u);
+        return ok(emptyObject());
+    }
+
+    if (method == "setDeckOutputChannels" || method == "setSendOutputChannel") {
         auto* audio = services != nullptr ? services->audio : nullptr;
         if (audio == nullptr) return fail(method + ": no audio device on this build");
         auto& map = audio->outputMap();
@@ -244,14 +262,7 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             return ok(emptyObject());
         }
 
-        // setPerTrackOutputRouting — the per-DEVICE master switch behind the
-        // donor's output-1/2 mode. The per-track half (`Track.outputAssign`,
-        // mono-summed hard onto one side ignoring pan) is DOCUMENT state and
-        // belongs in the world, not here; this is the gate that makes it active.
-        // Refused rather than silently accepted until that half exists, because
-        // a switch that reports success and changes nothing is exactly the
-        // shape this whole command family was stuck in.
-        return fail("setPerTrackOutputRouting: the per-track outputAssign half is not built yet");
+        return fail(method + ": unknown output-routing action");
     }
 
     // ── MIDI: devices and roles (S9, ledger B8) ─────────────────────────────
@@ -622,22 +633,22 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         // TURNTABLISM SCRATCH (docs/specs/scratching.md). Three verbs, and the
         // reason `set` is not just another `start`: retuning while HELD must not
         // re-seed the phase, or every knob movement restarts the figure.
-        if (action == "scratchStart") {
-            sl_tape_scratch_start(engine, tape,
-                                  static_cast<uint32_t>(intProp(params, "technique", 0)),
-                                  numProp(params, "periodBeats", 0.5),
-                                  // span 0 is FADER-ONLY — the record hand moves
-                                  // nothing and the loop plays on underneath.
-                                  numProp(params, "span", 0.07),
-                                  numProp(params, "vary", 0.0),
-                                  // Where the hand landed on the record. -1 = "no
-                                  // point given", i.e. start where the head is.
-                                  numProp(params, "frame", -1.0));
-            return ok(okFlag());
-        }
-        if (action == "scratchSet") {
-            sl_tape_scratch_set(engine, tape, numProp(params, "periodBeats", 0.5),
-                                numProp(params, "span", 0.07), numProp(params, "vary", 0.0));
+        if (action == "scratchStart" || action == "scratchSet") {
+            // ONE MODE, five parameters. A struct rather than positional
+            // doubles: five [0,1]-ish numbers in a row is a silent miscall
+            // waiting to happen, and the fields name themselves here.
+            sl_scratch_params sp{};
+            sp.period_beats = numProp(params, "periodBeats", 0.5);
+            sp.span = numProp(params, "span", 0.07); // 0 = FADER ONLY
+            sp.cut = numProp(params, "cut", 0.0);
+            sp.vary = numProp(params, "vary", 0.0);
+            sp.spread = numProp(params, "spread", 0.0);
+            if (action == "scratchStart")
+                // `frame` is where the hand landed; the record spins there
+                // first. -1 = no point given, so start where the head is.
+                sl_tape_scratch_start(engine, tape, &sp, numProp(params, "frame", -1.0));
+            else
+                sl_tape_scratch_set(engine, tape, &sp);
             return ok(okFlag());
         }
         if (action == "scratchStop") {

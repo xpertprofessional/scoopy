@@ -643,14 +643,18 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape) {
     return e == nullptr ? 0.0 : e->tapes.scrubRate(tape);
 }
 
-void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
-                           double period_beats, double span, double vary, double cue_frame) {
-    if (e != nullptr) e->tapes.scratchStart(tape, technique, period_beats, span, vary, cue_frame);
+void sl_tape_scratch_start(sl_engine* e, uint32_t tape, const sl_scratch_params* p,
+                           double cue_frame) {
+    // A NULL p is IGNORED, not defaulted: a caller that failed to build its
+    // parameters has a bug, and starting at some house default would hide it.
+    if (e == nullptr || p == nullptr) return;
+    e->tapes.scratchStart(tape, {p->period_beats, p->span, p->cut, p->vary, p->spread},
+                          cue_frame);
 }
 
-void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span,
-                         double vary) {
-    if (e != nullptr) e->tapes.scratchSet(tape, period_beats, span, vary);
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, const sl_scratch_params* p) {
+    if (e == nullptr || p == nullptr) return;
+    e->tapes.scratchSet(tape, {p->period_beats, p->span, p->cut, p->vary, p->spread});
 }
 
 void sl_tape_scratch_stop(sl_engine* e, uint32_t tape, uint32_t release_mode) {
@@ -1430,6 +1434,11 @@ uint32_t sl_deck_stretch_ready(const sl_engine* e, uint32_t deck) {
 void sl_engine_set_sync_stretch_warmup(sl_engine* e, uint32_t enabled) {
     if (e == nullptr) return;
     e->core.setStretchWarmupSynchronous(enabled != 0);
+}
+
+void sl_engine_set_per_track_routing(sl_engine* e, uint32_t enabled) {
+    if (e == nullptr) return;
+    e->core.setPerTrackRoutingActive(enabled != 0);
 }
 
 /**
