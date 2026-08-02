@@ -131,6 +131,13 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
   name it; `web/package.json` is the authority.
 - `npm run bundle` must be the LAST step before `git add`, or `.buildhash`
   records a tree that no longer exists (the P3-X4 lesson).
+- ⚠️ **ANY WEB CHANGE STALES THE PLUGINS — the heading below says "plugin work"
+  and that is too narrow.** The plugins embed the WHOLE bundle, so a commit that
+  touches a face nowhere near them still leaves their binaries serving an older
+  UI. Measured 2026-08-02: four web commits in a row, each green on its own
+  gates, and `plugin:check` was RED the whole time because nothing rebuilt the
+  targets in between. Treat the rebuild as part of bundling, not part of plugin
+  work, and **run `plugin:check` in the same sweep as the other gates.**
 - ⚠️ **PLUGIN WORK: bundling is not enough, and the failure is silent.** The app
   serves `webdist/` off disk; a PLUGIN links it *into the binary* (a plugin is
   copied to machines that never saw this tree). So a DAW runs the UI frozen at
