@@ -81,7 +81,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 105);
+    obj->setProperty("schemaVersion", 106);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -472,6 +472,12 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                 // a missing key would read as "unknown" instead of "empty").
                 o->setProperty("identifier", juce::var());
                 o->setProperty("state", juce::var());
+                // UNIFORM SHAPE: an empty slot answers every key, so the UI
+                // reads one thing rather than branching on which keys exist.
+                o->setProperty("name", juce::var());
+                o->setProperty("latencyMs", 0.0);
+                o->setProperty("editorAvailable", false);
+                o->setProperty("editorVisible", false);
                 slots.add(juce::var(o));
                 continue;
             }
@@ -489,6 +495,27 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                 sl_fx_plugin_state(engine, i, stBuf.data(), stLen + 1);
                 o->setProperty("state", juce::String(juce::CharPointer_UTF8(stBuf.data())));
             }
+            // ⚠️ THE THINGS A RACK ACTUALLY NEEDS, and which this reported none
+            // of until S4's rack was used: the DISPLAY NAME (the identifier is
+            // a format-encoded string, not something to show a person), the
+            // latency the return adds, and whether the plugin HAS an editor.
+            // Without the last one an EDIT button is drawn over plugins that
+            // open nothing.
+            const uint32_t nmLen = sl_fx_plugin_name(engine, i, nullptr, 0);
+            if (nmLen == 0) {
+                o->setProperty("name", juce::var());
+            } else {
+                std::vector<char> nmBuf(nmLen + 1, '\0');
+                sl_fx_plugin_name(engine, i, nmBuf.data(), nmLen + 1);
+                o->setProperty("name", juce::String(juce::CharPointer_UTF8(nmBuf.data())));
+            }
+            o->setProperty("latencyMs", sl_fx_plugin_latency_ms(engine, i));
+            // Read from the ENGINE, never echoed from a request — the window
+            // can be closed by its own close box (sl_engine.h says so at the
+            // editor calls), so a UI trusting its last request lights a lamp
+            // over a window that is gone.
+            o->setProperty("editorAvailable", sl_fx_editor_available(engine, i) != 0);
+            o->setProperty("editorVisible", sl_fx_editor_visible(engine, i) != 0);
             slots.add(juce::var(o));
         }
         auto* res = new juce::DynamicObject();
