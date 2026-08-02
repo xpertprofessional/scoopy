@@ -316,6 +316,55 @@ void sl_tape_scrub_begin(sl_engine* e, uint32_t tape);
 void sl_tape_scrub_to(sl_engine* e, uint32_t tape, double frame);
 void sl_tape_scrub_end(sl_engine* e, uint32_t tape);
 
+/** The scrub rate the render is publishing, in playback speeds (signed;
+    0 when not scrubbing). The readback for a value that was WRITE-ONLY —
+    `pubScrubRate` had no getter, no HotFrame slot and no reader anywhere. */
+double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
+
+/** TURNTABLISM SCRATCH (docs/specs/scratching.md). A tempo-locked pattern that
+    runs for as long as it is held, driving the SAME scrub path a finger does —
+    which is the point: the 10 ms rate one-pole is what produces the phantom
+    click (the momentary silence at every direction change that gives a baby
+    scratch its rhythm with no fader at all), and a generator that bypassed it
+    to "drive the playhead properly" would delete the articulation.
+
+    IT LIVES IN THE ENGINE rather than in a host block callback because
+    `processBlock` exists only in the plugins — the app renders through a thin
+    sink adapter with no per-block hook — and because per-sample evaluation
+    removes the ~94 Hz control-rate ceiling that otherwise smears each reversal
+    across a block. Measured: 7 ms of reversal silence per sample against 11 ms
+    at a 512-frame control grain, where the sources put a real turntable at ~5.
+
+    `technique` indexes the table generated from
+    `slengine/scratch-techniques.json`; THE INDEX IS THE WIRE, and the UI's copy
+    of that table is emitted from the same authority (`scratch:check`).
+    `period_beats` is one full back-and-forth in beats — musical divisions, never
+    milliseconds, because crossfader IOIs cluster on 1/32, 1/16 and 1/8.
+    `span` is a fraction of the loop, and measured spans are SMALL.
+
+    Refused while recording, exactly as sl_tape_scrub_begin is: the write head is
+    not the user's to drag, and a pattern is only a faster drag. Out-of-range
+    period/span are CLAMPED rather than refused — these come from a UI control,
+    and a refused start is a button that does nothing.
+
+    `stop` completes the current stroke before releasing (reversals land at the
+    extrema; strokes are whole units), then hands over to the ordinary 10 ms
+    scrub release fade. */
+void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
+                           double period_beats, double span);
+/** Retune while held. Deliberately does NOT re-seed the phase: a period change
+    mid-stroke should change speed, not restart the figure. */
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span);
+void sl_tape_scratch_stop(sl_engine* e, uint32_t tape);
+
+/** The tempo scratch patterns lock to, engine-wide. Pushed by whoever knows —
+    ScoopyTape from HostSync inside processBlock, Studio from the master tempo —
+    because the engine has no tempo of its own to read: its only tempo concept is
+    a per-deck sync RATIO. Engine-wide rather than per-tape because a pattern is
+    locked to THE tempo, and eight tapes disagreeing about the length of a 1/8
+    note would be eight clocks. Ignored unless finite and positive. */
+void sl_tape_set_scratch_tempo(sl_engine* e, double bpm);
+
 /** Half-open loop region [start, end), published torn-free (seqlock). A region
     set before recording stops is honored by the Law C-3 handoff if it fits the
     captured length; otherwise the take itself becomes the loop. */

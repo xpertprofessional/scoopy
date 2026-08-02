@@ -1,10 +1,10 @@
 {
   "_comment": [
-    "Coverage ledger for the SL-ABI-V3 §5 tape transplant, gated by",
+    "Coverage ledger for the SL-ABI-V3 \u00a75 tape transplant, gated by",
     "`npm run tape:check` (web/scripts/checkTapeCoverage.ts).",
     "",
     "notCarried: a wizard wz_deck_* entry point deliberately NOT carried into",
-    "  sl_tape_*, with the reason. Empty is the good state — it means the",
+    "  sl_tape_*, with the reason. Empty is the good state \u2014 it means the",
     "  transplant is complete.",
     "additions: an sl_tape_* entry point with no wizard counterpart, with the",
     "  reason it exists. Both lists are required so neither a dropped function",
@@ -26,11 +26,11 @@
     },
     {
       "name": "sl_tape_record_cap_reached",
-      "reason": "Same as sl_tape_state — wizard surfaced the 256 MB cap flag via its HotFrame deck block. A cap that stops a recording with no way to observe it is the silent-truncation failure D-WZ-DECK-01 exists to make visible."
+      "reason": "Same as sl_tape_state \u2014 wizard surfaced the 256 MB cap flag via its HotFrame deck block. A cap that stops a recording with no way to observe it is the silent-truncation failure D-WZ-DECK-01 exists to make visible."
     },
     {
       "name": "sl_tape_set_tempo_mode",
-      "reason": "P3-2b-5 (TAPE-STRETCH.md): 0 timePitch / 1 timeStretch — what the one rate number DRIVES. Wizard's deck had varispeed only; pitch-preserving stretch is the merge's 'stretch and re-pitch every element to the master' made real for tapes, on scoopy's own Signalsmith stretcher."
+      "reason": "P3-2b-5 (TAPE-STRETCH.md): 0 timePitch / 1 timeStretch \u2014 what the one rate number DRIVES. Wizard's deck had varispeed only; pitch-preserving stretch is the merge's 'stretch and re-pitch every element to the master' made real for tapes, on scoopy's own Signalsmith stretcher."
     },
     {
       "name": "sl_tape_tempo_mode",
@@ -39,6 +39,26 @@
     {
       "name": "sl_tape_stretch_ready",
       "reason": "The stretcher warms up ASYNC (~600 ms) and the render stays dry until it is warm; without an introspection point the fixture could only sleep-and-hope, and a UI lamp could never say why stretch has not engaged yet."
+    },
+    {
+      "name": "sl_tape_scrub_rate",
+      "reason": "The readback for pubScrubRate, which the render has published since the transplant and NOTHING could read \u2014 no getter, no HotFrame slot, no reader anywhere (scratching.md \u00a74.5 records it as a trap). Wizard had no equivalent because its deck published rate through the HotFrame deck block that v3 does not have yet, the same gap sl_tape_state and sl_tape_record_cap_reached exist to cover. A rate the engine publishes and nobody can read is telemetry that only looks like telemetry."
+    },
+    {
+      "name": "sl_tape_scratch_start",
+      "reason": "Turntablism scratch (docs/specs/scratching.md): a tempo-locked pattern that runs while held, driving the SAME scrub path a finger does. Wizard's deck had no auto-gesture of any kind. It is in the ENGINE rather than a host block callback because processBlock exists only in the plugins \u2014 the app renders through SlRenderSink's four-line adapter with no per-block hook \u2014 and because per-sample evaluation removes the ~94 Hz control-rate ceiling that smeared each reversal across a block (measured: 7 ms of reversal silence per sample vs 11 ms at a 512-frame grain, against ~5 ms on a real turntable)."
+    },
+    {
+      "name": "sl_tape_scratch_set",
+      "reason": "Retune period and span while the pattern is HELD, without re-seeding the phase \u2014 a period change mid-stroke must change speed, not restart the figure. Separate from scratch_start for exactly that reason: reusing start would make every knob movement a restart, which is audible and wrong. No wizard counterpart; wizard had no patterns."
+    },
+    {
+      "name": "sl_tape_scratch_stop",
+      "reason": "Release, which COMPLETES THE CURRENT STROKE before letting go: reversals land at the extrema and strokes are whole units, so cutting mid-stroke hands the scrub coast a playhead the gesture never rests at, and from there the region `entry` snap is a jump nobody asked for. Distinct from sl_tape_scrub_end, which releases immediately because a finger genuinely has let go."
+    },
+    {
+      "name": "sl_tape_set_scratch_tempo",
+      "reason": "The tempo scratch patterns lock to. The engine has no tempo of its own to read \u2014 its only tempo concept is a per-deck sync RATIO (sl_deck_set_tempo_sync) \u2014 so whoever knows must push it: ScoopyTape from HostSync inside processBlock, Studio from the master tempo. Engine-wide rather than per-tape because a pattern is locked to THE tempo, and eight tapes disagreeing about the length of a 1/8 note would be eight clocks. Wizard's deck had no tempo input at all."
     }
   ]
 }

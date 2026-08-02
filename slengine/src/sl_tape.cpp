@@ -15,6 +15,11 @@
 namespace sl {
 namespace {
 
+// THE TECHNIQUE TABLE, generated from slengine/scratch-techniques.json. Never
+// hand-edited, and the same authority emits the UI's copy — the index IS the
+// wire, so a drift here means picking "crab" and hearing an orbit.
+#include "sl_scratch_table.inc"
+
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRampSeconds = 0.010; // D-WZ-RAMP-01: one 10 ms constant
 
@@ -32,6 +37,57 @@ inline double rampStep(double r, double target, double step) {
 inline double sanitize(float s) {
     return std::isfinite(s) ? static_cast<double>(s) : 0.0; // NaN/Inf squelched at the tape input
 }
+
+/* ── the scratch gesture ─────────────────────────────────────────────────────
+   PHASE 0 IS THE START OF THE FORWARD PUSH, which is what makes strokes whole
+   units: velocity is zero at phase 0 and 0.5 — the two reversals — positive on
+   (0, 0.5) (the forward stroke) and negative on (0.5, 1) (the back stroke). So
+   "stroke 0" and "stroke 1" in the technique table are literally the two halves,
+   and a click's `at` is its position inside one.
+
+   The gesture DEPARTS FROM AND RETURNS TO the anchor rather than straddling it,
+   so a pattern started at frame 0 never asks to read before the buffer begins.
+
+   ⚠️ NOT A TRIANGLE, and that is measured rather than aesthetic: the mean pitch
+   span within a single tone is 2109 cents (>1.5 octaves), so the record velocity
+   is emphatically not constant within a stroke. A constant-rate ramp would be
+   the one shape the sources rule out. */
+
+/** Position within the gesture, in [0,1] — 0 at the anchor, 1 at full span. */
+inline double strokePos(double phase) { return 0.5 * (1.0 - std::cos(2.0 * kPi * phase)); }
+
+/** d(strokePos)/d(phase). Analytic, because the generator KNOWS its velocity —
+    it does not have to infer it from a gap the way a finger's positions do. */
+inline double strokeVel(double phase) { return kPi * std::sin(2.0 * kPi * phase); }
+
+/** ASYMMETRIC (the stab): a fast push and a slow re-cue. A piecewise-linear
+    phase warp whose knee lands at the half-cycle point, so the derivative
+    discontinuity falls exactly where sin() is zero and the VELOCITY stays
+    continuous — a jump there would be an authored click at the extremum, which
+    is the one place a technique must not have one. */
+constexpr double kStabKnee = 0.3;
+inline double warpPhase(double phase) {
+    return phase < kStabKnee ? 0.5 * (phase / kStabKnee)
+                             : 0.5 + 0.5 * (phase - kStabKnee) / (1.0 - kStabKnee);
+}
+inline double warpSlope(double phase) {
+    return phase < kStabKnee ? 0.5 / kStabKnee : 0.5 / (1.0 - kStabKnee);
+}
+
+inline double shapePos(int shape, double phase) {
+    return shape == 1 ? strokePos(warpPhase(phase)) : strokePos(phase);
+}
+inline double shapeVel(int shape, double phase) {
+    return shape == 1 ? strokeVel(warpPhase(phase)) * warpSlope(phase) : strokeVel(phase);
+}
+
+/** How hard the playhead is pulled back onto the commanded position. The
+    integrated one-pole lags the command — which is the POINT, it is what makes
+    the reversal notch — but over minutes that lag's numerical residue could
+    wander. A ~1 s time constant is three orders of magnitude slower than the
+    7 ms notch and slower than any stroke, so it cannot touch the articulation;
+    it only stops a long hold from drifting off its anchor. */
+constexpr double kScratchAnchorSeconds = 1.0;
 
 } // namespace
 
@@ -225,6 +281,71 @@ void TapeBank::scrubTo(uint32_t tape, double frame) {
 void TapeBank::scrubEnd(uint32_t tape) {
     if (tape >= kMaxTapes) return;
     tapes_[tape].scrubActive.store(0, std::memory_order_release);
+}
+
+double TapeBank::scrubRate(uint32_t tape) const {
+    // The readback for pubScrubRate, which was WRITE-ONLY until this existed —
+    // no getter, no HotFrame slot, no reader anywhere (scratching.md §4.5). A
+    // rate the engine publishes and nobody can read is telemetry that only looks
+    // like telemetry.
+    return tape >= kMaxTapes ? 0.0
+                             : tapes_[tape].pubScrubRate.load(std::memory_order_relaxed);
+}
+
+void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeats,
+                            double span) {
+    if (tape >= kMaxTapes) return;
+    Tape& d = tapes_[tape];
+    // Recording owns the playhead, exactly as scrubBegin has it: the write head
+    // is not the user's to drag, and a pattern is only a faster drag.
+    if (d.state.load(std::memory_order_acquire) == static_cast<uint32_t>(TapeState::recording))
+        return;
+    if (technique >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) return;
+    // Hostile input is CLAMPED rather than refused: these arrive from a UI
+    // control and a refused start is a button that does nothing, which is worse
+    // than a gesture at the edge of its range.
+    if (!(periodBeats > 0.0) || !std::isfinite(periodBeats)) periodBeats = 0.5;
+    if (!(span > 0.0) || !std::isfinite(span)) span = 0.07;
+    d.scratchTechnique.store(technique, std::memory_order_relaxed);
+    d.scratchPeriodBeats.store(std::clamp(periodBeats, 1.0 / 64.0, 8.0),
+                               std::memory_order_relaxed);
+    d.scratchSpan.store(std::clamp(span, 0.0005, 1.0), std::memory_order_relaxed);
+    // The render seeds the anchor and the phase, because only it knows where the
+    // playhead actually IS — pubPlayhead is a block-old copy, and starting a
+    // gesture from a stale anchor puts a lurch at the top of every pattern.
+    d.scratchSeeded.store(0, std::memory_order_relaxed);
+    d.scratchActive.store(1, std::memory_order_release);
+    // The scrub path is what renders it, so open that too. A scratch IS a scrub;
+    // the only difference is who posts the positions.
+    d.scrubActive.store(1, std::memory_order_release);
+}
+
+void TapeBank::scratchSet(uint32_t tape, double periodBeats, double span) {
+    if (tape >= kMaxTapes) return;
+    Tape& d = tapes_[tape];
+    // Live while held, and deliberately NOT re-seeding the phase: a pattern
+    // whose period jumps mid-stroke should change speed, not restart.
+    if (periodBeats > 0.0 && std::isfinite(periodBeats))
+        d.scratchPeriodBeats.store(std::clamp(periodBeats, 1.0 / 64.0, 8.0),
+                                   std::memory_order_relaxed);
+    if (span > 0.0 && std::isfinite(span))
+        d.scratchSpan.store(std::clamp(span, 0.0005, 1.0), std::memory_order_relaxed);
+}
+
+void TapeBank::scratchStop(uint32_t tape) {
+    if (tape >= kMaxTapes) return;
+    Tape& d = tapes_[tape];
+    // 2 = STOPPING, not 0. Release completes the stroke: reversals land at the
+    // extrema and strokes are whole units, so cutting mid-stroke would leave the
+    // playhead somewhere the gesture never rests — and then scrubEnd's coast
+    // hands it to the `entry` snap from wherever that happened to be.
+    uint32_t running = 1;
+    d.scratchActive.compare_exchange_strong(running, 2, std::memory_order_acq_rel);
+}
+
+void TapeBank::setScratchTempo(double bpm) {
+    if (bpm > 0.0 && std::isfinite(bpm))
+        scratchBpm_.store(std::clamp(bpm, 20.0, 999.0), std::memory_order_relaxed);
 }
 
 void TapeBank::trigger(uint32_t tape, uint32_t mode) {
@@ -613,6 +734,12 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             }
             for (uint32_t i = 0; i < frames; ++i) { dl[i] = 0.0f; dr[i] = 0.0f; }
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
+            // A tape that is not moving publishes a rate of zero, exactly as the
+            // playback path below does. This branch used to leave the last scrub
+            // rate standing forever, which was invisible while `pubScrubRate`
+            // had no getter — adding `sl_tape_scrub_rate` is what turned a
+            // harmless stale field into a readout that would lie.
+            d.pubScrubRate.store(0.0, std::memory_order_relaxed);
             continue;
         }
         if (scrubbing) {
@@ -625,13 +752,102 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             // at a target the finger has already left.
             const double gap = scrubHeld ? target - d.playhead : 0.0;
             const double want = std::clamp(gap / static_cast<double>(frames), -4.0, 4.0);
+
+            // ── the scratch generator (docs/specs/scratching.md) ─────────────
+            // A PATTERN REPLACES THE FINGER AND NOTHING ELSE. Everything below —
+            // the one-pole, the ±4 clamp, sampleLerp, the raised-cosine
+            // scrubGain — is the same code a hand drives, which is why a
+            // reversal still produces the phantom click that a baby scratch is
+            // made of. The only difference is that these positions come from a
+            // phase evaluated PER SAMPLE rather than from a mailbox read once
+            // per block, so the reversal is not smeared across 10.7 ms of
+            // control grain.
+            const uint32_t scratchState = d.scratchActive.load(std::memory_order_acquire);
+            const bool scratching = scratchState != 0 && scrubHeld;
+            uint32_t tech = d.scratchTechnique.load(std::memory_order_relaxed);
+            if (tech >= static_cast<uint32_t>(SL_SCRATCH_TECHNIQUE_COUNT)) tech = 0;
+            const SlScratchTechnique& T = kSlScratchTechniques[tech];
+            if (scratching && d.scratchSeeded.load(std::memory_order_relaxed) == 0) {
+                // ⚠️ DRAIN A PENDING SEEK FIRST. The scrub branch does not
+                // consume `pendingSeek` — only the playback branch and the idle
+                // early-out do — so "park the head, then scratch there" silently
+                // lost the park: the scratch opened the scrub path, that branch
+                // ran instead, and the gesture anchored wherever the head
+                // happened to be. Caught by the anchor-return fixture, which is
+                // the only reason it is not still in here.
+                const int64_t seekTo = d.pendingSeek.exchange(-1, std::memory_order_acq_rel);
+                if (seekTo >= 0) {
+                    const double t = static_cast<double>(seekTo);
+                    d.playhead = t < static_cast<double>(dFrames)
+                                     ? t
+                                     : static_cast<double>(dFrames - 1);
+                }
+                d.scratchAnchor = d.playhead;
+                d.scratchPhase = 0.0; // phase 0 IS the start of the forward push
+                d.scratchSeeded.store(1, std::memory_order_relaxed);
+            }
+            // Span is a fraction of the LOOP, and the measured spans are small —
+            // chirps used only the first 20° of a 144° sample. Bounded so the
+            // gesture cannot reach past the material it is scratching.
+            const double spanFrames =
+                d.scratchSpan.load(std::memory_order_relaxed) * static_cast<double>(dFrames);
+            const double beats = d.scratchPeriodBeats.load(std::memory_order_relaxed);
+            const double bpm = scratchBpm_.load(std::memory_order_relaxed);
+            // One full back-and-forth in BEATS, because crossfader IOIs cluster
+            // on 1/32, 1/16 and 1/8 — the grid is a description of what DJs do,
+            // not an approximation of it.
+            const double cycleSamples = beats * (60.0 / bpm) * fs;
+            const double phaseInc = cycleSamples > 1.0 ? 1.0 / cycleSamples : 0.0;
+            const double anchorPull = 1.0 / (kScratchAnchorSeconds * fs);
+
             for (uint32_t i = 0; i < frames; ++i) {
-                // Smoothed on the ONE D-WZ-RAMP-01 constant, so a flick glides
-                // like tape instead of stepping, and reverse is just a negative
-                // rate through the same reader.
-                d.scrubRate += alpha * (want - d.scrubRate);
+                if (scratching) {
+                    // ANALYTIC VELOCITY: the generator knows how fast the record
+                    // is moving, so it says so instead of opening a gap and
+                    // letting the engine infer it. That is also what makes this
+                    // block-size independent — nothing here divides by `frames`,
+                    // which §4.1 warns is the trap a rate-driven generator falls
+                    // into (a different block size, a different rate).
+                    const double v =
+                        spanFrames * shapeVel(T.shape, d.scratchPhase) * phaseInc;
+                    const double wantS = std::clamp(v, -4.0, 4.0);
+                    d.scrubRate += alpha * (wantS - d.scrubRate);
+                    d.playhead += d.scrubRate;
+                    // A whisper of a pull toward the commanded position. Three
+                    // orders of magnitude slower than the notch (see the
+                    // constant), so it cannot flatten the articulation — it only
+                    // keeps a long hold from wandering off its anchor.
+                    const double commanded =
+                        d.scratchAnchor + spanFrames * shapePos(T.shape, d.scratchPhase);
+                    d.playhead += anchorPull * (commanded - d.playhead);
+
+                    const double prevPhase = d.scratchPhase;
+                    d.scratchPhase += phaseInc;
+                    if (d.scratchPhase >= 1.0) d.scratchPhase -= 1.0;
+                    // RELEASE COMPLETES THE STROKE. Reversals land at the
+                    // extrema and strokes are whole units, so a pattern told to
+                    // stop runs to the next boundary (phase 0 or 0.5) and lets
+                    // go THERE. Cutting mid-stroke would hand scrubEnd's coast a
+                    // playhead the gesture never rests at, and from there the
+                    // `entry` snap below is a jump you did not ask for.
+                    if (scratchState == 2) {
+                        const bool crossedHalf = prevPhase < 0.5 && d.scratchPhase >= 0.5;
+                        const bool wrapped = d.scratchPhase < prevPhase;
+                        if (crossedHalf || wrapped) {
+                            d.scratchActive.store(0, std::memory_order_release);
+                            // Hands over to the ordinary 10 ms release fade,
+                            // which is what stops it clicking.
+                            d.scrubActive.store(0, std::memory_order_release);
+                        }
+                    }
+                } else {
+                    // Smoothed on the ONE D-WZ-RAMP-01 constant, so a flick
+                    // glides like tape instead of stepping, and reverse is just
+                    // a negative rate through the same reader.
+                    d.scrubRate += alpha * (want - d.scrubRate);
+                    d.playhead += d.scrubRate;
+                }
                 d.scrubGain = rampStep(d.scrubGain, scrubHeld ? 1.0 : 0.0, step);
-                d.playhead += d.scrubRate;
                 if (d.playhead < 0.0) d.playhead = 0.0;
                 const double lastFrame = static_cast<double>(dFrames) - 1.0;
                 if (d.playhead > lastFrame) d.playhead = lastFrame;
@@ -641,7 +857,13 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 dl[i] = static_cast<float>(scrubL * sg);
                 dr[i] = static_cast<float>(scrubR * sg);
             }
-            d.cueFrame = d.playhead; // arm: a trigger starts where you let go
+            // ⚠️ A RUNNING PATTERN DOES NOT ARM THE CUE. `cueFrame` is re-armed
+            // on every scrub block so that "scrub to the drop, hit play" works
+            // (D-WZ-SCRUBCUE-01) — but a scratch posts a new position every
+            // sample, so left alone it would overwrite the user's cue point
+            // continuously and silently. A hand scrub still arms it; that is the
+            // gesture the law was written for.
+            if (!scratching) d.cueFrame = d.playhead;
             d.pubPlayhead.store(d.playhead, std::memory_order_relaxed);
             d.pubScrubRate.store(d.scrubRate, std::memory_order_relaxed);
             continue;

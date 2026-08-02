@@ -639,6 +639,27 @@ void sl_tape_scrub_end(sl_engine* e, uint32_t tape) {
     if (e != nullptr) e->tapes.scrubEnd(tape);
 }
 
+double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape) {
+    return e == nullptr ? 0.0 : e->tapes.scrubRate(tape);
+}
+
+void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
+                           double period_beats, double span) {
+    if (e != nullptr) e->tapes.scratchStart(tape, technique, period_beats, span);
+}
+
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span) {
+    if (e != nullptr) e->tapes.scratchSet(tape, period_beats, span);
+}
+
+void sl_tape_scratch_stop(sl_engine* e, uint32_t tape) {
+    if (e != nullptr) e->tapes.scratchStop(tape);
+}
+
+void sl_tape_set_scratch_tempo(sl_engine* e, double bpm) {
+    if (e != nullptr) e->tapes.setScratchTempo(bpm);
+}
+
 void sl_tape_set_loop(sl_engine* e, uint32_t tape, uint32_t enabled,
                       uint64_t start, uint64_t end) {
     if (e != nullptr) e->tapes.setLoop(tape, enabled, start, end);

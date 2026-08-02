@@ -77,6 +77,11 @@ constexpr double kPeakRate = 2.0;
     into a comb. */
 constexpr double kWindowSeconds = 0.001;
 
+/** Where a scratch gesture is parked before it starts. An integer frame index
+    on purpose — it is what `sl_tape_seek` takes — and mid-buffer so the gesture
+    has material either side of it. */
+constexpr uint64_t kAnchorFrame = kLen / 2;
+
 struct Notch {
     double floorRms;   // the quietest window near the reversal
     double strokeRms;  // the loudest window mid-stroke (the reference)
@@ -225,6 +230,50 @@ bool measure(uint32_t block, Notch& out) {
 
 } // namespace
 
+/* ── the auto-scratch ──────────────────────────────────────────────────────
+   Everything above measures the HAND path, which is the reference the generator
+   has to sound like. What follows exercises the generator itself. */
+
+/** Render one pattern and return the left channel. `blockSize` is both the
+    engine's block and the render chunk, so this is the same gesture evaluated
+    at three different control grains. */
+bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double span,
+                double bpm, uint32_t cycles, std::vector<float>& out,
+                double* endPlayhead = nullptr) {
+    sl_engine* e = sl_engine_create(kRate, block, 86);
+    if (e == nullptr) return false;
+    if (sl_engine_start(e) != 1) return false;
+    sl_watchdog_set_enabled(e, 0);
+    for (uint32_t t = 0; t < sl_channel_count(); ++t)
+        if (sl_channel_set_source(e, t, 1 /* tape */, t) != 1) return false;
+
+    std::vector<float> tone(kLen);
+    for (size_t i = 0; i < kLen; ++i)
+        tone[i] = static_cast<float>(
+            std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+    const float* planar[1] = {tone.data()};
+    if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return false;
+    // Park the head mid-buffer so the gesture has material either side of it.
+    sl_tape_seek(e, 0, kAnchorFrame);
+
+    sl_tape_set_scratch_tempo(e, bpm);
+    sl_tape_scratch_start(e, 0, technique, periodBeats, span);
+
+    const double cycleSamples = periodBeats * (60.0 / bpm) * kRate;
+    const auto total = static_cast<uint64_t>(cycleSamples * cycles);
+
+    std::vector<float> l(block), r(block);
+    float* outs[2] = {l.data(), r.data()};
+    out.clear();
+    for (uint64_t done = 0; done < total; done += block) {
+        sl_render(e, outs, 2, block);
+        out.insert(out.end(), l.begin(), l.end());
+    }
+    if (endPlayhead != nullptr) *endPlayhead = sl_tape_playhead(e, 0);
+    sl_engine_destroy(e);
+    return true;
+}
+
 int main() {
     // 64 frames = 1.33 ms control grain: what the ENGINE does, with the control
     // rate almost out of the picture.
@@ -263,5 +312,223 @@ int main() {
     CHECK(fine.widthMs >= 2.0 && fine.widthMs <= 20.0);
     CHECK(coarse.widthMs >= 2.0 && coarse.widthMs <= 20.0);
 
+    /* ── 1. BLOCK-SIZE INDEPENDENCE — the load-bearing assertion ───────────
+       scratching.md §4.1 warns that the gap law divides by `frames`, so a
+       generator that commands a RATE would produce a different rate at a
+       different block size — the same pattern would be a different gesture in
+       every host. The generator is therefore position/velocity driven and
+       touches `frames` nowhere, and this is what holds that true. It is the
+       reason the whole feature can live in the engine at all. */
+    {
+        std::vector<float> a, b, c;
+        CHECK(runPattern(64, 0 /* baby */, 0.5, 0.07, 120.0, 4, a));
+        CHECK(runPattern(256, 0, 0.5, 0.07, 120.0, 4, b));
+        CHECK(runPattern(512, 0, 0.5, 0.07, 120.0, 4, c));
+        const size_t n = std::min(a.size(), std::min(b.size(), c.size()));
+        CHECK(n > kRate / 4); // it actually rendered something
+        double worst = 0.0;
+        for (size_t i = 0; i < n; ++i) {
+            worst = std::max(worst, std::abs(static_cast<double>(a[i] - b[i])));
+            worst = std::max(worst, std::abs(static_cast<double>(a[i] - c[i])));
+        }
+        std::printf("  block-size independence: worst |Δ| across 64/256/512 = %.3e\n", worst);
+        // MEASURED BIT-EXACT (worst |Δ| = 0), and structurally it should be: the
+        // per-sample scratch maths references no block boundary at all, so each
+        // sample is computed identically however the render is chunked. The
+        // bound is a hair above zero rather than `== 0` only because FMA
+        // contraction can differ across compilers and architectures — a genuine
+        // block-size dependence would be percent, not 1e-9.
+        CHECK(worst < 1e-9);
+    }
+
+    /* ── 2. THE PATTERN SOUNDS, AND IT ARTICULATES ─────────────────────────
+       A generator that produced a steady tone would pass every structural check
+       above and be worthless: a baby scratch's whole character is that it breaks
+       into discrete bursts with NO FADER AT ALL. */
+    {
+        std::vector<float> baby;
+        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 4, baby));
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        const size_t windows = baby.size() / win;
+        CHECK(windows > 20);
+        double loud = 0.0, quiet = 1e9;
+        for (size_t w = 0; w < windows; ++w) {
+            const double v = acRms(baby, w * win, win);
+            loud = std::max(loud, v);
+            quiet = std::min(quiet, v);
+        }
+        std::printf("  baby @120bpm 1/8: loudest %.5f  quietest %.5f\n", loud, quiet);
+        CHECK(loud > 0.01);          // it sounds
+        CHECK(quiet < loud * 0.05);  // and it BREAKS — >26 dB of articulation
+    }
+
+    /* ── 3. PERIOD IS MUSICAL — half the tempo is half the reversal rate ───
+       The one assertion that pins `periodBeats` as beats rather than as some
+       number that happens to work at 120. Counting reversals is the honest
+       measure: it is what a listener counts. */
+    {
+        // A REVERSAL IS A SIGN CHANGE OF THE RECORD'S VELOCITY, so count that
+        // directly off `sl_tape_scrub_rate` rather than inferring it from the
+        // envelope.
+        //
+        // ⚠️ Counting envelope dips was tried first and is WRONG, which is worth
+        // recording because it looks right: the output frequency is the tone
+        // times the instantaneous rate, so near a reversal the tone itself goes
+        // subsonic and a short analysis window sees "no AC" over a wide region
+        // that dips in and out. It counted 29 reversals in 4 cycles, and — the
+        // tell — the count scaled with DURATION rather than with cycles, which
+        // is exactly the thing this test exists to distinguish.
+        auto reversals = [](double bpm, uint64_t& renderedSamples) {
+            sl_engine* e = sl_engine_create(kRate, 64, 86);
+            if (e == nullptr) return -1;
+            if (sl_engine_start(e) != 1) return -1;
+            sl_watchdog_set_enabled(e, 0);
+            for (uint32_t t = 0; t < sl_channel_count(); ++t)
+                if (sl_channel_set_source(e, t, 1, t) != 1) return -1;
+            std::vector<float> tone(kLen, 0.25f);
+            const float* planar[1] = {tone.data()};
+            if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1;
+            sl_tape_seek(e, 0, kAnchorFrame);
+            sl_tape_set_scratch_tempo(e, bpm);
+            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07);
+
+            const double cycleSamples = 0.5 * (60.0 / bpm) * kRate;
+            const auto total = static_cast<uint64_t>(cycleSamples * 4.0);
+            std::vector<float> l(64), r(64);
+            float* outs[2] = {l.data(), r.data()};
+            int count = 0, sign = 0;
+            uint64_t done = 0;
+            for (; done < total; done += 64) {
+                sl_render(e, outs, 2, 64);
+                const double v = sl_tape_scrub_rate(e, 0);
+                // A dead band, so the settling one-pole cannot jitter across
+                // zero and be counted twice at the same reversal.
+                const int s = v > 1e-3 ? 1 : (v < -1e-3 ? -1 : 0);
+                if (s != 0 && sign != 0 && s != sign) ++count;
+                if (s != 0) sign = s;
+            }
+            renderedSamples = done;
+            sl_engine_destroy(e);
+            return count;
+        };
+        uint64_t n120 = 0, n60 = 0;
+        const int r120 = reversals(120.0, n120);
+        const int r60 = reversals(60.0, n60);
+        std::printf("  reversals over 4 cycles: %d @120bpm (%llu smp), %d @60bpm (%llu smp)\n",
+                    r120, static_cast<unsigned long long>(n120), r60,
+                    static_cast<unsigned long long>(n60));
+        // THE ASSERTION THAT PINS "BEATS": halving the tempo makes four cycles
+        // take twice as long in wall-clock time and contain exactly as many
+        // reversals. A period secretly in milliseconds would hold the duration
+        // and double the count.
+        CHECK(n60 > n120 * 3 / 2);
+        CHECK(r120 == r60);
+        // Two reversals per cycle over four cycles; the first is at phase 0
+        // where the gesture starts from rest, so it is not a sign CHANGE.
+        CHECK(r120 >= 6 && r120 <= 8);
+    }
+
+    /* ── 4. THE GESTURE RETURNS TO ITS ANCHOR ──────────────────────────────
+       Strokes are whole units and the shape is periodic, so a whole number of
+       cycles must end where it began. If this drifts, a long hold walks off
+       across the buffer — the failure mode the slow anchor pull exists for. */
+    {
+        std::vector<float> x;
+        double endPh = 0.0;
+        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 16, x, &endPh));
+        const double anchor = static_cast<double>(kAnchorFrame);
+        const double spanFrames = 0.07 * static_cast<double>(kLen);
+        std::printf("  after 16 cycles: playhead %.1f, anchor %.1f, span %.1f\n",
+                    endPh, anchor, spanFrames);
+        // Within a fraction of one span of where it started — the one-pole lags
+        // by design, so "exactly" is the wrong demand; "has not wandered off" is
+        // the right one.
+        CHECK(std::abs(endPh - anchor) < spanFrames);
+    }
+
+    /* ── 5. RECORDING REFUSES, exactly as sl_tape_scrub_begin does ─────────
+       The write head is not the user's to drag, and a pattern is only a faster
+       drag. Without this a scratch during a take would corrupt the recording. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        std::vector<float> tone(kLen, 0.5f);
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        CHECK(sl_tape_set_record_source(e, 0, 0 /* deviceInput */, 0, 1) == 1);
+        sl_tape_record_start(e, 0);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07);
+        std::vector<float> l(64), r(64);
+        float* outs[2] = {l.data(), r.data()};
+        sl_render(e, outs, 2, 64);
+        // Refused means the scrub path never opened, so the rate stays zero.
+        CHECK(sl_tape_scrub_rate(e, 0) == 0.0);
+        sl_engine_destroy(e);
+    }
+
+    /* ── 6. AN OUT-OF-RANGE TECHNIQUE IS REFUSED, not clamped into another ─
+       Period and span are clamped (a UI control at the edge of its range should
+       still play), but a technique INDEX is a name, and silently playing a
+       different figure than the one asked for is the exact drift scratch:check
+       exists to prevent — it must not be reachable through the ABI either. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        std::vector<float> tone(kLen, 0.5f);
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07);
+        std::vector<float> l(64), r(64);
+        float* outs[2] = {l.data(), r.data()};
+        sl_render(e, outs, 2, 64);
+        CHECK(sl_tape_scrub_rate(e, 0) == 0.0);
+        sl_engine_destroy(e);
+    }
+
+    /* ── 7. RELEASE COMPLETES THE STROKE ───────────────────────────────────
+       Told to stop mid-stroke, the pattern runs to the next reversal and lets go
+       there — so the playhead the scrub coast inherits is one the gesture
+       actually rests at. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        for (uint32_t t = 0; t < sl_channel_count(); ++t)
+            CHECK(sl_channel_set_source(e, t, 1, t) == 1);
+        std::vector<float> tone(kLen);
+        for (size_t i = 0; i < kLen; ++i)
+            tone[i] = static_cast<float>(
+                std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        sl_tape_seek(e, 0, kAnchorFrame);
+        sl_tape_set_scratch_tempo(e, 120.0);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07);
+
+        std::vector<float> l(64), r(64);
+        float* outs[2] = {l.data(), r.data()};
+        const double cycle = 0.5 * (60.0 / 120.0) * kRate; // one full back-and-forth, in samples
+        // Stop a QUARTER of the way into the forward stroke — the least
+        // convenient moment, and the one a naive implementation cuts at.
+        const int quarterIn = static_cast<int>(cycle * 0.125) / 64;
+        for (int i = 0; i < quarterIn; ++i) sl_render(e, outs, 2, 64);
+        sl_tape_scratch_stop(e, 0);
+        // It must still be moving immediately after the stop.
+        sl_render(e, outs, 2, 64);
+        const double rateJustAfter = sl_tape_scrub_rate(e, 0);
+        std::printf("  release: rate just after stop = %.4f (still travelling)\n", rateJustAfter);
+        CHECK(std::abs(rateJustAfter) > 1e-3);
+        // And it must actually finish, rather than running forever.
+        for (int i = 0; i < static_cast<int>(cycle * 2) / 64; ++i) sl_render(e, outs, 2, 64);
+        CHECK(sl_tape_scrub_rate(e, 0) == 0.0);
+        sl_engine_destroy(e);
+    }
+
+    std::printf("sl_tape_scratch_test OK\n");
     return 0;
 }

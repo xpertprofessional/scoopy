@@ -132,6 +132,39 @@ struct Tape {
     std::atomic<double> pubScrubRate{0.0}; // published for the UI
     std::atomic<double> rate{1.0};         // signed varispeed; <0 = reverse
 
+    // --- SCRATCH (docs/specs/scratching.md) ---------------------------------
+    // AN AUTO-SCRATCH IS THE SAME SHAPE ONE OCTAVE UP: instead of a finger
+    // posting positions, a per-sample phase evaluator produces them. It reaches
+    // the reader through the SAME scrubRate one-pole and sampleLerp above, and
+    // that is not an implementation convenience — that one-pole IS the phantom
+    // click (measured -48 dB / 7 ms, sl_tape_scratch_test), the thing that gives
+    // a baby scratch its rhythm with no fader at all. Bypassing it to "drive the
+    // playhead properly" would delete the articulation and leave every test
+    // green.
+    //
+    // WHY IT LIVES HERE AND NOT IN A HOST. `processBlock` exists only in the
+    // plugins; the standalone app renders through SlRenderSink's four-line
+    // adapter with no per-block hook. Engine-side reaches every product by
+    // construction, and per-sample removes the 93.75 Hz control-rate ceiling
+    // that made the reversal 4 ms too wide at the block size hosts really run.
+    //
+    // 0 = off · 1 = running · 2 = STOPPING (finish the stroke, then release —
+    // reversals land at the extrema and strokes are whole units).
+    std::atomic<uint32_t> scratchActive{0};
+    std::atomic<uint32_t> scratchTechnique{0}; // index into kSlScratchTechniques
+    std::atomic<double> scratchPeriodBeats{0.5};
+    std::atomic<double> scratchSpan{0.07}; // fraction of the loop
+    // Render-owned.
+    double scratchPhase = 0.0;   // [0,1): 0 and 0.5 are the two reversals
+    double scratchAnchor = 0.0;  // the frame the gesture departs from and returns to
+    double scratchGate = 1.0;    // D-SL-SCRATCHGATE-01, the fader hand
+    /** Cleared by scratchStart, set by the render once it has seeded the anchor
+        and the phase. Atomic because both threads touch it, and it is the render
+        that must do the seeding: only it knows where the playhead actually is
+        (`pubPlayhead` is a block old, and a stale anchor puts a lurch at the top
+        of every pattern). */
+    std::atomic<uint32_t> scratchSeeded{0};
+
     // Seqlock loop spec (writer: control thread; reader: render, once per block).
     std::atomic<uint32_t> loopSeq{0};
     uint32_t loopEnabled = 0;
@@ -416,6 +449,19 @@ public:
     void scrubBegin(uint32_t tape);
     void scrubTo(uint32_t tape, double frame);
     void scrubEnd(uint32_t tape);
+    double scrubRate(uint32_t tape) const;
+    /** Auto-scratch (docs/specs/scratching.md). `technique` indexes the table
+        emitted from `slengine/scratch-techniques.json` — THE INDEX IS THE WIRE.
+        `periodBeats` is one full back-and-forth in beats; `span` is a fraction
+        of the loop. Stop finishes the current stroke before releasing. */
+    void scratchStart(uint32_t tape, uint32_t technique, double periodBeats, double span);
+    void scratchSet(uint32_t tape, double periodBeats, double span);
+    void scratchStop(uint32_t tape);
+    /** The tempo a beat-locked pattern runs against, engine-wide. Pushed by
+        whoever knows: ScoopyTape from HostSync inside processBlock, Studio from
+        the master tempo. There is no engine-level tempo to read instead — the
+        engine's only tempo concept is a per-deck sync RATIO. */
+    void setScratchTempo(double bpm);
     void setLoop(uint32_t tape, uint32_t enabled, uint64_t start, uint64_t end);
     uint32_t waveform(uint32_t tape, uint32_t channel, uint64_t startFrame,
                       uint64_t endFrame, uint32_t columns,
@@ -505,6 +551,11 @@ private:
     std::vector<std::unique_ptr<TapeChunk>>& retireSink();
 
     Tape tapes_[kMaxTapes];
+    /** The scratch clock, engine-wide rather than per-tape: a pattern is locked
+        to THE tempo, and eight tapes disagreeing about what a 1/8 note is would
+        be eight clocks. Seeded at 120 so a host that never pushes one still
+        produces a musically sensible gesture instead of dividing by zero. */
+    std::atomic<double> scratchBpm_{120.0};
     // Chunk storage handed over by Tape::reset, kept alive until a render block
     // boundary has passed (see reset's comment). Freed on the NEXT reset, which
     // in practice is many blocks later — you cannot press record faster than
