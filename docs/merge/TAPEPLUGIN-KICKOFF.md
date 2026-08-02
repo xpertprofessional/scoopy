@@ -573,6 +573,25 @@ while recording, and legible enough to place a loop point by eye.
 
 ## §5 · Scrub styles (A5)
 
+> ⚠️ **SUPERSEDED IN SCOPE by `docs/specs/scratching.md` (2026-08-02).** What
+> this section calls "a turntable scrub style" grew into a researched feature of
+> its own: tempo-locked turntablism patterns (baby · chirp · flare · transformer
+> · crab · orbit) driving TWO gesture streams, plus a 2D pad whose Y axis is a
+> crossfader. **Read that spec before touching this section** — it carries the
+> measured behaviour, the reference material at `~/reference/scratching/`, and
+> three findings that change the design:
+>
+> - a **fader gate does not exist** in this engine and needs a signed exception
+>   to D-WZ-RAMP-01;
+> - `scrubTarget` is read **once per 512-frame block**, so the generator must
+>   post from `processBlock`, not from the 40 Hz timer;
+> - the feature must be built as the **`TapeRow` block** (D-SL-STUDIO-01 L1) or
+>   it reaches only this plugin — the looper is in **neither Studio nor
+>   ScoopyDeck** today.
+>
+> ⚠️ It also inherits §8's blocker: **ScoopyTape's parameter IDs are still
+> unsigned, and that now blocks two features rather than one.**
+
 **Turntable exists** and is good (`sl_tape.cpp:623-638`). The work is to make it
 one of several named styles behind the `SCRUB ▾` selector.
 
