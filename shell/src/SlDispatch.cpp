@@ -81,7 +81,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 103);
+    obj->setProperty("schemaVersion", 104);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -1290,6 +1290,14 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
             o->setProperty("current", io.inputDeviceName());
             o->setProperty("devices", toArray(io.availableInputDevices()));
             o->setProperty("channels", toArray(io.activeInputChannelNames()));
+            // OUTPUTS TOO (S5). `activeOutputChannelCount` has existed on the
+            // device layer all along and nothing reported it, so the UI could
+            // not know whether this interface HAS a pair 3/4 to offer. The
+            // donor gates its output picker on exactly this ("publish only when
+            // outputChannelCount > 2"), and a picker offering channels the
+            // hardware does not have is a control that reaches nothing.
+            o->setProperty("outputDevices", toArray(io.availableOutputDevices()));
+            o->setProperty("outputChannelCount", io.activeOutputChannelCount());
             return ok(juce::var(o));
         }
         if (action == "setInput") {

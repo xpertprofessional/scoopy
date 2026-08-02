@@ -165,12 +165,19 @@ export function Select(props: {
   options: readonly { value: string | number; label: string }[];
   /** Inert: the choice exists but cannot apply right now (say the reason in a title). */
   disabled?: boolean;
+  /** ⚠️ THE TITLE THE LINE ABOVE ALREADY ASKED FOR. It said "say the reason in
+   *  a title" and there was no prop to say it with, so every disabled Select in
+   *  the tree was a dead end — DESIGN.md §6 is explicit that `disabled` with no
+   *  `title` is exactly that. Added when S5's output picker needed to explain
+   *  "this interface has only one stereo pair". */
+  title?: string;
   onChange: (raw: string) => void;
 }) {
   return (
     <select
       className="ds-select"
       value={props.value}
+      title={props.title}
       disabled={props.disabled}
       onChange={(e) => props.onChange(e.target.value)}
     >

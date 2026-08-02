@@ -58,7 +58,7 @@ namespace wizard::merged {
     Carried into `sl_engine_create` for the HotFrame slot-0 echo (sl_engine.h §1).
     ⚠️ Was **88** against a schema.ts of 96 — eight versions stale, because its
     only consumer is an echo nobody compared. Gated now: `npm run schema:check`. */
-inline constexpr int kScoopySchemaVersion = 103;
+inline constexpr int kScoopySchemaVersion = 104;
 
 /** The engine + device + settings the whole app shares. One engine, one device;
     every window is another view onto it. */

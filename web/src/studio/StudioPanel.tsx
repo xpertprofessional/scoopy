@@ -44,6 +44,7 @@ import { useComposeLifecycle } from '../plane/useComposeLifecycle.ts'
 import { Transport } from './Transport.tsx'
 import { MASTER_TEMPO, MASTER_TEMPO_KEY, MasterBar } from './MasterBar.tsx'
 import { useMidiClock } from './useMidiClock.ts'
+import { OutputBlock } from './OutputBlock.tsx'
 import { installStudioMap } from './studioMap.ts'
 import { asNumber, useSetting } from '../useSetting.ts'
 import '../plane/plane.css'
@@ -117,6 +118,7 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
             and not reachable by anyone who does not already know it is there. */}
         <Transport deck={DECK} session={session?.name ?? null} />
         <MasterBar link={link} session={session?.name ?? null} />
+        <OutputBlock link={link} session={session?.name ?? null} />
         <span>{`studio · ${session?.name ?? 'no session'}`}</span>
         {!session && (
           <span className="dim">{' empty studio — use “session ▾” to make or open one'}</span>
