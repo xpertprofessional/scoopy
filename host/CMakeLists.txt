@@ -7,7 +7,7 @@
 # that does not exist yet (ScoopyPluginProcessor.h records the same wall).
 # GUI-free so the id-stability rules are tested headlessly, on a machine with no
 # MIDI hardware at all.
-add_library(wz_midi STATIC src/MidiHost.cpp src/MidiClockOut.cpp)
+add_library(wz_midi STATIC src/MidiHost.cpp src/MidiClockOut.cpp src/MidiNoteOut.cpp)
 target_include_directories(wz_midi PUBLIC src)
 target_link_libraries(wz_midi
     PUBLIC juce::juce_audio_devices
@@ -20,6 +20,10 @@ add_test(NAME midi_host_test COMMAND midi_host_test)
 add_executable(midi_clock_test tools/midi_clock_test.cpp)
 target_link_libraries(midi_clock_test PRIVATE wz_midi)
 add_test(NAME midi_clock_test COMMAND midi_clock_test)
+
+add_executable(midi_note_test tools/midi_note_test.cpp)
+target_link_libraries(midi_note_test PRIVATE wz_midi)
+add_test(NAME midi_note_test COMMAND midi_note_test)
 
 add_library(wz_audio_io STATIC src/AudioIO.cpp src/RenderSink.cpp)
 target_include_directories(wz_audio_io PUBLIC src)
