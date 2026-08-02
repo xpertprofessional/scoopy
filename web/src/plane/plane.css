@@ -174,6 +174,15 @@
 
 /* Value read-outs are sized in ch, never px (DESIGN.md §2) — the width follows
    the value font instead of an assumption about it. */
+.studio-sends,
+.studio-send-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.studio-sends { gap: 6px; }
+
 .studio-output {
   display: inline-flex;
   align-items: center;
