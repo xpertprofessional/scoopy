@@ -1,9 +1,17 @@
 # Turntablism scratch for the looper — behaviour spec
 
-**Written 2026-08-02.** Research complete, **nothing built**. This document
-exists so implementation can start in a fresh session without re-deriving any of
-it. Line numbers were verified on that date against the tree — confirm they
-still point at the same thing, but **trust the finding**.
+**Written 2026-08-02** as research with nothing built. ⚠️ **BUILT THE SAME DAY —
+this is no longer a proposal.** Stages 1–4 shipped (commits `SCRATCH 1/7`–`7/7`),
+then the plugin was played and three things changed out of use (`SCRATCH 8`, `9`).
+**Read §0's second table and "What playing it changed" before anything else** —
+between them they supersede decision 4, discharge decision 1, answer every open
+question in §6, and retire the X/Y pad.
+
+The prose below is kept in its original tense where the reasoning still holds,
+because it is the argument, not a status report. Where a passage was overtaken it
+is struck or marked, never quietly rewritten. Line numbers were verified
+2026-08-02 — confirm they still point at the same thing, but **trust the
+finding**.
 
 Reference PDFs are staged at **`~/reference/scratching/`** (outside the repo,
 per the plugin line's provenance convention) with a `SOURCES.md` describing each
