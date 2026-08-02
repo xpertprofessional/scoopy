@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <array>
+#include <mutex>
 
 namespace wizard::host {
 
@@ -87,8 +88,9 @@ public:
         device with notes down is one of the ways they hang. */
     bool open(const juce::String& identifier);
     void close();
-    bool isOpen() const { return out != nullptr; }
-    const juce::String& openedIdentifier() const { return openedId; }
+    /** Guarded like everything else that reads shared state — see `lock`. */
+    bool isOpen() const;
+    juce::String openedIdentifier() const;
 
     /** Note-on now, note-off after `gateMs`. Sends the release of a retrigger
         before the new hit, per rule 1. */
@@ -97,10 +99,22 @@ public:
     /** Release everything, now. */
     void allNotesOff();
 
-    int heldCount() const { return book.heldCount(); }
+    int heldCount() const;
 
 private:
     class Servicer;
+    /** ⚠️ `book` AND the device are touched from TWO threads: the caller's
+     *  (play / allNotesOff / close) and the servicer's timer. Without this the
+     *  two mutate the slot table concurrently — undefined behaviour whose
+     *  cheapest symptom is a note released twice and whose worst is one never
+     *  released at all, which is precisely the hang rule 2 exists to prevent.
+     *
+     *  A MUTEX IS LEGITIMATE HERE, and it is worth saying why: this lane is
+     *  host-side and runs on a timer, NOT on the audio thread. The donor's
+     *  equivalent lives in the audio core and must be lock-free; this one has
+     *  no such constraint, and a lock-free scheme bought nothing but a harder
+     *  proof. If this ever moves onto the render thread, that changes. */
+    mutable std::mutex lock;
     NoteBook book;
     std::unique_ptr<juce::MidiOutput> out;
     std::unique_ptr<Servicer> servicer;

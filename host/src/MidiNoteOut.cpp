@@ -101,11 +101,36 @@ bool MidiNoteOut::open(const juce::String& identifier) {
 }
 
 void MidiNoteOut::close() {
-    allNotesOff();
+    // ORDER IS LOAD-BEARING. Stop the timer FIRST — `stopTimer` blocks until any
+    // in-flight callback returns, so from here nothing else can touch the book
+    // or the device. Releasing notes before stopping (as this did when first
+    // written) means the caller and the servicer can be inside the book at the
+    // same time.
     if (servicer != nullptr) servicer->stopTimer();
     servicer.reset();
-    out.reset();
-    openedId.clear();
+    allNotesOff(); // now single-threaded, and still BEFORE the device closes
+    {
+        const std::lock_guard<std::mutex> g(lock);
+        out.reset();
+        openedId.clear();
+    }
+}
+
+bool MidiNoteOut::isOpen() const {
+    const std::lock_guard<std::mutex> g(lock);
+    return out != nullptr;
+}
+
+juce::String MidiNoteOut::openedIdentifier() const {
+    // BY VALUE, not by reference: a reference into a member the servicer thread
+    // may be clearing is a dangling read waiting to happen.
+    const std::lock_guard<std::mutex> g(lock);
+    return openedId;
+}
+
+int MidiNoteOut::heldCount() const {
+    const std::lock_guard<std::mutex> g(lock);
+    return book.heldCount();
 }
 
 void MidiNoteOut::sendOff(int channel, int note) {
@@ -115,10 +140,12 @@ void MidiNoteOut::sendOff(int channel, int note) {
 
 void MidiNoteOut::service() {
     const double now = juce::Time::getMillisecondCounterHiRes();
+    const std::lock_guard<std::mutex> g(lock);
     for (const auto& r : book.expire(now)) sendOff(r.channel, r.note);
 }
 
 void MidiNoteOut::play(int channel, int note, int velocity, double gateMs) {
+    const std::lock_guard<std::mutex> g(lock);
     if (out == nullptr) return; // nowhere to send: say nothing, honestly
     const int ch = juce::jlimit(0, 15, channel);
     const int n = juce::jlimit(0, 127, note);
@@ -136,6 +163,7 @@ void MidiNoteOut::play(int channel, int note, int velocity, double gateMs) {
 }
 
 void MidiNoteOut::allNotesOff() {
+    const std::lock_guard<std::mutex> g(lock);
     for (const auto& r : book.releaseAll()) sendOff(r.channel, r.note);
 }
 

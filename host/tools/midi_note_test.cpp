@@ -121,6 +121,18 @@ int main() {
         lane.allNotesOff(); // safe with nothing open and nothing held
     }
 
-    std::printf("midi_note_test OK\n");
+    // ⚠️ WHAT THIS FILE DOES NOT COVER, said plainly rather than left to be
+    // assumed: the THREADING. `book` and the device are guarded by a mutex
+    // because the servicer timer and the caller both reach them, and `close()`
+    // stops the timer before releasing for the same reason. Neither is asserted
+    // here — reproducing the race needs a real MIDI device and a window a test
+    // cannot open on demand, and a test that merely calls the methods in one
+    // thread would prove nothing while looking like coverage.
+    //
+    // The guarantee therefore rests on review, on the ordering being stated at
+    // the site, and on `NoteBook` being pure so the LOGIC above is provable
+    // without threads at all. If this lane ever misbehaves in the field, the
+    // threading is the first place to look, not the last.
+    std::printf("midi_note_test OK (threading is reviewed, not asserted — see note)\n");
     return 0;
 }
