@@ -396,6 +396,36 @@ check('and at the width it was left at', Math.abs(reopened - widened) < 2,
   `left ${widened}, reopened ${reopened}`)
 await page3.close()
 
+// ── S1/S2 — the STUDIO face, and the transport door it grew ────────────────
+// Studio is what the app opens now (D-SL-STUDIO-01), and its transport had no
+// visible door until S2. Both facts were pinned only by source-text tests,
+// which cannot see a rendered button — so this asserts the door EXISTS and that
+// its disabled state TEACHES (DESIGN.md §6/§7), in a real engine.
+//
+// Studio boots with NO session on purpose ("empty is a door"), which is exactly
+// the state the four verbs must refuse in: every one of them goes through
+// useCompanion, which returns silently with no session, so unguarded they would
+// be four buttons that swallow clicks and look identical to four working ones.
+const studio = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+studio.on('pageerror', (e) => pageErrors.push('studio: ' + String(e)))
+await studio.addInitScript(INIT)
+await studio.addInitScript(`window.__slPanel = 'studio';`)
+await studio.goto('http://localhost:4601/')
+await studio.waitForSelector('main.compose-window', { timeout: 10000 })
+check('the studio face mounts and names itself',
+  ((await studio.getAttribute('main.compose-window', 'aria-label')) ?? '').startsWith('studio'),
+  await studio.getAttribute('main.compose-window', 'aria-label'))
+
+const glyphs = await studio.$$eval('[aria-label="transport"] button', (bs) =>
+  bs.map((b) => ({ text: b.textContent.trim(), disabled: b.disabled, title: b.title })))
+check('all four transport glyphs are drawn (DESIGN.md §3)',
+  glyphs.map((g) => g.text).join('') === '⟳▸↻◼', JSON.stringify(glyphs.map((g) => g.text)))
+check('with no session every verb is disabled rather than silently inert',
+  glyphs.length === 4 && glyphs.every((g) => g.disabled), JSON.stringify(glyphs))
+check('and each disabled verb says what to do about it (§6)',
+  glyphs.every((g) => g.title.includes('session')), JSON.stringify(glyphs.map((g) => g.title)))
+await studio.close()
+
 // The plane resumes ownership on the shell's close broadcast.
 await page.evaluate(
   (a) => window.__emitEvent('slPanelClosed', { panel: 'compose', arg: a }),
