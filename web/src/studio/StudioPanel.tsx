@@ -40,6 +40,7 @@ import { ComposeFiles } from '../plane/ComposeFiles.tsx'
 import { ComposeSessions } from '../plane/ComposeSessions.tsx'
 import { useComposeBinding } from '../plane/useComposeBinding.ts'
 import { useComposeLifecycle } from '../plane/useComposeLifecycle.ts'
+import { Transport } from './Transport.tsx'
 import '../plane/plane.css'
 
 /** One engine, one deck. Not a default — the only deck there is (see header). */
@@ -77,6 +78,12 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
     <main className="panel compose-window" aria-label={`studio ${session?.name ?? 'empty'}`}>
       <header className="compose-window-bar mono">
         <ComposeSessions deck={DECK} onNote={setNote} />
+        {/* THE TRANSPORT HAD NO DOOR. The verb was already reachable — Space
+            goes through `browserKeymap` to the handler `useComposeBinding`
+            registers — but a keyboard-only transport in the app's MAIN WINDOW
+            is the fourth of the four rules failing on its own: built, shipped,
+            and not reachable by anyone who does not already know it is there. */}
+        <Transport deck={DECK} session={session?.name ?? null} />
         <span>{`studio · ${session?.name ?? 'no session'}`}</span>
         {!session && (
           <span className="dim">{' empty studio — use “session ▾” to make or open one'}</span>
