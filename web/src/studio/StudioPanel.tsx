@@ -43,6 +43,7 @@ import { useComposeBinding } from '../plane/useComposeBinding.ts'
 import { useComposeLifecycle } from '../plane/useComposeLifecycle.ts'
 import { Transport } from './Transport.tsx'
 import { MASTER_TEMPO, MASTER_TEMPO_KEY, MasterBar } from './MasterBar.tsx'
+import { useMidiClock } from './useMidiClock.ts'
 import { installStudioMap } from './studioMap.ts'
 import { asNumber, useSetting } from '../useSetting.ts'
 import '../plane/plane.css'
@@ -73,6 +74,11 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
   useComposeLifecycle(setNote)
 
   const { session } = useComposeBinding(link, DECK)
+
+  // The MIDI clock follows the transport (S9). Mounted at the FACE rather than
+  // inside Transport or MasterBar: it is derived from both, and giving it to
+  // either would make the other's changes invisible to it.
+  useMidiClock(link, DECK)
 
   // THE TEMPO AUTHORITY follows the open session (S3). `applyTempo` walks the
   // map's grid strips, so without a strip the master tempo would move on screen

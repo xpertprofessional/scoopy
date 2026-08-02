@@ -198,6 +198,39 @@ const Step kSteps[] = {
         return '';
       })())JS"},
 
+    // The CLOCK lane, page to shell. `stop` because it is the one op that is
+    // safe to issue at any time and against any state — it asserts the chain
+    // exists without starting anything on somebody's hardware mid-walk.
+    {"(arm) ask the shell for the MIDI clock's state", 0,
+     R"JS((function () {
+        try {
+          window.__clk = null;
+          var id = 909092;
+          window.__JUCE__.backend.addEventListener('__juce__complete', function (p) {
+            if (p && p.promiseId === id) window.__clk = p.result;
+          });
+          window.__JUCE__.backend.emitEvent('__juce__invoke', {
+            name: 'slCommand', params: ['midiClock', { op: 'stop' }], resultId: id,
+          });
+          return '';
+        } catch (e) { return 'could not call: ' + e; }
+      })())JS"},
+
+    {"the clock lane answers, and reports both running AND open", 700,
+     R"JS((function () {
+        var m = window.__clk;
+        if (m === null || m === undefined) return 'no reply within ~700ms';
+        var r = (typeof m === 'string') ? JSON.parse(m) : m;
+        if (r && r.ok === false) return 'refused: ' + JSON.stringify(r.error);
+        var res = (r && r.result) ? r.result : r;
+        if (!res || typeof res.running !== 'boolean') return 'no running flag';
+        // `open` is the half that makes "off" distinguishable from "nowhere to
+        // send" — without it a silent clock has two causes and one appearance.
+        if (typeof res.open !== 'boolean') return 'no open flag';
+        if (res.running !== false) return 'a stopped clock reports running';
+        return '';
+      })())JS"},
+
     // ── the native -> page lane, end to end ─────────────────────────────────
     // ARM. Subscribes through JUCE's own documented backend API rather than
     // reaching into the app's link object, so this measures the HOST's
