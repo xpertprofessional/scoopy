@@ -371,6 +371,11 @@ export class BrowserLink implements EngineLink {
           // parameters, never the session's — so the browser is a dry host by policy (sends UI
           // hidden, send levels zeroed in the world) rather than a wrong-sounding one.
           returnFx: false,
+          // No tape. Not "not built yet" — the WASM engine has no recorder and
+          // no looper at all (D-SL-COMPANION-01: "no tape, no recording, one
+          // deck"), so `TapeRow` renders inert with that reason rather than
+          // drawing eight slots that refuse every command.
+          tape: false,
         };
 
       case "getUiState": {

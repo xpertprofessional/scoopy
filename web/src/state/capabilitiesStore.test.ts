@@ -26,6 +26,7 @@ const BROWSER_CAPS = {
   midiHardware: false,
   audioDeviceSelection: false,
   returnFx: false,
+  tape: false, // v100: the WASM engine has no recorder and no looper
 };
 
 describe("capabilitiesStore (P8-9)", () => {

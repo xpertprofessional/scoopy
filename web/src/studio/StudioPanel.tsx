@@ -31,6 +31,7 @@
 import { useEffect, useState } from 'react'
 
 import type { EngineLink } from '../engineLink.ts'
+import { TapeRow } from '../blocks/TapeRow.tsx'
 import { GridPanel, STUDIO_SOURCE } from '../panels/GridPanel.tsx'
 import { useCompanion } from '../store/companionEngine.ts'
 import { silenceNote } from '../store/sampleReport.ts'
@@ -52,6 +53,8 @@ const DECK = 0
 export function StudioPanel({ link }: { link: EngineLink | null }) {
   /** The face's ONE error surface, like the compose window's and the plane's. */
   const [note, setNote] = useState<string | null>(null)
+  /** Whether the S8 tape row is showing. See the dock's comment below. */
+  const [tapeOpen, setTapeOpen] = useState(false)
   const error = useCompanion((c) => c.error)
   const notice = useCompanion((c) => c.notice)
   const engine = useCompanion((c) => c.engine)
@@ -124,6 +127,29 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
           <GridPanel link={link} source={STUDIO_SOURCE} />
         </div>
         <ComposeFiles link={link} />
+      </div>
+      {/* THE TAPE ROW (S8) — the same block ScoopyTape mounts, given a short
+          collapsible box instead of a window. That difference is the whole of
+          the product difference here, which is what D-SL-STUDIO-01 L1 asks for:
+          a face composes blocks and never rebuilds one.
+
+          COLLAPSED BY DEFAULT because the row is optional by decision — the
+          ruling calls it "an optional Scoopy Tape bottom row" — and an unasked-
+          for 200px of recorder under every session would be the face making a
+          choice that belongs to the person. The toggle is the door, and it is
+          one click; it does not remember yet (a setting is S7's shape, and
+          guessing at the key now would be a second home for it). */}
+      <div className={`studio-tape-dock${tapeOpen ? ' open' : ''}`}>
+        <button
+          type="button"
+          className="studio-tape-toggle mono"
+          aria-expanded={tapeOpen}
+          title={tapeOpen ? 'hide the tape row' : 'show the tape row — 8 loopers and the input recorder'}
+          onClick={() => setTapeOpen((v) => !v)}
+        >
+          {`${tapeOpen ? '▾' : '▸'} tape`}
+        </button>
+        {tapeOpen && <TapeRow link={link} />}
       </div>
     </main>
   )

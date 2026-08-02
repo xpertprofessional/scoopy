@@ -20,6 +20,7 @@ const FULL_CAPS: Capabilities = {
   midiHardware: true,
   audioDeviceSelection: true,
   returnFx: true,
+  tape: true,
 };
 
 interface Store {

@@ -50,6 +50,7 @@ const REPLY: Record<string, unknown> = {
     midiHardware: false,
     audioDeviceSelection: true,
     returnFx: false,
+    tape: true,
   },
   slRouteList: { routes: [], renderOrder: [] },
   setSetting: {},

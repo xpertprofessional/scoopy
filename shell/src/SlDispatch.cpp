@@ -80,7 +80,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 99);
+    obj->setProperty("schemaVersion", 100);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -111,6 +111,13 @@ juce::var capabilities(const HostServices* services) {
     obj->setProperty("returnFx",
                      services != nullptr &&
                          (services->pluginScanner != nullptr || services->externalReturns));
+    // tape: this host has a recorder and a looper. Unconditionally true for
+    // everything that reaches this dispatcher — sl_tape_* is part of the merged
+    // engine, not an optional service, so unlike pluginHosting there is nothing
+    // to derive it from and a derivation would only be a way to get it wrong.
+    // The flag exists for the OTHER tier: the browser companion's WASM engine
+    // has no tape, and `blocks/TapeRow.tsx` ships in the bundle both load.
+    obj->setProperty("tape", true);
     return juce::var(obj);
 }
 

@@ -16,9 +16,10 @@
  * in prose, and as `PluginTapePanel`'s OWN transport, which is a different scope
  * rather than a copy. Every rule below is one with no known false positive.
  *
- * ITS RULE SET GROWS WITH THE BLOCKS. Today two exist (`studio/Transport.tsx`,
- * the FILES drawer); as S2 extracts the rest, each lands here with the marker
- * that would mean somebody rebuilt it.
+ * ITS RULE SET GROWS WITH THE BLOCKS. Today three exist (`studio/Transport.tsx`,
+ * the FILES drawer, and `blocks/TapeRow.tsx`); as S2 extracts the rest, each
+ * lands here with the marker that would mean somebody rebuilt it. R5 is
+ * TapeRow's, and its marker was measured before it was written — see the rule.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -98,6 +99,26 @@ for (const face of FACES) {
     errors.push(
       `${face.file}: edits a session but does not call useComposeLifecycle.\n` +
         `  It owes ⌘S (D-SL-SAVE-01) and the pagehide/visibilitychange flush.`,
+    )
+  }
+
+  // R5 — the LOOPER is `blocks/TapeRow.tsx`. A face that speaks the tape wire
+  // itself is rebuilding it, which is the exact state this block was carved out
+  // of: `PluginTapePanel` WAS the looper, so the looper existed in one product
+  // and Studio's S8 would have written a second one.
+  //
+  // ⚠️ `scrubBegin` is the marker BECAUSE IT WAS MEASURED, per this file's own
+  // rule that a gate needing an allowlist on day one is not a gate. It appears
+  // in exactly two files in the tree — `PluginTapePanel` (now a mount, so it no
+  // longer says it) and `plane/Strip.tsx`, which is NOT a face: it is a
+  // component of `PlanePanel`, the frozen plane's 48 px lane, a different scope
+  // rather than a copy. No face legitimately says this word.
+  if (/\bscrubBegin\b/.test(body) && !body.includes('TapeRow')) {
+    errors.push(
+      `${face.file}: drives the tape scrub wire directly.\n` +
+        `  The looper is a BLOCK — mount blocks/TapeRow.tsx (D-SL-STUDIO-01 L1).\n` +
+        `  A face that re-speaks slTape drifts from the other faces silently, and the\n` +
+        `  drift is only visible by one product growing a feature the others cannot get.`,
     )
   }
 }

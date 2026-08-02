@@ -891,6 +891,35 @@
   overflow: hidden;
 }
 
+/* STUDIO'S TAPE DOCK (S8) — the box the shared `TapeRow` block is given.
+   Collapsed it is one toggle at the control height; open it is a fixed strip,
+   because the grid above owns the flexible space and a tape row that grew with
+   the window would take it from the thing the face is actually for. The block
+   inside states no height of its own — see `blocks/TapeRow.tsx`. */
+.studio-tape-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: var(--hairline) solid var(--line);
+}
+.studio-tape-dock.open {
+  /* Enough ground to scrub on, and not a pixel of the grid's. */
+  height: 240px;
+}
+.studio-tape-toggle {
+  flex: none;
+  height: var(--control-h);
+  padding: 0 6px;
+  text-align: left;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: none;
+  font-size: var(--type-label-size);
+  cursor: pointer;
+}
+.studio-tape-toggle:hover { color: var(--text); }
+
 /* Sync · tempo · compose, in the rate row's 18 px slot. */
 .strip-gridrow { gap: 4px; }
 
@@ -1666,16 +1695,39 @@
    asserts exactly that, because it is the requirement most easily lost the
    first time somebody adds a row.
    ───────────────────────────────────────────────────────────────────────── */
+/* THE FACE'S BOX. All this contributes is a height — a plugin window root has
+   nothing above it to supply one. Everything inside is `.tape-row`'s, which is
+   what lets Studio hand the same block a short strip instead. */
 .plugin-tape-pane {
   display: flex;
   flex-direction: column;
   /* A window root, not a lane: nothing above supplies a height. */
   height: 100vh;
   min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* THE BLOCK. Fills whatever box a face gives it and never states a height of
+   its own — `blocks/TapeRow.tsx`'s header has the L1 argument. */
+.tape-row {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   gap: var(--cell);
   padding: var(--cell);
   box-sizing: border-box;
   overflow: hidden;
+}
+
+/* No tape on this host: one line, stating why, at the one control height. Not a
+   collapsed row and not an empty box — DESIGN.md §7, a disabled thing says so. */
+.tape-row-inert {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  height: var(--control-h);
 }
 
 /* `.strip-row` already establishes height and gap — per DESIGN.md §2 a block
