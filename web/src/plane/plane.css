@@ -139,6 +139,46 @@
 
 .master-transport button:hover { background: var(--bg); }
 
+/* ── Studio's master tempo (S3) ──────────────────────────────────────────── */
+
+.studio-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* TS / TP / T. One control height from the token, like every other verb in a
+   bar — DESIGN.md §2: a box in front of a bar has to line up. */
+.studio-mode {
+  min-width: 22px;
+  height: var(--control-h);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.studio-mode:hover:not(:disabled) { color: var(--text); }
+
+/* ACTIVE INVERTS, the plugin line's convention (PLUGIN-DESIGN-SYSTEM §4) — the
+   selected mode reads as selected across the room, not as a slightly different
+   grey. */
+.studio-mode.is-on {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.studio-mode:disabled { opacity: 0.5; cursor: default; }
+
+/* Value read-outs are sized in ch, never px (DESIGN.md §2) — the width follows
+   the value font instead of an assumption about it. */
+.studio-synced {
+  min-width: 7ch;
+  white-space: nowrap;
+}
+
 /* −/+ nudge, flanking the tempo box. Narrower than the transport verbs because
    they are an adjustment to a number, not a transport action, and reading as
    the same weight would put them in the wrong category on sight. */

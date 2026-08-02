@@ -424,6 +424,13 @@ check('with no session every verb is disabled rather than silently inert',
   glyphs.length === 4 && glyphs.every((g) => g.disabled), JSON.stringify(glyphs))
 check('and each disabled verb says what to do about it (§6)',
   glyphs.every((g) => g.title.includes('session')), JSON.stringify(glyphs.map((g) => g.title)))
+const master = await studio.$$eval('[aria-label="master tempo"] button', (bs) =>
+  bs.map((b) => ({ text: b.textContent.trim(), disabled: b.disabled, title: b.title })))
+check('the three tempo modes are drawn (TS / TP / T)',
+  master.map((m) => m.text).join(' ') === 'TS TP T', JSON.stringify(master.map((m) => m.text)))
+check('and are disabled-with-a-reason until a session is open',
+  master.length === 3 && master.every((m) => m.disabled && m.title.includes('session')),
+  JSON.stringify(master))
 await studio.close()
 
 // The plane resumes ownership on the shell's close broadcast.

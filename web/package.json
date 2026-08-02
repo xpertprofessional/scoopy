@@ -12,7 +12,6 @@
     "dev:lan": "SL_LAN=1 vite",
     "engine:check": "node --experimental-strip-types scripts/sharedSync.ts --check --lock engine.lock.json",
     "engine:sync": "node --experimental-strip-types scripts/sharedSync.ts --write --lock engine.lock.json",
-    "faces:check": "node --experimental-strip-types scripts/checkFaces.ts",
     "hotframe:check": "node --experimental-strip-types scripts/generateHotFrame.ts --check",
     "hotframe:generate": "node --experimental-strip-types scripts/generateHotFrame.ts",
     "nativemethods:check": "node --experimental-strip-types scripts/checkNativeMethods.ts",

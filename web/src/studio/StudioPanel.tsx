@@ -41,6 +41,9 @@ import { ComposeSessions } from '../plane/ComposeSessions.tsx'
 import { useComposeBinding } from '../plane/useComposeBinding.ts'
 import { useComposeLifecycle } from '../plane/useComposeLifecycle.ts'
 import { Transport } from './Transport.tsx'
+import { MASTER_TEMPO, MASTER_TEMPO_KEY, MasterBar } from './MasterBar.tsx'
+import { installStudioMap } from './studioMap.ts'
+import { asNumber, useSetting } from '../useSetting.ts'
 import '../plane/plane.css'
 
 /** One engine, one deck. Not a default — the only deck there is (see header). */
@@ -68,6 +71,26 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
 
   const { session } = useComposeBinding(link, DECK)
 
+  // THE TEMPO AUTHORITY follows the open session (S3). `applyTempo` walks the
+  // map's grid strips, so without a strip the master tempo would move on screen
+  // and reach no deck — the exact defect `setMasterBpm`'s signature was changed
+  // to prevent, one layer up. Re-installed on every session change because the
+  // element carries the SESSION's own bpm, which is the denominator of the
+  // sync ratio.
+  const [storedMaster] = useSetting(link, MASTER_TEMPO_KEY, MASTER_TEMPO.def, asNumber)
+  useEffect(() => {
+    if (!session) return
+    installStudioMap({
+      sessionId: session.name,
+      bpm: (session.pattern as { bpm?: number }).bpm ?? MASTER_TEMPO.def,
+      masterBpm: storedMaster,
+      // Synced by default: the master tempo is the number a person came here to
+      // set, and a deck ignoring it would make every mode switch inaudible.
+      syncToMaster: true,
+      tempoMode: 'timeStretch',
+    })
+  }, [session?.name, storedMaster])
+
   const quiet = silenceNote(session?.name ?? '', {
     engine,
     decodeFailures,
@@ -84,6 +107,7 @@ export function StudioPanel({ link }: { link: EngineLink | null }) {
             is the fourth of the four rules failing on its own: built, shipped,
             and not reachable by anyone who does not already know it is there. */}
         <Transport deck={DECK} session={session?.name ?? null} />
+        <MasterBar link={link} session={session?.name ?? null} />
         <span>{`studio · ${session?.name ?? 'no session'}`}</span>
         {!session && (
           <span className="dim">{' empty studio — use “session ▾” to make or open one'}</span>
