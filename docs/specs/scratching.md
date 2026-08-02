@@ -29,9 +29,32 @@ ScoopyTape (VST) and Studio**, not only the plugin it was imagined in.
 | 1 | The fast fader gate becomes a **proposed exception to D-WZ-RAMP-01** (~1–3 ms). ⚠️ **Not signed yet — sign before building it.** §4.2 carries the argument. |
 | 2 | **Ship on the existing linear interpolation**; measure aliasing rather than pre-emptively implementing D-WZ-VARISPEED-01 on the tape. §4.6. |
 | 3 | **The 2D pad belongs to SCRATCH MODE**, not to ordinary scrubbing. Y stays meaningless for a normal scrub. |
-| 4 | **The pattern generator posts `scrub_to` from `processBlock`**, not from a message-thread timer. §4.1. |
+| 4 | ~~**The pattern generator posts `scrub_to` from `processBlock`**, not from a message-thread timer. §4.1.~~ **SUPERSEDED BY 7.** Its thrust — never a message-thread timer — survives intact. |
 | 5 | **This work carves the `TapeRow` block** that Studio's S8 needs, so the feature reaches both products by construction. §5. |
 | 6 | Reference PDFs live at `~/reference/scratching/`. |
+
+**Ruled 2026-08-02, in the implementation session:**
+
+| # | Decision |
+|---|---|
+| 7 | **The generator lives IN THE ENGINE**, driven by new `sl_tape_scratch_*` ABI and evaluated per sample. Supersedes 4. |
+| 8 | The D-WZ-RAMP-01 exception is **signed as `D-SL-SCRATCHGATE-01`** — decision 1's ⚠️ is discharged. |
+| 9 | §6's open questions 1–6 are all answered; see that section. |
+
+⚠️ **WHY 4 HAD TO GO, and it is not a matter of taste.** `processBlock` exists
+only in the plugins. **The standalone app renders through
+`host/src/AudioIO.cpp` → `SlRenderSink::renderIo` (`host/src/SlRenderSink.h:36`)
+— a four-line adapter with no per-block hook at all.** Taken literally, decision
+4 builds the feature into the one product decision 5 exists to escape, and
+reaching Studio would mean writing the generator a second time against a hook
+that does not exist.
+
+Engine-side is also *cheaper*, not merely more correct: §4.2's fader gate has to
+live in `sl_tape.cpp`'s per-sample loops regardless, so that file is being opened
+either way. Putting the phase evaluator beside the gate costs almost nothing and
+removes the 93.75 Hz control ceiling and the ±5.3 ms reversal jitter outright.
+§6 Q6 called this the escape hatch; the measurement below promoted it to the
+design.
 
 ---
 
@@ -409,36 +432,94 @@ choice), period a **`Stepper`** over musical divisions (the detent idiom
 value), and depth a **`GeoRange`** — never a bare range input. Anything a
 technique fixes is **not drawn at all** rather than drawn disabled, per rule 7.
 
-### Open questions — answer these, do not re-derive them
+### Open questions — ANSWERED 2026-08-02. Do not re-derive them.
 
-1. **Does the phantom click already happen?** Record a hand back-and-forth scrub
-   and look for the reversal notch. **Do this first — it is free and it decides
-   the scope of everything else.**
-2. **Release semantics.** Complete the stroke (faithful: reversals are at the
-   extrema, strokes are whole units) or cut immediately (responsive)? Interacts
-   with the `entry` snap in §4.5.
-3. **The cue side-effect.** Should a running pattern suppress `cueFrame` arming?
-4. **Y-axis law.** Linear, or a battle-curve gate with a ~5%-of-travel
-   transition band and dead ground either side (§3)? The measurement says the
-   latter; it has never been tried on a trackpad.
-5. **Does level follow speed?** The 0.8 correlation is real and we do not model
-   it. Cheap to add, changes the character a lot.
-6. **Is ±4× enough**, and does the ±5.3 ms block-grid reversal jitter become
-   audible on flares and crabs? If it does, the escape hatch is an **engine-side
-   scratch oscillator** — phase/span/shape evaluated per sample in the render,
-   like the grain scheduler — which removes the ceiling entirely at the cost of
-   putting scratch knowledge inside the engine.
+1. ~~**Does the phantom click already happen?**~~ **YES — MEASURED. It is deep,
+   and it is already slightly wide.** See "The measurement" below.
+2. **Release semantics** → **complete the stroke.** Faithful to the measurement:
+   reversals are at the extrema and strokes are whole units. Also the safer
+   answer against the `entry` snap in §4.5.
+3. **The cue side-effect** → **a running pattern SUPPRESSES `cueFrame` arming.**
+   Otherwise an auto-scratch continuously overwrites the user's cue point.
+4. **Y-axis law** → **the battle curve**: a narrow transition band with dead
+   ground either side, per the 2–3 mm of 45 mm measurement in §3. Still never
+   tried on a trackpad; that risk is accepted, not resolved.
+5. **Does level follow speed?** → **yes, model it**, on the scratch path only.
+   Applying it to hand scrubs would change a shipped feature and move pinned
+   fixtures.
+6. **Is ±4× enough / is the block-grid jitter audible?** → **made moot.** The
+   generator is engine-side and evaluated per sample (decision 7 below), so the
+   ±5.3 ms jitter never arises. The ±4× clamp stands, untested against a crab;
+   §4.5's warning still applies.
+
+### The measurement — `sl_tape_scratch_test`, 2026-08-02
+
+A 400 ms back-and-forth (peak 2×, solved from the rate rather than picked) over
+a 400 Hz tone, through the **existing** `scrub_to` path. Envelope in 1 ms
+windows, **mean-removed** — a stationary `sampleLerp` holds a DC level, so plain
+RMS would report a scratch that never breaks at all.
+
+| control grain | notch depth | notch width | parked DC |
+|---|---|---|---|
+| 64 frames (1.33 ms) | **−49.3 dB** | **7 ms** | 0.865 |
+| 512 frames (10.7 ms) | **−47.6 dB** | **11 ms** | 0.724 |
+
+**What this settles.** The 10 ms one-pole at `sl_tape.cpp:632` already produces
+the phantom click, at −48 dB — effectively silence. So this feature is **"author
+some curves", not "model the platter"**, exactly as §6 Q1 predicted it would
+decide.
+
+⚠️ **Two findings that were not the question, and both are load-bearing.**
+
+**The notch is already WIDER than a real turntable's, and the control grain is
+why.** KTH measured direction-change silence at ~5 ms and set their "not a tone"
+floor at 10 ms. We are at 7 ms with the grain almost out of the picture and
+**11 ms at the 512-frame block every host actually runs** — i.e. at the real
+block size our reversal has crossed their floor. The 4 ms difference between the
+two rows *is* the control grain. This is direct evidence for decision 7: an
+engine-side per-sample generator delivers the 7 ms figure in the real host
+rather than the 11 ms one, so it does not merely reduce jitter, it lands the
+articulation inside the measured band instead of outside it.
+
+**The reader parks on a DC PEDESTAL, not on silence.** A stationary cartridge
+outputs nothing; a stationary `sampleLerp` outputs whatever sample the playhead
+froze on — here 0.72–0.87, held for the width of the notch, with a step in and
+out of it. Silent as a *tone*, but a thump. It is arbitrary and material- and
+phase-dependent, so it is recorded rather than asserted on.
+
+It is also the first argument for the §4.2 gate that is not about authored
+clicks: **a closed-fader technique cuts at the reversal, which zeroes the
+pedestal.** With 70–90% of reversals silenced in real playing (§3), idiomatic
+use masks it most of the time — so if scratching ever sounds thumpy, this is the
+cause and the fader lane is already the fix.
 
 ### Staged path
 
-1. **Measure the phantom click** (question 1).
+1. ~~**Measure the phantom click** (question 1).~~ **DONE 2026-08-02** —
+   `sl_tape_scratch_test`, numbers above.
 2. **Carve `TapeRow`** + its `faces:check` rule; mount in Studio and ScoopyTape.
-3. **Record hand only, no gate** — generator in `processBlock` posting
-   `scrub_to`. **Zero engine change**, and it already delivers baby, scribble
-   and stab. Proves the concept audibly before any ABI work.
-4. **Sign the D-WZ-RAMP-01 exception**, then build the gate → chirp,
-   transformer, flare, crab, orbit.
+3. **Record hand only, no gate** — ~~generator in `processBlock` posting
+   `scrub_to`~~ **the `sl_tape_scratch_*` ABI and a per-sample phase evaluator
+   driving the existing scrub path** (decision 7). Delivers baby, scribble and
+   stab. ⚠️ The old note "zero engine change" no longer applies and was the
+   reason 4 looked attractive; the price of that cheapness was reaching one
+   product.
+4. ~~**Sign the D-WZ-RAMP-01 exception**~~ (**signed**, decision 8), then build
+   the gate → chirp, transformer, flare, crab, orbit.
 5. Scratch mode's X/Y pad inside the block.
+
+**Invariant for steps 3–4, and it is the one thing that must not be broken.**
+The scratch is a **producer of scrub position, nothing more**. It reaches the
+reader through the **existing** `scrubRate` one-pole and `sampleLerp`,
+unchanged — because that one-pole *is* the phantom click the measurement just
+found. Anything that bypasses or "improves" it destroys the articulation the
+whole feature rests on, and every other test stays green while it does.
+
+Two consequences, both mechanical:
+- **Position-driven, never rate-driven** — §4.1's warning that the gap law
+  divides by `frames`. Pinned by rendering one pattern at 64 / 256 / 512 frames
+  and asserting identical output.
+- **Level-follows-speed lives on the scratch path only** (question 5).
 
 ---
 
