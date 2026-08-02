@@ -19,7 +19,7 @@
  * (it is the release ship gate) and builds the bundle as part of the run, so it
  * would be minutes of duplicated work.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +56,35 @@ const walks = filter ? WALKS.filter((w) => w.includes(filter)) : WALKS;
 
 if (walks.length === 0) {
   console.error(`no walk matches "${filter}". Known:\n  ${WALKS.join("\n  ")}`);
+  process.exit(1);
+}
+
+// ⚠️ THE WALKS SERVE `webdist/`, NOT `src/` — so a walk run before `npm run
+// bundle` measures the COMMITTED bundle and says nothing about your edits.
+//
+// This is not hypothetical and it is not obvious from a failing walk. On
+// 2026-08-02 it produced two false results in a row while a new control was
+// being built: first "the element does not exist" (it did, in source), then a
+// pass that proved nothing. It is the same shape as the stale MergedWalk
+// artefact fixed the same day — a green gate measuring yesterday's build.
+//
+// `webdistFresh --check` already knows the exact input closure, so the guard is
+// to ask it. It REFUSES rather than bundling: `npm run bundle` also stamps
+// `.buildhash`, and a gate that silently rebuilds what it is about to measure
+// is a gate you can no longer reason about.
+const fresh = spawnSync(
+  process.execPath,
+  ["--experimental-strip-types", resolve(here, "../scripts/webdistFresh.ts"), "--check"],
+  { cwd: resolve(here, ".."), encoding: "utf8" },
+);
+if (fresh.status !== 0) {
+  console.error("──────────────────────────────────────────────────────────────");
+  console.error("REFUSING TO WALK: webdist/ is stale — it does not contain your");
+  console.error("edits, so every result below would describe the last bundle.");
+  console.error("");
+  console.error("  npm run bundle    then run the walks again");
+  console.error("──────────────────────────────────────────────────────────────");
+  process.stderr.write(fresh.stdout ?? "");
   process.exit(1);
 }
 
