@@ -22,15 +22,49 @@
  * unreachable feature this row is about. Closed is the default because the grid
  * needs the width; the tab is the door.
  */
-import { useState } from 'react'
+import { useRef } from 'react'
 
 import type { EngineLink } from '../engineLink.ts'
 import { FileBrowserPanel } from '../panels/FileBrowserPanel.tsx'
+import { asBoolean, asNumber, useSetting } from '../useSetting.ts'
 
-/** The drawer with its own open state — what a compose surface mounts. */
+/**
+ * P3.5-E8e — THE DRAWER REMEMBERS.
+ *
+ * ⚠️ TWO KEYS OF ITS OWN, and the row records why that matters more than it
+ * looks: `fileBrowserFolded` (`store/fileBrowserBackend.ts:34`) already exists
+ * and is NOT this. That one folds the NATIVE browser frame; reusing it would
+ * couple two different things that merely both mean "narrow", and the ledger
+ * flagged the mistake before anyone made it. The donor keeps its own key for
+ * the same reason — `@AppStorage("fileBrowser.expanded")`, `ContentView.swift:150`.
+ */
+const OPEN_KEY = 'fileBrowser.expanded'
+const WIDTH_KEY = 'fileBrowser.width'
+
+/** Donor width, and the bounds a drag is held inside. 280 is
+ *  `ContentView.swift:150`'s open width; the floor is where the browser's own
+ *  columns stop being readable, and the ceiling keeps the GRID the larger half
+ *  of a compose surface — which is the whole reason the drawer is a drawer. */
+export const FILES_WIDTH = { def: 280, min: 180, max: 560 } as const
+
+/** Pure, and exported for its test: this project has no jsdom, so the DECISION
+ *  a drag makes is what can be pinned, not the dragging. */
+export const clampFilesWidth = (px: number): number =>
+  Math.round(Math.min(FILES_WIDTH.max, Math.max(FILES_WIDTH.min, px)))
+
+/** The drawer with its own persisted state — what a compose surface mounts. */
 export function ComposeFiles({ link }: { link: EngineLink | null }) {
-  const [open, setOpen] = useState(false)
-  return <ComposeFilesDrawer link={link} open={open} onToggle={() => setOpen((v) => !v)} />
+  const [open, setOpen] = useSetting(link, OPEN_KEY, false, asBoolean)
+  const [width, setWidth] = useSetting(link, WIDTH_KEY, FILES_WIDTH.def, asNumber)
+  return (
+    <ComposeFilesDrawer
+      link={link}
+      open={open}
+      width={clampFilesWidth(width)}
+      onToggle={() => setOpen(!open)}
+      onWidth={setWidth}
+    />
+  )
 }
 
 /**
@@ -41,14 +75,66 @@ export function ComposeFiles({ link }: { link: EngineLink | null }) {
 export function ComposeFilesDrawer({
   link,
   open,
+  width = FILES_WIDTH.def,
   onToggle,
+  onWidth,
 }: {
   link: EngineLink | null
   open: boolean
+  width?: number
   onToggle: () => void
+  onWidth?: (px: number) => void
 }) {
+  /** Where the pointer went down, and how wide the body was then. A drag is
+   *  measured from its own start rather than from the live width — reading the
+   *  element mid-drag would compound rounding on every move. */
+  const drag = useRef<{ x: number; w: number } | null>(null)
+
+  /**
+   * ⚠️ WINDOW LISTENERS, NOT `setPointerCapture`, and that is a measured choice
+   * rather than a stylistic one. Capture retargets moves to the grip — which
+   * also means the grip must survive every re-render of the drag, and each
+   * `onWidth` re-renders it. Under WebKit the first move after that landed
+   * nowhere and the drawer never resized (the walk caught it: "width 280"). The
+   * listeners below are bound to `window` for the life of the gesture, so
+   * nothing about re-rendering can interrupt it.
+   */
+  const onGripDown = (e: React.PointerEvent) => {
+    if (!onWidth) return
+    drag.current = { x: e.clientX, w: width }
+    e.preventDefault()
+    // The drawer is on the RIGHT, so dragging its grip LEFT makes it wider.
+    const move = (ev: PointerEvent) => {
+      const d = drag.current
+      if (d) onWidth(clampFilesWidth(d.w + (d.x - ev.clientX)))
+    }
+    const up = () => {
+      drag.current = null
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
   return (
     <aside className={open ? 'compose-files open' : 'compose-files'} aria-label="sample browser">
+      {/* The grip exists only while the drawer is open — closed, there is no
+          width to set, and a handle for a dimension nothing is showing is the
+          "control that reaches nothing" DESIGN.md §7 forbids. */}
+      {open && onWidth && (
+        <div
+          className="compose-files-grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="resize the sample browser"
+          onPointerDown={onGripDown}
+          onDoubleClick={() => onWidth(FILES_WIDTH.def)}
+          title="Drag to resize · double-click to reset"
+        />
+      )}
       <button
         type="button"
         className="compose-files-tab mono"
@@ -66,7 +152,7 @@ export function ComposeFilesDrawer({
           topic and decodes peaks for the selection, and a hidden browser paying
           for that is a cost with nothing on screen to show for it. */}
       {open && (
-        <div className="compose-files-body">
+        <div className="compose-files-body" style={{ width: `${width}px` }}>
           <FileBrowserPanel link={link} />
         </div>
       )}

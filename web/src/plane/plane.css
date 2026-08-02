@@ -1448,10 +1448,29 @@
   color: var(--accent);
 }
 
+/* Width is INLINE now (P3.5-E8e) — it is persisted state, not a constant, so
+   `flex-basis` yields to the element's own style. `0 0 auto` keeps it rigid:
+   the drawer must not absorb slack from the grid beside it. */
 .compose-files-body {
-  flex: 0 0 260px;
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
+}
+
+/* The resize grip. A hairline that widens its HIT area without widening its
+   ink — a 2px target is a control only a mouse can use, and the compose
+   surfaces already run on coarse pointers (METRICS_COARSE). */
+.compose-files-grip {
+  flex: 0 0 auto;
+  width: 7px;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.compose-files-grip:hover,
+.compose-files-grip:active {
+  background: var(--line);
 }
 
 /* `.fb-root` is sized for the case where the panel IS the whole webview

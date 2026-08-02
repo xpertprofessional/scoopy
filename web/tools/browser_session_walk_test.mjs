@@ -89,8 +89,28 @@ function libHandle({ action, path, text, b64 }) {
   throw new Error(`slFiles: unknown action '${action}'`)
 }
 
+// ── Settings, server-side, for the same reason the library is ──────────────
+// The fake backend used to answer `getSetting` with a flat `{value:null}` and
+// swallow `setSetting`, which made every persisted setting invisible to every
+// walk — a whole class of behaviour ("it is remembered") that could not be
+// tested at all. Held in the NODE process so it outlives a page, because
+// outliving a page is the entire claim a persistence test makes.
+const settings = new Map()
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
+  if (url.pathname === '/__set') {
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      const { method, key, value } = JSON.parse(body)
+      if (method === 'setSetting') settings.set(key, value)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(
+        method === 'getSetting' ? { value: settings.has(key) ? settings.get(key) : null } : {}))
+    })
+    return
+  }
   if (url.pathname === '/__lib') {
     let body = ''
     req.on('data', (c) => (body += c))
@@ -141,7 +161,11 @@ window.__JUCE__ = { backend: (() => {
     if (method === 'slWorld') return { ok: true, applied: true }
     if (method === 'slMap') return { ok: true, maps: [] }
     if (method === 'slTakes') return { ok: true, takes: [] }
-    if (method === 'getSetting') return { value: null }
+    if (method === 'getSetting' || method === 'setSetting') {
+      const res = await fetch('/__set', { method: 'POST', body: JSON.stringify(
+        { method, key: p.key, value: p.value }) })
+      return res.json()
+    }
     return { ok: true }
   }
   // The walk plays the SHELL's part for window-lifecycle events (P3-C2):
@@ -336,7 +360,41 @@ check('the compose window names its session',
 await page2.waitForSelector('.trk-name', { timeout: 10000 })
 check('the REAL GridPanel mounted in the compose window',
   (await page2.$('.trk-name')) !== null)
+
+// ── P3.5-E8e — the FILES drawer remembers, across a REOPEN ─────────────────
+// The row's own gate, in the only place that can prove it: persistence goes
+// through getSetting/setSetting, which here is BrowserLink's localStorage-backed
+// LocalSettings, so "survives a reopen" means a genuinely new page reading what
+// the last one wrote. A unit test can pin the clamp; only a walk can pin that.
+await page2.click('.compose-files-tab')
+await page2.waitForSelector('.compose-files.open .compose-files-body', { timeout: 10000 })
+const grip = await page2.waitForSelector('.compose-files-grip', { timeout: 10000 })
+const gb = await grip.boundingBox()
+// Drag the grip LEFT — the drawer is on the right, so left is wider.
+await page2.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2)
+await page2.mouse.down()
+await page2.mouse.move(gb.x + gb.width / 2 - 70, gb.y + gb.height / 2, { steps: 8 })
+await page2.mouse.up()
+const widened = await page2.evaluate(
+  () => document.querySelector('.compose-files-body').getBoundingClientRect().width)
+check('dragging the grip widens the drawer', widened > 300, `width ${widened}`)
 await page2.close()
+
+// A NEW page, same context: it must come up with the drawer OPEN at that width.
+const page3 = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+page3.on('pageerror', (e) => pageErrors.push('page3: ' + String(e)))
+await page3.addInitScript(INIT)
+await page3.addInitScript(
+  `window.__slPanel = 'compose'; window.__slPanelArg = '${composeArg}';`)
+await page3.goto('http://localhost:4601/')
+await page3.waitForSelector('.compose-files.open .compose-files-body', { timeout: 10000 })
+const reopened = await page3.evaluate(
+  () => document.querySelector('.compose-files-body').getBoundingClientRect().width)
+check('the drawer reopens OPEN — the state is remembered, not defaulted',
+  reopened > 0)
+check('and at the width it was left at', Math.abs(reopened - widened) < 2,
+  `left ${widened}, reopened ${reopened}`)
+await page3.close()
 
 // The plane resumes ownership on the shell's close broadcast.
 await page.evaluate(

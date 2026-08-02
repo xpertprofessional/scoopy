@@ -19,7 +19,12 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ComposeFiles, ComposeFilesDrawer } from './ComposeFiles.tsx'
+import {
+  ComposeFiles,
+  ComposeFilesDrawer,
+  FILES_WIDTH,
+  clampFilesWidth,
+} from './ComposeFiles.tsx'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(here, p), 'utf8')
@@ -69,5 +74,60 @@ describe('the home is the drawer, NOT the panels menu', () => {
     // Ruled once across E8b and P11-1: P11-1 retires `≡ panels`, and a door
     // added there would have to be moved again the moment it does.
     expect(read('./PlanePanel.tsx')).not.toContain("'filebrowser'")
+  })
+})
+
+describe('P3.5-E8e — the drawer remembers, and can be resized', () => {
+  it('clamps a drag to bounds and lands on whole pixels', () => {
+    // Pure, so the DECISION a drag makes is pinned even though nothing here can
+    // drag (no jsdom). The bounds are the reason the control is safe to ship:
+    // below the floor the browser's columns stop being readable, above the
+    // ceiling the drawer stops being a drawer and starts being the view.
+    expect(clampFilesWidth(FILES_WIDTH.min - 200)).toBe(FILES_WIDTH.min)
+    expect(clampFilesWidth(FILES_WIDTH.max + 200)).toBe(FILES_WIDTH.max)
+    expect(clampFilesWidth(301.6)).toBe(302)
+    expect(clampFilesWidth(FILES_WIDTH.def)).toBe(FILES_WIDTH.def)
+  })
+
+  it('renders the body at the width it was given', () => {
+    const html = renderToStaticMarkup(
+      <ComposeFilesDrawer link={null} open width={340} onToggle={() => {}} onWidth={() => {}} />,
+    )
+    expect(html).toContain('width:340px')
+  })
+
+  it('draws the grip only when there is a width to set (§7)', () => {
+    const open = renderToStaticMarkup(
+      <ComposeFilesDrawer link={null} open width={280} onToggle={() => {}} onWidth={() => {}} />,
+    )
+    expect(open).toContain('compose-files-grip')
+    // CLOSED there is no body to size, and no `onWidth` means the caller holds
+    // no width at all — a handle in either case would move nothing.
+    const closed = renderToStaticMarkup(
+      <ComposeFilesDrawer link={null} open={false} onToggle={() => {}} onWidth={() => {}} />,
+    )
+    expect(closed).not.toContain('compose-files-grip')
+    const readOnly = renderToStaticMarkup(
+      <ComposeFilesDrawer link={null} open width={280} onToggle={() => {}} />,
+    )
+    expect(readOnly).not.toContain('compose-files-grip')
+  })
+
+  it('keeps its own keys and never reuses the native fold key', () => {
+    // The ledger row recorded this trap BEFORE anyone fell into it:
+    // `fileBrowserFolded` (store/fileBrowserBackend.ts) folds the NATIVE browser
+    // frame. It merely also means "narrow". Sharing it would couple two
+    // different things and make each one's bug look like the other's.
+    // Comments stripped: the file's own header NAMES the forbidden key in
+    // order to warn about it, so a whole-file match fails on prose that is
+    // doing the right thing. `studio/Transport.test.ts` needed the same
+    // distinction for the same reason — a third use should extract it.
+    const code = read('./ComposeFiles.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    expect(code).toContain("'fileBrowser.expanded'")
+    expect(code).toContain("'fileBrowser.width'")
+    expect(code).not.toContain('fileBrowserFolded')
+    expect(code).not.toContain('SETTING_FOLDED')
   })
 })
