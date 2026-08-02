@@ -1,5 +1,15 @@
-/* Pane-specific bits — shared idiom lives in design/controls.css. */
-.paintmode {
+/* Pane-specific bits — shared idiom lives in design/controls.css.
+ *
+ * ⚠️ THIS FILE ALSO DRESSES THE MIDI PANE, which is not obvious from its name.
+ * `.mapping-row`, `.mapping-target` and `.inv-label` below are the MIDI-mapping
+ * styles, and `MidiPanel` imports this stylesheet for them. Until S9 that panel
+ * went further and wore `.paintmode` itself as its root class — a copy-paste
+ * that made it announce another pane's identity, which the real-host walk read
+ * (correctly) as the route having fallen through. It has its own class now, and
+ * shares only the width. Untangling the mapping styles into their own file is
+ * worth doing and is not S9's business. */
+.paintmode,
+.midi-panel {
   max-width: 440px;
 }
 

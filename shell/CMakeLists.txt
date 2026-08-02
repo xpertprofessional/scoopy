@@ -54,7 +54,7 @@ target_include_directories(wz_sl_command PUBLIC src)
 # wz_sl_engine is PRIVATE: the plane commands call the C ABI directly, but
 # SlDispatch.h only forward-declares sl_engine, so nothing downstream needs it.
 target_link_libraries(wz_sl_command
-    PUBLIC juce::juce_core wz_record
+    PUBLIC juce::juce_core wz_record wz_midi
     PRIVATE wz_sl_world wz_sl_engine wz_audio_io
             juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
@@ -174,7 +174,7 @@ add_test(NAME sl_world_apply_test COMMAND sl_world_apply_test)
 add_library(wz_merged_app STATIC src/MergedApp.cpp)
 target_include_directories(wz_merged_app PUBLIC src
     ${CMAKE_SOURCE_DIR}/slengine/include ${CMAKE_SOURCE_DIR}/host/src)
-target_link_libraries(wz_merged_app PUBLIC wz_scoopy_paths)
+target_link_libraries(wz_merged_app PUBLIC wz_scoopy_paths wz_midi)
 
 target_compile_definitions(wz_merged_app PUBLIC
     JUCE_WEB_BROWSER=1

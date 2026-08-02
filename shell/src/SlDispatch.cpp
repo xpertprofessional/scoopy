@@ -1,6 +1,7 @@
 #include "SlDispatch.h"
 
 #include "AudioIO.h"
+#include "MidiHost.h"
 #include "NativePluginHost.hpp" // JUCE-free scanner surface (P6-2)
 #include "RecordService.h"
 #include "SlWorldApply.h"
@@ -178,6 +179,92 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // the first push arrives.
     if (method == "getUiState")
         return ok(emptyObject());
+
+    // ── MIDI: devices and roles (S9, ledger B8) ─────────────────────────────
+    //
+    // ⚠️ THE CONFIGURATION HALF ONLY, and the honesty is the point. These
+    // enumerate real CoreMIDI endpoints and remember which one holds which
+    // role. Nothing here emits a note or a clock byte: that needs an engine
+    // MIDI door which does not exist (`ScoopyPluginProcessor.h` records the
+    // same wall). `getCapabilities` therefore still answers `midiHardware:
+    // false` — see the note there — so no surface lights up claiming a
+    // hardware lane that cannot carry anything yet.
+    //
+    // Before this, all eleven MIDI methods were specified in `schema.ts` and
+    // answered by NOBODY, so `MidiPanel.tsx` — a complete donor-parity pane —
+    // showed "loading endpoints…" forever.
+    if (method == "enumerateMidiEndpoints" || method == "refreshMidiDevices" ||
+        method == "setMidiEnabled" || method == "selectMidiDevice" ||
+        method == "setMidiSyncMode" || method == "setMidiSlaveTransportPolicy" ||
+        method == "getMidiClockStatus") {
+        auto* midi = services != nullptr ? services->midi : nullptr;
+        if (midi == nullptr) return fail(method + ": no MIDI surface on this build");
+
+        const auto roleOf = [](const juce::String& r) {
+            if (r == "cc") return host::MidiHost::Role::cc;
+            if (r == "note") return host::MidiHost::Role::note;
+            if (r == "clock") return host::MidiHost::Role::clock;
+            return host::MidiHost::Role::clockOutput;
+        };
+
+        if (method == "refreshMidiDevices") {
+            midi->refresh();
+            return ok(emptyObject());
+        }
+        if (method == "setMidiEnabled") {
+            midi->setEnabled(params.getProperty("enabled", false));
+            return ok(emptyObject());
+        }
+        if (method == "selectMidiDevice") {
+            midi->select(roleOf(params.getProperty("role", "cc").toString()),
+                         static_cast<int>(params.getProperty("deviceId", 0)));
+            return ok(emptyObject());
+        }
+        if (method == "setMidiSyncMode") {
+            midi->syncMode = params.getProperty("mode", "internalMaster").toString();
+            return ok(emptyObject());
+        }
+        if (method == "setMidiSlaveTransportPolicy") {
+            midi->slaveTransportPolicy =
+                params.getProperty("policy", "fullTransport").toString();
+            return ok(emptyObject());
+        }
+        if (method == "getMidiClockStatus") {
+            // HONEST ZEROES. There is no clock input, so `locked` is false and
+            // stays false. Reporting a plausible bpm here would be the worst
+            // kind of wrong: a readout that looks alive over a lane carrying
+            // nothing.
+            auto* st = new juce::DynamicObject();
+            st->setProperty("locked", false);
+            st->setProperty("bpm", 0.0);
+            st->setProperty("tickCount", 0);
+            return ok(juce::var(st));
+        }
+
+        // enumerateMidiEndpoints
+        midi->refresh();
+        const auto listVar = [](const juce::Array<host::MidiHost::Endpoint>& in) {
+            juce::Array<juce::var> out;
+            for (const auto& e : in) {
+                auto* o = new juce::DynamicObject();
+                o->setProperty("id", e.id);
+                o->setProperty("name", e.name);
+                out.add(juce::var(o));
+            }
+            return juce::var(out);
+        };
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("sources", listVar(midi->sources()));
+        obj->setProperty("destinations", listVar(midi->destinations()));
+        obj->setProperty("enabled", midi->enabled());
+        obj->setProperty("ccDeviceId", midi->selected(host::MidiHost::Role::cc));
+        obj->setProperty("noteDeviceId", midi->selected(host::MidiHost::Role::note));
+        obj->setProperty("clockDeviceId", midi->selected(host::MidiHost::Role::clock));
+        obj->setProperty("clockOutputId", midi->selected(host::MidiHost::Role::clockOutput));
+        obj->setProperty("syncMode", midi->syncMode);
+        obj->setProperty("slaveTransportPolicy", midi->slaveTransportPolicy);
+        return ok(juce::var(obj));
+    }
 
     // ── Plugin scanner + FX-return slots (P6-2) ─────────────────────────────
     //

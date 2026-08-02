@@ -391,6 +391,24 @@ class MergedLink extends BrowserLink {
     "openPanelWindow",
     "openInstrumentWindow",
     "openFxSlotWindow",
+    // ── MIDI (S9, ledger B8) ────────────────────────────────────────────
+    // Answered by SlDispatch's MIDI block. Without these entries every call
+    // falls through to BrowserLink and throws — which is the exact defect
+    // `nativemethods:check` was written for, and the reason MidiPanel showed
+    // "loading endpoints…" forever before the shell answered at all.
+    //
+    // The four MAPPING methods (getMidiMappings / updateMidiMapping /
+    // removeMidiMapping / clearMidiMappings) and `midiLearn` are deliberately
+    // ABSENT: no host answers them yet, so routing them native would turn a
+    // clean "not implemented in the browser companion" into a silent refusal
+    // from a lane that does not exist.
+    "enumerateMidiEndpoints",
+    "refreshMidiDevices",
+    "setMidiEnabled",
+    "selectMidiDevice",
+    "setMidiSyncMode",
+    "setMidiSlaveTransportPolicy",
+    "getMidiClockStatus",
     "openAudioRoutingWindow",
   ]);
 

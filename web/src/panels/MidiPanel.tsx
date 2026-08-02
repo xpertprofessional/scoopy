@@ -71,7 +71,7 @@ export function MidiPanel({ link }: { link: EngineLink | null }) {
 
   if (!info) {
     return (
-      <main className="panel paintmode">
+      <main className="panel midi-panel" aria-label="midi">
         <PanelTitle>MIDI</PanelTitle>
         <Caption>loading endpoints…</Caption>
       </main>
@@ -106,7 +106,7 @@ export function MidiPanel({ link }: { link: EngineLink | null }) {
   );
 
   return (
-    <main className="panel paintmode">
+    <main className="panel midi-panel" aria-label="midi">
       <header className="panel-head">
         <PanelTitle>MIDI</PanelTitle>
         <Button label="Refresh" onClick={() => call("refreshMidiDevices", {})} />

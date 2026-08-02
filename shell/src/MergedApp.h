@@ -35,6 +35,7 @@
 
 #include "AudioIO.h"
 #include "RecordService.h"
+#include "MidiHost.h"
 #include "SlDispatch.h"
 #include "SlRenderSink.h"
 #include "SlSettingsStore.h"
@@ -64,6 +65,8 @@ struct Backend {
     sl_engine* engine;
     wizard::host::SlRenderSink sink;
     wizard::host::AudioIO audioIO;
+    /** S9: enumeration + role selection. See SlDispatch's MIDI block. */
+    wizard::host::MidiHost midi;
     wizard::sl::FileSettingsStore settings;
     juce::String deviceError;
 

@@ -38,6 +38,9 @@ namespace wizard::host {
 class AudioIO;
 }
 
+
+namespace wizard::host { class MidiHost; }
+
 namespace wizard::sl {
 
 /** Host-tier services the pure dispatcher cannot own but some commands need.
@@ -61,6 +64,10 @@ struct HostServices {
         why every strip was hard-wired to channels 0/1. Nullable: a host with no
         device still answers every other command. */
     host::AudioIO* audio = nullptr;
+    /** THE MIDI SURFACE (S9). Nullable for the same reason `audio` is: a
+        headless dispatcher has none and every MIDI command refuses by name
+        rather than pretending to enumerate. */
+    host::MidiHost* midi = nullptr;
     /** The AU/VST3 plugin scanner (P6-2) — owned by the app, which is the only
         process with the real NativePluginHost implementation and a JUCE message
         loop for it to marshal on. Null = this host cannot host plugins, and the

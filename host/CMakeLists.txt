@@ -2,6 +2,21 @@
 # hold only transport/chrome/dialogs). JUCE device code lives here. Capture
 # backends (macOS taps, Linux PipeWire) and the WAV writer join this tier in
 # P2/P3.
+# THE MIDI SURFACE (S9, ledger B8). Configuration only for now — endpoints and
+# which one has which role — because emitting a note needs an engine MIDI door
+# that does not exist yet (ScoopyPluginProcessor.h records the same wall).
+# GUI-free so the id-stability rules are tested headlessly, on a machine with no
+# MIDI hardware at all.
+add_library(wz_midi STATIC src/MidiHost.cpp)
+target_include_directories(wz_midi PUBLIC src)
+target_link_libraries(wz_midi
+    PUBLIC juce::juce_audio_devices
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+add_executable(midi_host_test tools/midi_host_test.cpp)
+target_link_libraries(midi_host_test PRIVATE wz_midi)
+add_test(NAME midi_host_test COMMAND midi_host_test)
+
 add_library(wz_audio_io STATIC src/AudioIO.cpp src/RenderSink.cpp)
 target_include_directories(wz_audio_io PUBLIC src)
 # It linked wz_engine PRIVATE until H2a. That was already vestigial: AudioIO.h

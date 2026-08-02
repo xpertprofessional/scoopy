@@ -94,6 +94,7 @@ Backend::Backend(sl_engine* e)
     // refuse honestly — the app still runs and still plays.
     if (recorder.start(drainSource, services.takesDir)) services.recorder = &recorder;
     services.audio = &audioIO; // the plane's input source picker reads this
+    services.midi = &midi;     // S9: MidiPanel enumerates through this
 #if SCOOPY_PLUGIN_HOST
     services.pluginScanner = &pluginScanner; // flips pluginHosting true (P6-2)
 #endif

@@ -152,6 +152,52 @@ const Step kSteps[] = {
         return '';
       })())JS"},
 
+    // ── MIDI: the shell answers, and says what it can and cannot do (S9) ────
+    //
+    // The claim being checked is narrow and worth stating: `enumerateMidiEndpoints`
+    // reaches the SHELL and comes back with a well-formed answer. Before S9 all
+    // eleven MIDI methods were specified and answered by nobody, so this call
+    // threw from BrowserLink and MidiPanel showed "loading endpoints…" forever.
+    //
+    // It does NOT assert that any device exists — a CI box has none, and a walk
+    // that needs hardware plugged in is a walk that gets disabled.
+    {"(arm) ask the shell to enumerate MIDI endpoints", 0,
+     R"JS((function () {
+        try {
+          window.__midi = null;
+          // JUCE's getNativeFunction wire format, verbatim from
+          // protocol/juceLink.ts — the SAME lane the app uses, so this measures
+          // the shell rather than a convenience the walk invented.
+          var id = 909091;
+          // ONE completion channel carrying the id in its payload — not a
+          // per-id event. Read from protocol/juceLink.ts rather than guessed;
+          // guessing it cost this walk one failing run.
+          window.__JUCE__.backend.addEventListener('__juce__complete', function (p) {
+            if (p && p.promiseId === id) window.__midi = p.result;
+          });
+          window.__JUCE__.backend.emitEvent('__juce__invoke', {
+            name: 'slCommand',
+            params: ['enumerateMidiEndpoints', {}],
+            resultId: id,
+          });
+          return '';
+        } catch (e) { return 'could not call: ' + e; }
+      })())JS"},
+
+    {"the shell ANSWERS enumerateMidiEndpoints (it answered nobody before S9)", 700,
+     R"JS((function () {
+        var m = window.__midi;
+        if (m === null || m === undefined) return 'no reply within ~700ms';
+        var r = (typeof m === 'string') ? JSON.parse(m) : m;
+        if (r && r.ok === false) return 'refused: ' + JSON.stringify(r.error);
+        var res = (r && r.result) ? r.result : r;
+        if (!res || !Array.isArray(res.sources) || !Array.isArray(res.destinations))
+          return 'malformed: ' + JSON.stringify(res).slice(0, 200);
+        if (res.syncMode !== 'internalMaster' && res.syncMode !== 'externalSlave')
+          return 'bad syncMode: ' + JSON.stringify(res.syncMode);
+        return '';
+      })())JS"},
+
     // ── the native -> page lane, end to end ─────────────────────────────────
     // ARM. Subscribes through JUCE's own documented backend API rather than
     // reaching into the app's link object, so this measures the HOST's
