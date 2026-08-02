@@ -342,6 +342,12 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
     milliseconds, because crossfader IOIs cluster on 1/32, 1/16 and 1/8.
     `span` is a fraction of the loop, and measured spans are SMALL.
 
+    ⚠️ `span = 0` IS FADER-ONLY, and it is not a magic value — it is literally
+    what the field says: the record hand moves nothing, so the loop keeps playing
+    normally and only the crossfader chops it. That is how a transformer is
+    actually played over a running loop, and D-SL-SCRATCHGATE-01 names it as a
+    case the gate must reach. The scrub path stays shut in that mode.
+
     Refused while recording, exactly as sl_tape_scrub_begin is: the write head is
     not the user's to drag, and a pattern is only a faster drag. Out-of-range
     period/span are CLAMPED rather than refused — these come from a UI control,

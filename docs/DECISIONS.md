@@ -1507,10 +1507,19 @@ precisely why the general rule cannot be read onto it.
 
 **Consequences:**
 
-· **It lives in the TAPE, per sample, in BOTH loops** — the scrub path and the
-  `renderVarispeed` lambda. Both, because a transformer is played over a **normally
-  playing loop**, not only during a scrub; putting it in one place would ship half the
-  technique table.
+· **It lives in the TAPE, per sample, on BOTH paths** — the scrub path and the ordinary
+  playback path. Both, because a transformer is played over a **normally playing loop**,
+  not only during a scrub; putting it in one place would ship half the technique table.
+  On the playback side it is reached with **`span = 0`** — not a magic value but literally
+  what the field says, the record hand moving nothing.
+  ⚠️ **Amended on implementation (2026-08-02):** this entry originally named the
+  `renderVarispeed` lambda as the site. It is applied as a per-sample pass over that
+  lambda's **output** instead, because `renderVarispeed` runs **twice** during a stretch
+  transition — a dry leg and a wet leg, with playhead and `smRate` saved and restored
+  around it — so advancing the pattern phase inside it would run the gesture at double
+  speed for exactly as long as a crossfade lasts. Same stage, same per-sample
+  granularity, phase advanced once; the distinction this decision actually rests on
+  (the tape's stage, not `mixInto`'s block-hoisted targets) is untouched.
 · **Not in `ChannelBank::mixInto`.** Targets there are hoisted once per block, so the
   *decision instant* would sit on the ~10.7 ms block grid however fast the ramp was. The
   ramp shape and the decision instant are two different problems and only the second one

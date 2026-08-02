@@ -529,6 +529,125 @@ int main() {
         sl_engine_destroy(e);
     }
 
+    /* ── 8. THE GATE REACHES SILENCE INSIDE A CLICK ────────────────────────
+       The whole reason D-SL-SCRATCHGATE-01 exists. At the engine's 10 ms
+       constant a 40 ms click is 10 ms down + 10 ms up and NEVER GETS THERE; the
+       signed ~2 ms does. This is the assertion that would fail if somebody
+       "restored consistency" by putting the gate back on the one ramp. */
+    {
+        std::vector<float> tf;
+        // transformer: rest CLOSED with four openings per stroke, so most of the
+        // pattern is silence and the openings are the tones.
+        CHECK(runPattern(64, 5 /* transformer */, 0.5, 0.07, 120.0, 4, tf));
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        const size_t windows = tf.size() / win;
+        CHECK(windows > 20);
+        double loud = 0.0;
+        int silentWindows = 0;
+        std::vector<double> rms(windows);
+        for (size_t w = 0; w < windows; ++w) {
+            rms[w] = acRms(tf, w * win, win);
+            loud = std::max(loud, rms[w]);
+        }
+        for (double v : rms)
+            if (v < loud * 0.01) ++silentWindows; // 40 dB down = closed, not "quieter"
+        const double silentFraction = static_cast<double>(silentWindows) /
+                                      static_cast<double>(windows);
+        std::printf("  transformer: %.0f%% of windows fully closed (>40 dB down)\n",
+                    silentFraction * 100.0);
+        CHECK(loud > 0.01);            // the openings sound
+        CHECK(silentFraction > 0.25);  // and the closes REACH silence
+    }
+
+    /* ── 9. FADER-ONLY (span 0) CHOPS A PLAYING LOOP ───────────────────────
+       D-SL-SCRATCHGATE-01 names this case explicitly: a transformer over a
+       NORMALLY PLAYING loop, not only over a scratch. The record hand moves
+       nothing, so the pitch is untouched and only the gate articulates. */
+    {
+        sl_engine* e = sl_engine_create(kRate, 64, 86);
+        CHECK(e != nullptr);
+        CHECK(sl_engine_start(e) == 1);
+        sl_watchdog_set_enabled(e, 0);
+        for (uint32_t t = 0; t < sl_channel_count(); ++t)
+            CHECK(sl_channel_set_source(e, t, 1, t) == 1);
+        std::vector<float> tone(kLen);
+        for (size_t i = 0; i < kLen; ++i)
+            tone[i] = static_cast<float>(
+                std::sin(2.0 * M_PI * kToneHz * static_cast<double>(i) / kRate));
+        const float* planar[1] = {tone.data()};
+        CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
+        // ⚠️ A SEAMLESS LOOP, or this test measures its own material. 400 Hz at
+        // 48k is exactly 120 frames per cycle, and 65536 is not a multiple of
+        // 120 — so looping the whole buffer puts a step of up to full scale at
+        // every wrap. The first run of the release assertion below caught
+        // exactly that, reporting 0.707 (a tone sample, not a gain change) and
+        // reading like a gate that snaps.
+        constexpr uint64_t kTonePeriod = 120;
+        constexpr uint64_t kLoopFrames = (kLen / kTonePeriod) * kTonePeriod;
+        sl_tape_set_loop(e, 0, 1, 0, kLoopFrames);
+        sl_tape_trigger(e, 0, 0); // LOOPING, at rate 1.0
+        sl_tape_set_scratch_tempo(e, 120.0);
+        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */);
+
+        std::vector<float> l(64), r(64), captured;
+        float* outs[2] = {l.data(), r.data()};
+        for (int i = 0; i < 750; ++i) { // ~1 s
+            sl_render(e, outs, 2, 64);
+            captured.insert(captured.end(), l.begin(), l.end());
+        }
+        // THE RECORD NEVER MOVED: the scrub path stayed shut, so this is
+        // ordinary playback with a gate on it.
+        CHECK(sl_tape_scrub_rate(e, 0) == 0.0);
+
+        const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+        const size_t windows = captured.size() / win;
+        double loud = 0.0;
+        std::vector<double> rms(windows);
+        for (size_t w = 0; w < windows; ++w) {
+            rms[w] = acRms(captured, w * win, win);
+            loud = std::max(loud, rms[w]);
+        }
+        int silent = 0;
+        for (double v : rms) if (v < loud * 0.01) ++silent;
+        const double frac = static_cast<double>(silent) / static_cast<double>(windows);
+        std::printf("  fader-only over a playing loop: %.0f%% closed, peak %.4f\n",
+                    frac * 100.0, loud);
+        CHECK(loud > 0.01);   // the loop is audible through the openings
+        CHECK(frac > 0.25);   // and the fader really is chopping it
+
+        // RELEASE MUST NOT CLICK. A closed-rest technique would otherwise
+        // deactivate with the gate shut and step straight to full output.
+        sl_tape_scratch_stop(e, 0);
+        std::vector<float> tail;
+        for (int i = 0; i < 400; ++i) {
+            sl_render(e, outs, 2, 64);
+            tail.insert(tail.end(), l.begin(), l.end());
+        }
+        double worstStep = 0.0;
+        for (size_t i = 1; i < tail.size(); ++i)
+            worstStep = std::max(worstStep, std::abs(static_cast<double>(tail[i] - tail[i - 1])));
+        // One sample of a 400 Hz tone at full scale steps by at most
+        // sin(2*pi*400/48000) ~= 0.052. A gate snapping open would step by the
+        // whole sample value, several times that.
+        std::printf("  release step: worst sample-to-sample |Δ| = %.4f (tone alone ~0.052)\n",
+                    worstStep);
+        CHECK(worstStep < 0.08);
+        sl_engine_destroy(e);
+    }
+
+    /* ── 10. A HAND SCRUB IS UNCHANGED ─────────────────────────────────────
+       Neither the gate nor the speed law may leak onto the path a finger drives.
+       The measurement at the top of this file IS that path, so if this commit
+       had touched it those numbers would have moved — but assert it directly
+       too, because "the other test would have caught it" is how things stop
+       being caught. */
+    {
+        Notch again{};
+        CHECK(measure(64, again));
+        CHECK(again.strokeRms == fine.strokeRms);
+        CHECK(again.floorRms == fine.floorRms);
+    }
+
     std::printf("sl_tape_scratch_test OK\n");
     return 0;
 }
