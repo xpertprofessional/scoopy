@@ -102,12 +102,20 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
 ## Verify (the gate for every commit in a bundle)
 - C++: `ctest --test-dir build --output-on-failure`
 - Web (in `web/`): `npm run typecheck && npm test`
-- **Drift gates — run all ELEVEN every session, not only when a row names one**
+- **Drift gates — run all TWELVE every session, not only when a row names one**
   (2026-07-29: two were RED at HEAD and one uncovered two real UI defects):
   `params:check` · `shared:check` · `worldmap:check` · `hotframe:check` ·
   `tape:check` · `trackparams:check` · `webdist:check` · `check:tokens` ·
-  `schema:check` · `nativemethods:check` · `faces:check`.
-  `faces:check` is the newest (2026-08-02, D-SL-STUDIO-01 L1): a FACE composes
+  `schema:check` · `nativemethods:check` · `faces:check` · `scratch:check`.
+  `scratch:check` is the newest (2026-08-02, `docs/specs/scratching.md`): the
+  eleven scratch techniques live in `slengine/scratch-techniques.json` and are
+  EMITTED to both the engine's C table and the UI's TS one, because **the index
+  is the wire** — `sl_tape_scratch_start` takes a position in that array. Two
+  hand-written copies would fail the way `generateTrackParams.ts`'s header
+  describes: pick "crab", get an orbit's gate, nothing red anywhere. It also
+  refuses rather than emitting something plausible (a duplicate id, a click at
+  `at >= 1` that falls in the next stroke, a `span` of 0 that does not move).
+  `faces:check` (2026-08-02, D-SL-STUDIO-01 L1): a FACE composes
   blocks and never rebuilds one, because six products share one bundle and
   differ only in which blocks they mount, what `getCapabilities` answers, and
   `viewDensity`. It exists because that had failed twice — `PluginDeckPanel`'s
@@ -115,7 +123,9 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
   hand-written save lifecycle had silently lost half its job. ⚠️ It deliberately
   does NOT try to detect a rebuilt transport by its glyphs: measured, those
   appear legitimately in tooltips, in prose and as the tape's own transport, and
-  a gate needing an allowlist on day one is not a gate.
+  a gate needing an allowlist on day one is not a gate. Its R5 (the looper is
+  `blocks/TapeRow.tsx`) picked its marker under that same rule: `scrubBegin`
+  reaches only two files, and `plane/Strip.tsx` is not a face.
   `schema:check` (H5-a, 2026-07-30) was added because three
   hosts were reporting three different protocol versions — schema.ts 96,
   `getCapabilities` 92, `kScoopySchemaVersion` 88 — while `sl_dispatch_test`

@@ -19,6 +19,8 @@
     "plugin:check": "node --experimental-strip-types scripts/pluginFresh.ts",
     "preview:lan": "SL_LAN=1 vite build && SL_LAN=1 vite preview --host",
     "schema:check": "node --experimental-strip-types scripts/checkSchemaVersion.ts",
+    "scratch:check": "node --experimental-strip-types scripts/generateScratchTechniques.ts --check",
+    "scratch:generate": "node --experimental-strip-types scripts/generateScratchTechniques.ts",
     "session:generate": "node --experimental-strip-types scripts/generateSessionFixture.ts",
     "shared:check": "node --experimental-strip-types scripts/sharedSync.ts --check",
     "shared:sync": "node --experimental-strip-types scripts/sharedSync.ts --write",
