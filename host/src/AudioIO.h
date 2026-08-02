@@ -14,6 +14,7 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include "OutputMap.h"
 #include "RenderSink.h"
 
 #include <functional>
@@ -26,6 +27,12 @@ public:
         outlive this AudioIO — it is a reference, not ownership, because the
         shell owns the engine and the device layer only borrows it to render. */
     explicit AudioIO(RenderSink& sinkToUse);
+
+    /** The output routing, for the dispatcher to configure. Returned by
+        reference because it is written from the message thread and read from
+        the audio thread — the atomics inside are what make that safe, and
+        copying it would quietly break that. */
+    OutputMap& outputMap() noexcept { return outputs; }
     ~AudioIO() override;
 
     // (Re)opens the default duplex device at `sampleRate` and attaches the
@@ -71,6 +78,11 @@ private:
     void detach();
 
     RenderSink& sink;
+    /** WHERE EACH ENGINE BUS GOES (S5). Identity by default, so a host that
+        never touches it renders exactly as it did before the map existed.
+        Owned here because the device callback is the only reader and the
+        device's channel count is the only thing that bounds it. */
+    OutputMap outputs;
     juce::AudioDeviceManager deviceManager;
     double openedRate = 0.0;
     bool attached = false;

@@ -157,6 +157,17 @@ int main(int argc, char* argv[]) {
         CHECK(r.getProperty("error", "").toString().contains(m));
     }
 
+    // OUTPUT ROUTING (S5). With no audio device these refuse BY NAME rather
+    // than pretending to route — the shape this whole command family was stuck
+    // in for months, declared in schema.ts and answered by nobody, where a
+    // caller could not tell "routed" from "silently ignored".
+    for (const char* m : {"setDeckOutputChannels", "setSendOutputChannel",
+                          "setPerTrackOutputRouting"}) {
+        const auto r = dispatch(m, juce::var(), settings, nullptr);
+        CHECK(!replyOk(r));
+        CHECK(r.getProperty("error", "").toString().contains(m));
+    }
+
     // worldPublish ROUTING (the applier itself is covered by sl_world_apply_test).
     // With a real engine, a flat `world` object routes through and applies; the
     // Option-B contract is enforced — a stock PatternFile `json` string, which

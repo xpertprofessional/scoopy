@@ -1,6 +1,7 @@
 #include "SlDispatch.h"
 
 #include "AudioIO.h"
+#include "OutputMap.h"
 #include "MidiClockOut.h"
 #include "MidiHost.h"
 #include "NativePluginHost.hpp" // JUCE-free scanner surface (P6-2)
@@ -187,6 +188,71 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
     // the first push arrives.
     if (method == "getUiState")
         return ok(emptyObject());
+
+    // ── OUTPUT ROUTING (S5) ─────────────────────────────────────────────────
+    //
+    // ⚠️ THESE WERE DECLARED AND ANSWERED BY NOBODY. `sl_engine.h` says the
+    // desktop "maps it through the host's output map"; until `OutputMap` there
+    // was no map, so the engine rendered 1:1 into device channels and these
+    // three commands had nowhere to land.
+    //
+    // THE LANE LAYOUT IS THE ENGINE'S, read from `AudioLane` rather than
+    // assumed: main L/R are 0/1, the four sends are 2-5 and are MONO — the
+    // engine's own comment warns that writing `send1 + 1` instead of `send2` is
+    // how a reorder routes a channel's right side into the next send. Deck A/B/C
+    // outs are stereo pairs at 10-15, which is what `djDeckA/B/C_OutputChannels`
+    // addressed on the desktop.
+    if (method == "setDeckOutputChannels" || method == "setSendOutputChannel" ||
+        method == "setPerTrackOutputRouting") {
+        auto* audio = services != nullptr ? services->audio : nullptr;
+        if (audio == nullptr) return fail(method + ": no audio device on this build");
+        auto& map = audio->outputMap();
+
+        // The engine's lane indices. Named here, once.
+        constexpr int kMainL = 0, kMainR = 1;
+        constexpr int kSend0 = 2;              // sends 2,3,4,5 — mono, consecutive
+        constexpr int kDeckA_L = 10;           // deck pairs A/B/C at 10-15
+
+        if (method == "setSendOutputChannel") {
+            // MONO, one channel per send — NOT a pair. -1 = none, which routes
+            // the lane nowhere and leaves its old channel to be cleared.
+            const int idx = static_cast<int>(params.getProperty("sendIndex", 0)); // 1..4
+            const int ch = static_cast<int>(params.getProperty("channel", -1));
+            if (idx < 1 || idx > 4) return fail("setSendOutputChannel: sendIndex must be 1..4");
+            map.set(kSend0 + idx - 1, ch < 0 ? host::OutputMap::kNone : ch);
+            return ok(emptyObject());
+        }
+
+        if (method == "setDeckOutputChannels") {
+            const auto deck = params.getProperty("deck", "A").toString();
+            const int base = kDeckA_L + (deck == "B" ? 2 : deck == "C" ? 4 : 0);
+            const auto chans = params.getProperty("channels", juce::var());
+
+            // NULL = "Main": the deck is not given its own pair and simply
+            // stays in the summed program, which is the donor's `nil`. Its own
+            // lanes go nowhere rather than doubling the deck into the mix.
+            if (chans.isVoid() || !chans.isArray()) {
+                map.set(base, host::OutputMap::kNone);
+                map.set(base + 1, host::OutputMap::kNone);
+                return ok(emptyObject());
+            }
+            const auto* arr = chans.getArray();
+            if (arr == nullptr || arr->size() < 2)
+                return fail("setDeckOutputChannels: channels must be a stereo PAIR or null");
+            map.set(base, static_cast<int>((*arr)[0]));
+            map.set(base + 1, static_cast<int>((*arr)[1]));
+            return ok(emptyObject());
+        }
+
+        // setPerTrackOutputRouting — the per-DEVICE master switch behind the
+        // donor's output-1/2 mode. The per-track half (`Track.outputAssign`,
+        // mono-summed hard onto one side ignoring pan) is DOCUMENT state and
+        // belongs in the world, not here; this is the gate that makes it active.
+        // Refused rather than silently accepted until that half exists, because
+        // a switch that reports success and changes nothing is exactly the
+        // shape this whole command family was stuck in.
+        return fail("setPerTrackOutputRouting: the per-track outputAssign half is not built yet");
+    }
 
     // ── MIDI: devices and roles (S9, ledger B8) ─────────────────────────────
     //

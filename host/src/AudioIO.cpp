@@ -197,7 +197,8 @@ void AudioIO::audioDeviceIOCallbackWithContext(
     // unconfigured-engine handling are testable without a device or a display
     // (render_sink_test) — everything that used to be untestable about this
     // callback was the part with the arithmetic in it.
-    renderChunked(sink, input, numInputChannels, output, numOutputChannels, numSamples);
+    renderChunked(sink, input, numInputChannels, output, numOutputChannels, numSamples,
+                  &outputs);
 }
 
 } // namespace wizard::host

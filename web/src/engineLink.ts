@@ -410,6 +410,15 @@ class MergedLink extends BrowserLink {
     "setMidiSlaveTransportPolicy",
     "getMidiClockStatus",
     "midiClock",
+    // ── OUTPUT ROUTING (S5) ─────────────────────────────────────────────
+    // Answered by SlDispatch's output block, on top of host/OutputMap.
+    // `setPerTrackOutputRouting` is routed too even though the shell refuses
+    // it by name today: the refusal is the honest answer and must reach the
+    // caller, where falling through to BrowserLink would throw a misleading
+    // "not implemented in the browser companion" instead.
+    "setDeckOutputChannels",
+    "setSendOutputChannel",
+    "setPerTrackOutputRouting",
     "openAudioRoutingWindow",
   ]);
 
