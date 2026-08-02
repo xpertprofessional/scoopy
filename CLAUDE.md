@@ -158,5 +158,27 @@ Scope searches to the hand-written source: `web/src`, `web/protocol`, `shell/`,
 - Bundle + `webdist/` freshness and the Chromium walk gates per the ledger row's gate
   line. **Never commit a red tree.** One coherent step per commit — a bundle spans
   several; the ledger row closes on the last one.
-- ⚠️ Other agents edit this tree concurrently: `git add` **explicit paths**, never
-  `git add -A`.
+- ⚠️ **Other agents edit this tree concurrently, and `git add` explicit paths is
+  NOT enough.** That rule was here already and a commit still deleted 523 lines
+  of another agent's work (2026-08-02, repaired in `357ce5f`). Three different
+  failures, none of them `-A`:
+  1. **`git commit` with no pathspec commits the WHOLE INDEX** — including
+     deletions someone else staged mid-move. Naming your paths on `add` buys
+     nothing once their changes are already sitting in the index.
+  2. **`git add <file>` stages the FILE, not your diff** — so it carries any
+     uncommitted edits another agent has in that same file. This is how a
+     mid-refactor `sl_engine.h` got committed under an unrelated message and
+     produced "conflicting types" errors nobody could place.
+  3. Reading `git diff --cached --stat` as *confirmation your files are there*
+     rather than as *the full manifest*. Four unfamiliar paths were in that
+     output and got skimmed past.
+
+  **The procedure that actually holds:**
+  ```
+  git status --short <file>      # BEFORE editing: is it already dirty? then leave it
+  git commit -- <explicit paths> # pathspec on COMMIT, not just add — ignores the
+                                 # rest of the index entirely
+  git show --stat HEAD           # AFTER: the file list must be exactly yours
+  ```
+  A file another agent is holding is a file you do not touch. Wait, or work
+  elsewhere — there is no way to commit half of a shared file non-interactively.
