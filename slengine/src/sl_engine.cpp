@@ -644,12 +644,13 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape) {
 }
 
 void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
-                           double period_beats, double span, double cue_frame) {
-    if (e != nullptr) e->tapes.scratchStart(tape, technique, period_beats, span, cue_frame);
+                           double period_beats, double span, double vary, double cue_frame) {
+    if (e != nullptr) e->tapes.scratchStart(tape, technique, period_beats, span, vary, cue_frame);
 }
 
-void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span) {
-    if (e != nullptr) e->tapes.scratchSet(tape, period_beats, span);
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span,
+                         double vary) {
+    if (e != nullptr) e->tapes.scratchSet(tape, period_beats, span, vary);
 }
 
 void sl_tape_scratch_stop(sl_engine* e, uint32_t tape, uint32_t release_mode) {

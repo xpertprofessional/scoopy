@@ -342,6 +342,18 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
     milliseconds, because crossfader IOIs cluster on 1/32, 1/16 and 1/8.
     `span` is a fraction of the loop, and measured spans are SMALL.
 
+    `vary` [0,1] is HOW MUCH THE FIGURE VARIES, and 0 — every stroke identical —
+    is nobody's playing. The sources are blunt: *"the actual improvising does not
+    necessarily turn out to be a series of perfectly performed basic
+    techniques"*. Above 0 it drives three measured behaviours at once: the
+    TWIN-PEAKS alternation (a big excursion then one 0.585 its size, a figure
+    that took "almost one third of the performance in time"), ±30% span jitter,
+    and thinning the crossfader off the big stroke — because the measurement puts
+    more attacks on the second peak. Period is deliberately untouched: what was
+    measured is that "the record speed and gesture span varies, but the DURATION
+    is constant". Generated from the published statistics; no recorded gesture
+    data was obtained or transcribed.
+
     ⚠️ `span = 0` IS FADER-ONLY, and it is not a magic value — it is literally
     what the field says: the record hand moves nothing, so the loop keeps playing
     normally and only the crossfader chops it. That is how a transformer is
@@ -363,10 +375,11 @@ double sl_tape_scrub_rate(const sl_engine* e, uint32_t tape);
     `stop` completes the current stroke before releasing (reversals land at the
     extrema; strokes are whole units), then hands over per its release mode. */
 void sl_tape_scratch_start(sl_engine* e, uint32_t tape, uint32_t technique,
-                           double period_beats, double span, double cue_frame);
+                           double period_beats, double span, double vary, double cue_frame);
 /** Retune while held. Deliberately does NOT re-seed the phase: a period change
     mid-stroke should change speed, not restart the figure. */
-void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span);
+void sl_tape_scratch_set(sl_engine* e, uint32_t tape, double period_beats, double span,
+                         double vary);
 
 /** Release. `release_mode` is the pair `pd-scrub-engine.md` §5 designed and
     shipped neither of:

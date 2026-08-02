@@ -171,6 +171,17 @@ struct Tape {
         hand's figure, and this is the hand on top of it. */
     std::atomic<double> scratchFader{1.0};
     double scratchFaderSm = 1.0; // render-side, on the same ~2 ms gate ramp
+
+    /** HOW MUCH THE FIGURE VARIES, 0 = every stroke identical (which is not what
+        anyone plays). Drives all three measured behaviours at once — the
+        twin-peaks big/small alternation, ±30% span jitter, and thinning the
+        fader off the big stroke. See sl_tape.cpp's VARIATION block. */
+    std::atomic<double> scratchVary{0.0};
+    // Render-owned, redrawn once per CYCLE — never per sample.
+    uint32_t scratchRng = 0x9E3779B9u; // any odd seed; xorshift32 needs nonzero
+    uint32_t scratchCycle = 0;         // which half of the twin-peaks pair
+    double scratchSpanMul = 1.0;       // this cycle's span, as a multiple
+    uint32_t scratchClicksOn = 1;      // whether this cycle uses the fader at all
     std::atomic<uint32_t> scratchTechnique{0}; // index into kSlScratchTechniques
     std::atomic<double> scratchPeriodBeats{0.5};
     std::atomic<double> scratchSpan{0.07}; // fraction of the loop
@@ -475,8 +486,8 @@ public:
         `periodBeats` is one full back-and-forth in beats; `span` is a fraction
         of the loop. Stop finishes the current stroke before releasing. */
     void scratchStart(uint32_t tape, uint32_t technique, double periodBeats, double span,
-                      double cueFrame);
-    void scratchSet(uint32_t tape, double periodBeats, double span);
+                      double vary, double cueFrame);
+    void scratchSet(uint32_t tape, double periodBeats, double span, double vary);
     void scratchStop(uint32_t tape, uint32_t releaseMode);
     void scratchFader(uint32_t tape, double position);
     /** The tempo a beat-locked pattern runs against, engine-wide. Pushed by

@@ -239,7 +239,7 @@ bool measure(uint32_t block, Notch& out) {
     at three different control grains. */
 bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double span,
                 double bpm, uint32_t cycles, std::vector<float>& out,
-                double* endPlayhead = nullptr) {
+                double* endPlayhead = nullptr, double vary = 0.0) {
     sl_engine* e = sl_engine_create(kRate, block, 86);
     if (e == nullptr) return false;
     if (sl_engine_start(e) != 1) return false;
@@ -257,7 +257,7 @@ bool runPattern(uint32_t block, uint32_t technique, double periodBeats, double s
     sl_tape_seek(e, 0, kAnchorFrame);
 
     sl_tape_set_scratch_tempo(e, bpm);
-    sl_tape_scratch_start(e, 0, technique, periodBeats, span, -1.0);
+    sl_tape_scratch_start(e, 0, technique, periodBeats, span, vary, -1.0);
 
     const double cycleSamples = periodBeats * (60.0 / bpm) * kRate;
     const auto total = static_cast<uint64_t>(cycleSamples * cycles);
@@ -390,7 +390,7 @@ int main() {
             if (sl_tape_load(e, 0, 1, kLen, planar, kRate) != 1) return -1;
             sl_tape_seek(e, 0, kAnchorFrame);
             sl_tape_set_scratch_tempo(e, bpm);
-            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07, -1.0);
+            sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.07, 0.0 /* vary */, -1.0);
 
             const double cycleSamples = 0.5 * (60.0 / bpm) * kRate;
             const auto total = static_cast<uint64_t>(cycleSamples * 4.0);
@@ -459,7 +459,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         CHECK(sl_tape_set_record_source(e, 0, 0 /* deviceInput */, 0, 1) == 1);
         sl_tape_record_start(e, 0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, -1.0);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, 0.0 /* vary */, -1.0);
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
@@ -481,7 +481,7 @@ int main() {
         std::vector<float> tone(kLen, 0.5f);
         const float* planar[1] = {tone.data()};
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
-        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07, -1.0);
+        sl_tape_scratch_start(e, 0, 9999, 0.5, 0.07, 0.0 /* vary */, -1.0);
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         sl_render(e, outs, 2, 64);
@@ -508,7 +508,7 @@ int main() {
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         sl_tape_seek(e, 0, kAnchorFrame);
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, -1.0);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.07, 0.0 /* vary */, -1.0);
 
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
@@ -587,7 +587,7 @@ int main() {
         sl_tape_set_loop(e, 0, 1, 0, kLoopFrames);
         sl_tape_trigger(e, 0, 0); // LOOPING, at rate 1.0
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */, -1.0);
+        sl_tape_scratch_start(e, 0, 5 /* transformer */, 0.5, 0.0 /* FADER ONLY */, 0.0 /* vary */, -1.0);
 
         std::vector<float> l(64), r(64), captured;
         float* outs[2] = {l.data(), r.data()};
@@ -671,14 +671,16 @@ int main() {
         sl_tape_seek(e, 0, kLen - 2000);
         sl_tape_set_scratch_tempo(e, 120.0);
         const double cue = 4000.0;
-        sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.02, cue);
+        sl_tape_scratch_start(e, 0, 0 /* baby */, 0.5, 0.02, 0.0 /* vary */, cue);
 
         std::vector<float> l(64), r(64), heard;
         float* outs[2] = {l.data(), r.data()};
         double fastest = 0.0;
         bool arrived = false;
+        int blocksToArrive = 0;
         for (int i = 0; i < 400 && !arrived; ++i) {
             sl_render(e, outs, 2, 64);
+            ++blocksToArrive;
             heard.insert(heard.end(), l.begin(), l.end());
             const double v = sl_tape_scrub_rate(e, 0);
             // Track the extreme by MAGNITUDE. The first cut tracked the minimum
@@ -692,6 +694,15 @@ int main() {
         std::printf("  spin-back: extreme %.2fx, arrived=%s, playhead %.0f (cue %.0f)\n",
                     fastest, arrived ? "yes" : "NO", sl_tape_playhead(e, 0), cue);
         CHECK(arrived);
+        // ⚠️ HOW LONG IT TOOK IS THE POINT, and this assertion exists because it
+        // once took 704 ms. The landing constant was 90 ms, so the profile never
+        // saturated for a normal gap and the record CRAWLED in — heard as "it
+        // rewinds, pauses, then starts", which reads like quantization and is
+        // nothing of the sort. Flat out at 16x a 60k-frame journey is ~78 ms.
+        const double arriveMs = blocksToArrive * 64.0 * 1000.0 / kRate;
+        std::printf("  spin-back took %.0f ms for %.0f frames (flat out at 16x = %.0f ms)\n",
+                    arriveMs, 63536.0 - cue, (63536.0 - cue) / 16.0 * 1000.0 / kRate);
+        CHECK(arriveMs < 150.0);
         // FASTER THAN A HAND COULD ASK FOR. The hand-scrub law is clamped to ±4
         // and this must exceed it, or the whole point (a seek that feels like a
         // turntable rather than a slow crawl) is lost.
@@ -740,15 +751,20 @@ int main() {
         // An IDLE tape, launched mid-buffer: the case where "play out" has to
         // invent a transport rather than restore one.
         const double cue = static_cast<double>(kAnchorFrame);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, cue);
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, 0.0 /* vary */, cue);
 
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         for (int i = 0; i < 200; ++i) sl_render(e, outs, 2, 64);
         sl_tape_scratch_stop(e, 0, 0 /* RESUME */);
-        // Run past the stroke boundary and well into the play-out.
+        // Run past the stroke boundary and into the play-out — but NOT past the
+        // end of the buffer. ⚠️ This was 600 blocks and started failing the
+        // moment the spin-back got 8x faster: the one-shot reached the end of
+        // the material and went idle inside the window, so the assertion below
+        // read "it never played" when what happened was "it finished". 300
+        // blocks from mid-buffer leaves half the tape still to run.
         std::vector<float> after;
-        for (int i = 0; i < 600; ++i) {
+        for (int i = 0; i < 300; ++i) {
             sl_render(e, outs, 2, 64);
             after.insert(after.end(), l.begin(), l.end());
         }
@@ -781,7 +797,7 @@ int main() {
         const float* planar[1] = {tone.data()};
         CHECK(sl_tape_load(e, 0, 1, kLen, planar, kRate) == 1);
         sl_tape_set_scratch_tempo(e, 120.0);
-        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, static_cast<double>(kAnchorFrame));
+        sl_tape_scratch_start(e, 0, 0, 0.5, 0.05, 0.0 /* vary */, static_cast<double>(kAnchorFrame));
         std::vector<float> l(64), r(64);
         float* outs[2] = {l.data(), r.data()};
         for (int i = 0; i < 200; ++i) sl_render(e, outs, 2, 64);
@@ -814,7 +830,7 @@ int main() {
             sl_tape_set_scratch_tempo(e, 120.0);
             sl_tape_scratch_start(e, 0, 0 /* baby: gate always open, so what is
                                              measured is the FADER alone */,
-                                  0.5, 0.05, static_cast<double>(kAnchorFrame));
+                                  0.5, 0.05, 0.0 /* vary */, static_cast<double>(kAnchorFrame));
             sl_tape_scratch_fader(e, 0, faderPos);
             std::vector<float> l(64), r(64), got;
             float* outs[2] = {l.data(), r.data()};
@@ -823,8 +839,14 @@ int main() {
                 got.insert(got.end(), l.begin(), l.end());
             }
             const size_t win = static_cast<size_t>(kWindowSeconds * kRate);
+            // ⚠️ SKIP THE SETTLING. The fader RESTS open and is then commanded,
+            // so the first few ms are its ~2 ms ramp travelling to the position
+            // under test — measuring that reports the journey, not the state.
+            // Including it put "shut" at 0.0072 against a 0.0072 threshold and
+            // made this assertion a coin-flip on unrelated changes elsewhere.
+            const size_t skip = static_cast<size_t>(0.05 * kRate) / win;
             double loud = 0.0;
-            for (size_t w = 0; w + 1 < got.size() / win; ++w)
+            for (size_t w = skip; w + 1 < got.size() / win; ++w)
                 loud = std::max(loud, acRms(got, w * win, win));
             sl_engine_destroy(e);
             return loud;
@@ -844,6 +866,58 @@ int main() {
         CHECK(justOpen == open);
         CHECK(justShut == shut);
         sl_engine_destroy(nullptr); // no-op; keeps the shape of the block above
+    }
+
+    /* ── 15. VARIATION — a repeated figure is not what anyone plays ────────
+       "the actual improvising does not necessarily turn out to be a series of
+       perfectly performed basic techniques". At vary 0 every stroke must be
+       identical (that is the old behaviour and the escape hatch); above 0 the
+       twin-peaks alternation, the span jitter and the fader thinning must all
+       be measurable — otherwise the control is a placebo. */
+    {
+        // vary 0 IS THE OLD BEHAVIOUR, bit for bit. The escape hatch has to be
+        // exact or "turn it off" is not a real answer.
+        std::vector<float> a, b;
+        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 6, a, nullptr, 0.0));
+        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 6, b, nullptr, 0.0));
+        CHECK(a.size() == b.size());
+        for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
+
+        // The measure that matters: how much CONSECUTIVE CYCLES differ from each
+        // other. A stale pattern scores ~0 by construction; twin peaks alone
+        // guarantees a large number, since the second excursion is 0.585 of the
+        // first.
+        auto cycleSpread = [](const std::vector<float>& x, double bpm) {
+            const auto cyc = static_cast<size_t>(0.5 * (60.0 / bpm) * kRate);
+            const size_t n = x.size() / cyc;
+            std::vector<double> peak(n, 0.0);
+            for (size_t c = 0; c < n; ++c)
+                for (size_t i = 0; i < cyc; ++i)
+                    peak[c] = std::max(peak[c], std::abs(static_cast<double>(x[c * cyc + i])));
+            double mean = 0.0;
+            for (double v : peak) mean += v;
+            mean /= static_cast<double>(n > 0 ? n : 1);
+            double dev = 0.0;
+            for (double v : peak) dev += std::abs(v - mean);
+            return n > 0 && mean > 0.0 ? (dev / static_cast<double>(n)) / mean : 0.0;
+        };
+
+        // A technique whose gate is always open, so what is measured is the
+        // RECORD hand rather than the fader: span, not clicks.
+        std::vector<float> flat, varied;
+        CHECK(runPattern(64, 0 /* baby */, 0.5, 0.07, 120.0, 8, flat, nullptr, 0.0));
+        CHECK(runPattern(64, 0, 0.5, 0.07, 120.0, 8, varied, nullptr, 1.0));
+        const double sFlat = cycleSpread(flat, 120.0);
+        const double sVaried = cycleSpread(varied, 120.0);
+        std::printf("  variation: cycle-to-cycle spread %.4f at vary 0 -> %.4f at vary 1\n",
+                    sFlat, sVaried);
+        CHECK(sVaried > sFlat * 2.0);
+
+        // AND THE PERIOD DOES NOT MOVE. The measurement is specific: "the record
+        // speed and gesture span varies, but the DURATION is constant". If
+        // variation leaked onto the period this feature would drift off the
+        // grid, which is the one thing a tempo-locked scratch may not do.
+        CHECK(flat.size() == varied.size());
     }
 
     std::printf("sl_tape_scratch_test OK\n");

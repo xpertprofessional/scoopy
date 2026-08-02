@@ -80,7 +80,7 @@ juce::var capabilities(const HostServices* services) {
     //     UI's OWN constant — the browser host agrees with itself BY
     //     CONSTRUCTION and cannot fail this check however wrong native is.
     // A comment saying "must equal" is not a gate. `npm run schema:check` is.
-    obj->setProperty("schemaVersion", 101);
+    obj->setProperty("schemaVersion", 103);
     // The merged host = wizard's JUCE shell hosting scoopy's UI. Each flag is
     // what that host can ACTUALLY do today, not what it aspires to — scoopy's UI
     // renders native-only surfaces inert from these, so an optimistic `true`
@@ -563,6 +563,7 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
                                   // span 0 is FADER-ONLY — the record hand moves
                                   // nothing and the loop plays on underneath.
                                   numProp(params, "span", 0.07),
+                                  numProp(params, "vary", 0.0),
                                   // Where the hand landed on the record. -1 = "no
                                   // point given", i.e. start where the head is.
                                   numProp(params, "frame", -1.0));
@@ -570,7 +571,7 @@ juce::var dispatch(const juce::String& method, const juce::var& params,
         }
         if (action == "scratchSet") {
             sl_tape_scratch_set(engine, tape, numProp(params, "periodBeats", 0.5),
-                                numProp(params, "span", 0.07));
+                                numProp(params, "span", 0.07), numProp(params, "vary", 0.0));
             return ok(okFlag());
         }
         if (action == "scratchStop") {

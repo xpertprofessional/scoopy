@@ -109,6 +109,11 @@ export function TapeRow({
   const [technique, setTechnique] = useState(0)
   const [division, setDivision] = useState(DEFAULT_DIVISION)
   const [depth, setDepth] = useState(0.07)
+  /** How much the figure varies stroke to stroke. Defaults to a real amount
+      rather than 0: one identical stroke repeated is not what anyone plays, and
+      shipping the stale version as the default would make the feature's first
+      impression its worst one. */
+  const [vary, setVary] = useState(0.45)
   /** ARMED — a latch, not a hold. While it is lit the waveform's unmodified drag
       is a SCRATCH instead of a scrub, which is what makes re-grabbing during a
       play-out fall out for free rather than needing its own mechanism. */
@@ -221,6 +226,7 @@ export function TapeRow({
       technique,
       periodBeats: DIVISIONS[division]!.beats,
       span: depth,
+      vary,
       frame,
     })
   }
@@ -234,13 +240,14 @@ export function TapeRow({
 
   /** Retune WHILE HELD through `scratchSet`, which deliberately does not re-seed
       the phase — otherwise every knob movement restarts the figure mid-gesture. */
-  const retune = (nextDivision: number, nextDepth: number) => {
+  const retune = (nextDivision: number, nextDepth: number, nextVary: number) => {
     if (!link || !scratching) return
     send(link, 'slTape', {
       action: 'scratchSet',
       tape: slot,
       periodBeats: DIVISIONS[nextDivision]!.beats,
       span: nextDepth,
+      vary: nextVary,
     })
   }
 
@@ -434,7 +441,7 @@ export function TapeRow({
           max={DIVISIONS.length - 1}
           onChange={(v) => {
             setDivision(v)
-            retune(v, depth)
+            retune(v, depth, vary)
           }}
         />
         <span className="plugin-tape-state">{DIVISIONS[division]?.label}</span>
@@ -453,7 +460,26 @@ export function TapeRow({
           title="how far the record travels — 0 is FADER ONLY, chopping a loop that keeps playing"
           onChange={(v) => {
             setDepth(v)
-            retune(division, v)
+            retune(division, v, vary)
+          }}
+        />
+        <GeoRange
+          label="VARY"
+          value={vary}
+          min={0}
+          max={1}
+          step={0.01}
+          display={vary <= 0 ? 'strict' : vary.toFixed(2)}
+          // Not "humanize" and not a taste knob: every behaviour behind this is
+          // a measured one. It alternates a BIG stroke with a small one (the
+          // twin-peaks figure, which was a third of the analysed performance),
+          // jitters the span within the measured spread, and thins the fader off
+          // the big stroke. 0 reads "strict" rather than "0.00" because playing
+          // one identical stroke forever is a deliberate choice, not an absence.
+          title="how much the figure varies stroke to stroke — big/small alternation, span spread, and some strokes left uncut. 0 is strict: every stroke identical"
+          onChange={(v) => {
+            setVary(v)
+            retune(division, depth, v)
           }}
         />
         <Button

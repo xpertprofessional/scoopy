@@ -125,6 +125,19 @@ describe('the SCRATCH row', () => {
     expect(armed).not.toMatch(/drag to scrub/)
   })
 
+  it('VARY defaults to a real amount, not to strict', () => {
+    withTape(true)
+    const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)
+    expect(html).toContain('VARY')
+    // ⚠️ NOT 0. One identical stroke repeated is not what anyone plays — the
+    // sources say improvising is not "a series of perfectly performed basic
+    // techniques" — so shipping the stale version as the default would make the
+    // feature's first impression its worst one.
+    expect(html).not.toContain('>strict<')
+    // And 0 is a real setting with a name, not an absence.
+    expect(html).toMatch(/0 is strict: every stroke identical/)
+  })
+
   it('release policy is a visible switch, defaulting to PLAY OUT', () => {
     withTape(true)
     const html = renderToStaticMarkup(<TapeRow link={null} bpm={120} />)

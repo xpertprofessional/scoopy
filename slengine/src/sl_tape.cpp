@@ -145,7 +145,17 @@ inline double speedLevel(double rate) {
     The time constant makes the approach block-size independent, which the gap
     law's own `/ frames` would not be. */
 constexpr double kScratchSeekRate = 16.0;
-constexpr double kScratchSeekSeconds = 0.09;
+/** THE LANDING, and it is not the journey. This divides the remaining gap to get
+    a velocity, so it is the time constant of the FINAL approach — the journey
+    itself is flat out at the clamp above.
+
+    ⚠️ IT WAS 0.09 AND THAT WAS THE BUG. At 90 ms the profile only saturates
+    above 69120 frames, so a typical launch never reached 16× at all: it started
+    in the exponential tail and crawled in over **704 ms**, measured. Heard as
+    "it rewinds, pauses, then starts" — which read like quantization and was
+    nothing of the sort. At 2 ms the same launch runs flat out at 16× and lands
+    in one 10 ms ramp, which is the one-pole on `scrubRate` and not this. */
+constexpr double kScratchSeekSeconds = 0.002;
 /** Close enough to call it arrived. Under a millisecond at any sane rate, so the
     hand-off into the pattern is inaudible. */
 constexpr double kScratchArriveFrames = 24.0;
@@ -169,6 +179,68 @@ inline double battleCurve(double p) {
     const double t = (p - (0.5 - kFaderBand)) / (2.0 * kFaderBand);
     return 0.5 * (1.0 - std::cos(kPi * t)); // the one raised-cosine shape
 }
+
+/* ── VARIATION: why a repeated figure does not sound like playing ────────────
+   The sources are blunt that a performance is not one technique repeated:
+   *"the actual improvising does not necessarily turn out to be a series of
+   perfectly performed basic techniques"*. Three measured facts say what it is
+   instead, and all three are generated here from the published statistics —
+   no recorded gesture data was obtained or transcribed (see §7 provenance).
+
+   1. TWIN PEAKS. A named two-stroke figure that took *"almost one third of the
+      performance in time"*, repeated eight times *"with striking similarity"*:
+      a big excursion (100–175°, mean 132.5) then a small one (50–100°, mean
+      77.5). The second is 0.585 of the first, and that ratio is the constant
+      below. It is the single biggest structural difference between what we
+      emitted and what was recorded.
+   2. SPAN VARIES, DURATION DOES NOT — *"the record speed and gesture span
+      varies, but the duration is constant (73 ms and 155 ms… 1/32 and 1/16 in
+      90 bpm)"*. So variation goes on SPAN and the period stays exactly on the
+      grid. The measured ranges around each peak's mean work out near ±30%.
+   3. NOT EVERY STROKE USES THE FADER, and the twin-peaks measurement puts
+      *"more [crossfader attacks] on the second peak than the first"* — so the
+      big stroke is the one that thins.
+
+   ⚠️ THE 35% FIGURE IS NOT THE THINNING TARGET, though it is tempting to fit to
+   it. *"Many strokes (35 %) have a SWIFT crossfader use"* counts fast fader
+   work, not "strokes with any fader at all" — fitting the thinning to it would
+   be borrowing a number's authority for a quantity it does not measure. The
+   constant below is tuned to be musical in the measured DIRECTION and is
+   labelled as such. */
+constexpr double kTwinSecondPeak = 0.585; // 77.5° / 132.5°, measured
+constexpr double kSpanJitter = 0.30;      // ±30%, from the measured peak ranges
+constexpr double kThinBigPeak = 0.5;      // taste, in the measured direction — see above
+
+/** RT-safe and allocation-free: xorshift32, advanced only at cycle boundaries
+    (a few times a second), never per sample. Free-running by design — the
+    twin-peaks figure recurred "with striking similarity", not identically. */
+inline uint32_t xorshift32(uint32_t& s) {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return s;
+}
+inline double rnd01(uint32_t& s) {
+    return static_cast<double>(xorshift32(s) >> 8) * (1.0 / 16777216.0);
+}
+/** Redraw the per-cycle variation. Called at each phase wrap and once at seed —
+    a few times a second, never per sample. Safe to apply mid-gesture because it
+    only ever lands at phase 0, where both position and velocity are zero
+    whatever the span is, so a changed span cannot make the playhead jump. */
+inline void rollCycle(uint32_t& rng, uint32_t& cycle, double& spanMul, uint32_t& clicksOn,
+                      double vary) {
+    cycle ^= 1u;
+    // TWIN PEAKS: big, then small. At vary 0 both are 1.0 and every stroke is
+    // identical, which is the old behaviour and is nobody's playing.
+    const double twin = cycle == 0 ? 1.0 : (1.0 - vary * (1.0 - kTwinSecondPeak));
+    const double jitter = 1.0 + vary * kSpanJitter * (rnd01(rng) * 2.0 - 1.0);
+    spanMul = twin * jitter;
+    // The BIG stroke is the one that thins, because the measurement puts more
+    // crossfader attacks on the second (small) peak than the first.
+    const double keep = cycle == 0 ? (1.0 - vary * kThinBigPeak) : 1.0;
+    clicksOn = rnd01(rng) < keep ? 1u : 0u;
+}
+
 
 /** How hard the playhead is pulled back onto the commanded position. The
     integrated one-pole lags the command — which is the POINT, it is what makes
@@ -382,7 +454,7 @@ double TapeBank::scrubRate(uint32_t tape) const {
 }
 
 void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeats,
-                            double span, double cueFrame) {
+                            double span, double vary, double cueFrame) {
     if (tape >= kMaxTapes) return;
     Tape& d = tapes_[tape];
     // Recording owns the playhead, exactly as scrubBegin has it: the write head
@@ -399,6 +471,8 @@ void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeat
     d.scratchPeriodBeats.store(std::clamp(periodBeats, 1.0 / 64.0, 8.0),
                                std::memory_order_relaxed);
     d.scratchSpan.store(std::clamp(span, 0.0, 1.0), std::memory_order_relaxed);
+    d.scratchVary.store(std::isfinite(vary) ? std::clamp(vary, 0.0, 1.0) : 0.0,
+                        std::memory_order_relaxed);
     // The render seeds the anchor and the phase, because only it knows where the
     // playhead actually IS — pubPlayhead is a block-old copy, and starting a
     // gesture from a stale anchor puts a lurch at the top of every pattern.
@@ -428,7 +502,7 @@ void TapeBank::scratchStart(uint32_t tape, uint32_t technique, double periodBeat
     }
 }
 
-void TapeBank::scratchSet(uint32_t tape, double periodBeats, double span) {
+void TapeBank::scratchSet(uint32_t tape, double periodBeats, double span, double vary) {
     if (tape >= kMaxTapes) return;
     Tape& d = tapes_[tape];
     // Live while held, and deliberately NOT re-seeding the phase: a pattern
@@ -925,6 +999,9 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                 }
                 d.scratchAnchor = d.playhead;
                 d.scratchPhase = 0.0; // phase 0 IS the start of the forward push
+                d.scratchCycle = 1u;  // so the first roll lands on the BIG peak
+                rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul, d.scratchClicksOn,
+                          d.scratchVary.load(std::memory_order_relaxed));
                 d.scratchSeeded.store(1, std::memory_order_relaxed);
             }
             // Span is a fraction of the LOOP, and the measured spans are small —
@@ -948,6 +1025,7 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
             const double clickPhaseWidth =
                 cycleSamples > 1.0 ? (T.clickWidthMs * 0.001 * fs) / (cycleSamples * 0.5) : 0.0;
 
+            const double vary = d.scratchVary.load(std::memory_order_relaxed);
             const double cue = d.scratchCue.load(std::memory_order_relaxed);
             const double seekDiv = kScratchSeekSeconds * fs;
 
@@ -983,6 +1061,24 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                         d.scratchAnchor = cue;
                         d.scratchPhase = 0.0;
                         d.scratchGate = 1.0;
+                        d.scratchCycle = 1u; // so the first roll lands on the BIG peak
+                        rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul,
+                                  d.scratchClicksOn, vary);
+                        // ⚠️ CATCH THE RECORD. Arriving at 16× and handing over
+                        // to a pattern whose peak velocity is a third of a frame
+                        // per sample left the platter still FLYING: the one-pole
+                        // took 10 ms to shed the seek rate, carrying the head
+                        // thousands of frames past the cue, and the deliberately
+                        // slow anchor pull then crawled back over ~a second.
+                        // That was the other half of "it rewinds, pauses, and
+                        // then starts" — the half the seek constant did not
+                        // explain. A hand does not release the record at speed
+                        // and hope; it CATCHES it and starts the stroke.
+                        //
+                        // Not a click: level follows speed, so rate 0 is already
+                        // silence at that instant — the catch lands inside the
+                        // phantom click the reversal was going to make anyway.
+                        d.scrubRate = 0.0;
                         d.scratchSeeded.store(1, std::memory_order_relaxed);
                         d.scratchActive.store(1, std::memory_order_release);
                         scratchState = 1;
@@ -994,8 +1090,10 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     // block-size independent — nothing here divides by `frames`,
                     // which §4.1 warns is the trap a rate-driven generator falls
                     // into (a different block size, a different rate).
-                    const double v =
-                        spanFrames * shapeVel(T.shape, d.scratchPhase) * phaseInc;
+                    // THIS CYCLE's span, not the nominal one — the twin-peaks
+                    // alternation and the jitter both live here.
+                    const double sf = spanFrames * d.scratchSpanMul;
+                    const double v = sf * shapeVel(T.shape, d.scratchPhase) * phaseInc;
                     const double wantS = std::clamp(v, -4.0, 4.0);
                     d.scrubRate += alpha * (wantS - d.scrubRate);
                     d.playhead += d.scrubRate;
@@ -1004,19 +1102,31 @@ void TapeBank::renderPlayback(const float* const* inBus, uint32_t inCount, uint3
                     // constant), so it cannot flatten the articulation — it only
                     // keeps a long hold from wandering off its anchor.
                     const double commanded =
-                        d.scratchAnchor + spanFrames * shapePos(T.shape, d.scratchPhase);
+                        d.scratchAnchor + sf * shapePos(T.shape, d.scratchPhase);
                     d.playhead += anchorPull * (commanded - d.playhead);
 
                     // THE FADER HAND, at ~2 ms rather than the engine's 10.
                     // Stepped BEFORE the phase advances so the gate belongs to
                     // the same instant the position does.
+                    // A STROKE WITH NO CROSSFADER USE plays through uncut, which
+                    // is what such a stroke IS. Only applied where the rest state
+                    // is OPEN: on a closed-rest technique (transformer, chirp)
+                    // suppressing the clicks would suppress the SOUND, turning
+                    // "this stroke has no fader work" into silence.
+                    const int restHere = T.rest[d.scratchPhase < 0.5 ? 0 : 1];
+                    const bool thinned = d.scratchClicksOn == 0u && restHere != 0;
                     d.scratchGate = rampStep(
-                        d.scratchGate, gateOpen(T, d.scratchPhase, clickPhaseWidth) ? 1.0 : 0.0,
+                        d.scratchGate,
+                        thinned || gateOpen(T, d.scratchPhase, clickPhaseWidth) ? 1.0 : 0.0,
                         gateStep);
 
                     const double prevPhase = d.scratchPhase;
                     d.scratchPhase += phaseInc;
-                    if (d.scratchPhase >= 1.0) d.scratchPhase -= 1.0;
+                    if (d.scratchPhase >= 1.0) {
+                        d.scratchPhase -= 1.0;
+                        rollCycle(d.scratchRng, d.scratchCycle, d.scratchSpanMul,
+                                  d.scratchClicksOn, vary);
+                    }
                     // RELEASE COMPLETES THE STROKE. Reversals land at the
                     // extrema and strokes are whole units, so a pattern told to
                     // stop runs to the next boundary (phase 0 or 0.5) and lets
