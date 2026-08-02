@@ -52,11 +52,12 @@ import {
   quantumSteps,
   type LaunchQuantum,
 } from '../audio/launchQuantum.ts'
-import { flushAutosave, useCompanion } from '../store/companionEngine.ts'
+import { useCompanion } from '../store/companionEngine.ts'
 import { listSessions } from '../store/sessionStore.ts'
 import { silenceNote } from '../store/sampleReport.ts'
 import { useMapStore } from '../state/mapStore.ts'
 import { autoStartEngine } from './bootEngine.ts'
+import { useComposeLifecycle } from './useComposeLifecycle.ts'
 import { ComposeFiles } from './ComposeFiles.tsx'
 import { ComposeSessions } from './ComposeSessions.tsx'
 import { DeckFace, claimKeyboard } from './deckTile.tsx'
@@ -518,30 +519,12 @@ export function PluginDeckPanel({ link }: { link: EngineLink | null }) {
     })
   }, [link, enabledSceneRow])
 
-  // ⌘S flushes the autosave debounce, same meaning as everywhere else
-  // (D-SL-SAVE-01). Inside a DAW the host may well take ⌘S first; this is the
-  // fallback for when focus is in the editor.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 's' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
-      e.preventDefault()
-      void flushAutosave().then(() => setNote('saved'))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // The last edit must land. A DAW can close a plugin editor without any of
-  // the usual page lifecycle firing, so the flush is wired to both.
-  useEffect(() => {
-    const flush = () => void flushAutosave()
-    window.addEventListener('pagehide', flush)
-    document.addEventListener('visibilitychange', flush)
-    return () => {
-      window.removeEventListener('pagehide', flush)
-      document.removeEventListener('visibilitychange', flush)
-    }
-  }, [])
+  // ⌘S (D-SL-SAVE-01) and the teardown flush, shared with every other
+  // session-editing face. This panel's own reason for the second one is the
+  // sharpest of the three and is recorded in the hook: a DAW can close a plugin
+  // editor without any of the usual page lifecycle firing, which is why the
+  // flush is wired to `visibilitychange` as well as `pagehide`.
+  useComposeLifecycle(setNote)
 
   // ⚠️ NOT useComposeBinding, and the reason is measurable rather than
   // stylistic: compose density reads its playhead from `HotFrameLayout

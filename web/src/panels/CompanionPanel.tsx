@@ -21,7 +21,6 @@ import { kitSamples } from "../persist/kit.ts";
 import {
   useCompanion,
   useCompanionDeck,
-  flushAutosave,
   engineLevel,
   enginePosition,
   applyGridRow,
@@ -31,6 +30,7 @@ import {
   toggleLocatorRepeatTrack,
 } from "../store/companionEngine.ts";
 import { isSessionFile } from "../store/sessionStore.ts";
+import { useComposeLifecycle } from "../plane/useComposeLifecycle.ts";
 // P3.5-E7: the folder doors moved to `persist/folderImport.ts` and the plane's
 // library uses the SAME ones. Two copies of a directory walk is how the plane
 // ended up with one door out of three.
@@ -105,13 +105,22 @@ export function CompanionPanel({ link }: { link: EngineLink | null }) {
 
   useEffect(() => {
     void s.refresh();
-    // The debounce would eat the last edit if the tab goes away mid-window — and "the tab went away"
-    // is the normal way a browser session ends, not an edge case.
-    const flush = () => void flushAutosave();
-    window.addEventListener("pagehide", flush);
-    return () => window.removeEventListener("pagehide", flush);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ⌘S + the teardown flush, shared with every other session-editing face.
+  //
+  // ⚠️ THIS PANEL WAS THE DIVERGENT COPY, and converging it FIXES two things
+  // rather than tidying one. It listened for `pagehide` alone, and it had no ⌘S
+  // at all — so D-SL-SAVE-01's "one meaning on every surface" was already false
+  // here, and on the host where the omission costs most. `pagehide` is the
+  // unreliable half on mobile: backgrounding a tab fires `visibilitychange` and
+  // may never fire `pagehide`, which is precisely how a browser session on a
+  // phone ends. The companion is the surface most likely to be used that way.
+  //
+  // Feedback goes to the notice line — the companion's existing report channel,
+  // which already auto-dismisses after 2.4 s — rather than a second one.
+  useComposeLifecycle((n) => useCompanion.setState({ notice: n }));
 
   useEffect(() => {
     if (!s.notice) return;
