@@ -26,7 +26,7 @@ ScoopyTape (VST) and Studio**, not only the plugin it was imagined in.
 
 | # | Decision |
 |---|---|
-| 1 | The fast fader gate becomes a **proposed exception to D-WZ-RAMP-01** (~1–3 ms). ⚠️ **Not signed yet — sign before building it.** §4.2 carries the argument. |
+| 1 | The fast fader gate becomes a **proposed exception to D-WZ-RAMP-01** (~1–3 ms). ~~⚠️ Not signed yet~~ — **SIGNED 2026-08-02 as `D-SL-SCRATCHGATE-01`**. §4.2 carries the argument; the entry carries the one thing §4.2 missed (D-WZ-RAMP-01's own *"5 ms can thump"* line, addressed rather than ignored). |
 | 2 | **Ship on the existing linear interpolation**; measure aliasing rather than pre-emptively implementing D-WZ-VARISPEED-01 on the tape. §4.6. |
 | 3 | **The 2D pad belongs to SCRATCH MODE**, not to ordinary scrubbing. Y stays meaningless for a normal scrub. |
 | 4 | ~~**The pattern generator posts `scrub_to` from `processBlock`**, not from a message-thread timer. §4.1.~~ **SUPERSEDED BY 7.** Its thrust — never a message-thread timer — survives intact. |

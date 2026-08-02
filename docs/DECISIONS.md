@@ -1475,3 +1475,57 @@ compose-shaped companion wants different verbs, and `BRIDGE_VERSION` is how that
 made without breaking an installed extension. Note the ceiling this inherits from the WASM
 engine and cannot exceed: **no tape, no recording, one deck**, and sends render **dry**
 (`returnFx: false`) — deliberately, "a dry host rather than a wrong-sounding one".
+
+## D-SL-SCRATCHGATE-01 · 2026-08-02 · The scratch click is an exception to the 10 ms ramp
+
+**Decision:** A narrow, named exception to `D-WZ-RAMP-01`. **One per-tape gate, ~2 ms
+raised-cosine (tunable 1–3 ms), reachable only from the scratch path**, applied inside
+`sl_tape.cpp`'s per-sample loops. Nothing else moves: channel level, mute, monitor
+assign, route gain, insert bypass and the tape's own `scrubGain` all keep the one 10 ms
+constant, and `rampShape` is literally the same function — only the step differs.
+
+**Rationale:** `D-WZ-RAMP-01`'s consequences clause enumerates what it governs — *"solo,
+monitor assign, insert bypass"* — and every item is a **state change that should be
+inaudible**. A scratch click is the opposite category: it is a **musical event the
+listener is meant to hear**. The fader hand is one of the two gesture streams a scratch
+is made of (`docs/specs/scratching.md` §1); a technique is *defined* by where its clicks
+fall.
+
+The measured numbers make 10 ms not merely suboptimal but non-functional here. Clicks
+run **30–70 ms end to end**, so a 10 ms ramp down plus 10 ms up inside a 40 ms click
+never reaches silence at all, and a crab's four clicks per stroke smear into a wobble
+instead of four events. The control is not "too soft" — it does not produce the
+phenomenon.
+
+⚠️ **This entry contradicts a sentence in the decision it excepts, and does so
+knowingly.** `D-WZ-RAMP-01`'s rationale says *"5 ms can thump"* on bass-heavy material.
+It can, and at 2 ms it will more. **That is the instrument.** A battle crossfader's
+travel from silence to full volume measures **2–3 mm out of a 45 mm run** — it is a gate
+with a hair trigger, not a fader, and DJs select the sharpest cut a mixer offers. The
+transient at the edge of the gate is part of the sound of the technique, which is
+precisely why the general rule cannot be read onto it.
+
+**Consequences:**
+
+· **It lives in the TAPE, per sample, in BOTH loops** — the scrub path and the
+  `renderVarispeed` lambda. Both, because a transformer is played over a **normally
+  playing loop**, not only during a scrub; putting it in one place would ship half the
+  technique table.
+· **Not in `ChannelBank::mixInto`.** Targets there are hoisted once per block, so the
+  *decision instant* would sit on the ~10.7 ms block grid however fast the ramp was. The
+  ramp shape and the decision instant are two different problems and only the second one
+  needs sample accuracy — a distinction worth stating because getting the first right
+  while leaving the second on the block grid looks like a fix and is not one.
+· **The topology already allows it.** A per-sample gate array exists in the route pour
+  (`sl_channel.cpp:608`, `g = sm * extra * (gate != nullptr ? gate[i] : 1.0)` — the
+  monitor gate lane), proven RT-safe. It is simply not reachable from the ABI and not
+  applied at the tape's own stage.
+· **Bounded by construction.** The gate is per-tape and multiplies only that tape's
+  output, so it cannot reach the master, another channel, or any path a scratch is not
+  running on. A tape with no scratch active holds the gate at 1.0 and is bit-identical to
+  today, which the DSP characterization fixtures depend on.
+· It also, incidentally, cleans up something nobody authored: the reader **parks on a DC
+  pedestal** at each reversal rather than on silence (measured 0.72–0.87 in
+  `sl_tape_scratch_test`). A closed-fader technique cuts exactly there, so the gate
+  zeroes it — and since 70–90% of reversals are silenced in real playing, idiomatic use
+  masks the pedestal for free.
