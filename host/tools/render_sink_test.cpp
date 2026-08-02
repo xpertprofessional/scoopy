@@ -7,6 +7,7 @@
 // same path, so the seam is proven by the engine that ships, not by a spy alone.
 #include "SlRenderSink.h"
 #include "RenderSink.h"
+#include "OutputMap.h"
 
 #include <cmath>
 #include <cstdio>
@@ -216,6 +217,80 @@ int main() {
         float* deadOuts[1] = {buf.data()};
         renderChunked(dead, nullptr, 0, deadOuts, 1, 32);
         for (float v : buf) CHECK(v == 0.0f);
+    }
+
+    // ── THE OUTPUT MAP (S5) ─────────────────────────────────────────────────
+    // Before this there was no map: engine bus i went to device channel i, and
+    // the three declared routing commands had nowhere to land. The spy stamps
+    // a marker into every buffer it is handed, so "which device channel did bus
+    // N reach" is directly observable.
+    {
+        // IDENTITY BY DEFAULT — a null map must reproduce the old behaviour
+        // exactly, or installing this changes the sound of every existing setup.
+        SpySink spy;
+        spy.block = 64;
+        std::vector<float> ch0(64, -1.0f), ch1(64, -1.0f);
+        float* outs[2] = {ch0.data(), ch1.data()};
+        renderChunked(spy, nullptr, 0, outs, 2, 64, nullptr);
+        CHECK(ch0[0] == 1.0f && ch1[0] == 1.0f); // both written by their own bus
+    }
+    {
+        // MAIN OUT TO PAIR 3/4: bus 0 → channel 2, bus 1 → channel 3.
+        SpySink spy;
+        spy.block = 64;
+        OutputMap map;
+        map.set(0, 2);
+        map.set(1, 3);
+        std::vector<float> c0(64, 9.0f), c1(64, 9.0f), c2(64, -1.0f), c3(64, -1.0f);
+        float* outs[4] = {c0.data(), c1.data(), c2.data(), c3.data()};
+        renderChunked(spy, nullptr, 0, outs, 4, 64, &map);
+
+        // The audio arrived on 3/4…
+        CHECK(c2[0] == 1.0f && c3[0] == 1.0f);
+        // …and 1/2 were CLEARED, not left holding what the device had. This is
+        // the bug class the 1:1 routing could not produce: with a map, a channel
+        // can have no bus pointing at it, and passing stale memory through is an
+        // audible fault dressed as a quiet one.
+        CHECK(c0[0] == 0.0f && c1[0] == 0.0f);
+        CHECK(c0[63] == 0.0f && c1[63] == 0.0f); // the whole block, not just the head
+    }
+    {
+        // kNone SILENCES A BUS. The engine already treats a null bus pointer as
+        // "not rendered", so "this output goes nowhere" needs no new concept.
+        SpySink spy;
+        spy.block = 64;
+        OutputMap map;
+        map.set(0, OutputMap::kNone);
+        std::vector<float> c0(64, 7.0f), c1(64, -1.0f);
+        float* outs[2] = {c0.data(), c1.data()};
+        renderChunked(spy, nullptr, 0, outs, 2, 64, &map);
+        CHECK(c0[0] == 0.0f);  // nothing routed here → cleared
+        CHECK(c1[0] == 1.0f);  // bus 1 still identity-routed
+    }
+    {
+        // TWO BUSES, ONE CHANNEL is not silently allowed to look like routing —
+        // the later bus wins by writing last, and the channel is targeted so it
+        // is not cleared. Asserted so the behaviour is a decision on record
+        // rather than an accident of loop order.
+        OutputMap map;
+        map.set(0, 1);
+        map.set(1, 1);
+        CHECK(map.isTargeted(1));
+        CHECK(!map.isTargeted(0));
+        CHECK(map.channelFor(0) == 1 && map.channelFor(1) == 1);
+    }
+    {
+        // Out-of-range is IGNORED, not clamped: clamping would send audio to a
+        // channel nobody asked for, which is worse than the routing not taking.
+        OutputMap map;
+        map.set(-1, 5);
+        map.set(OutputMap::kMaxBuses, 5);
+        CHECK(map.channelFor(0) == 0); // untouched identity
+        CHECK(map.channelFor(-1) == OutputMap::kNone);
+        CHECK(map.channelFor(OutputMap::kMaxBuses) == OutputMap::kNone);
+        map.set(0, 3);
+        map.reset();
+        CHECK(map.channelFor(0) == 0); // reset restores identity
     }
 
     std::printf("render_sink_test OK\n");

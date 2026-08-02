@@ -16,7 +16,7 @@
 // virtual call per CHUNK (not per sample), which is noise next to a render.
 #pragma once
 
-#include <cstdint>
+#include "OutputMap.h"
 
 namespace wizard::host {
 
@@ -56,10 +56,14 @@ public:
     (maxBlockFrames() == 0) yields SILENCE, never stale buffer contents — the
     device hands us whatever was last in that memory, and passing it through
     would be an audible fault dressed up as a quiet one. */
+/** `map` is OPTIONAL and null means the identity routing this had before it
+    existed — bus i straight into device channel i. Supplied, every engine bus
+    is written to the channel the map names, and any device channel no bus
+    points at is CLEARED rather than left holding whatever the device had. */
 void renderChunked(RenderSink& sink,
                    const float* const* input, int numInputChannels,
                    float* const* output, int numOutputChannels,
-                   int numSamples) noexcept;
+                   int numSamples, const OutputMap* map = nullptr) noexcept;
 
 /** Channel ceiling for one callback. Device pointer arrays are stack-copied per
     chunk to offset them, so the bound is fixed and generous rather than dynamic
